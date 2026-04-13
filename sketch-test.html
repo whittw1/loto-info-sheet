@@ -2762,8 +2762,8 @@ async function runCombinedExport() {
         pngDataUrl = await renderSketchOffscreen(entry.sketch);
       }
       if (pngDataUrl) {
-        const safeName = (entry.equipName || 'equipment').replace(/[^a-zA-Z0-9_-]/g, '_');
-        diagramFile = safeName + '_sketch.png';
+        const h = nextH();
+        diagramFile = h + '.png';
         const pngBytes = dataUrlToUint8Array(pngDataUrl);
         diagramsFolder.file(diagramFile, pngBytes);
       }
