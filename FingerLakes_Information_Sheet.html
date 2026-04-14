@@ -3439,6 +3439,37 @@ function duplicateSaved(index) {
     if (!confirm(`Current form has unsaved data ("${currentName || 'unnamed'}"). Discard and duplicate "${savedEquipment[index].equipName}"?`)) return;
   }
 
+  // Show choice dialog
+  showDuplicateDialog(index);
+}
+
+function showDuplicateDialog(index) {
+  const entry = savedEquipment[index];
+  const photoCount = (entry.photos ? Object.keys(entry.photos).filter(k => entry.photos[k] && entry.photos[k].thumbnail).length : 0)
+    + (entry.miscPhotos ? entry.miscPhotos.length : 0);
+
+  const overlay = document.createElement('div');
+  overlay.id = 'duplicateDialog';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:1000;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:320px;width:90%;text-align:center;">
+      <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">Duplicate "${entry.equipName}"</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:18px;">${photoCount} photo${photoCount !== 1 ? 's' : ''} available to copy</div>
+      <button onclick="executeDuplicate(${index}, true)" style="width:100%;padding:12px;margin-bottom:8px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">
+        With Photos
+      </button>
+      <button onclick="executeDuplicate(${index}, false)" style="width:100%;padding:12px;margin-bottom:8px;border:none;border-radius:8px;background:var(--card-bg);color:var(--text-primary);font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border);">
+        Info Only
+      </button>
+      <button onclick="document.getElementById('duplicateDialog').remove()" style="width:100%;padding:10px;border:none;border-radius:8px;background:transparent;color:var(--text-dim);font-size:13px;cursor:pointer;">
+        Cancel
+      </button>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function executeDuplicate(index, withPhotos) {
+  document.getElementById('duplicateDialog').remove();
   const entry = savedEquipment[index];
 
   // Restore equipment type — check if it's a custom value
@@ -3483,42 +3514,42 @@ function duplicateSaved(index) {
   // Deep copy sources
   sources = JSON.parse(JSON.stringify(entry.sources));
 
-  // Duplicate photos — copy thumbnails and queue IDB copy of full-res
   photos = {};
   miscPhotos = [];
-  const dupName = (entry.equipName || 'unknown') + '_dup_' + Date.now();
 
-  // Copy equipment photos (main, dataplate, ee) and source photos
-  if (entry.photos) {
-    for (const [slot, photo] of Object.entries(entry.photos)) {
-      if (!photo || !photo.thumbnail) continue;
-      const newDbKey = photoDBKey(dupName, slot);
-      photos[slot] = { ...photo, dbKey: newDbKey };
-      // Copy full-res from IDB in background
-      if (photo.dbKey && idbAvailable) {
-        getPhotoFromDB(photo.dbKey).then(data => {
-          if (data && data.data) savePhotoToDB(newDbKey, data.data, data.type || 'image/jpeg');
-        }).catch(() => {});
+  if (withPhotos) {
+    // Duplicate photos — copy thumbnails and queue IDB copy of full-res
+    const dupName = (entry.equipName || 'unknown') + '_dup_' + Date.now();
+
+    if (entry.photos) {
+      for (const [slot, photo] of Object.entries(entry.photos)) {
+        if (!photo || !photo.thumbnail) continue;
+        const newDbKey = photoDBKey(dupName, slot);
+        photos[slot] = { ...photo, dbKey: newDbKey };
+        if (photo.dbKey && idbAvailable) {
+          getPhotoFromDB(photo.dbKey).then(data => {
+            if (data && data.data) savePhotoToDB(newDbKey, data.data, data.type || 'image/jpeg');
+          }).catch(() => {});
+        }
+      }
+    }
+
+    if (entry.miscPhotos && entry.miscPhotos.length > 0) {
+      for (let mi = 0; mi < entry.miscPhotos.length; mi++) {
+        const mp = entry.miscPhotos[mi];
+        if (!mp || !mp.thumbnail) continue;
+        const newDbKey = photoDBKey(dupName, 'misc_' + mi);
+        miscPhotos.push({ ...mp, dbKey: newDbKey });
+        if (mp.dbKey && idbAvailable) {
+          getPhotoFromDB(mp.dbKey).then(data => {
+            if (data && data.data) savePhotoToDB(newDbKey, data.data, data.type || 'image/jpeg');
+          }).catch(() => {});
+        }
       }
     }
   }
 
-  // Copy misc photos
-  if (entry.miscPhotos && entry.miscPhotos.length > 0) {
-    for (let mi = 0; mi < entry.miscPhotos.length; mi++) {
-      const mp = entry.miscPhotos[mi];
-      if (!mp || !mp.thumbnail) continue;
-      const newDbKey = photoDBKey(dupName, 'misc_' + mi);
-      miscPhotos.push({ ...mp, dbKey: newDbKey });
-      if (mp.dbKey && idbAvailable) {
-        getPhotoFromDB(mp.dbKey).then(data => {
-          if (data && data.data) savePhotoToDB(newDbKey, data.data, data.type || 'image/jpeg');
-        }).catch(() => {});
-      }
-    }
-  }
-
-  // Render equipment photo slots with duplicated thumbnails
+  // Render equipment photo slots
   ['equip_main','equip_dataplate','equip_ee'].forEach(slot => {
     const container = document.getElementById(`photo_${slot}`);
     if (photos[slot] && photos[slot].thumbnail) {
@@ -3550,7 +3581,11 @@ function duplicateSaved(index) {
   // Scroll to form
   document.querySelector('.equipment-section').scrollIntoView({ behavior: 'smooth' });
   const photoCount = Object.keys(photos).filter(k => photos[k] && photos[k].thumbnail).length + miscPhotos.length;
-  showToast(`Duplicated "${entry.equipName}" with ${photoCount} photo${photoCount !== 1 ? 's' : ''} — update name`);
+  if (withPhotos) {
+    showToast(`Duplicated "${entry.equipName}" with ${photoCount} photo${photoCount !== 1 ? 's' : ''} — update name`);
+  } else {
+    showToast(`Duplicated "${entry.equipName}" (info only) — update name`);
+  }
 }
 
 function updateHeaderBadge() {
