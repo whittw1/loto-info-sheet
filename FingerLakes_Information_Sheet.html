@@ -855,11 +855,16 @@ function init() {
     idbAvailable = false;
   });
 
-  loadAll();
-  renderSavedPanel();
-  renderSources();
-  updateHeaderBadge();
-  checkStorage();
+  loadAll().then(() => {
+    renderSavedPanel();
+    renderSources();
+    updateHeaderBadge();
+    checkStorage();
+  }).catch(() => {
+    renderSavedPanel();
+    renderSources();
+    updateHeaderBadge();
+  });
 }
 
 // Called by handleEquipTypeChange with the resolved equipment type
@@ -2713,11 +2718,14 @@ function openPhotoDB() {
   return new Promise((resolve, reject) => {
     if (photoDB) { resolve(photoDB); return; }
     try {
-      const req = indexedDB.open('loto_photos_v3', 1);
+      const req = indexedDB.open('loto_photos_v3', 2);
       req.onupgradeneeded = (e) => {
         const db = e.target.result;
         if (!db.objectStoreNames.contains('photos')) {
           db.createObjectStore('photos');
+        }
+        if (!db.objectStoreNames.contains('metadata')) {
+          db.createObjectStore('metadata');
         }
       };
       req.onsuccess = (e) => { photoDB = e.target.result; resolve(photoDB); };
@@ -2737,6 +2745,51 @@ function openPhotoDB() {
       reject(e);
     }
   });
+}
+
+// ---- IndexedDB metadata helpers ----
+function saveMetadata(key, value) {
+  return openPhotoDB().then(db => new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction('metadata', 'readwrite');
+      tx.objectStore('metadata').put(value, key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = (e) => reject(e);
+    } catch(e) { reject(e); }
+  }));
+}
+
+function getMetadata(key) {
+  return openPhotoDB().then(db => new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction('metadata', 'readonly');
+      const req = tx.objectStore('metadata').get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = (e) => reject(e);
+    } catch(e) { reject(e); }
+  }));
+}
+
+function deleteMetadata(key) {
+  return openPhotoDB().then(db => new Promise((resolve) => {
+    try {
+      const tx = db.transaction('metadata', 'readwrite');
+      tx.objectStore('metadata').delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    } catch(e) { resolve(); }
+  })).catch(() => {});
+}
+
+function clearMetadataStore() {
+  return openPhotoDB().then(db => new Promise((resolve) => {
+    try {
+      const tx = db.transaction('metadata', 'readwrite');
+      tx.objectStore('metadata').clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    } catch(e) { resolve(); }
+  })).catch(() => {});
 }
 
 // Store photo as {arrayBuffer, type, size}  -  NOT as a Blob (iOS Safari compat)
@@ -3924,36 +3977,33 @@ function getDateStamp() {
 // PERSISTENCE - survives close/reopen
 // ============================================================================
 function checkStorage() {
-  try {
-    let totalBytes = 0;
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key.startsWith('loto_')) {
-        totalBytes += localStorage.getItem(key).length * 2; // UTF-16 = 2 bytes per char
-      }
-    }
-    const maxBytes = 5 * 1024 * 1024; // Conservative 5MB estimate
-    const pct = Math.round((totalBytes / maxBytes) * 100);
-    const indicator = document.getElementById('storageIndicator');
-    const label = document.getElementById('storageUsed');
-
-    if (pct >= 50) {
-      indicator.style.display = 'block';
-      label.textContent = pct;
-
-      if (pct >= 90) {
-        indicator.style.color = '#d94a4a';
-        showToast('&#9888; Storage almost full "" export now!', true);
-      } else if (pct >= 75) {
-        indicator.style.color = '#d9a84a';
-        showToast('Storage getting full "" consider exporting', true);
+  // Use Storage Manager API if available (works on iPad Safari 17+)
+  if (navigator.storage && navigator.storage.estimate) {
+    navigator.storage.estimate().then(est => {
+      const used = est.usage || 0;
+      const quota = est.quota || (500 * 1024 * 1024); // fallback 500MB
+      const pct = Math.round((used / quota) * 100);
+      const indicator = document.getElementById('storageIndicator');
+      const label = document.getElementById('storageUsed');
+      if (pct >= 50) {
+        indicator.style.display = 'block';
+        label.textContent = pct;
+        if (pct >= 90) {
+          indicator.style.color = '#d94a4a';
+          showToast('Storage almost full - export now!', true);
+        } else if (pct >= 75) {
+          indicator.style.color = '#d9a84a';
+        } else {
+          indicator.style.color = 'var(--text-dim)';
+        }
       } else {
-        indicator.style.color = 'var(--text-dim)';
+        indicator.style.display = 'none';
       }
-    } else {
-      indicator.style.display = 'none';
-    }
-  } catch(e) {}
+    }).catch(() => {});
+  } else {
+    // Fallback: just hide the indicator since IndexedDB has plenty of room
+    document.getElementById('storageIndicator').style.display = 'none';
+  }
 }
 
 function autoSaveCurrent() {
@@ -3973,103 +4023,151 @@ function autoSaveCurrent() {
       miscPhotos: miscPhotos,
       sketch: getSketchData()
     };
-    localStorage.setItem('loto_current', JSON.stringify(state));
-    checkStorage();
+    saveMetadata('current_wip', state).then(() => {
+      checkStorage();
+    }).catch(() => {
+      // Fallback to localStorage if IDB fails
+      try {
+        localStorage.setItem('loto_current', JSON.stringify(state));
+      } catch(e2) {
+        showToast('Storage issue - export soon', true);
+      }
+    });
   } catch(e) {
-    showToast('Storage issue "" export soon', true);
+    showToast('Storage issue - export soon', true);
   }
 }
 
 function saveAll() {
-  try {
-    // Thumbnails are tiny (~2-5KB each), safe to store inline
-    localStorage.setItem('loto_saved', JSON.stringify(savedEquipment));
+  saveMetadata('saved_equipment', savedEquipment).then(() => {
     checkStorage();
-  } catch(e) {
-    showToast('Storage error "" export soon!', true);
-  }
+  }).catch(() => {
+    // Fallback to localStorage if IDB fails
+    try {
+      localStorage.setItem('loto_saved', JSON.stringify(savedEquipment));
+    } catch(e) {
+      showToast('Storage error - export soon!', true);
+    }
+  });
 }
 
-function loadAll() {
-  // Load saved equipment list
+async function loadAll() {
+  let loadedFromIDB = false;
+
+  // Try loading from IndexedDB first
   try {
-    const saved = localStorage.getItem('loto_saved');
-    if (saved) {
-      savedEquipment = JSON.parse(saved);
+    const saved = await getMetadata('saved_equipment');
+    if (saved && Array.isArray(saved)) {
+      savedEquipment = saved;
+      loadedFromIDB = true;
     }
-  } catch(e) {}
+  } catch(e) { console.warn('IDB load saved_equipment failed:', e); }
 
-  // Load current work-in-progress
+  // Fallback / migrate from localStorage
+  if (!loadedFromIDB) {
+    try {
+      const lsSaved = localStorage.getItem('loto_saved');
+      if (lsSaved) {
+        savedEquipment = JSON.parse(lsSaved);
+        // Migrate to IndexedDB and remove from localStorage
+        saveMetadata('saved_equipment', savedEquipment).then(() => {
+          localStorage.removeItem('loto_saved');
+          console.log('Migrated loto_saved from localStorage to IndexedDB');
+        }).catch(() => {});
+      }
+    } catch(e) {}
+  }
+
+  // Load current work-in-progress from IndexedDB
+  let state = null;
   try {
-    const current = localStorage.getItem('loto_current');
-    if (current) {
-      const state = JSON.parse(current);
-      document.getElementById('equipType').value = state.equipType || '';
-      
-      // Restore custom equipment type
-      if (state.equipType === '** New Equipment Type **' && state.equipTypeCustom) {
-        document.getElementById('customEquipTypeGroup').style.display = 'flex';
-        document.getElementById('equipTypeCustom').value = state.equipTypeCustom;
-      }
-      document.getElementById('equipName').value = state.equipName || '';
-      document.getElementById('equipRoom').value = state.equipRoom || '';
-      document.getElementById('equipBuilding').value = state.equipBuilding || '';
-      document.getElementById('equipTiedTo').value = state.tiedTo || '';
-      
-      // Restore tied-to equipment name
-      if (state.tiedTo) {
-        document.getElementById('tiedToNameGroup').style.display = 'flex';
-        document.getElementById('equipTiedToName').value = state.tiedToName || '';
-      }
-      
-      // Restore notes
-      document.getElementById('equipNotes').value = state.notes || '';
-      
-      // Restore template
-      if (state.template) {
-        const templateSel = document.getElementById('equipTemplate');
-        if (!DATA.templates.includes(state.template)) {
-          templateSel.value = '** New Template **';
-          document.getElementById('equipTemplateCustom').value = state.template;
-          document.getElementById('customTemplateGroup').style.display = 'flex';
-        } else {
-          templateSel.value = state.template;
-        }
-      }
-      
-      sources = state.sources || [];
-      photos = state.photos || {};
-      miscPhotos = state.miscPhotos || [];
+    state = await getMetadata('current_wip');
+  } catch(e) { console.warn('IDB load current_wip failed:', e); }
 
-      // Restore equipment photos
-      ['equip_main','equip_dataplate','equip_ee'].forEach(slot => {
-        if (photos[slot] && photos[slot].thumbnail) {
-          const container = document.getElementById(`photo_${slot}`);
-          container.classList.add('has-photo');
-          container.innerHTML = `<img src="${photos[slot].thumbnail}">
-            <span class="retake-badge">Tap to retake</span>
-            <span style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);color:#4ab86a;font-size:10px;padding:2px 6px;border-radius:3px;font-weight:600;">&#10004; Captured</span>`;
-        }
-      });
-
-      // Restore sketch
-      if (state.sketch) {
-        restoreSketch(state.sketch);
+  // Fallback / migrate from localStorage
+  if (!state) {
+    try {
+      const lsCurrent = localStorage.getItem('loto_current');
+      if (lsCurrent) {
+        state = JSON.parse(lsCurrent);
+        // Migrate to IndexedDB and remove from localStorage
+        saveMetadata('current_wip', state).then(() => {
+          localStorage.removeItem('loto_current');
+          console.log('Migrated loto_current from localStorage to IndexedDB');
+        }).catch(() => {});
       }
+    } catch(e) {}
+  }
 
-      // Restore misc photos
-      renderMiscPhotos();
+  if (state) {
+    document.getElementById('equipType').value = state.equipType || '';
 
-      if (state.photosDropped) {
-        showToast('Previous session photos were not saved (storage full)', true);
+    // Restore custom equipment type
+    if (state.equipType === '** New Equipment Type **' && state.equipTypeCustom) {
+      document.getElementById('customEquipTypeGroup').style.display = 'flex';
+      document.getElementById('equipTypeCustom').value = state.equipTypeCustom;
+    }
+    document.getElementById('equipName').value = state.equipName || '';
+    document.getElementById('equipRoom').value = state.equipRoom || '';
+    document.getElementById('equipBuilding').value = state.equipBuilding || '';
+    document.getElementById('equipTiedTo').value = state.tiedTo || '';
+
+    // Restore tied-to equipment name
+    if (state.tiedTo) {
+      document.getElementById('tiedToNameGroup').style.display = 'flex';
+      document.getElementById('equipTiedToName').value = state.tiedToName || '';
+    }
+
+    // Restore notes
+    document.getElementById('equipNotes').value = state.notes || '';
+
+    // Restore template
+    if (state.template) {
+      const templateSel = document.getElementById('equipTemplate');
+      if (!DATA.templates.includes(state.template)) {
+        templateSel.value = '** New Template **';
+        document.getElementById('equipTemplateCustom').value = state.template;
+        document.getElementById('customTemplateGroup').style.display = 'flex';
+      } else {
+        templateSel.value = state.template;
       }
     }
-  } catch(e) {}
+
+    sources = state.sources || [];
+    photos = state.photos || {};
+    miscPhotos = state.miscPhotos || [];
+
+    // Restore equipment photos
+    ['equip_main','equip_dataplate','equip_ee'].forEach(slot => {
+      if (photos[slot] && photos[slot].thumbnail) {
+        const container = document.getElementById(`photo_${slot}`);
+        container.classList.add('has-photo');
+        container.innerHTML = `<img src="${photos[slot].thumbnail}">
+          <span class="retake-badge">Tap to retake</span>
+          <span style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);color:#4ab86a;font-size:10px;padding:2px 6px;border-radius:3px;font-weight:600;">&#10004; Captured</span>`;
+      }
+    });
+
+    // Restore sketch
+    if (state.sketch) {
+      restoreSketch(state.sketch);
+    }
+
+    // Restore misc photos
+    renderMiscPhotos();
+
+    if (state.photosDropped) {
+      showToast('Previous session photos were not saved (storage full)', true);
+    }
+  }
 }
 
 function clearAllData() {
   if (confirm('Delete ALL saved equipment and clear the form? This cannot be undone.')) {
-    // Clear all localStorage keys
+    // Clear IndexedDB metadata store
+    clearMetadataStore();
+
+    // Clear all localStorage keys (legacy cleanup)
     const keys = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
