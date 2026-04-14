@@ -1077,18 +1077,30 @@ function renderSources() {
           <div class="form-grid">
             <div class="form-group">
               <label>Energy Source</label>
-              <select onchange="updateSource(${i},'energySource',this.value)" id="src_energy_${i}">
+              <select onchange="handleEnergySourceChange(${i},this.value)" id="src_energy_${i}">
                 <option value="">-- Select --</option>
-                ${DATA.energySources.map(s => `<option value="${s}" ${src.energySource===s?'selected':''}>${s}</option>`).join('')}
+                ${DATA.energySources.map(s => `<option value="${s}" ${src.energySource===s&&!src._customEnergy?'selected':''}>${s}</option>`).join('')}
+                <option value="** Custom Energy **" ${src._customEnergy?'selected':''}>Custom...</option>
               </select>
             </div>
+            ${src._customEnergy ? `<div class="form-group" id="customEnergyGroup_${i}">
+              <label>Custom Energy Source</label>
+              <input type="text" id="src_energy_custom_${i}" value="${src.energySource||''}" placeholder="Enter custom energy source"
+                oninput="updateSourceCustomField(${i},'energySource',this.value)">
+            </div>` : `<div id="customEnergyGroup_${i}" style="display:none;"></div>`}
             <div class="form-group">
               <label>Device Type</label>
-              <select onchange="updateSource(${i},'deviceType',this.value)" id="src_device_${i}">
+              <select onchange="handleDeviceTypeChange(${i},this.value)" id="src_device_${i}">
                 <option value="">-- Select --</option>
-                ${DATA.deviceTypes.map(s => `<option value="${s}" ${src.deviceType===s?'selected':''}>${s}</option>`).join('')}
+                ${DATA.deviceTypes.map(s => `<option value="${s}" ${src.deviceType===s&&!src._customDevice?'selected':''}>${s}</option>`).join('')}
+                <option value="** Custom Device **" ${src._customDevice?'selected':''}>Custom...</option>
               </select>
             </div>
+            ${src._customDevice ? `<div class="form-group" id="customDeviceGroup_${i}">
+              <label>Custom Device Type</label>
+              <input type="text" id="src_device_custom_${i}" value="${src.deviceType||''}" placeholder="Enter custom device type"
+                oninput="updateSourceCustomField(${i},'deviceType',this.value)">
+            </div>` : `<div id="customDeviceGroup_${i}" style="display:none;"></div>`}
             <div class="form-group">
               <label>Location</label>
               <select onchange="handleLocationChange(${i},this.value)" id="src_loc_${i}">
@@ -1180,6 +1192,43 @@ function updateSource(index, field, value) {
     renderSources();
     return;
   }
+  autoSaveCurrent();
+}
+
+function handleEnergySourceChange(index, value) {
+  if (value === '** Custom Energy **') {
+    sources[index]._customEnergy = true;
+    sources[index].energySource = '';
+    renderSources();
+    const el = document.getElementById('src_energy_custom_' + index);
+    if (el) el.focus();
+  } else {
+    sources[index]._customEnergy = false;
+    sources[index].energySource = value;
+    const cg = document.getElementById('customEnergyGroup_' + index);
+    if (cg) cg.style.display = 'none';
+    autoSaveCurrent();
+  }
+}
+
+function handleDeviceTypeChange(index, value) {
+  if (value === '** Custom Device **') {
+    sources[index]._customDevice = true;
+    sources[index].deviceType = '';
+    renderSources();
+    const el = document.getElementById('src_device_custom_' + index);
+    if (el) el.focus();
+  } else {
+    sources[index]._customDevice = false;
+    sources[index].deviceType = value;
+    const cg = document.getElementById('customDeviceGroup_' + index);
+    if (cg) cg.style.display = 'none';
+    autoSaveCurrent();
+  }
+}
+
+function updateSourceCustomField(index, field, value) {
+  sources[index][field] = value;
   autoSaveCurrent();
 }
 
