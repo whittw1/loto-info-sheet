@@ -4,6 +4,7 @@ const URLS_TO_CACHE = [
   './index.html',
   './FingerLakes_Information_Sheet.html',
   './manifest.json',
+  './manifest_fl.json',
   'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'
 ];
 
