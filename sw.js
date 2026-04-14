@@ -1,7 +1,9 @@
-const CACHE_NAME = 'loto-collector-v4.3';
+const CACHE_NAME = 'loto-collector-v5.0';
 const URLS_TO_CACHE = [
   './',
   './index.html',
+  './FingerLakes_Information_Sheet.html',
+  './manifest.json',
   'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'
 ];
 
