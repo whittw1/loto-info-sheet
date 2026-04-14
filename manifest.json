@@ -1,6 +1,6 @@
 {
-  "name": "LOTO Field Collector",
-  "short_name": "LOTO",
+  "name": "Finger Lakes VA LOTO Collector",
+  "short_name": "FL VA LOTO",
   "start_url": "./index.html",
   "display": "browser",
   "background_color": "#1a1f2e",
