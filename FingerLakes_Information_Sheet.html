@@ -2019,17 +2019,54 @@ function clearSketch() {
   autoSaveSketch();
 }
 
-// Label placement
+// Label placement — room-based numbering
+// Counts labels from all saved equipment in the same building+room so numbering continues
+function getRoomLabelCounts() {
+  const building = (document.getElementById('equipBuilding').value || '').trim().toLowerCase();
+  const room = (document.getElementById('equipRoom').value || '').trim().toLowerCase();
+  const counts = {}; // { prefix: totalCount }
+
+  if (!building && !room) return counts;
+
+  for (const entry of savedEquipment) {
+    const eBldg = (entry.equipBuilding || '').trim().toLowerCase();
+    const eRoom = (entry.equipRoom || '').trim().toLowerCase();
+    if (eBldg !== building || eRoom !== room) continue;
+
+    // Count labels from this entry's sketch
+    if (entry.sketch && entry.sketch.labels) {
+      for (const lbl of entry.sketch.labels) {
+        const match = lbl.text.match(/^([A-Z]+)-(\d+)$/);
+        if (match) {
+          const p = match[1];
+          const n = parseInt(match[2]);
+          counts[p] = Math.max(counts[p] || 0, n);
+        }
+      }
+    }
+  }
+  return counts;
+}
+
 function getNextLabelText() {
-  // Count existing labels by prefix, look at energy sources to suggest the next
-  const prefixCounts = {};
+  // Get the highest label numbers already used in this room (from saved equipment)
+  const roomCounts = getRoomLabelCounts();
+
+  // Also count labels already placed on the current sketch
+  const currentCounts = {};
   for (const lbl of sketchLabels) {
     const match = lbl.text.match(/^([A-Z]+)-(\d+)$/);
     if (match) {
       const p = match[1];
       const n = parseInt(match[2]);
-      prefixCounts[p] = Math.max(prefixCounts[p] || 0, n);
+      currentCounts[p] = Math.max(currentCounts[p] || 0, n);
     }
+  }
+
+  // Merge: for each prefix, the effective max is the higher of room or current
+  const mergedCounts = { ...roomCounts };
+  for (const [p, n] of Object.entries(currentCounts)) {
+    mergedCounts[p] = Math.max(mergedCounts[p] || 0, n);
   }
 
   // Walk through current sources and find first unlabeled
@@ -2040,11 +2077,11 @@ function getNextLabelText() {
     for (const [key, val] of Object.entries(ENERGY_LABEL_PREFIX)) {
       if (src.energySource.startsWith(key)) { prefix = val; break; }
     }
-    const qty = src.quantity || 1;
-    const currentMax = prefixCounts[prefix] || 0;
-    // Count how many labels of this prefix already exist
-    const existing = sketchLabels.filter(l => l.text.startsWith(prefix + '-')).length;
-    // Calculate total expected for sources so far
+
+    // Count how many labels of this prefix exist on the CURRENT sketch only
+    const currentPlaced = sketchLabels.filter(l => l.text.startsWith(prefix + '-')).length;
+
+    // Calculate total expected for sources up to this index
     let expectedForThisPrefix = 0;
     for (let j = 0; j <= i; j++) {
       let p2 = 'E';
@@ -2053,13 +2090,19 @@ function getNextLabelText() {
       }
       if (p2 === prefix) expectedForThisPrefix += (sources[j].quantity || 1);
     }
-    if (existing < expectedForThisPrefix) {
-      return { text: prefix + '-' + (existing + 1), color: ENERGY_LABEL_COLORS[prefix] || '#222' };
+
+    if (currentPlaced < expectedForThisPrefix) {
+      // Next number = room offset + current placed + 1
+      const roomOffset = roomCounts[prefix] || 0;
+      return { text: prefix + '-' + (roomOffset + currentPlaced + 1), color: ENERGY_LABEL_COLORS[prefix] || '#222' };
     }
   }
+
   // Fallback: generic next
-  const allCount = sketchLabels.length;
-  return { text: 'E-' + (allCount + 1), color: '#d94a4a' };
+  const allPrefix = 'E';
+  const roomOffset = roomCounts[allPrefix] || 0;
+  const currentPlaced = sketchLabels.filter(l => l.text.startsWith(allPrefix + '-')).length;
+  return { text: allPrefix + '-' + (roomOffset + currentPlaced + 1), color: '#d94a4a' };
 }
 
 function placeLabel(pos) {
