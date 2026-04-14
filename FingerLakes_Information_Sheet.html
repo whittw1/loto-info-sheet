@@ -304,6 +304,18 @@ if ('serviceWorker' in navigator) {
     padding: 3px 8px; border-radius: 4px; pointer-events: none; white-space: nowrap;
     transform: translate(-50%, -100%); margin-top: -6px;
   }
+  .label-picker {
+    position: absolute; z-index: 20; background: #1e2334; border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px; display: flex; flex-wrap: wrap; gap: 6px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 220px; justify-content: center;
+    transform: translate(-50%, -110%);
+  }
+  .label-picker-btn {
+    border: none; border-radius: 6px; padding: 6px 10px; font-size: 13px; font-weight: 700;
+    color: #fff; cursor: pointer; min-width: 48px; text-align: center;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .label-picker-btn:active { transform: scale(0.92); opacity: 0.8; }
   .sketch-label-marker {
     position: absolute; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff;
     display: flex; align-items: center; justify-content: center;
@@ -366,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.1</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.2</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -1979,6 +1991,7 @@ function redrawSketchStrokes() {
 }
 
 function setSketchTool(tool) {
+  closeLabelPicker();
   sketchTool = tool;
   document.querySelectorAll('#sketchToolbar .tool-btn').forEach(b => b.classList.remove('active'));
   const btn = document.getElementById('tool' + tool.charAt(0).toUpperCase() + tool.slice(1));
@@ -2048,73 +2061,89 @@ function getRoomLabelCounts() {
   return counts;
 }
 
-function getNextLabelText() {
-  // Get the highest label numbers already used in this room (from saved equipment)
+// Get the next label number for a given prefix, accounting for room history
+function getNextForPrefix(prefix) {
   const roomCounts = getRoomLabelCounts();
+  const roomMax = roomCounts[prefix] || 0;
+  const currentPlaced = sketchLabels.filter(l => l.text.startsWith(prefix + '-')).length;
+  const nextNum = roomMax + currentPlaced + 1;
+  return { text: prefix + '-' + nextNum, color: ENERGY_LABEL_COLORS[prefix] || '#222' };
+}
 
-  // Also count labels already placed on the current sketch
-  const currentCounts = {};
-  for (const lbl of sketchLabels) {
-    const match = lbl.text.match(/^([A-Z]+)-(\d+)$/);
-    if (match) {
-      const p = match[1];
-      const n = parseInt(match[2]);
-      currentCounts[p] = Math.max(currentCounts[p] || 0, n);
-    }
-  }
-
-  // Merge: for each prefix, the effective max is the higher of room or current
-  const mergedCounts = { ...roomCounts };
-  for (const [p, n] of Object.entries(currentCounts)) {
-    mergedCounts[p] = Math.max(mergedCounts[p] || 0, n);
-  }
-
-  // Walk through current sources and find first unlabeled
-  for (let i = 0; i < sources.length; i++) {
-    const src = sources[i];
+// Build the list of prefixes to show in the picker
+function getLabelPickerOptions() {
+  // Start with prefixes from the current equipment's sources (in order, no duplicates)
+  const seen = new Set();
+  const options = [];
+  for (const src of sources) {
     if (!src.energySource) continue;
-    let prefix = 'E'; // default
+    let prefix = 'E';
     for (const [key, val] of Object.entries(ENERGY_LABEL_PREFIX)) {
       if (src.energySource.startsWith(key)) { prefix = val; break; }
     }
-
-    // Count how many labels of this prefix exist on the CURRENT sketch only
-    const currentPlaced = sketchLabels.filter(l => l.text.startsWith(prefix + '-')).length;
-
-    // Calculate total expected for sources up to this index
-    let expectedForThisPrefix = 0;
-    for (let j = 0; j <= i; j++) {
-      let p2 = 'E';
-      for (const [key, val] of Object.entries(ENERGY_LABEL_PREFIX)) {
-        if (sources[j].energySource && sources[j].energySource.startsWith(key)) { p2 = val; break; }
-      }
-      if (p2 === prefix) expectedForThisPrefix += (sources[j].quantity || 1);
-    }
-
-    if (currentPlaced < expectedForThisPrefix) {
-      // Next number = room offset + current placed + 1
-      const roomOffset = roomCounts[prefix] || 0;
-      return { text: prefix + '-' + (roomOffset + currentPlaced + 1), color: ENERGY_LABEL_COLORS[prefix] || '#222' };
+    if (!seen.has(prefix)) {
+      seen.add(prefix);
+      options.push(getNextForPrefix(prefix));
     }
   }
-
-  // Fallback: generic next
-  const allPrefix = 'E';
-  const roomOffset = roomCounts[allPrefix] || 0;
-  const currentPlaced = sketchLabels.filter(l => l.text.startsWith(allPrefix + '-')).length;
-  return { text: allPrefix + '-' + (roomOffset + currentPlaced + 1), color: '#d94a4a' };
+  // Add common prefixes not already shown
+  for (const p of ['E', 'S', 'W', 'P', 'K', 'GP']) {
+    if (!seen.has(p)) {
+      seen.add(p);
+      options.push(getNextForPrefix(p));
+    }
+  }
+  return options;
 }
 
-function placeLabel(pos) {
+let pendingLabelPos = null; // Stores tap position while picker is open
+
+function showLabelPicker(pos) {
+  closeLabelPicker();
   const container = document.getElementById('sketchContainer');
   const rect = container.getBoundingClientRect();
   const xPct = pos.x / rect.width;
   const yPct = pos.y / rect.height;
+  pendingLabelPos = { xPct, yPct };
 
-  const next = getNextLabelText();
-  sketchLabels.push({ x: xPct, y: yPct, text: next.text, color: next.color });
+  const options = getLabelPickerOptions();
+  const picker = document.createElement('div');
+  picker.className = 'label-picker';
+  picker.id = 'labelPicker';
+  picker.style.left = (xPct * 100) + '%';
+  picker.style.top = (yPct * 100) + '%';
+
+  for (const opt of options) {
+    const btn = document.createElement('button');
+    btn.className = 'label-picker-btn';
+    btn.style.background = opt.color;
+    btn.textContent = opt.text;
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      placeLabelWithChoice(opt);
+    };
+    picker.appendChild(btn);
+  }
+
+  container.appendChild(picker);
+}
+
+function closeLabelPicker() {
+  const existing = document.getElementById('labelPicker');
+  if (existing) existing.remove();
+  pendingLabelPos = null;
+}
+
+function placeLabelWithChoice(opt) {
+  if (!pendingLabelPos) return;
+  sketchLabels.push({ x: pendingLabelPos.xPct, y: pendingLabelPos.yPct, text: opt.text, color: opt.color });
+  closeLabelPicker();
   renderSketchLabels();
   autoSaveSketch();
+}
+
+function placeLabel(pos) {
+  showLabelPicker(pos);
 }
 
 function renderSketchLabels() {
