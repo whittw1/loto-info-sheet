@@ -2448,10 +2448,13 @@ function handleTemplateChange() {
   if (val && TEMPLATE_AUTO_SOURCES[val]) {
     const autoSources = TEMPLATE_AUTO_SOURCES[val];
     let added = 0;
+    const atsOverride = isATSEquipment();
     for (const autoSrc of autoSources) {
       const alreadyExists = sources.some(s => s.energySource === autoSrc.energySource && s.auto === true);
       if (!alreadyExists) {
-        sources.push({ ...autoSrc, collapsed: true });
+        const src = { ...autoSrc, collapsed: true };
+        if (atsOverride) src.verification = 'Meter';
+        sources.push(src);
         added++;
       }
     }
