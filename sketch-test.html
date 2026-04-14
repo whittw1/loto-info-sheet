@@ -2518,7 +2518,7 @@ function renderSources() {
           <span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
           <div class="source-summary-text">
             <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}
-            ${src.deviceType ? ' &mdash; ' + src.deviceType : ''}
+            ${src.deviceType ? ' &mdash; ' + src.deviceType : ''}${src.deviceId ? ' <span style="color:#7eb8da;">(' + src.deviceId + ')</span>' : ''}
             ${src.location ? ' &mdash; ' + src.location : ''}
             ${src.detail ? ' <span style="color:var(--accent);font-weight:600;font-family:monospace;">(' + src.detail + ')</span>' : ''}
           </div>
@@ -2556,6 +2556,11 @@ function renderSources() {
                 <option value="">-- Select --</option>
                 ${DATA.deviceTypes.map(s => `<option value="${s}" ${src.deviceType===s?'selected':''}>${s}</option>`).join('')}
               </select>
+            </div>
+            <div class="form-group">
+              <label>Device ID</label>
+              <input type="text" id="src_deviceId_${i}" value="${src.deviceId||''}" placeholder="e.g. Pump 3, V-201"
+                oninput="updateSource(${i},'deviceId',this.value)">
             </div>
             <div class="form-group">
               <label>Location</label>
@@ -3606,7 +3611,7 @@ async function runCombinedExport() {
   }
 
   // ---- PASS 2: build CSV ----
-  let csv = 'Equipment Type,Equipment Name,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Quantity,Location,Duplicate,Verification,Photo Filename,Detail,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames\n';
+  let csv = 'Equipment Type,Equipment Name,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Photo Filename,Detail,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames\n';
 
   allEntries.forEach((entry, ei) => {
     const map = entryMaps[ei];
@@ -3616,7 +3621,7 @@ async function runCombinedExport() {
         quote(entry.equipRoom), quote(entry.equipBuilding),
         quote(entry.template || ''), quote(entry.tiedTo || ''),
         quote(entry.tiedToName || ''), quote(entry.notes || ''),
-        i + 1, quote(src.energySource), quote(src.deviceType), src.quantity,
+        i + 1, quote(src.energySource), quote(src.deviceType), quote(src.deviceId || ''), src.quantity,
         quote(src.location), src.duplicate, quote(src.verification),
         quote(map.sourceHs[i] || ''), quote(src.detail || ''), quote(map.mainH || ''),
         quote(map.dpH || ''), quote(map.eeH || ''),
@@ -3694,7 +3699,7 @@ async function runCombinedExport() {
 
         // Source label row (light fill)
         const srcLabelRow = ws.addRow([
-          `Energy Source #${n}`, ` Source #${n} Device`, 'Total Device Quantity',
+          `Energy Source #${n}`, ` Source #${n} Device`, 'Device ID', 'Total Device Quantity',
           ` Source #${n} Location`, `Source #${n} Photo`, '', 'Dup Photo',
           `Source #${n} Verification`, `Verification Photo #${n}`, ''
         ]);
@@ -3704,6 +3709,7 @@ async function runCombinedExport() {
         const srcDataRow = ws.addRow([
           src ? (src.energySource || '') : '',
           src ? (src.deviceType   || '') : '',
+          src ? (src.deviceId     || '') : '',
           src ? (src.quantity     || '') : '',
           src ? (src.location     || '') : '',
           srcH || '',
