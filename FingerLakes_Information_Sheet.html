@@ -3245,7 +3245,9 @@ function saveAndNew() {
 
   savedEquipment.push(entry);
   saveAll();
+  const lastBuilding = entry.equipBuilding;
   clearForm(false); // Don't confirm
+  document.getElementById('equipBuilding').value = lastBuilding || '';
   renderSavedPanel();
   updateHeaderBadge();
   showToast(`&#10004; Saved "${equipName}" "" ${savedEquipment.length} total`);
