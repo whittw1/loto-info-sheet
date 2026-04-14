@@ -3223,7 +3223,7 @@ function renderSavedPanel() {
 function toggleSavedPanel() {
   savedPanelOpen = !savedPanelOpen;
   document.getElementById('savedPanelBody').classList.toggle('collapsed', !savedPanelOpen);
-  document.getElementById('savedToggle').textContent = savedPanelOpen ? '&#9650; Hide' : '&#9660; Show';
+  document.getElementById('savedToggle').innerHTML = savedPanelOpen ? '&#9650; Hide' : '&#9660; Show';
 }
 
 function showSavedList() {
