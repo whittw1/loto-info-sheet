@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.2</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.3</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -902,10 +902,13 @@ function equipTypeChanged(equipType) {
   if (equipType && EQUIPMENT_AUTO_SOURCES[equipType]) {
     const autoSources = EQUIPMENT_AUTO_SOURCES[equipType];
     let added = 0;
+    const isATS = equipType === 'ATS';
     for (const autoSrc of autoSources) {
       const alreadyExists = sources.some(s => s.energySource === autoSrc.energySource && s.auto === true);
       if (!alreadyExists) {
-        sources.push({ ...autoSrc, collapsed: true });
+        const src = { ...autoSrc, collapsed: true };
+        if (isATS) src.verification = 'Meter';
+        sources.push(src);
         added++;
       }
     }
@@ -2581,11 +2584,16 @@ function getSourceColorClass(sourceType) {
   return 'source-default';
 }
 
+function isATSEquipment() {
+  const eqType = document.getElementById('equipType').value;
+  return eqType === 'ATS';
+}
+
 function addSource() {
   const index = sources.length;
   sources.push({
     energySource: '', deviceType: '', quantity: 1, location: '',
-    duplicate: 'No', verification: '', detail: '', collapsed: false
+    duplicate: 'No', verification: isATSEquipment() ? 'Meter' : '', detail: '', collapsed: false
   });
   renderSources();
   setTimeout(() => {
@@ -3465,19 +3473,59 @@ function duplicateSaved(index) {
     document.getElementById('customTemplateGroup').style.display = 'none';
   }
 
-  // Deep copy sources, clear photos
+  // Deep copy sources
   sources = JSON.parse(JSON.stringify(entry.sources));
+
+  // Duplicate photos — copy thumbnails and queue IDB copy of full-res
   photos = {};
   miscPhotos = [];
+  const dupName = (entry.equipName || 'unknown') + '_dup_' + Date.now();
 
-  // Reset all equipment photo slots to empty
+  // Copy equipment photos (main, dataplate, ee) and source photos
+  if (entry.photos) {
+    for (const [slot, photo] of Object.entries(entry.photos)) {
+      if (!photo || !photo.thumbnail) continue;
+      const newDbKey = photoDBKey(dupName, slot);
+      photos[slot] = { ...photo, dbKey: newDbKey };
+      // Copy full-res from IDB in background
+      if (photo.dbKey && idbAvailable) {
+        getPhotoFromDB(photo.dbKey).then(data => {
+          if (data && data.data) savePhotoToDB(newDbKey, data.data, data.type || 'image/jpeg');
+        }).catch(() => {});
+      }
+    }
+  }
+
+  // Copy misc photos
+  if (entry.miscPhotos && entry.miscPhotos.length > 0) {
+    for (let mi = 0; mi < entry.miscPhotos.length; mi++) {
+      const mp = entry.miscPhotos[mi];
+      if (!mp || !mp.thumbnail) continue;
+      const newDbKey = photoDBKey(dupName, 'misc_' + mi);
+      miscPhotos.push({ ...mp, dbKey: newDbKey });
+      if (mp.dbKey && idbAvailable) {
+        getPhotoFromDB(mp.dbKey).then(data => {
+          if (data && data.data) savePhotoToDB(newDbKey, data.data, data.type || 'image/jpeg');
+        }).catch(() => {});
+      }
+    }
+  }
+
+  // Render equipment photo slots with duplicated thumbnails
   ['equip_main','equip_dataplate','equip_ee'].forEach(slot => {
     const container = document.getElementById(`photo_${slot}`);
-    container.classList.remove('has-photo');
-    container.innerHTML = `<span class="placeholder">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M9 2h6l1 3H8l1-3z"/></svg>
-      Tap to capture
-    </span>`;
+    if (photos[slot] && photos[slot].thumbnail) {
+      container.classList.add('has-photo');
+      container.innerHTML = `<img src="${photos[slot].thumbnail}">
+        <span class="retake-badge">Tap to retake</span>
+        <span style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);color:#4ab86a;font-size:10px;padding:2px 6px;border-radius:3px;font-weight:600;">&#10004; Duplicated</span>`;
+    } else {
+      container.classList.remove('has-photo');
+      container.innerHTML = `<span class="placeholder">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M9 2h6l1 3H8l1-3z"/></svg>
+        Tap to capture
+      </span>`;
+    }
   });
 
   // Load diagram but clear annotations (user re-annotates for duplicate)
@@ -3494,7 +3542,8 @@ function duplicateSaved(index) {
 
   // Scroll to form
   document.querySelector('.equipment-section').scrollIntoView({ behavior: 'smooth' });
-  showToast(`Duplicated "${entry.equipName}" — update name & take photos`);
+  const photoCount = Object.keys(photos).filter(k => photos[k] && photos[k].thumbnail).length + miscPhotos.length;
+  showToast(`Duplicated "${entry.equipName}" with ${photoCount} photo${photoCount !== 1 ? 's' : ''} — update name`);
 }
 
 function updateHeaderBadge() {
