@@ -2661,6 +2661,8 @@ function handleLocationChange(index, value) {
   } else {
     sources[index]._customLoc = false;
     sources[index].location = value;
+    const cg = document.getElementById('customLocGroup_' + index);
+    if (cg) cg.style.display = 'none';
     autoSaveCurrent();
   }
 }
@@ -3568,7 +3570,7 @@ async function runCombinedExport() {
         pngDataUrl = await renderSketchOffscreen(entry.sketch);
       }
       if (pngDataUrl) {
-        const safeName = (entry.equipName || 'equipment').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const safeName = [entry.equipBuilding, entry.equipRoom, entry.equipName || 'equipment'].filter(Boolean).join('_').replace(/[^a-zA-Z0-9_-]/g, '_');
         diagramFile = safeName + '_diagram.png';
         const pngBytes = dataUrlToUint8Array(pngDataUrl);
         diagramsFolder.file(diagramFile, pngBytes);
@@ -3585,7 +3587,7 @@ async function runCombinedExport() {
     const entryMiscPhotos = entry.miscPhotos || [];
     const names = [];
     if (entryMiscPhotos.length > 0) {
-      const safeName = (entry.equipName || 'equipment').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeName = [entry.equipBuilding, entry.equipRoom, entry.equipName || 'equipment'].filter(Boolean).join('_').replace(/[^a-zA-Z0-9_-]/g, '_');
       for (let mi = 0; mi < entryMiscPhotos.length; mi++) {
         const mp = entryMiscPhotos[mi];
         if (mp.dbKey) {
