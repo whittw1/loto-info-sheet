@@ -10,14 +10,30 @@
 <title>LOTO Field Collector v4.0</title>
 <script>
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').then(reg => {
-      console.log('SW registered:', reg.scope);
-      reg.update(); // Force check for updated SW
-    }).catch(err => {
-      console.log('SW registration failed:', err);
+  // One-time purge: unregister old SW, clear all caches, then reload fresh
+  if (!sessionStorage.getItem('sw_purged')) {
+    navigator.serviceWorker.getRegistrations().then(regs => {
+      const unregPromises = regs.map(r => r.unregister());
+      return Promise.all(unregPromises);
+    }).then(() => caches.keys()).then(keys => {
+      return Promise.all(keys.map(k => caches.delete(k)));
+    }).then(() => {
+      sessionStorage.setItem('sw_purged', '1');
+      window.location.reload();
+    }).catch(() => {
+      sessionStorage.setItem('sw_purged', '1');
+      window.location.reload();
     });
-  });
+  } else {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').then(reg => {
+        console.log('SW registered:', reg.scope);
+        reg.update();
+      }).catch(err => {
+        console.log('SW registration failed:', err);
+      });
+    });
+  }
 }
 </script>
 <style>
