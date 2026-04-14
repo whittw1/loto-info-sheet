@@ -456,6 +456,15 @@ if ('serviceWorker' in navigator) {
 
   <button class="add-source-btn" onclick="addSource()">+ Add Energy Source</button>
 
+  <!-- Misc Photos Section -->
+  <div class="equipment-section" id="miscPhotoSection" style="margin-bottom:20px;">
+    <h2>&#128247; Miscellaneous Photos</h2>
+    <p style="font-size:12px;color:#aaa;margin:0 0 10px;">Capture additional photos not tied to a specific energy source (max 10)</p>
+    <div id="miscPhotoGrid" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;"></div>
+    <button class="add-source-btn" onclick="addMiscPhoto()" id="addMiscPhotoBtn">+ Add Misc Photo</button>
+    <input type="file" accept="image/*" capture="environment" id="file_misc_photo" style="display:none;" onchange="handleMiscPhoto(this)">
+  </div>
+
   <!-- Sketch Section -->
   <div class="equipment-section" id="sketchSection" style="margin-bottom:20px;">
     <h2>&#9997; Overhead Sketch</h2>
@@ -809,6 +818,7 @@ const EQUIPMENT_AUTO_SOURCES = {
 // ============================================================================
 let sources = [];          // Current equipment's energy sources
 let photos = {};           // Current equipment's photos (keyed by slot id)
+let miscPhotos = [];       // Current equipment's misc photos [{dbKey, thumbnail, fileType, timestamp}]
 let savedEquipment = [];   // Accumulated saved equipment entries
 let savedPanelOpen = false;
 
@@ -2948,6 +2958,97 @@ function handlePhoto(input, slotId) {
 }
 
 // ============================================================================
+// MISC PHOTOS
+// ============================================================================
+const MAX_MISC_PHOTOS = 10;
+
+function addMiscPhoto() {
+  if (miscPhotos.length >= MAX_MISC_PHOTOS) {
+    showToast('Maximum ' + MAX_MISC_PHOTOS + ' misc photos reached', true);
+    return;
+  }
+  document.getElementById('file_misc_photo').click();
+}
+
+function handleMiscPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (miscPhotos.length >= MAX_MISC_PHOTOS) return;
+
+  const equipName = document.getElementById('equipName').value.trim() || 'equipment';
+  const idx = miscPhotos.length;
+  const slotId = 'misc_' + idx;
+  const dbKey = photoDBKey(equipName, slotId);
+  const settings = getPhotoSettings();
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      let w = img.width, h = img.height;
+      const maxW = settings.maxWidth, maxH = settings.maxHeight;
+      if (w > maxW || h > maxH) {
+        const ratio = Math.min(maxW / w, maxH / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
+      const resizeCanvas = document.createElement('canvas');
+      resizeCanvas.width = w; resizeCanvas.height = h;
+      resizeCanvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      const resizedDataUrl = resizeCanvas.toDataURL('image/jpeg', settings.quality);
+      const resizedKB = Math.round(resizedDataUrl.length * 0.75 / 1024);
+
+      savePhotoFallback(dbKey, resizedDataUrl);
+      if (idbAvailable) {
+        const arrBuf = dataUrlToUint8Array(resizedDataUrl).buffer;
+        savePhotoToDB(dbKey, arrBuf, 'image/jpeg').catch(() => { idbAvailable = false; });
+      }
+
+      const thumbCanvas = document.createElement('canvas');
+      const thumbScale = 80 / w;
+      thumbCanvas.width = 80;
+      thumbCanvas.height = Math.round(h * thumbScale);
+      thumbCanvas.getContext('2d').drawImage(resizeCanvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
+      const thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.4);
+
+      miscPhotos.push({
+        dbKey: dbKey,
+        thumbnail: thumbnail,
+        fileType: 'image/jpeg',
+        timestamp: new Date().toISOString()
+      });
+      renderMiscPhotos();
+      showToast('Misc photo ' + miscPhotos.length + ' saved (' + w + 'x' + h + ', ~' + resizedKB + 'KB)');
+      autoSaveCurrent();
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
+}
+
+function removeMiscPhoto(idx) {
+  if (!confirm('Remove misc photo ' + (idx + 1) + '?')) return;
+  miscPhotos.splice(idx, 1);
+  renderMiscPhotos();
+  autoSaveCurrent();
+}
+
+function renderMiscPhotos() {
+  const grid = document.getElementById('miscPhotoGrid');
+  const btn = document.getElementById('addMiscPhotoBtn');
+  if (!grid) return;
+  grid.innerHTML = miscPhotos.map((p, i) => `
+    <div style="position:relative;width:80px;">
+      <img src="${p.thumbnail}" style="width:80px;border-radius:6px;border:2px solid #333;">
+      <span style="position:absolute;top:2px;left:4px;background:rgba(0,0,0,0.7);color:#fff;font-size:9px;padding:1px 5px;border-radius:3px;">Misc ${i+1}</span>
+      <button onclick="removeMiscPhoto(${i})" style="position:absolute;top:2px;right:2px;background:rgba(200,40,40,0.9);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;line-height:18px;padding:0;">&#10005;</button>
+    </div>
+  `).join('');
+  btn.style.display = miscPhotos.length >= MAX_MISC_PHOTOS ? 'none' : '';
+}
+
+// ============================================================================
 // SAVE & NEW - Core multi-equipment feature
 // ============================================================================
 function saveAndNew() {
@@ -2976,6 +3077,7 @@ function saveAndNew() {
     photoCount: Object.keys(photos).filter(k => photos[k] && photos[k].timestamp).length,
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     photos: Object.assign({}, photos),
+    miscPhotos: JSON.parse(JSON.stringify(miscPhotos)),
     sketch: getSketchData()
   };
 
@@ -2993,6 +3095,7 @@ function clearForm(confirm_first = true) {
   }
   sources = [];
   photos = {};
+  miscPhotos = [];
   document.getElementById('equipType').value = '';
   document.getElementById('equipTypeCustom').value = '';
   document.getElementById('customEquipTypeGroup').style.display = 'none';
@@ -3015,6 +3118,7 @@ function clearForm(confirm_first = true) {
     </span>`;
   });
   renderSources();
+  renderMiscPhotos();
   clearSketchState();
   localStorage.removeItem('loto_current');
   window.scrollTo(0, 0);
@@ -3129,6 +3233,7 @@ function editSaved(index) {
   
   sources = JSON.parse(JSON.stringify(entry.sources));
   photos = Object.assign({}, entry.photos || {});
+  miscPhotos = JSON.parse(JSON.stringify(entry.miscPhotos || []));
 
   // Restore equipment photos
   ['equip_main','equip_dataplate','equip_ee'].forEach(slot => {
@@ -3155,6 +3260,7 @@ function editSaved(index) {
   saveAll();
   renderSavedPanel();
   renderSources();
+  renderMiscPhotos();
   updateHeaderBadge();
 
   // Scroll to form
@@ -3213,6 +3319,7 @@ function duplicateSaved(index) {
   // Deep copy sources, clear photos
   sources = JSON.parse(JSON.stringify(entry.sources));
   photos = {};
+  miscPhotos = [];
 
   // Reset all equipment photo slots to empty
   ['equip_main','equip_dataplate','equip_ee'].forEach(slot => {
@@ -3233,6 +3340,7 @@ function duplicateSaved(index) {
 
   // Original stays in saved list — do NOT splice
   renderSources();
+  renderMiscPhotos();
   autoSaveCurrent();
 
   // Scroll to form
@@ -3335,6 +3443,7 @@ async function runCombinedExport() {
       notes:         document.getElementById('equipNotes').value.trim(),
       sources:       sources,
       photos:        photos,
+      miscPhotos:    miscPhotos,
       sketch:        getSketchData()
     });
   }
@@ -3468,8 +3577,34 @@ async function runCombinedExport() {
     diagramFiles.push(diagramFile);
   }
 
+  // ---- PASS 1C: export misc photos ----
+  const miscFileNames = []; // one per entry: comma-separated filenames or ''
+
+  for (let ei = 0; ei < allEntries.length; ei++) {
+    const entry = allEntries[ei];
+    const entryMiscPhotos = entry.miscPhotos || [];
+    const names = [];
+    if (entryMiscPhotos.length > 0) {
+      const safeName = (entry.equipName || 'equipment').replace(/[^a-zA-Z0-9_-]/g, '_');
+      for (let mi = 0; mi < entryMiscPhotos.length; mi++) {
+        const mp = entryMiscPhotos[mi];
+        if (mp.dbKey) {
+          const pd = await getPhotoData(mp.dbKey, mp.fileType || 'image/jpeg');
+          if (pd) {
+            const ext = pd.type.includes('png') ? '.png' : '.jpg';
+            const fname = safeName + '_Misc' + (mi + 1) + ext;
+            photosFolder.file(fname, pd.bytes);
+            names.push(fname);
+            photoCount++;
+          }
+        }
+      }
+    }
+    miscFileNames.push(names.join(', '));
+  }
+
   // ---- PASS 2: build CSV ----
-  let csv = 'Equipment Type,Equipment Name,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Quantity,Location,Duplicate,Verification,Photo Filename,Detail,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename\n';
+  let csv = 'Equipment Type,Equipment Name,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Quantity,Location,Duplicate,Verification,Photo Filename,Detail,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames\n';
 
   allEntries.forEach((entry, ei) => {
     const map = entryMaps[ei];
@@ -3483,7 +3618,8 @@ async function runCombinedExport() {
         quote(src.location), src.duplicate, quote(src.verification),
         quote(map.sourceHs[i] || ''), quote(src.detail || ''), quote(map.mainH || ''),
         quote(map.dpH || ''), quote(map.eeH || ''),
-        quote(diagramFiles[ei] || '')
+        quote(diagramFiles[ei] || ''),
+        quote(miscFileNames[ei] || '')
       ].join(',') + '\n';
     });
   });
@@ -3496,7 +3632,7 @@ async function runCombinedExport() {
     // Column widths matching original
     ws.columns = [
       { width: 28 }, { width: 22 }, { width: 16 }, { width: 26 }, { width: 18 },
-      { width: 14 }, { width: 10 }, { width: 22 }, { width: 18 }, { width: 8 }, { width: 22 }
+      { width: 14 }, { width: 10 }, { width: 22 }, { width: 18 }, { width: 8 }, { width: 22 }, { width: 30 }
     ];
 
     // Style definitions matching original info sheet
@@ -3511,7 +3647,7 @@ async function runCombinedExport() {
 
     function applyRow(row, font, fill, borders) {
       row.eachCell({ includeEmpty: true }, (cell, colNum) => {
-        if (colNum <= 11) {
+        if (colNum <= 12) {
           cell.font = font;
           if (fill) cell.fill = fill;
           if (borders) cell.border = borders;
@@ -3521,7 +3657,7 @@ async function runCombinedExport() {
     }
 
     // Title row (light blue-gray fill like original)
-    const titleRow = ws.addRow(['Energy Sources','Source Devices','','Location','Photo #','','','','','Page #','Diagram']);
+    const titleRow = ws.addRow(['Energy Sources','Source Devices','','Location','Photo #','','','','','Page #','Diagram','Misc Photos']);
     applyRow(titleRow, { bold: true, size: 10, name: 'Calibri' }, topHeaderFill, allBorders);
 
     // Blank separator
@@ -3533,13 +3669,13 @@ async function runCombinedExport() {
       const location = [entry.equipBuilding, entry.equipRoom].filter(Boolean).join(' ');
 
       // Equipment header row (light yellow fill like original)
-      const eqHeaderRow = ws.addRow(['Equipment ID/Name','','','Location','Main Photo','Details','','Data Plate Photo','EE Number Photo','Page #','Diagram File']);
+      const eqHeaderRow = ws.addRow(['Equipment ID/Name','','','Location','Main Photo','Details','','Data Plate Photo','EE Number Photo','Page #','Diagram File','Misc Photo Files']);
       applyRow(eqHeaderRow, headerFont, labelFill, allBorders);
       const eqHdrNum = eqHeaderRow.number;
       ws.mergeCells(eqHdrNum, 1, eqHdrNum, 2); // A:B merge
 
       // Equipment data row
-      const eqDataRow = ws.addRow([entry.equipName || '', '', '', location, map.mainH || '', entry.equipType || '', '', map.dpH || '', map.eeH || '', pageNum, diagramFiles[ei] || '']);
+      const eqDataRow = ws.addRow([entry.equipName || '', '', '', location, map.mainH || '', entry.equipType || '', '', map.dpH || '', map.eeH || '', pageNum, diagramFiles[ei] || '', miscFileNames[ei] || '']);
       applyRow(eqDataRow, dataFont, null, allBorders);
       eqDataRow.getCell(10).font = boldData;
       const eqDataNum = eqDataRow.number;
@@ -3826,6 +3962,7 @@ function autoSaveCurrent() {
       notes: document.getElementById('equipNotes').value.trim(),
       sources: sources,
       photos: photos,
+      miscPhotos: miscPhotos,
       sketch: getSketchData()
     };
     localStorage.setItem('loto_current', JSON.stringify(state));
@@ -3894,6 +4031,7 @@ function loadAll() {
       
       sources = state.sources || [];
       photos = state.photos || {};
+      miscPhotos = state.miscPhotos || [];
 
       // Restore equipment photos
       ['equip_main','equip_dataplate','equip_ee'].forEach(slot => {
@@ -3910,6 +4048,9 @@ function loadAll() {
       if (state.sketch) {
         restoreSketch(state.sketch);
       }
+
+      // Restore misc photos
+      renderMiscPhotos();
 
       if (state.photosDropped) {
         showToast('Previous session photos were not saved (storage full)', true);
