@@ -2231,15 +2231,62 @@ function renderSketchLabels() {
     el.style.top = (lbl.y * 100) + '%';
     el.style.background = lbl.color;
     el.textContent = lbl.text;
-    el.title = 'Tap to remove';
-    el.onclick = (e) => {
+    el.title = 'Drag to move, tap to remove';
+    el.style.touchAction = 'none';
+
+    let dragStartX, dragStartY, dragMoved = false;
+
+    el.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
-      if (confirm(`Remove label "${lbl.text}"?`)) {
-        sketchLabels.splice(i, 1);
-        renderSketchLabels();
-        autoSaveSketch();
+      e.preventDefault();
+      el.setPointerCapture(e.pointerId);
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      dragMoved = false;
+      el.style.zIndex = '10';
+      el.style.boxShadow = '0 2px 10px rgba(0,0,0,0.6)';
+    });
+
+    el.addEventListener('pointermove', (e) => {
+      if (dragStartX === undefined) return;
+      e.stopPropagation();
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) dragMoved = true;
+      if (dragMoved) {
+        const rect = container.getBoundingClientRect();
+        const newX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const newY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+        el.style.left = (newX * 100) + '%';
+        el.style.top = (newY * 100) + '%';
       }
-    };
+    });
+
+    el.addEventListener('pointerup', (e) => {
+      e.stopPropagation();
+      el.style.zIndex = '2';
+      el.style.boxShadow = '0 1px 4px rgba(0,0,0,0.4)';
+      if (dragMoved) {
+        const rect = container.getBoundingClientRect();
+        lbl.x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        lbl.y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+        autoSaveSketch();
+      } else {
+        if (confirm(`Remove label "${lbl.text}"?`)) {
+          sketchLabels.splice(i, 1);
+          renderSketchLabels();
+          autoSaveSketch();
+        }
+      }
+      dragStartX = undefined;
+    });
+
+    el.addEventListener('pointercancel', () => {
+      el.style.zIndex = '2';
+      el.style.boxShadow = '0 1px 4px rgba(0,0,0,0.4)';
+      dragStartX = undefined;
+    });
+
     container.appendChild(el);
   });
 }
