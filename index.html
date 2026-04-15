@@ -914,28 +914,79 @@ function handleTemplateChange() {
   if (val === '** New Template **') {
     customGroup.style.display = 'flex';
     document.getElementById('equipTemplateCustom').focus();
+    autoSaveCurrent();
+    return;
   } else {
     customGroup.style.display = 'none';
     document.getElementById('equipTemplateCustom').value = '';
   }
 
-  // Auto-add sources based on template selection
+  // Check if existing sources have user-entered data before replacing
+  if (sources.length > 0 && sourcesHaveData()) {
+    showTemplateConfirmDialog(val);
+    return;
+  }
+
+  applyTemplate(val);
+}
+
+function sourcesHaveData() {
+  return sources.some(s =>
+    (s.location && s.location !== '' && s.location !== 'On Equipment') ||
+    (s.detail && s.detail !== '') ||
+    (s._customEnergy) ||
+    (s._customDevice) ||
+    (s._customLocation)
+  );
+}
+
+function showTemplateConfirmDialog(templateVal) {
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'templateConfirmOverlay';
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:340px;">
+      <h3 style="margin:0 0 12px 0;color:var(--accent);">Change Template?</h3>
+      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">Changing the template will replace your current energy sources. You have data entered that will be lost.</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <button class="btn btn-primary" onclick="confirmTemplateChange('${templateVal.replace(/'/g, "\\'")}')" style="padding:12px;font-size:15px;">Yes, Replace Sources</button>
+        <button class="btn" onclick="cancelTemplateChange()" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+}
+
+function confirmTemplateChange(templateVal) {
+  const overlay = document.getElementById('templateConfirmOverlay');
+  if (overlay) overlay.remove();
+  applyTemplate(templateVal);
+}
+
+function cancelTemplateChange() {
+  const overlay = document.getElementById('templateConfirmOverlay');
+  if (overlay) overlay.remove();
+  document.getElementById('equipTemplate').value = '';
+}
+
+function applyTemplate(val) {
+  // Clear existing sources and replace with template sources
   if (val && TEMPLATE_AUTO_SOURCES[val]) {
+    sources = [];
     const autoSources = TEMPLATE_AUTO_SOURCES[val];
-    let added = 0;
     const atsOverride = isATSEquipment();
     for (const autoSrc of autoSources) {
-      const alreadyExists = sources.some(s => s.energySource === autoSrc.energySource && s.auto === true);
-      if (!alreadyExists) {
-        const src = { ...autoSrc, collapsed: true };
-        if (atsOverride) src.verification = 'Meter';
-        sources.push(src);
-        added++;
-      }
+      const src = { ...autoSrc, collapsed: true };
+      if (atsOverride) src.verification = 'Meter';
+      sources.push(src);
     }
-    if (added) {
+    renderSources();
+    showToast(`Set ${sources.length} source${sources.length > 1 ? 's' : ''} for ${val}`);
+  } else if (!val) {
+    if (sources.length > 0 && !sourcesHaveData()) {
+      sources = [];
       renderSources();
-      showToast(`Added ${added} standard source${added > 1 ? 's' : ''} for ${val}`);
     }
   }
 
