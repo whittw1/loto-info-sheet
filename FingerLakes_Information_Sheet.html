@@ -865,6 +865,7 @@ const EQUIPMENT_AUTO_SOURCES = {
   ],
   'Condensing Unit': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   'Unit Heater': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
@@ -930,9 +931,17 @@ function init() {
 
 // Called by handleEquipTypeChange with the resolved equipment type
 function equipTypeChanged(equipType) {
-  // ATS: prompt for voltage, then auto-populate 2 Electrical sources
+  // Equipment types with voltage prompts
   if (equipType === 'ATS') {
-    showATSVoltageDialog();
+    showVoltageDialog('ATS');
+    return;
+  }
+  if (equipType === 'Generator') {
+    showVoltageDialog('Generator');
+    return;
+  }
+  if (equipType === 'Chiller') {
+    showVoltageDialog('Chiller');
     return;
   }
 
@@ -964,43 +973,106 @@ function equipTypeChanged(equipType) {
   }
 }
 
-function showATSVoltageDialog() {
+// Voltage prompt configurations per equipment type
+const VOLTAGE_PROMPT_CONFIG = {
+  'ATS': {
+    title: 'ATS Voltage',
+    description: 'Select voltage for the two Electrical sources:',
+    apply: function(voltage) {
+      const energyName = voltage ? 'Electrical ' + voltage : 'Electrical';
+      for (let i = 0; i < 2; i++) {
+        sources.push({
+          energySource: energyName, deviceType: 'Breaker', quantity: 1, location: '',
+          duplicate: 'No', verification: 'Meter', detail: '', collapsed: true, auto: true
+        });
+      }
+      showToast(`Added 2 Electrical sources${voltage ? ' (' + voltage + ')' : ''} for ATS`);
+    }
+  },
+  'Generator': {
+    title: 'Generator Voltage',
+    description: 'Select voltage for the Electrical source:',
+    apply: function(voltage) {
+      const energyName = voltage ? 'Electrical ' + voltage : 'Electrical';
+      sources.push({
+        energySource: energyName, deviceType: 'Disconnect', quantity: 1, location: '',
+        duplicate: 'No', verification: 'Controls', detail: '', collapsed: true, auto: true
+      });
+      showToast(`Added Electrical source${voltage ? ' (' + voltage + ')' : ''} for Generator`);
+    }
+  },
+  'Chiller': {
+    title: 'Chiller Voltage',
+    description: 'Select voltage for the Electrical source:',
+    apply: function(voltage) {
+      const energyName = voltage ? 'Electrical ' + voltage : 'Electrical';
+      sources.push({
+        energySource: energyName, deviceType: 'Disconnect', quantity: 1, location: '',
+        duplicate: 'No', verification: 'Controls', detail: '', collapsed: true, auto: true
+      });
+      showToast(`Added Electrical source${voltage ? ' (' + voltage + ')' : ''} for Chiller`);
+    }
+  }
+};
+
+let pendingVoltageEquipType = null;
+
+function showVoltageDialog(equipType) {
+  const config = VOLTAGE_PROMPT_CONFIG[equipType];
+  if (!config) return;
+  pendingVoltageEquipType = equipType;
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
-  overlay.id = 'atsVoltageOverlay';
+  overlay.id = 'voltageOverlay';
   overlay.innerHTML = `
     <div class="dialog" style="max-width:320px;">
-      <h3 style="margin:0 0 12px 0;color:var(--accent);">ATS Voltage</h3>
-      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">Select voltage for the two Electrical sources:</p>
+      <h3 style="margin:0 0 12px 0;color:var(--accent);">${config.title}</h3>
+      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">${config.description}</p>
       <div style="display:flex;flex-direction:column;gap:10px;">
-        <button class="btn btn-primary" onclick="applyATSVoltage('208V')" style="padding:12px;font-size:16px;">208V</button>
-        <button class="btn btn-primary" onclick="applyATSVoltage('480V')" style="padding:12px;font-size:16px;">480V</button>
-        <button class="btn" onclick="applyATSVoltage('')" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Other (leave blank)</button>
-        <button class="btn" onclick="closeATSVoltageDialog()" style="padding:10px;font-size:13px;background:transparent;color:var(--text-dim);">Cancel</button>
+        <button class="btn btn-primary" onclick="applyVoltageChoice('208V')" style="padding:12px;font-size:16px;">208V</button>
+        <button class="btn btn-primary" onclick="applyVoltageChoice('480V')" style="padding:12px;font-size:16px;">480V</button>
+        <button class="btn" onclick="applyVoltageChoice('')" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Other (leave blank)</button>
+        <button class="btn" onclick="closeVoltageDialog()" style="padding:10px;font-size:13px;background:transparent;color:var(--text-dim);">Cancel</button>
       </div>
     </div>
   `;
   document.body.appendChild(overlay);
   overlay.style.display = 'flex';
+
+  // Also add standard auto-sources for this equipment type (Kinetic, etc.)
+  if (EQUIPMENT_AUTO_SOURCES[equipType]) {
+    for (const autoSrc of EQUIPMENT_AUTO_SOURCES[equipType]) {
+      const alreadyExists = sources.some(s => s.energySource === autoSrc.energySource && s.auto === true);
+      if (!alreadyExists) {
+        sources.push({ ...autoSrc, collapsed: true });
+      }
+    }
+  }
 }
 
-function applyATSVoltage(voltage) {
-  closeATSVoltageDialog();
-  const energyName = voltage ? 'Electrical ' + voltage : 'Electrical';
-  for (let i = 0; i < 2; i++) {
-    sources.push({
-      energySource: energyName, deviceType: 'Breaker', quantity: 1, location: '',
-      duplicate: 'No', verification: 'Meter', detail: '', collapsed: true, auto: true
-    });
+function applyVoltageChoice(voltage) {
+  const equipType = pendingVoltageEquipType;
+  closeVoltageDialog();
+  if (equipType && VOLTAGE_PROMPT_CONFIG[equipType]) {
+    VOLTAGE_PROMPT_CONFIG[equipType].apply(voltage);
   }
   renderSources();
-  showToast(`Added 2 Electrical sources${voltage ? ' (' + voltage + ')' : ''} for ATS`);
   autoSaveCurrent();
+
+  // Auto-suggest template
+  if (equipType && EQUIPMENT_TEMPLATE_MAP[equipType]) {
+    const templates = EQUIPMENT_TEMPLATE_MAP[equipType];
+    if (templates.length === 1) {
+      document.getElementById('equipTemplate').value = templates[0];
+      handleTemplateChange();
+    }
+  }
 }
 
-function closeATSVoltageDialog() {
-  const overlay = document.getElementById('atsVoltageOverlay');
+function closeVoltageDialog() {
+  const overlay = document.getElementById('voltageOverlay');
   if (overlay) overlay.remove();
+  pendingVoltageEquipType = null;
 }
 
 // Map equipment types to likely templates (for auto-suggest)
@@ -2506,6 +2578,7 @@ const TEMPLATE_AUTO_SOURCES = {
   ],
   'Condensing Unit': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   'Chilled Water Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
