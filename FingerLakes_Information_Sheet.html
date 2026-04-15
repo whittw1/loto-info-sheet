@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.8</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.81</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -515,6 +515,7 @@ if ('serviceWorker' in navigator) {
       <button class="tool-btn" onclick="setSketchTool('label')" id="toolLabel">Label</button>
       <button class="tool-btn" onclick="setSketchTool('eraser')" id="toolEraser">Eraser</button>
       <button class="tool-btn" onclick="sketchUndo()" id="toolUndo">Undo</button>
+      <button class="tool-btn" onclick="undoLastLabel()" id="toolUndoLabel">Undo Label</button>
       <button class="tool-btn" onclick="clearSketch()" style="color:var(--danger);">Clear</button>
       <span style="width:1px;height:22px;background:var(--border);margin:0 4px;"></span>
       <span class="color-swatch active" style="background:#d94a4a;" onclick="setSketchColor('#d94a4a',this)" title="Electrical (Red)"></span>
@@ -2092,6 +2093,16 @@ function sketchUndo() {
     sketchLabels.pop();
     renderSketchLabels();
     autoSaveSketch();
+  }
+}
+
+function undoLastLabel() {
+  if (sketchLabels.length > 0) {
+    sketchLabels.pop();
+    renderSketchLabels();
+    autoSaveSketch();
+  } else {
+    showToast('No labels to undo', true);
   }
 }
 
