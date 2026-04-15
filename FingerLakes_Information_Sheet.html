@@ -2905,6 +2905,7 @@ function renderSources() {
         <div class="source-card-header">
           <h3><span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span> Energy Source #${i + 1}${autoBadge}</h3>
           <div style="display:flex;gap:8px;">
+            <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="duplicateSource(${i})">Dup</button>
             <button class="btn btn-danger btn-sm" onclick="removeSource(${i})">Remove</button>
             <button class="btn btn-outline btn-sm" onclick="collapseSource(${i})">Done</button>
           </div>
@@ -3111,10 +3112,66 @@ function removeSource(index) {
   }
 }
 
+function duplicateSource(index) {
+  const src = sources[index];
+  const newSrc = JSON.parse(JSON.stringify(src));
+  newSrc.auto = false;
+  newSrc.collapsed = false;
+  sources.splice(index + 1, 0, newSrc);
+  // Shift photos for sources after the insertion point
+  for (let i = sources.length - 1; i > index + 1; i--) {
+    if (photos[`source_${i-1}`]) {
+      photos[`source_${i}`] = photos[`source_${i-1}`];
+    } else {
+      delete photos[`source_${i}`];
+    }
+  }
+  // Copy photo from original source if it exists
+  if (photos[`source_${index}`]) {
+    photos[`source_${index + 1}`] = JSON.parse(JSON.stringify(photos[`source_${index}`]));
+  } else {
+    delete photos[`source_${index + 1}`];
+  }
+  renderSources();
+  autoSaveCurrent();
+  showToast(`Duplicated source #${index + 1}`);
+}
+
 // ============================================================================
 // PHOTO HANDLING - stores timestamp + tiny thumbnail, NOT full image
 // ============================================================================
 function takePhoto(slotId) {
+  // If photo already exists, show view/retake dialog
+  if (photos[slotId] && photos[slotId].thumbnail) {
+    showPhotoDialog(slotId);
+    return;
+  }
+  document.getElementById(`file_${slotId}`).click();
+}
+
+function showPhotoDialog(slotId) {
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'photoDialogOverlay';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:360px;">
+      <div style="text-align:center;margin-bottom:12px;">
+        <img src="${photos[slotId].thumbnail}" style="max-width:100%;border-radius:8px;border:1px solid var(--border);">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <button class="btn btn-primary" onclick="retakePhoto('${slotId}')" style="padding:12px;font-size:15px;">Retake Photo</button>
+        <button class="btn" onclick="document.getElementById('photoDialogOverlay').remove()" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Close</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+}
+
+function retakePhoto(slotId) {
+  const overlay = document.getElementById('photoDialogOverlay');
+  if (overlay) overlay.remove();
   document.getElementById(`file_${slotId}`).click();
 }
 
