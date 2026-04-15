@@ -517,6 +517,7 @@ if ('serviceWorker' in navigator) {
       <button class="tool-btn" onclick="sketchUndo()" id="toolUndo">Undo</button>
       <button class="tool-btn" onclick="undoLastLabel()" id="toolUndoLabel">Undo Label</button>
       <button class="tool-btn" onclick="clearSketch()" style="color:var(--danger);">Clear</button>
+      <button class="tool-btn" onclick="switchToGeneralDiagram()" id="toolGeneral" style="color:var(--text-dim);font-size:11px;">General</button>
       <span style="width:1px;height:22px;background:var(--border);margin:0 4px;"></span>
       <span class="color-swatch active" style="background:#d94a4a;" onclick="setSketchColor('#d94a4a',this)" title="Electrical (Red)"></span>
       <span class="color-swatch" style="background:#e07020;" onclick="setSketchColor('#e07020',this)" title="Steam (Orange)"></span>
@@ -2339,6 +2340,31 @@ function loadSketchDiagram(templateName) {
     resizeSketchCanvas();
     renderSketchLabels();
   });
+}
+
+function switchToGeneralDiagram() {
+  if (sketchDiagramKey === 'general') {
+    showToast('Already using general diagram');
+    return;
+  }
+  const hasAnnotations = sketchStrokes.length > 0 || sketchLabels.length > 0;
+  if (hasAnnotations && !confirm('Switch to general diagram? Your labels will be kept but pen strokes may not align.')) {
+    return;
+  }
+  const container = document.getElementById('sketchContainer');
+  const oldSvg = container.querySelector('svg');
+  if (oldSvg) oldSvg.remove();
+  sketchDiagramKey = 'general';
+  const canvas = document.getElementById('sketchCanvas');
+  canvas.insertAdjacentHTML('beforebegin', SKETCH_DIAGRAMS['general']);
+  sketchStrokes = [];
+  initSketchCanvas();
+  requestAnimationFrame(() => {
+    resizeSketchCanvas();
+    renderSketchLabels();
+  });
+  autoSaveSketch();
+  showToast('Switched to general diagram');
 }
 
 // Auto-save sketch data (strokes + labels + diagram key) to current entry state
