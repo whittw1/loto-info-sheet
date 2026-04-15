@@ -418,7 +418,20 @@ if ('serviceWorker' in navigator) {
       </div>
       <div class="form-group">
         <label>Building</label>
-        <input type="text" id="equipBuilding" placeholder="e.g. Building 1">
+        <select id="equipBuilding" onchange="handleBuildingChange()">
+          <option value="">-- Select --</option>
+          <option value="Building 24">Building 24</option>
+          <option value="Building 29A">Building 29A</option>
+          <option value="Building 31">Building 31</option>
+          <option value="Building 34">Building 34</option>
+          <option value="Building 78">Building 78</option>
+          <option value="Building 104">Building 104</option>
+          <option value="** Custom Building **">Custom...</option>
+        </select>
+      </div>
+      <div class="form-group" id="customBuildingGroup" style="display:none;">
+        <label>Custom Building</label>
+        <input type="text" id="equipBuildingCustom" placeholder="Enter building name" oninput="autoSaveCurrent()">
       </div>
       <div class="form-group">
         <label>Location / Room</label>
@@ -2095,7 +2108,7 @@ function clearSketch() {
 // Label placement — room-based numbering
 // Counts labels from all saved equipment in the same building+room so numbering continues
 function getRoomLabelCounts() {
-  const building = (document.getElementById('equipBuilding').value || '').trim().toLowerCase();
+  const building = (getBuilding() || '').trim().toLowerCase();
   const room = (document.getElementById('equipRoom').value || '').trim().toLowerCase();
   const counts = {}; // { prefix: totalCount }
 
@@ -2675,6 +2688,47 @@ function getEquipType() {
     return document.getElementById('equipTypeCustom').value.trim();
   }
   return sel;
+}
+
+function handleBuildingChange() {
+  const val = document.getElementById('equipBuilding').value;
+  const customGroup = document.getElementById('customBuildingGroup');
+  if (val === '** Custom Building **') {
+    customGroup.style.display = 'flex';
+    document.getElementById('equipBuildingCustom').focus();
+  } else {
+    customGroup.style.display = 'none';
+    document.getElementById('equipBuildingCustom').value = '';
+  }
+  autoSaveCurrent();
+}
+
+function getBuilding() {
+  const sel = document.getElementById('equipBuilding').value;
+  if (sel === '** Custom Building **') {
+    return document.getElementById('equipBuildingCustom').value.trim();
+  }
+  return sel;
+}
+
+function setBuilding(value) {
+  const sel = document.getElementById('equipBuilding');
+  const customGroup = document.getElementById('customBuildingGroup');
+  // Check if value matches one of the preset options
+  const options = Array.from(sel.options).map(o => o.value);
+  if (value && options.includes(value)) {
+    sel.value = value;
+    customGroup.style.display = 'none';
+    document.getElementById('equipBuildingCustom').value = '';
+  } else if (value) {
+    sel.value = '** Custom Building **';
+    customGroup.style.display = 'flex';
+    document.getElementById('equipBuildingCustom').value = value;
+  } else {
+    sel.value = '';
+    customGroup.style.display = 'none';
+    document.getElementById('equipBuildingCustom').value = '';
+  }
 }
 
 function getTemplate() {
@@ -3399,7 +3453,7 @@ function saveAndNew() {
     equipType: getEquipType(),
     equipName: equipName,
     equipRoom: document.getElementById('equipRoom').value,
-    equipBuilding: document.getElementById('equipBuilding').value,
+    equipBuilding: getBuilding(),
     template: getTemplate(),
     tiedTo: document.getElementById('equipTiedTo').value,
     tiedToName: document.getElementById('equipTiedToName').value.trim(),
@@ -3417,7 +3471,7 @@ function saveAndNew() {
   const lastBuilding = entry.equipBuilding;
   const lastRoom = entry.equipRoom;
   clearForm(false); // Don't confirm
-  document.getElementById('equipBuilding').value = lastBuilding || '';
+  setBuilding(lastBuilding || '');
   document.getElementById('equipRoom').value = lastRoom || '';
   renderSavedPanel();
   updateHeaderBadge();
@@ -3436,7 +3490,7 @@ function clearForm(confirm_first = true) {
   document.getElementById('customEquipTypeGroup').style.display = 'none';
   document.getElementById('equipName').value = '';
   document.getElementById('equipRoom').value = '';
-  document.getElementById('equipBuilding').value = '';
+  setBuilding('');
   document.getElementById('equipTemplate').value = '';
   document.getElementById('equipTemplateCustom').value = '';
   document.getElementById('customTemplateGroup').style.display = 'none';
@@ -3539,7 +3593,7 @@ function editSaved(index) {
   }
   document.getElementById('equipName').value = entry.equipName || '';
   document.getElementById('equipRoom').value = entry.equipRoom || '';
-  document.getElementById('equipBuilding').value = entry.equipBuilding || '';
+  setBuilding(entry.equipBuilding || '');
   document.getElementById('equipTiedTo').value = entry.tiedTo || '';
   
   // Restore tied-to equipment name
@@ -3655,7 +3709,7 @@ function executeDuplicate(index, withPhotos) {
   }
   document.getElementById('equipName').value = entry.equipName || '';
   document.getElementById('equipRoom').value = entry.equipRoom || '';
-  document.getElementById('equipBuilding').value = entry.equipBuilding || '';
+  setBuilding(entry.equipBuilding || '');
   document.getElementById('equipTiedTo').value = entry.tiedTo || '';
 
   // Restore tied-to equipment name
@@ -3847,7 +3901,7 @@ async function runCombinedExport() {
       equipType:     getEquipType(),
       equipName:     currentName,
       equipRoom:     document.getElementById('equipRoom').value,
-      equipBuilding: document.getElementById('equipBuilding').value,
+      equipBuilding: getBuilding(),
       template:      getTemplate(),
       tiedTo:        document.getElementById('equipTiedTo').value,
       tiedToName:    document.getElementById('equipTiedToName').value.trim(),
@@ -4196,7 +4250,7 @@ function saveBackup() {
       equipType:     getEquipType(),
       equipName:     currentName,
       equipRoom:     document.getElementById('equipRoom').value,
-      equipBuilding: document.getElementById('equipBuilding').value,
+      equipBuilding: getBuilding(),
       template:      getTemplate(),
       tiedTo:        document.getElementById('equipTiedTo').value,
       tiedToName:    document.getElementById('equipTiedToName').value.trim(),
@@ -4364,7 +4418,7 @@ function autoSaveCurrent() {
       equipTypeCustom: document.getElementById('equipTypeCustom').value.trim(),
       equipName: document.getElementById('equipName').value,
       equipRoom: document.getElementById('equipRoom').value,
-      equipBuilding: document.getElementById('equipBuilding').value,
+      equipBuilding: getBuilding(),
       template: getTemplate(),
       tiedTo: document.getElementById('equipTiedTo').value,
       tiedToName: document.getElementById('equipTiedToName').value.trim(),
@@ -4460,7 +4514,7 @@ async function loadAll() {
     }
     document.getElementById('equipName').value = state.equipName || '';
     document.getElementById('equipRoom').value = state.equipRoom || '';
-    document.getElementById('equipBuilding').value = state.equipBuilding || '';
+    setBuilding(state.equipBuilding || '');
     document.getElementById('equipTiedTo').value = state.tiedTo || '';
 
     // Restore tied-to equipment name
