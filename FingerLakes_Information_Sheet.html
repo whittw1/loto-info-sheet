@@ -835,6 +835,8 @@ const EQUIPMENT_AUTO_SOURCES = {
   ],
   'Air Compressor': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Electrical', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '240V', auto: true },
+    { energySource: 'CA Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensing Unit': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
@@ -2573,18 +2575,23 @@ const TEMPLATE_AUTO_SOURCES = {
   // Kinetic for anything with a motor/fan/compressor
   'AHU - Steam': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
   ],
   'AHU - HHW': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
   ],
   'AHU - Steam, CHW, HHW': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
   ],
   'Exhaust Fan': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
   ],
   'Air Compressor': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Electrical', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '240V', auto: true },
+    { energySource: 'CA Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensing Unit': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
@@ -2610,6 +2617,7 @@ const TEMPLATE_AUTO_SOURCES = {
   // Elevator templates
   'Elevator - Traction': [
     { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
   ],
   'Unit Heater - Steam': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
