@@ -900,16 +900,20 @@ function init() {
 
 // Called by handleEquipTypeChange with the resolved equipment type
 function equipTypeChanged(equipType) {
+  // ATS: prompt for voltage, then auto-populate 2 Electrical sources
+  if (equipType === 'ATS') {
+    showATSVoltageDialog();
+    return;
+  }
+
   // Auto-add standard energy sources
   if (equipType && EQUIPMENT_AUTO_SOURCES[equipType]) {
     const autoSources = EQUIPMENT_AUTO_SOURCES[equipType];
     let added = 0;
-    const isATS = equipType === 'ATS';
     for (const autoSrc of autoSources) {
       const alreadyExists = sources.some(s => s.energySource === autoSrc.energySource && s.auto === true);
       if (!alreadyExists) {
         const src = { ...autoSrc, collapsed: true };
-        if (isATS) src.verification = 'Meter';
         sources.push(src);
         added++;
       }
@@ -928,6 +932,45 @@ function equipTypeChanged(equipType) {
       handleTemplateChange();
     }
   }
+}
+
+function showATSVoltageDialog() {
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'atsVoltageOverlay';
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:320px;">
+      <h3 style="margin:0 0 12px 0;color:var(--accent);">ATS Voltage</h3>
+      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">Select voltage for the two Electrical sources:</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <button class="btn btn-primary" onclick="applyATSVoltage('208V')" style="padding:12px;font-size:16px;">208V</button>
+        <button class="btn btn-primary" onclick="applyATSVoltage('480V')" style="padding:12px;font-size:16px;">480V</button>
+        <button class="btn" onclick="applyATSVoltage('')" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Other (leave blank)</button>
+        <button class="btn" onclick="closeATSVoltageDialog()" style="padding:10px;font-size:13px;background:transparent;color:var(--text-dim);">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+}
+
+function applyATSVoltage(voltage) {
+  closeATSVoltageDialog();
+  const detail = voltage ? voltage : '';
+  for (let i = 0; i < 2; i++) {
+    sources.push({
+      energySource: 'Electrical', deviceType: 'Breaker', quantity: 1, location: '',
+      duplicate: 'No', verification: 'Meter', detail: detail, collapsed: true, auto: true
+    });
+  }
+  renderSources();
+  showToast(`Added 2 Electrical sources${voltage ? ' (' + voltage + ')' : ''} for ATS`);
+  autoSaveCurrent();
+}
+
+function closeATSVoltageDialog() {
+  const overlay = document.getElementById('atsVoltageOverlay');
+  if (overlay) overlay.remove();
 }
 
 // Map equipment types to likely templates (for auto-suggest)
