@@ -2159,13 +2159,6 @@ function getLabelPickerOptions() {
       options.push(getNextForPrefix(prefix));
     }
   }
-  // Add common prefixes not already shown
-  for (const p of ['E', 'S', 'W', 'P', 'K', 'GP']) {
-    if (!seen.has(p)) {
-      seen.add(p);
-      options.push(getNextForPrefix(p));
-    }
-  }
   return options;
 }
 
