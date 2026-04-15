@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<title>LOTO Field Collector v4.2</title>
+<title>LOTO Field Collector v4.3</title>
 <script>
 if ('serviceWorker' in navigator) {
   // One-time purge: unregister old SW, clear all caches, then reload fresh
@@ -721,31 +721,31 @@ const EQUIPMENT_AUTO_SOURCES = {
   ],
   'CHW Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Heating HW Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Domestic HW Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Domestic Water Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensate Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Chemical Feed Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Vacuum Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Exhaust Fan': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
@@ -755,7 +755,7 @@ const EQUIPMENT_AUTO_SOURCES = {
   ],
   'Air Compressor': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '240V', auto: true },
+    { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'CA Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensing Unit': [
@@ -885,11 +885,11 @@ function showATSVoltageDialog() {
 
 function applyATSVoltage(voltage) {
   closeATSVoltageDialog();
-  const detail = voltage ? voltage : '';
+  const energyName = voltage ? 'Electrical ' + voltage : 'Electrical';
   for (let i = 0; i < 2; i++) {
     sources.push({
-      energySource: 'Electrical', deviceType: 'Breaker', quantity: 1, location: '',
-      duplicate: 'No', verification: 'Meter', detail: detail, collapsed: true, auto: true
+      energySource: energyName, deviceType: 'Breaker', quantity: 1, location: '',
+      duplicate: 'No', verification: 'Meter', detail: '', collapsed: true, auto: true
     });
   }
   renderSources();
@@ -944,11 +944,13 @@ function handleTemplateChange() {
 
 function sourcesHaveData() {
   return sources.some(s =>
-    (s.location && s.location !== '' && s.location !== 'On Equipment') ||
+    !s.auto &&
+    ((s.location && s.location !== '' && s.location !== 'On Equipment') ||
     (s.detail && s.detail !== '') ||
+    (s.energySource && s.energySource !== '') ||
     (s._customEnergy) ||
     (s._customDevice) ||
-    (s._customLocation)
+    (s._customLocation))
   );
 }
 
@@ -1010,22 +1012,22 @@ const TEMPLATE_AUTO_SOURCES = {
   // Kinetic for anything with a motor/fan/compressor
   'AHU - Steam': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'AHU - HHW': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'AHU - Steam, CHW, HHW': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Exhaust Fan': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
   ],
   'Air Compressor': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '240V', auto: true },
+    { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'CA Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensing Unit': [
@@ -1033,15 +1035,15 @@ const TEMPLATE_AUTO_SOURCES = {
   ],
   'Chilled Water Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Heating Hot Water Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Standard Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '208V', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Cooling Tower': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
