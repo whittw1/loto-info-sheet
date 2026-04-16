@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.87</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.88</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -818,6 +818,80 @@ const SOURCE_DEFAULTS = {
   'Gravity/Potential':  { device: 'Potential',   location: 'On Equipment', verification: 'Block',     noPhoto: true },
   'Hydraulic':          { device: 'Hydraulic',   location: 'On Equipment', verification: 'GaugeOnly', noPhoto: true },
 };
+
+// Device → Verification mapping (filtered by device type + energy source temperature variant)
+const DEVICE_VERIFICATION_MAP = {
+  'Breaker':              ['Meter','Controls','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
+  'Breaker w/Padlock':    ['Meter','Controls','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
+  'Disconnect':           ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','SW (H/O/A)','SW (Other)','Button (Start/Stop)','Button (Other)'],
+  'Quick Disconnect':     ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','SW (H/O/A)','SW (Other)','Button (Start/Stop)','Button (Other)'],
+  'VFD':                  ['Controls','Meter','SW (Hand/Off/Auto)','SW (H/O/A)','SW (Drive/Off/Bypass)','SW (VFD/Off/Bypass)','SW (Other)','Button (Start/Stop) - VFD','Button (Hand/Off/Auto) - VFD','Button (Other)'],
+  'Switch':               ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
+  'Switch w/Padlock':     ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
+  'Plug':                 ['Controls'],
+  'Fuse':                 ['Meter','Controls'],
+  'Gate Valve':           ['_gauge','_gaugeonly','_drain'],
+  'Gate Valve w/Cable':   ['_gauge','_gaugeonly','_drain'],
+  'Ball Valve':           ['_gauge','_gaugeonly','_drain'],
+  'Butterfly Valve':      ['_gauge','_gaugeonly','_drain'],
+  'Butterfly w/Padlock':  ['_gauge','_gaugeonly','_drain'],
+  'Ckt Setter - Universal Valve': ['_gauge','_gaugeonly','_drain'],
+  'Rotating':             ['Rotating'],
+  'Potential':            ['Block'],
+  'Hydraulic':            ['_gauge','_gaugeonly','_drain'],
+  'Chain':                ['Controls'],
+  'Cable':                ['Controls'],
+};
+
+// Energy sources that get "- Hot" suffix on gauge/drain verifications
+const HOT_ENERGY_SOURCES = [
+  'LPS','MPS','HPS','Steam',
+  'HHW','DHW','DW','Feedwater','Condensate'
+];
+
+// Energy sources that get "- CHW" suffix on gauge/drain verifications
+const CHW_ENERGY_SOURCES = [
+  'CHW','CW','Condenser'
+];
+
+function getFilteredVerifications(deviceType, energySource) {
+  const baseList = DEVICE_VERIFICATION_MAP[deviceType];
+  if (!baseList) return DATA.verificationTypes; // unknown device → full list
+
+  // Determine temperature variant based on energy source
+  let tempSuffix = '';
+  if (energySource) {
+    const esUpper = energySource;
+    // Check hot sources (longest match first)
+    for (const hot of HOT_ENERGY_SOURCES) {
+      if (esUpper.startsWith(hot)) { tempSuffix = 'hot'; break; }
+    }
+    if (!tempSuffix) {
+      for (const chw of CHW_ENERGY_SOURCES) {
+        if (esUpper.startsWith(chw)) { tempSuffix = 'chw'; break; }
+      }
+    }
+  }
+
+  // Resolve placeholders
+  return baseList.map(v => {
+    if (v === '_gauge') {
+      if (tempSuffix === 'hot') return 'Gauge/Drain - Hot';
+      if (tempSuffix === 'chw') return 'Gauge/Drain - CHW';
+      return 'Gauge/Drain';
+    }
+    if (v === '_gaugeonly') {
+      if (tempSuffix === 'hot') return 'GaugeOnly - Hot';
+      if (tempSuffix === 'chw') return 'GaugeOnly - CHW';
+      return 'GaugeOnly';
+    }
+    if (v === '_drain') {
+      if (tempSuffix === 'hot') return 'Drain Only - Hot';
+      return 'Drain Only';
+    }
+    return v;
+  });
+}
 
 // Equipment-type auto-sources
 const EQUIPMENT_AUTO_SOURCES = {
@@ -2837,7 +2911,8 @@ function renderSources() {
               <label>Verification</label>
               <select onchange="updateSource(${i},'verification',this.value)" id="src_ver_${i}">
                 <option value="">-- Select --</option>
-                ${DATA.verificationTypes.map(s => `<option value="${s}" ${src.verification===s?'selected':''}>${s}</option>`).join('')}
+                ${getFilteredVerifications(src.deviceType, src.energySource).map(s => `<option value="${s}" ${src.verification===s?'selected':''}>${s}</option>`).join('')}
+                ${src.verification && !getFilteredVerifications(src.deviceType, src.energySource).includes(src.verification) ? `<option value="${src.verification}" selected>${src.verification}</option>` : ''}
               </select>
             </div>
             <div class="form-group">
@@ -2904,8 +2979,10 @@ function updateSource(index, field, value) {
     return;
   }
   if (field === 'energySource') {
-    const badge = document.querySelector(`#sourcesContainer .source-card:nth-child(${index+1}) .source-number`);
-    if (badge) badge.className = `source-number ${getSourceColorClass(value)}`;
+    // Re-render to update verification dropdown based on energy source temperature variant
+    renderSources();
+    autoSaveCurrent();
+    return;
   }
   if (field === 'duplicate') {
     renderSources();
@@ -2940,8 +3017,8 @@ function handleDeviceTypeChange(index, value) {
   } else {
     sources[index]._customDevice = false;
     sources[index].deviceType = value;
-    const cg = document.getElementById('customDeviceGroup_' + index);
-    if (cg) cg.style.display = 'none';
+    // Re-render to update verification dropdown based on new device type
+    renderSources();
     autoSaveCurrent();
   }
 }
