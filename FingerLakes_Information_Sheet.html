@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.90</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.91</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -1268,10 +1268,6 @@ const SKETCH_DIAGRAMS = {
     <!-- Pump body -->
     <circle cx="360" cy="225" r="55" fill="none" stroke="#3B6EA6" stroke-width="2.5"/>
     <text x="360" y="230" text-anchor="middle" fill="#3B6EA6" font-size="14" font-weight="bold" font-family="sans-serif">PUMP</text>
-    <!-- Electrical feed -->
-    <line x1="200" y1="180" x2="200" y2="100" stroke="#3B6EA6" stroke-width="1.5" stroke-dasharray="4,3"/>
-    <rect x="175" y="70" width="50" height="30" rx="3" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
-    <text x="200" y="90" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">DISC.</text>
     <!-- Instruction text -->
     <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, W-1, etc.)</text>
   </svg>`,
@@ -1318,10 +1314,6 @@ const SKETCH_DIAGRAMS = {
     <rect x="430" y="155" width="70" height="50" rx="4" fill="none" stroke="#3B6EA6" stroke-width="2"/>
     <text x="465" y="184" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">MOTOR</text>
     <line x1="405" y1="180" x2="430" y2="180" stroke="#3B6EA6" stroke-width="2"/>
-    <!-- Electrical feed to motor -->
-    <line x1="465" y1="155" x2="465" y2="80" stroke="#3B6EA6" stroke-width="1.5" stroke-dasharray="4,3"/>
-    <rect x="440" y="52" width="50" height="28" rx="3" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
-    <text x="465" y="70" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">DISC.</text>
     <!-- Instruction -->
     <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, S-1, W-1, etc.)</text>
   </svg>`,
@@ -1532,9 +1524,6 @@ const SKETCH_DIAGRAMS = {
     <!-- JBOX -->
     <rect x="330" y="215" width="50" height="40" rx="3" fill="none" stroke="#3B6EA6" stroke-width="1.5" stroke-dasharray="6,3"/>
     <text x="355" y="240" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">JBOX</text>
-    <!-- ELEC DISC (right of JBOX) -->
-    <line x1="380" y1="235" x2="420" y2="235" stroke="#3B6EA6" stroke-width="1.5" stroke-dasharray="6,3"/>
-    <text x="428" y="238" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">ELEC DISC</text>
     <!-- Instruction -->
     <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, W-1, etc.)</text>
   </svg>`,
@@ -1658,10 +1647,6 @@ const SKETCH_DIAGRAMS = {
     <rect x="220" y="370" width="60" height="35" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
     <text x="250" y="388" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">CONTROL</text>
     <text x="250" y="399" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">PANEL</text>
-    <!-- Elec disc -->
-    <rect x="295" y="370" width="50" height="35" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
-    <text x="320" y="388" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">ELEC</text>
-    <text x="320" y="399" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">DISC</text>
     <!-- Dew point monitor -->
     <rect x="295" y="140" width="50" height="25" fill="none" stroke="#3B6EA6" stroke-width="1"/>
     <text x="320" y="153" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">DEW PT</text>
@@ -1698,9 +1683,6 @@ const SKETCH_DIAGRAMS = {
     <rect x="360" y="80" width="55" height="48" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
     <text x="388" y="101" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">CTRL</text>
     <text x="388" y="113" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">/ VFD</text>
-    <!-- Elec disc -->
-    <rect x="360" y="133" width="55" height="22" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
-    <text x="388" y="148" text-anchor="middle" fill="#3B6EA6" font-size="7" font-weight="bold" font-family="sans-serif">ELEC DISC</text>
     <!-- Hoistway (middle zone) -->
     <rect x="226" y="175" width="160" height="190" fill="none" stroke="#999" stroke-width="1.5" stroke-dasharray="6,3"/>
     <text x="306" y="190" text-anchor="middle" fill="#999" font-size="10" font-weight="bold" font-family="sans-serif">HOISTWAY</text>
@@ -1739,9 +1721,6 @@ const SKETCH_DIAGRAMS = {
     <!-- Sump -->
     <rect x="330" y="425" width="35" height="17" fill="none" stroke="#3B6EA6" stroke-width="1"/>
     <text x="348" y="437" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">SUMP</text>
-    <!-- Pit disc -->
-    <rect x="330" y="403" width="35" height="17" fill="none" stroke="#3B6EA6" stroke-width="1"/>
-    <text x="348" y="415" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">PIT DISC</text>
     <!-- Instruction -->
     <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, K-1, etc.)</text>
   </svg>`,
@@ -1769,9 +1748,6 @@ const SKETCH_DIAGRAMS = {
     <!-- Controller -->
     <rect x="165" y="200" width="60" height="60" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
     <text x="195" y="234" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">CTRL</text>
-    <!-- Main disc -->
-    <rect x="165" y="270" width="60" height="28" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
-    <text x="195" y="288" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">MAIN DISC</text>
     <!-- Manual lowering valve -->
     <rect x="155" y="145" width="45" height="30" fill="none" stroke="#3B6EA6" stroke-width="1"/>
     <text x="178" y="159" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">MANUAL</text>
@@ -1797,9 +1773,6 @@ const SKETCH_DIAGRAMS = {
     <!-- Buffer -->
     <rect x="310" y="425" width="35" height="18" fill="none" stroke="#3B6EA6" stroke-width="1"/>
     <text x="328" y="438" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">BUFFER</text>
-    <!-- Pit disc -->
-    <rect x="415" y="425" width="45" height="18" fill="none" stroke="#3B6EA6" stroke-width="1"/>
-    <text x="438" y="438" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">PIT DISC</text>
     <!-- Instruction -->
     <text x="306" y="475" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, H-1, etc.)</text>
   </svg>`,
@@ -1845,9 +1818,6 @@ const SKETCH_DIAGRAMS = {
     <rect x="490" y="140" width="65" height="35" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
     <text x="523" y="158" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">CONTROL</text>
     <text x="523" y="169" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">PANEL</text>
-    <!-- Elec disc -->
-    <rect x="490" y="180" width="65" height="28" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
-    <text x="523" y="198" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">ELEC DISC</text>
     <!-- Alarm -->
     <rect x="490" y="100" width="65" height="28" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
     <text x="523" y="118" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">ALARM</text>
@@ -1928,10 +1898,6 @@ const SKETCH_DIAGRAMS = {
     <line x1="250" y1="355" x2="275" y2="355" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="4,3"/>
     <line x1="360" y1="355" x2="325" y2="355" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="4,3"/>
     <line x1="300" y1="340" x2="295" y2="185" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="4,3"/>
-    <!-- Main disconnect -->
-    <rect x="30" y="235" width="60" height="35" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
-    <text x="60" y="254" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">MAIN</text>
-    <text x="60" y="265" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">DISC</text>
     <!-- Warning -->
     <text x="306" y="430" text-anchor="middle" fill="#C41E3A" font-size="9" font-weight="bold" font-family="sans-serif">WARNING: Batteries remain energized when utility is disconnected</text>
     <!-- Instruction -->
