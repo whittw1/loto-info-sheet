@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.95</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.97</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -867,13 +867,19 @@ function getFilteredVerifications(deviceType, energySource) {
   // Determine temperature variant based on energy source
   let tempSuffix = '';
   if (energySource) {
-    const esUpper = energySource;
     for (const hot of HOT_ENERGY_SOURCES) {
-      if (esUpper.startsWith(hot)) { tempSuffix = 'hot'; break; }
+      if (energySource.startsWith(hot)) { tempSuffix = 'hot'; break; }
     }
     if (!tempSuffix) {
       for (const chw of CHW_ENERGY_SOURCES) {
-        if (esUpper.startsWith(chw)) { tempSuffix = 'chw'; break; }
+        if (energySource.startsWith(chw)) { tempSuffix = 'chw'; break; }
+      }
+    }
+    // Keyword fallback for custom energy sources
+    if (!tempSuffix) {
+      const lower = energySource.toLowerCase();
+      for (const entry of ENERGY_KEYWORD_TEMP) {
+        if (entry.keywords.some(kw => lower.includes(kw))) { tempSuffix = entry.temp; break; }
       }
     }
   }
@@ -941,9 +947,28 @@ const ENERGY_DEVICE_MAP = {
   'Hydraulic': ['Hydraulic'],
 };
 
+// Keyword fallback for custom energy sources that don't match prefix map
+const ENERGY_KEYWORD_DEVICE_MAP = [
+  { keywords: ['electric','volt','breaker','vfd'], devices: ELECTRICAL_DEVICES },
+  { keywords: ['water','glycol','condensate','feedwater'], devices: VALVE_DEVICES_WITH_CKT },
+  { keywords: ['steam','hps','lps','mps'], devices: VALVE_DEVICES_WITH_CKT },
+  { keywords: ['air','pneumatic','vacuum','compressed'], devices: VALVE_DEVICES_NO_CKT },
+  { keywords: ['fuel','oil','diesel','gas','propane'], devices: VALVE_DEVICES_NO_CKT },
+  { keywords: ['refrigerant','chemical','thermal'], devices: VALVE_DEVICES_NO_CKT },
+  { keywords: ['kinetic','rotating'], devices: ['Rotating'] },
+  { keywords: ['gravity','potential'], devices: ['Potential'] },
+  { keywords: ['hydraulic'], devices: ['Hydraulic'] },
+];
+
+// Keyword fallback for temperature variant detection on custom energy sources
+const ENERGY_KEYWORD_TEMP = [
+  { keywords: ['steam','hps','lps','mps','hhw','dhw','feedwater','condensate','hot'], temp: 'hot' },
+  { keywords: ['chw','chilled','condenser','cold'], temp: 'chw' },
+];
+
 function getFilteredDevices(energySource) {
   if (!energySource) return DATA.deviceTypes; // no energy source selected → full list
-  // Longest match first
+  // Longest prefix match first
   let bestDevices = null;
   let bestLen = 0;
   for (const [key, devices] of Object.entries(ENERGY_DEVICE_MAP)) {
@@ -952,7 +977,13 @@ function getFilteredDevices(energySource) {
       bestLen = key.length;
     }
   }
-  return bestDevices || DATA.deviceTypes; // unknown energy source → full list
+  if (bestDevices) return bestDevices;
+  // Keyword fallback for custom energy sources
+  const lower = energySource.toLowerCase();
+  for (const entry of ENERGY_KEYWORD_DEVICE_MAP) {
+    if (entry.keywords.some(kw => lower.includes(kw))) return entry.devices;
+  }
+  return DATA.deviceTypes; // truly unknown → full list
 }
 
 // Equipment-type auto-sources
@@ -2179,6 +2210,20 @@ function getLabelPickerOptions() {
     for (const [key, val] of Object.entries(ENERGY_LABEL_PREFIX)) {
       if (src.energySource.startsWith(key) && key.length > bestLen) { prefix = val; bestLen = key.length; }
     }
+    // Keyword fallback for custom energy sources
+    if (bestLen === 0) {
+      const lower = src.energySource.toLowerCase();
+      if (lower.includes('water') || lower.includes('glycol')) prefix = 'W';
+      else if (lower.includes('steam')) prefix = 'S';
+      else if (lower.includes('air') || lower.includes('pneumatic') || lower.includes('compressed')) prefix = 'P';
+      else if (lower.includes('fuel') || lower.includes('oil') || lower.includes('diesel')) prefix = 'F';
+      else if (lower.includes('gas') || lower.includes('propane')) prefix = 'G';
+      else if (lower.includes('kinetic') || lower.includes('rotating')) prefix = 'K';
+      else if (lower.includes('hydraulic')) prefix = 'H';
+      else if (lower.includes('refrigerant')) prefix = 'R';
+      else if (lower.includes('chemical')) prefix = 'CH';
+      else if (lower.includes('thermal')) prefix = 'TH';
+    }
     if (!seen.has(prefix)) {
       seen.add(prefix);
       options.push(getNextForPrefix(prefix));
@@ -3050,6 +3095,9 @@ function updateSource(index, field, value) {
   autoSaveCurrent();
 }
 
+// Equipment types where condensate sources auto-fill Gate Valve + Temp Only - Hot
+const CONDENSATE_AUTO_EQUIP = ['Air Handler','Heat Exchanger','Domestic Water Heater','Unit Heater'];
+
 function handleEnergySourceChange(index, value) {
   if (value === '** Custom Energy **') {
     sources[index]._customEnergy = true;
@@ -3060,8 +3108,22 @@ function handleEnergySourceChange(index, value) {
   } else {
     sources[index]._customEnergy = false;
     sources[index].energySource = value;
-    const cg = document.getElementById('customEnergyGroup_' + index);
-    if (cg) cg.style.display = 'none';
+    // Auto-fill defaults for special energy sources
+    if (value && SOURCE_DEFAULTS[value]) {
+      const defaults = SOURCE_DEFAULTS[value];
+      if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
+      if (!sources[index].location) sources[index].location = defaults.location;
+      if (!sources[index].verification) sources[index].verification = defaults.verification;
+      if (defaults.noPhoto) sources[index].noPhoto = true;
+      showToast(`Auto-filled defaults for ${value}`);
+    }
+    // Condensate on specific equipment types → Gate Valve + Temp Only - Hot
+    if (value && value.startsWith('Condensate') && CONDENSATE_AUTO_EQUIP.includes(getEquipType())) {
+      if (!sources[index].deviceType) sources[index].deviceType = 'Gate Valve';
+      if (!sources[index].verification) sources[index].verification = 'Temp Only - Hot';
+    }
+    // Re-render to update device + verification dropdowns
+    renderSources();
     autoSaveCurrent();
   }
 }
@@ -3084,6 +3146,10 @@ function handleDeviceTypeChange(index, value) {
 
 function updateSourceCustomField(index, field, value) {
   sources[index][field] = value;
+  if (field === 'energySource' || field === 'deviceType') {
+    // Re-render to update device/verification dropdowns for custom entries
+    renderSources();
+  }
   autoSaveCurrent();
 }
 
