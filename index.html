@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<title>LOTO Field Collector v4.5</title>
+<title>LOTO Field Collector v4.6</title>
 <script>
 if ('serviceWorker' in navigator) {
   // One-time purge: unregister old SW, clear all caches, then reload fresh
@@ -725,16 +725,16 @@ const DEVICE_VERIFICATION_MAP = {
   'Switch w/Padlock':     ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
   'Plug':                 ['Controls'],
   'Fuse':                 ['Meter','Controls'],
-  'Gate Valve':           ['_gauge','_gaugeonly','_drain'],
-  'Gate Valve w/Cable':   ['_gauge','_gaugeonly','_drain'],
-  'Ball Valve':           ['_gauge','_gaugeonly','_drain'],
-  'Butterfly Valve':      ['_gauge','_gaugeonly','_drain'],
-  'Butterfly w/Padlock':  ['_gauge','_gaugeonly','_drain'],
-  'Ckt Setter - Universal Valve': ['_gauge','_gaugeonly','_drain'],
+  'Gate Valve':           ['_gauge','_gaugeonly','_drain','_temponly'],
+  'Gate Valve w/Cable':   ['_gauge','_gaugeonly','_drain','_temponly'],
+  'Ball Valve':           ['_gauge','_gaugeonly','_drain','_temponly'],
+  'Butterfly Valve':      ['_gauge','_gaugeonly','_drain','_temponly'],
+  'Butterfly w/Padlock':  ['_gauge','_gaugeonly','_drain','_temponly'],
+  'Ckt Setter - Universal Valve': ['_gauge','_gaugeonly','_drain','_temponly'],
   'Rotating':             ['Rotating'],
   'Potential':            ['Block'],
-  'Hydraulic':            ['_gauge','_gaugeonly','_drain'],
-  'Chain':                ['Controls'],
+  'Hydraulic':            ['_gauge','_gaugeonly','_drain','_temponly'],
+  'Chain':                ['_gauge','_gaugeonly','_drain','_temponly'],
   'Cable':                ['Controls'],
 };
 
@@ -757,7 +757,6 @@ function getFilteredVerifications(deviceType, energySource) {
   let tempSuffix = '';
   if (energySource) {
     const esUpper = energySource;
-    // Check hot sources (longest match first)
     for (const hot of HOT_ENERGY_SOURCES) {
       if (esUpper.startsWith(hot)) { tempSuffix = 'hot'; break; }
     }
@@ -769,23 +768,80 @@ function getFilteredVerifications(deviceType, energySource) {
   }
 
   // Resolve placeholders
-  return baseList.map(v => {
+  const result = [];
+  for (const v of baseList) {
     if (v === '_gauge') {
-      if (tempSuffix === 'hot') return 'Gauge/Drain - Hot';
-      if (tempSuffix === 'chw') return 'Gauge/Drain - CHW';
-      return 'Gauge/Drain';
+      if (tempSuffix === 'hot') result.push('Gauge/Drain - Hot');
+      else if (tempSuffix === 'chw') result.push('Gauge/Drain - CHW');
+      else result.push('Gauge/Drain');
+    } else if (v === '_gaugeonly') {
+      if (tempSuffix === 'hot') result.push('GaugeOnly - Hot');
+      else if (tempSuffix === 'chw') result.push('GaugeOnly - CHW');
+      else result.push('GaugeOnly');
+    } else if (v === '_drain') {
+      if (tempSuffix === 'hot') result.push('Drain Only - Hot');
+      else result.push('Drain Only');
+    } else if (v === '_temponly') {
+      // Only show Temp Only for hot sources
+      if (tempSuffix === 'hot') result.push('Temp Only - Hot');
+      // Skip for non-hot sources
+    } else {
+      result.push(v);
     }
-    if (v === '_gaugeonly') {
-      if (tempSuffix === 'hot') return 'GaugeOnly - Hot';
-      if (tempSuffix === 'chw') return 'GaugeOnly - CHW';
-      return 'GaugeOnly';
+  }
+  return result;
+}
+
+// Energy Source → Device type mapping (filters device dropdown based on selected energy source)
+const ELECTRICAL_DEVICES = ['Disconnect','VFD','Switch','Switch w/Padlock','Breaker','Breaker w/Padlock','Plug','Fuse','Quick Disconnect'];
+const VALVE_DEVICES_WITH_CKT = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Butterfly Valve','Butterfly w/Padlock','Ckt Setter - Universal Valve','Chain'];
+const VALVE_DEVICES_NO_CKT = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Butterfly Valve','Butterfly w/Padlock','Chain'];
+
+const ENERGY_DEVICE_MAP = {
+  'Electrical': ELECTRICAL_DEVICES,
+  'LPS': VALVE_DEVICES_WITH_CKT,
+  'MPS': VALVE_DEVICES_WITH_CKT,
+  'HPS': VALVE_DEVICES_WITH_CKT,
+  'Steam': VALVE_DEVICES_WITH_CKT,
+  'Condensate': VALVE_DEVICES_WITH_CKT,
+  'HHW': VALVE_DEVICES_WITH_CKT,
+  'DHW': VALVE_DEVICES_WITH_CKT,
+  'DW': VALVE_DEVICES_WITH_CKT,
+  'CHW': VALVE_DEVICES_WITH_CKT,
+  'CW': VALVE_DEVICES_WITH_CKT,
+  'Condenser': VALVE_DEVICES_WITH_CKT,
+  'Feedwater': VALVE_DEVICES_WITH_CKT,
+  'Domestic': VALVE_DEVICES_WITH_CKT,
+  'Glycol': VALVE_DEVICES_WITH_CKT,
+  'CA': VALVE_DEVICES_NO_CKT,
+  'Compressed': VALVE_DEVICES_NO_CKT,
+  'Vacuum Air': VALVE_DEVICES_NO_CKT,
+  'Pneumatic': VALVE_DEVICES_NO_CKT,
+  'Fuel Oil': VALVE_DEVICES_NO_CKT,
+  'Fuel': VALVE_DEVICES_NO_CKT,
+  'Diesel': VALVE_DEVICES_NO_CKT,
+  'Natural Gas': VALVE_DEVICES_NO_CKT,
+  'Propane': VALVE_DEVICES_NO_CKT,
+  'Refrigerant': VALVE_DEVICES_NO_CKT,
+  'Chemical': VALVE_DEVICES_NO_CKT,
+  'Thermal': VALVE_DEVICES_NO_CKT,
+  'Kinetic': ['Rotating'],
+  'Gravity': ['Potential'],
+  'Hydraulic': ['Hydraulic'],
+};
+
+function getFilteredDevices(energySource) {
+  if (!energySource) return DATA.deviceTypes; // no energy source selected → full list
+  // Longest match first
+  let bestDevices = null;
+  let bestLen = 0;
+  for (const [key, devices] of Object.entries(ENERGY_DEVICE_MAP)) {
+    if (energySource.startsWith(key) && key.length > bestLen) {
+      bestDevices = devices;
+      bestLen = key.length;
     }
-    if (v === '_drain') {
-      if (tempSuffix === 'hot') return 'Drain Only - Hot';
-      return 'Drain Only';
-    }
-    return v;
-  });
+  }
+  return bestDevices || DATA.deviceTypes; // unknown energy source → full list
 }
 
 // Equipment-type auto-sources
@@ -1356,7 +1412,8 @@ function renderSources() {
               <label>Device Type</label>
               <select onchange="handleDeviceTypeChange(${i},this.value)" id="src_device_${i}">
                 <option value="">-- Select --</option>
-                ${DATA.deviceTypes.map(s => `<option value="${s}" ${src.deviceType===s&&!src._customDevice?'selected':''}>${s}</option>`).join('')}
+                ${getFilteredDevices(src.energySource).map(s => `<option value="${s}" ${src.deviceType===s&&!src._customDevice?'selected':''}>${s}</option>`).join('')}
+                ${src.deviceType && !src._customDevice && !getFilteredDevices(src.energySource).includes(src.deviceType) ? `<option value="${src.deviceType}" selected>${src.deviceType}</option>` : ''}
                 <option value="** Custom Device **" ${src._customDevice?'selected':''}>Custom...</option>
               </select>
             </div>
