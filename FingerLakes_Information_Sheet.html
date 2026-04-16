@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.89</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.90</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -830,16 +830,16 @@ const DEVICE_VERIFICATION_MAP = {
   'Switch w/Padlock':     ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
   'Plug':                 ['Controls'],
   'Fuse':                 ['Meter','Controls'],
-  'Gate Valve':           ['_gauge','_gaugeonly','_drain','_temponly'],
-  'Gate Valve w/Cable':   ['_gauge','_gaugeonly','_drain','_temponly'],
-  'Ball Valve':           ['_gauge','_gaugeonly','_drain','_temponly'],
-  'Butterfly Valve':      ['_gauge','_gaugeonly','_drain','_temponly'],
-  'Butterfly w/Padlock':  ['_gauge','_gaugeonly','_drain','_temponly'],
-  'Ckt Setter - Universal Valve': ['_gauge','_gaugeonly','_drain','_temponly'],
+  'Gate Valve':           ['_temponly','_gauge','_gaugeonly','_drain'],
+  'Gate Valve w/Cable':   ['_temponly','_gauge','_gaugeonly','_drain'],
+  'Ball Valve':           ['_temponly','_gauge','_gaugeonly','_drain'],
+  'Butterfly Valve':      ['_temponly','_gauge','_gaugeonly','_drain'],
+  'Butterfly w/Padlock':  ['_temponly','_gauge','_gaugeonly','_drain'],
+  'Ckt Setter - Universal Valve': ['_temponly','_gauge','_gaugeonly','_drain'],
   'Rotating':             ['Rotating'],
   'Potential':            ['Block'],
-  'Hydraulic':            ['_gauge','_gaugeonly','_drain','_temponly'],
-  'Chain':                ['_gauge','_gaugeonly','_drain','_temponly'],
+  'Hydraulic':            ['_temponly','_gauge','_gaugeonly','_drain'],
+  'Chain':                ['_temponly','_gauge','_gaugeonly','_drain'],
   'Cable':                ['Controls'],
 };
 

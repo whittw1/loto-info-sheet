@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<title>LOTO Field Collector v4.6</title>
+<title>LOTO Field Collector v4.7</title>
 <script>
 if ('serviceWorker' in navigator) {
   // One-time purge: unregister old SW, clear all caches, then reload fresh
@@ -725,16 +725,16 @@ const DEVICE_VERIFICATION_MAP = {
   'Switch w/Padlock':     ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
   'Plug':                 ['Controls'],
   'Fuse':                 ['Meter','Controls'],
-  'Gate Valve':           ['_gauge','_gaugeonly','_drain','_temponly'],
-  'Gate Valve w/Cable':   ['_gauge','_gaugeonly','_drain','_temponly'],
-  'Ball Valve':           ['_gauge','_gaugeonly','_drain','_temponly'],
-  'Butterfly Valve':      ['_gauge','_gaugeonly','_drain','_temponly'],
-  'Butterfly w/Padlock':  ['_gauge','_gaugeonly','_drain','_temponly'],
-  'Ckt Setter - Universal Valve': ['_gauge','_gaugeonly','_drain','_temponly'],
+  'Gate Valve':           ['_temponly','_gauge','_gaugeonly','_drain'],
+  'Gate Valve w/Cable':   ['_temponly','_gauge','_gaugeonly','_drain'],
+  'Ball Valve':           ['_temponly','_gauge','_gaugeonly','_drain'],
+  'Butterfly Valve':      ['_temponly','_gauge','_gaugeonly','_drain'],
+  'Butterfly w/Padlock':  ['_temponly','_gauge','_gaugeonly','_drain'],
+  'Ckt Setter - Universal Valve': ['_temponly','_gauge','_gaugeonly','_drain'],
   'Rotating':             ['Rotating'],
   'Potential':            ['Block'],
-  'Hydraulic':            ['_gauge','_gaugeonly','_drain','_temponly'],
-  'Chain':                ['_gauge','_gaugeonly','_drain','_temponly'],
+  'Hydraulic':            ['_temponly','_gauge','_gaugeonly','_drain'],
+  'Chain':                ['_temponly','_gauge','_gaugeonly','_drain'],
   'Cable':                ['Controls'],
 };
 
