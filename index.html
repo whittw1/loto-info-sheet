@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<title>LOTO Field Collector v5.0</title>
+<title>LOTO Field Collector v5.1</title>
 <script>
 if ('serviceWorker' in navigator) {
   // One-time purge: unregister old SW, clear all caches, then reload fresh
@@ -1431,10 +1431,11 @@ function renderSources() {
         <div class="source-summary" onclick="expandSource(${i})">
           <span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
           <div class="source-summary-text">
-            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}
+            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${src.linkedTo ? ' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>' : ''}
             ${src.deviceType ? ' &mdash; ' + src.deviceType : ''}
             ${src.location ? ' &mdash; ' + src.location : ''}
             ${src.detail ? ' <span style="color:var(--accent);font-weight:600;font-family:monospace;">(' + src.detail + ')</span>' : ''}
+            ${src.linkedTo ? `<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">→ ${src.linkedTo.equipName} / ${src.linkedTo.sourceLabel}</div>` : ''}
           </div>
           ${hasThumbnail ? `<img class="source-summary-photo" src="${photoData.thumbnail}">` : ''}
           <span class="edit-icon">Edit</span>
@@ -1442,20 +1443,35 @@ function renderSources() {
       `;
     } else {
       const isDuplicate = src.duplicate === 'Yes';
-      const isNoPhoto = src.noPhoto || isDuplicate || (SOURCE_DEFAULTS[src.energySource] && SOURCE_DEFAULTS[src.energySource].noPhoto);
-      const noPhotoMessage = isDuplicate
+      const isLinked = !!src.linkedTo;
+      const isNoPhoto = src.noPhoto || isDuplicate || isLinked || (SOURCE_DEFAULTS[src.energySource] && SOURCE_DEFAULTS[src.energySource].noPhoto);
+      const noPhotoMessage = isLinked
+        ? `🔗 Linked to ${src.linkedTo.equipName} &mdash; ${src.linkedTo.sourceLabel}`
+        : isDuplicate
         ? 'Duplicate "" photo captured on another source'
         : 'No photo needed "" uses main equipment photo';
       const autoBadge = src.auto ? ' <span class="auto-badge">AUTO</span>' : '';
+      const linkedBanner = isLinked ? `
+        <div style="background:rgba(74,144,217,0.15);border:1px solid var(--accent);border-radius:6px;padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
+          <div style="font-size:13px;color:var(--text);">
+            🔗 <strong>Linked to:</strong> ${src.linkedTo.equipName}
+            <span style="color:var(--text-dim);"> &mdash; ${src.linkedTo.sourceLabel}</span>
+            ${src.linkedTo.equipBuilding || src.linkedTo.equipRoom ? `<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${src.linkedTo.equipBuilding || ''}${src.linkedTo.equipBuilding && src.linkedTo.equipRoom ? ' / ' : ''}${src.linkedTo.equipRoom || ''}</div>` : ''}
+          </div>
+          <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);flex-shrink:0;" onclick="unlinkSource(${i})">Unlink</button>
+        </div>
+      ` : '';
       card.innerHTML = `
         <div class="source-card-header">
           <h3><span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span> Energy Source #${i + 1}${autoBadge}</h3>
-          <div style="display:flex;gap:8px;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="showLinkDialog(${i})">${src.linkedTo ? '🔗 Linked' : 'Link'}</button>
             <button class="btn btn-danger btn-sm" onclick="removeSource(${i})">Remove</button>
             <button class="btn btn-outline btn-sm" onclick="collapseSource(${i})">Done</button>
           </div>
         </div>
         <div class="source-card-body">
+          ${linkedBanner}
           <div class="form-grid">
             <div class="form-group">
               <label>Energy Source</label>
@@ -1673,6 +1689,175 @@ function removeSource(index) {
     sources.splice(index, 1);
     renderSources();
   }
+}
+
+// ============================================================================
+// LINKED SOURCES — match shared isolation points across equipment entries
+// ============================================================================
+let pendingLinkSourceIndex = null;
+let pendingLinkScope = 'room'; // 'room' | 'building' | 'all'
+
+function showLinkDialog(sourceIndex) {
+  pendingLinkSourceIndex = sourceIndex;
+  pendingLinkScope = 'room';
+  renderLinkDialog();
+}
+
+function renderLinkDialog() {
+  const existing = document.getElementById('linkDialogOverlay');
+  if (existing) existing.remove();
+
+  const currentBldg = document.getElementById('equipBuilding').value.trim();
+  const currentRoom = document.getElementById('equipRoom').value.trim();
+  const currentName = document.getElementById('equipName').value.trim();
+
+  let candidates = savedEquipment.filter(e => e.equipName !== currentName);
+  if (pendingLinkScope === 'room') {
+    candidates = candidates.filter(e =>
+      (e.equipBuilding || '') === (currentBldg || '') &&
+      (e.equipRoom || '') === (currentRoom || '')
+    );
+  } else if (pendingLinkScope === 'building') {
+    candidates = candidates.filter(e =>
+      (e.equipBuilding || '') === (currentBldg || '')
+    );
+  }
+
+  const scopeBtn = (val, label) => `
+    <button class="btn btn-sm" onclick="setLinkScope('${val}')" style="background:${pendingLinkScope===val?'var(--accent)':'var(--card)'};color:${pendingLinkScope===val?'white':'var(--text-dim)'};border:1px solid var(--border);">${label}</button>
+  `;
+
+  let candidatesHtml = '';
+  if (candidates.length === 0) {
+    candidatesHtml = `<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:14px;">No saved equipment found in this scope. Save your current entry first, or expand the scope.</div>`;
+  } else {
+    candidatesHtml = candidates.map(entry => {
+      const origIndex = savedEquipment.indexOf(entry);
+      const srcCount = (entry.sources || []).length;
+      return `
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px;cursor:pointer;" onclick="showLinkSourcePicker(${origIndex})">
+          <div style="font-weight:600;color:var(--text);">${entry.equipName || '(unnamed)'}</div>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:2px;">${entry.equipType || ''} &middot; ${entry.equipBuilding || ''}${entry.equipRoom ? ' / ' + entry.equipRoom : ''} &middot; ${srcCount} source${srcCount!==1?'s':''}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'linkDialogOverlay';
+  overlay.style.display = 'flex';
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:520px;max-height:85vh;display:flex;flex-direction:column;">
+      <h3 style="margin:0 0 8px 0;">🔗 Link to Shared Source</h3>
+      <p style="margin:0 0 12px 0;color:var(--text-dim);font-size:13px;">Pick equipment whose isolation point this source shares (e.g., same valve feeds both).</p>
+      <div style="display:flex;gap:6px;margin-bottom:12px;">
+        ${scopeBtn('room','Same Room')}
+        ${scopeBtn('building','Same Building')}
+        ${scopeBtn('all','All Equipment')}
+      </div>
+      <div style="overflow-y:auto;flex:1;min-height:100px;max-height:50vh;margin-bottom:12px;">
+        ${candidatesHtml}
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-outline btn-sm" onclick="closeLinkDialog()">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+function setLinkScope(scope) {
+  pendingLinkScope = scope;
+  renderLinkDialog();
+}
+
+function closeLinkDialog() {
+  const overlay = document.getElementById('linkDialogOverlay');
+  if (overlay) overlay.remove();
+  pendingLinkSourceIndex = null;
+}
+
+function showLinkSourcePicker(equipIndex) {
+  const entry = savedEquipment[equipIndex];
+  if (!entry) return;
+  const overlay = document.getElementById('linkDialogOverlay');
+  if (overlay) overlay.remove();
+
+  const srcList = entry.sources || [];
+  let srcHtml = '';
+  if (srcList.length === 0) {
+    srcHtml = `<div style="padding:20px;text-align:center;color:var(--text-dim);">No sources on this equipment.</div>`;
+  } else {
+    srcHtml = srcList.map((s, si) => {
+      const parts = [];
+      if (s.energySource) parts.push(s.energySource);
+      if (s.deviceType) parts.push(s.deviceType);
+      if (s.location) parts.push(s.location);
+      if (s.detail) parts.push('[' + s.detail + ']');
+      return `
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:6px;cursor:pointer;" onclick="applyLink(${equipIndex},${si})">
+          <div style="font-size:12px;color:var(--text-dim);">Source #${si+1}</div>
+          <div style="color:var(--text);font-size:14px;margin-top:2px;">${parts.join(' — ') || '(empty source)'}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  const newOverlay = document.createElement('div');
+  newOverlay.className = 'dialog-overlay';
+  newOverlay.id = 'linkDialogOverlay';
+  newOverlay.style.display = 'flex';
+  newOverlay.innerHTML = `
+    <div class="dialog" style="max-width:520px;max-height:85vh;display:flex;flex-direction:column;">
+      <h3 style="margin:0 0 4px 0;">🔗 ${entry.equipName || '(unnamed)'}</h3>
+      <p style="margin:0 0 12px 0;color:var(--text-dim);font-size:12px;">${entry.equipType || ''} &middot; ${entry.equipBuilding || ''}${entry.equipRoom ? ' / ' + entry.equipRoom : ''}</p>
+      <p style="margin:0 0 12px 0;color:var(--text-dim);font-size:13px;">Pick the source to link to:</p>
+      <div style="overflow-y:auto;flex:1;min-height:100px;max-height:55vh;margin-bottom:12px;">
+        ${srcHtml}
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:8px;">
+        <button class="btn btn-outline btn-sm" onclick="renderLinkDialog()">&#8592; Back</button>
+        <button class="btn btn-outline btn-sm" onclick="closeLinkDialog()">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(newOverlay);
+}
+
+function applyLink(equipIndex, sourceIndex) {
+  const entry = savedEquipment[equipIndex];
+  if (!entry || pendingLinkSourceIndex === null) { closeLinkDialog(); return; }
+  const src = entry.sources[sourceIndex];
+  if (!src) { closeLinkDialog(); return; }
+
+  const parts = [];
+  if (src.energySource) parts.push(src.energySource);
+  if (src.deviceType) parts.push(src.deviceType);
+  const label = parts.join(' — ') || 'Source #' + (sourceIndex + 1);
+
+  sources[pendingLinkSourceIndex].linkedTo = {
+    equipName: entry.equipName || '',
+    equipType: entry.equipType || '',
+    equipBuilding: entry.equipBuilding || '',
+    equipRoom: entry.equipRoom || '',
+    sourceIndex: sourceIndex,
+    sourceLabel: label,
+  };
+  delete photos[`source_${pendingLinkSourceIndex}`];
+
+  closeLinkDialog();
+  renderSources();
+  autoSaveCurrent();
+  showToast(`Linked to ${entry.equipName}`);
+}
+
+function unlinkSource(index) {
+  if (!sources[index] || !sources[index].linkedTo) return;
+  delete sources[index].linkedTo;
+  renderSources();
+  autoSaveCurrent();
+  showToast(`Unlinked source #${index + 1}`);
 }
 
 // ============================================================================
@@ -2541,11 +2726,14 @@ async function runCombinedExport() {
   }
 
   // ---- PASS 2: build CSV ----
-  let csv = 'Equipment Type,Equipment Name,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Quantity,Location,Duplicate,Verification,Photo Filename,Detail,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename\n';
+  let csv = 'Equipment Type,Equipment Name,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Quantity,Location,Duplicate,Verification,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename\n';
 
   allEntries.forEach((entry, ei) => {
     const map = entryMaps[ei];
     entry.sources.forEach((src, i) => {
+      const linkedStr = src.linkedTo
+        ? `${src.linkedTo.equipName} / Source #${src.linkedTo.sourceIndex + 1} (${src.linkedTo.sourceLabel})`
+        : '';
       csv += [
         quote(entry.equipType), quote(entry.equipName),
         quote(entry.equipRoom), quote(entry.equipBuilding),
@@ -2553,7 +2741,9 @@ async function runCombinedExport() {
         quote(entry.tiedToName || ''), quote(entry.notes || ''),
         i + 1, quote(src.energySource), quote(src.deviceType), src.quantity,
         quote(src.location), src.duplicate, quote(src.verification),
-        quote(map.sourceHs[i] || ''), quote(src.detail || ''), quote(map.mainH || ''),
+        quote(map.sourceHs[i] || ''), quote(src.detail || ''),
+        quote(linkedStr),
+        quote(map.mainH || ''),
         quote(map.dpH || ''), quote(map.eeH || '')
       ].join(',') + '\n';
     });
@@ -2633,6 +2823,13 @@ async function runCombinedExport() {
         ]);
         applyRow(srcLabelRow, labelFont, labelFill, allBorders);
 
+        // Build detail cell — prepend link info if this source is linked
+        let detailCell = src ? (src.detail || '') : '';
+        if (src && src.linkedTo) {
+          const linkStr = `LINKED → ${src.linkedTo.equipName} Src#${src.linkedTo.sourceIndex + 1}`;
+          detailCell = detailCell ? `${linkStr} | ${detailCell}` : linkStr;
+        }
+
         // Source data row
         const srcDataRow = ws.addRow([
           src ? (src.energySource || '') : '',
@@ -2640,7 +2837,7 @@ async function runCombinedExport() {
           src ? (src.quantity     || '') : '',
           src ? (src.location     || '') : '',
           srcH || '',
-          src ? (src.detail || '') : '',
+          detailCell,
           src ? (src.duplicate || '') : '',
           src ? (src.verification || '') : '',
           '', ''
