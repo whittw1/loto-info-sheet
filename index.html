@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<title>LOTO Field Collector v4.7</title>
+<title>LOTO Field Collector v4.8</title>
 <script>
 if ('serviceWorker' in navigator) {
   // One-time purge: unregister old SW, clear all caches, then reload fresh
@@ -1102,22 +1102,50 @@ function closeVoltageDialog() {
 }
 
 // Map equipment types to likely templates (for auto-suggest)
+// Map equipment types to available templates (filters dropdown + auto-selects if only one)
 const EQUIPMENT_TEMPLATE_MAP = {
+  'Air Handler': ['AHU - Steam','AHU - HHW','AHU - Steam, CHW, HHW'],
   'Exhaust Fan': ['Exhaust Fan'],
+  'Mini Split': ['Condensing Unit'],
+  'Condensing Unit': ['Condensing Unit'],
+  'CHW Pump': ['Chilled Water Pump'],
+  'Heating HW Pump': ['Heating Hot Water Pump'],
+  'Domestic HW Pump': ['Standard Pump'],
+  'Domestic Water Pump': ['Standard Pump'],
+  'Chemical Feed Pump': ['Standard Pump'],
+  'Condensate Pump': ['Heating Hot Water Pump'],
+  'Condensate Return Unit': ['Condensate Return Unit','Condensate Return Unit - Steam'],
+  'Unit Heater': ['Unit Heater - Steam','Unit Heater - HHW'],
+  'Domestic Water Heater': ['Water Heater - Steam','Water Heater - Gas'],
   'Air Compressor': ['Air Compressor'],
   'Air Dryer': ['Air Dryer'],
+  'Vacuum Pump': ['Vaccum Pump'],
   'Cooling Tower': ['Cooling Tower'],
   'Generator': ['Emergency Generator'],
   'Chiller': ['Chiller'],
   'Refrigerator': ['Refrigerator'],
-  'Condensing Unit': ['Condensing Unit'],
+  'Elevator': ['Elevator - Traction','Elevator - Hydraulic'],
+  'ATS': ['ATS - Generic','ASCO 7000','Non Byp','Kohler','Zenith'],
   'Heat Exchanger': ['Heat Exchanger'],
-  'CHW Pump': ['Chilled Water Pump'],
-  'Heating HW Pump': ['Heating Hot Water Pump'],
-  // These have multiple options "" don't auto-select:
-  // 'Elevator': ['Elevator - Traction', 'Elevator - Hydraulic'],
-  // 'Air Handler': ['AHU - Steam', 'AHU - HHW', 'AHU - Steam, CHW, HHW'],
+  'Boiler': ['Standard Electrical'],
+  'Steam PRV Station': ['Standard Electrical'],
 };
+
+function filterTemplateDropdown(equipType) {
+  const sel = document.getElementById('equipTemplate');
+  const currentVal = sel.value;
+  const templates = (equipType && EQUIPMENT_TEMPLATE_MAP[equipType]) ? EQUIPMENT_TEMPLATE_MAP[equipType] : DATA.templates;
+  sel.innerHTML = '<option value="">-- Select Template --</option>';
+  templates.forEach(t => {
+    const o = document.createElement('option');
+    o.value = t; o.textContent = t; sel.appendChild(o);
+  });
+  // Always include New Template option
+  const newOpt = document.createElement('option');
+  newOpt.value = '** New Template **'; newOpt.textContent = '** New Template **'; sel.appendChild(newOpt);
+  // Restore previous selection if still valid
+  if (currentVal && templates.includes(currentVal)) sel.value = currentVal;
+}
 
 function handleTemplateChange() {
   const val = document.getElementById('equipTemplate').value;
@@ -1294,8 +1322,11 @@ function handleEquipTypeChange() {
     customGroup.style.display = 'none';
     document.getElementById('equipTypeCustom').value = '';
   }
+  // Filter template dropdown based on equipment type
+  const resolvedType = val === '** New Equipment Type **' ? '' : val;
+  filterTemplateDropdown(resolvedType);
   // Fire the existing auto-source / auto-template logic
-  equipTypeChanged(val === '** New Equipment Type **' ? '' : val);
+  equipTypeChanged(resolvedType);
   autoSaveCurrent();
 }
 
@@ -1962,6 +1993,7 @@ function clearForm(confirm_first = true) {
   document.getElementById('equipType').value = '';
   document.getElementById('equipTypeCustom').value = '';
   document.getElementById('customEquipTypeGroup').style.display = 'none';
+  filterTemplateDropdown('');
   document.getElementById('equipName').value = '';
   document.getElementById('equipRoom').value = '';
   document.getElementById('equipBuilding').value = '';
@@ -2058,10 +2090,12 @@ function editSaved(index) {
     document.getElementById('equipType').value = '** New Equipment Type **';
     document.getElementById('equipTypeCustom').value = entry.equipType;
     document.getElementById('customEquipTypeGroup').style.display = 'flex';
+    filterTemplateDropdown('');
   } else {
     document.getElementById('equipType').value = entry.equipType || '';
     document.getElementById('equipTypeCustom').value = '';
     document.getElementById('customEquipTypeGroup').style.display = 'none';
+    filterTemplateDropdown(entry.equipType || '');
   }
   document.getElementById('equipName').value = entry.equipName || '';
   document.getElementById('equipRoom').value = entry.equipRoom || '';
@@ -2168,10 +2202,12 @@ function executeDuplicate(index, withPhotos) {
     document.getElementById('equipType').value = '** New Equipment Type **';
     document.getElementById('equipTypeCustom').value = entry.equipType;
     document.getElementById('customEquipTypeGroup').style.display = 'flex';
+    filterTemplateDropdown('');
   } else {
     document.getElementById('equipType').value = entry.equipType || '';
     document.getElementById('equipTypeCustom').value = '';
     document.getElementById('customEquipTypeGroup').style.display = 'none';
+    filterTemplateDropdown(entry.equipType || '');
   }
   document.getElementById('equipName').value = entry.equipName || '';
   document.getElementById('equipRoom').value = entry.equipRoom || '';
@@ -2879,6 +2915,7 @@ async function loadAll() {
 
   if (state) {
     document.getElementById('equipType').value = state.equipType || '';
+    filterTemplateDropdown(state.equipType === '** New Equipment Type **' ? '' : (state.equipType || ''));
 
     // Restore custom equipment type
     if (state.equipType === '** New Equipment Type **' && state.equipTypeCustom) {
