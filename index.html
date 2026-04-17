@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<title>LOTO Field Collector v5.9</title>
+<title>LOTO Field Collector v6.0</title>
 <script>
 if ('serviceWorker' in navigator) {
   // One-time purge: unregister old SW, clear all caches, then reload fresh
@@ -1392,6 +1392,9 @@ const TEMPLATE_AUTO_SOURCES = {
   ],
   'Unit Heater - HHW': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'HHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'HHW Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   'Elevator - Hydraulic': [
     { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
