@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.14</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.15</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -814,7 +814,7 @@ const DATA = {
     "AHU - Steam","AHU - HHW","AHU - Steam, CHW, HHW",
     "Chilled Water Pump","Heating Hot Water Pump","Standard Pump",
     "Condensate Return Unit","Condensate Return Unit - Steam",
-    "Exhaust Fan","Water Heater - Steam","Water Heater - Gas",
+    "Exhaust Fan","Water Heater - Steam","Water Heater - Gas","Water Heater - Electric",
     "Unit Heater - Steam","Unit Heater - HHW",
     "Air Compressor","Air Dryer","Vaccum Pump","Condensing Unit",
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
@@ -1313,7 +1313,7 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Condensate Pump': ['Heating Hot Water Pump'],
   'Condensate Return Unit': ['Condensate Return Unit','Condensate Return Unit - Steam'],
   'Unit Heater': ['Unit Heater - Steam','Unit Heater - HHW'],
-  'Domestic Water Heater': ['Water Heater - Steam','Water Heater - Gas'],
+  'Domestic Water Heater': ['Water Heater - Steam','Water Heater - Gas','Water Heater - Electric'],
   'Air Compressor': ['Air Compressor'],
   'Air Dryer': ['Air Dryer'],
   'Vacuum Pump': ['Vaccum Pump'],
@@ -1369,6 +1369,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'ATS - Generic': 'ats', 'ASCO 7000': 'ats', 'Non Byp': 'ats',
   'Kohler': 'ats', 'Zenith': 'ats',
   'Water Heater - Steam': 'steam_water_heater', 'Water Heater - Gas': 'electric_water_heater',
+  'Water Heater - Electric': 'general',
   'Unit Heater - Steam': 'steam_water_heater', 'Unit Heater - HHW': 'heat_exchanger',
   'Cooling Tower': 'cooling_tower',
   'Condensate Return Unit': 'condensate_return', 'Condensate Return Unit - Steam': 'condensate_return',
@@ -2885,6 +2886,12 @@ const TEMPLATE_AUTO_SOURCES = {
   'Water Heater - Steam': [
     { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Water Heater - Electric: 240V Disconnect + DW In Ball Valve + DHW Out Ball Valve
+  'Water Heater - Electric': [
+    { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: 'Above Equipment', verification: 'Drain Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'DHW Out', deviceType: 'Ball Valve', quantity: 1, location: 'Above Equipment', verification: 'Drain Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   // Air Dryer: 120V Plug + CA In Ball Valve
   'Air Dryer': [

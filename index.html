@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<title>LOTO Field Collector v6.5</title>
+<title>LOTO Field Collector v6.6</title>
 <script>
 if ('serviceWorker' in navigator) {
   // One-time purge: unregister old SW, clear all caches, then reload fresh
@@ -702,7 +702,7 @@ const DATA = {
     "AHU - Steam","AHU - HHW","AHU - Steam, CHW, HHW",
     "Chilled Water Pump","Heating Hot Water Pump","Standard Pump",
     "Condensate Return Unit","Condensate Return Unit - Steam",
-    "Exhaust Fan","Water Heater - Steam","Water Heater - Gas",
+    "Exhaust Fan","Water Heater - Steam","Water Heater - Gas","Water Heater - Electric",
     "Unit Heater - Steam","Unit Heater - HHW",
     "Air Compressor","Air Dryer","Vaccum Pump","Condensing Unit",
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
@@ -1202,7 +1202,7 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Condensate Pump': ['Heating Hot Water Pump'],
   'Condensate Return Unit': ['Condensate Return Unit','Condensate Return Unit - Steam'],
   'Unit Heater': ['Unit Heater - Steam','Unit Heater - HHW'],
-  'Domestic Water Heater': ['Water Heater - Steam','Water Heater - Gas'],
+  'Domestic Water Heater': ['Water Heater - Steam','Water Heater - Gas','Water Heater - Electric'],
   'Air Compressor': ['Air Compressor'],
   'Air Dryer': ['Air Dryer'],
   'Vacuum Pump': ['Vaccum Pump'],
@@ -1334,6 +1334,12 @@ const TEMPLATE_AUTO_SOURCES = {
   'Water Heater - Steam': [
     { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Water Heater - Electric: 240V Disconnect + DW In Ball Valve + DHW Out Ball Valve
+  'Water Heater - Electric': [
+    { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: 'Above Equipment', verification: 'Drain Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'DHW Out', deviceType: 'Ball Valve', quantity: 1, location: 'Above Equipment', verification: 'Drain Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   // Air Dryer: 120V Plug + CA In Ball Valve
   'Air Dryer': [
