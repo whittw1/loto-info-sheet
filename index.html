@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<title>LOTO Field Collector v5.2</title>
+<title>LOTO Field Collector v5.3</title>
 <script>
 if ('serviceWorker' in navigator) {
   // One-time purge: unregister old SW, clear all caches, then reload fresh
@@ -712,6 +712,10 @@ const SOURCE_DEFAULTS = {
   'Kinetic':            { device: 'Rotating',   location: 'On Equipment', verification: 'Rotating',  noPhoto: true },
   'Gravity/Potential':  { device: 'Potential',   location: 'On Equipment', verification: 'Block',     noPhoto: true },
   'Hydraulic':          { device: 'Hydraulic',   location: 'On Equipment', verification: 'GaugeOnly', noPhoto: true },
+  // Steam: default to Gate Valve, verification stays open (filtered to valve options)
+  'LPS 10 PSI':         { device: 'Gate Valve' },
+  'MPS 20 PSI':         { device: 'Gate Valve' },
+  'HPS 100 PSI':        { device: 'Gate Valve' },
 };
 
 // Device → Verification mapping (filtered by device type + energy source temperature variant)
@@ -941,6 +945,10 @@ const EQUIPMENT_AUTO_SOURCES = {
     { energySource: 'CA Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensing Unit': [
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+  ],
+  'Mini Split': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
