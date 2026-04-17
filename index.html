@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<title>LOTO Field Collector v5.5</title>
+<title>LOTO Field Collector v5.6</title>
 <script>
 if ('serviceWorker' in navigator) {
   // One-time purge: unregister old SW, clear all caches, then reload fresh
@@ -1478,6 +1478,8 @@ function renderSources() {
       const photoData = photos[photoKey];
       const hasThumbnail = photoData && photoData.thumbnail;
       const autoBadge = src.auto ? '<span class="auto-badge">AUTO</span>' : '';
+      const isFirst = i === 0;
+      const isLast = i === sources.length - 1;
       card.innerHTML = `
         <div class="source-summary" onclick="expandSource(${i})">
           <span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
@@ -1487,6 +1489,10 @@ function renderSources() {
             ${src.location ? ' &mdash; ' + src.location : ''}
             ${src.detail ? ' <span style="color:var(--accent);font-weight:600;font-family:monospace;">(' + src.detail + ')</span>' : ''}
             ${src.linkedTo ? `<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">→ ${src.linkedTo.equipName} / ${src.linkedTo.sourceLabel}</div>` : ''}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;margin-right:6px;" onclick="event.stopPropagation()">
+            <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:${isFirst?'#555':'var(--text-dim)'};padding:2px 8px;font-size:11px;line-height:1;" onclick="moveSource(${i},-1)" ${isFirst?'disabled':''}>&#9650;</button>
+            <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:${isLast?'#555':'var(--text-dim)'};padding:2px 8px;font-size:11px;line-height:1;" onclick="moveSource(${i},1)" ${isLast?'disabled':''}>&#9660;</button>
           </div>
           ${hasThumbnail ? `<img class="source-summary-photo" src="${photoData.thumbnail}">` : ''}
           <span class="edit-icon">Edit</span>
@@ -1512,10 +1518,14 @@ function renderSources() {
           <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);flex-shrink:0;" onclick="unlinkSource(${i})">Unlink</button>
         </div>
       ` : '';
+      const isFirstExp = i === 0;
+      const isLastExp = i === sources.length - 1;
       card.innerHTML = `
         <div class="source-card-header">
           <h3><span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span> Energy Source #${i + 1}${autoBadge}</h3>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:${isFirstExp?'#555':'var(--text-dim)'};padding:6px 10px;" onclick="moveSource(${i},-1)" ${isFirstExp?'disabled':''}>&#9650;</button>
+            <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:${isLastExp?'#555':'var(--text-dim)'};padding:6px 10px;" onclick="moveSource(${i},1)" ${isLastExp?'disabled':''}>&#9660;</button>
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="showLinkDialog(${i})">${src.linkedTo ? '🔗 Linked' : 'Link'}</button>
             <button class="btn btn-danger btn-sm" onclick="removeSource(${i})">Remove</button>
             <button class="btn btn-outline btn-sm" onclick="collapseSource(${i})">Done</button>
@@ -1740,6 +1750,22 @@ function removeSource(index) {
     sources.splice(index, 1);
     renderSources();
   }
+}
+
+function moveSource(index, direction) {
+  const newIndex = index + direction;
+  if (newIndex < 0 || newIndex >= sources.length) return;
+  const tmp = sources[index];
+  sources[index] = sources[newIndex];
+  sources[newIndex] = tmp;
+  const keyA = `source_${index}`;
+  const keyB = `source_${newIndex}`;
+  const photoA = photos[keyA];
+  const photoB = photos[keyB];
+  if (photoA) photos[keyB] = photoA; else delete photos[keyB];
+  if (photoB) photos[keyA] = photoB; else delete photos[keyA];
+  renderSources();
+  autoSaveCurrent();
 }
 
 // ============================================================================
