@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.12</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.13</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -2286,9 +2286,9 @@ function getPrefixForEnergySource(energySource) {
   return prefix;
 }
 
-// For a linked source, compute the label that should be used on this diagram
-// (pulls the number from the referenced equipment's source ordering, so both
-// diagrams use the same physical tag ID).
+// For a linked source, pull the label from the linked equipment's actual placed
+// labels. Assumes the Nth same-prefix label on the linked diagram corresponds to
+// the Nth same-prefix source. Falls back to computed numbering if no label exists.
 function getLabelForLinkedSource(linkedTo) {
   if (!linkedTo) return null;
   const entry = savedEquipment.find(e => e.equipName === linkedTo.equipName);
@@ -2297,20 +2297,30 @@ function getLabelForLinkedSource(linkedTo) {
   const targetSrc = entry.sources[srcIdx];
   if (!targetSrc) return null;
   const prefix = getPrefixForEnergySource(targetSrc.energySource);
-  // Count same-prefix sources at-or-before srcIdx in the linked equipment
+
+  // 0-based ordinal: how many same-prefix sources come BEFORE this one in linked equipment
   let ordinal = 0;
-  for (let i = 0; i <= srcIdx; i++) {
+  for (let i = 0; i < srcIdx; i++) {
     const s = entry.sources[i];
     if (s && getPrefixForEnergySource(s.energySource) === prefix) ordinal++;
   }
-  // Add room-level offset from OTHER equipment in the same room (excluding the linked entry itself,
-  // since its numbering starts from roomMax+1 by convention)
+
+  // Primary path: use the Nth actually-placed label of this prefix on the linked equipment's sketch
+  if (entry.sketch && entry.sketch.labels) {
+    const sameLabels = entry.sketch.labels.filter(l => l.text && l.text.startsWith(prefix + '-'));
+    if (sameLabels[ordinal]) {
+      return { text: sameLabels[ordinal].text, color: ENERGY_LABEL_COLORS[prefix] || sameLabels[ordinal].color || '#222' };
+    }
+  }
+
+  // Fallback: if no label placed for that source yet, compute what the next number would be
+  // (ordinal within linked equipment's same-prefix sources + 1 + max already used in the room by OTHER equipment)
   const bldg = (entry.equipBuilding || '').trim().toLowerCase();
   const room = (entry.equipRoom || '').trim().toLowerCase();
   let roomMax = 0;
   if (bldg || room) {
     for (const e of savedEquipment) {
-      if (e === entry) continue; // skip the linked entry — ordinal already handles it
+      if (e === entry) continue;
       if ((e.equipBuilding || '').trim().toLowerCase() !== bldg) continue;
       if ((e.equipRoom || '').trim().toLowerCase() !== room) continue;
       if (e.sketch && e.sketch.labels) {
@@ -2321,7 +2331,7 @@ function getLabelForLinkedSource(linkedTo) {
       }
     }
   }
-  return { text: prefix + '-' + (roomMax + ordinal), color: ENERGY_LABEL_COLORS[prefix] || '#222' };
+  return { text: prefix + '-' + (roomMax + ordinal + 1), color: ENERGY_LABEL_COLORS[prefix] || '#222' };
 }
 
 // Build the list of labels to show in the picker
