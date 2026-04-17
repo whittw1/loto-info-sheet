@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.10</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.11</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -581,12 +581,18 @@ if ('serviceWorker' in navigator) {
 
 <!-- Photo Export Dialog -->
 <div class="dialog-overlay" id="exportOverlay" style="display:none;" onclick="if(event.target===this)closeExportDialog()">
-  <div class="dialog" style="max-width:360px;">
+  <div class="dialog" style="max-width:400px;">
     <h3>&#128230; Export</h3>
     <p style="color:var(--text-dim);font-size:13px;margin:0 0 16px;">
-      Photos will be named <strong>MMDD_NNNNN</strong> (date + sequence).<br>
-      Enter the <strong>starting</strong> sequence number.
+      Photos will be named <strong>MMDD_NNNNN</strong> (date + sequence).
     </p>
+    <div class="form-group">
+      <label>Date Filter</label>
+      <select id="exportDateFilter" style="width:100%;">
+        <option value="all">All dates (everything saved)</option>
+      </select>
+      <div id="exportDateSummary" style="font-size:12px;color:var(--text-dim);margin-top:4px;"></div>
+    </div>
     <div class="form-group">
       <label>Starting Sequence Number</label>
       <input type="number" id="photoSeqStart" value="1" min="0" max="99999"
@@ -4043,6 +4049,7 @@ function saveAndNew() {
     sources: JSON.parse(JSON.stringify(sources)),
     photoCount: Object.keys(photos).filter(k => photos[k] && photos[k].timestamp).length,
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    savedAt: new Date().toISOString(),
     photos: Object.assign({}, photos),
     miscPhotos: JSON.parse(JSON.stringify(miscPhotos)),
     sketch: getSketchData()
@@ -4417,6 +4424,80 @@ function updateHeaderBadge() {
 // EXPORT DIALOG
 // ============================================================================
 
+// Extract YYYY-MM-DD from a saved entry (uses savedAt ISO, falls back to any photo timestamp)
+function getEntryDate(entry) {
+  if (entry.savedAt) return entry.savedAt.slice(0, 10);
+  // Fallback: check photo timestamps
+  if (entry.photos) {
+    for (const k of Object.keys(entry.photos)) {
+      const p = entry.photos[k];
+      if (p && p.timestamp) {
+        const d = new Date(p.timestamp);
+        if (!isNaN(d)) return d.toISOString().slice(0, 10);
+      }
+    }
+  }
+  return null; // undated
+}
+
+function formatDateLabel(isoDate) {
+  if (!isoDate) return 'Undated';
+  const [y, m, d] = isoDate.split('-');
+  const dt = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
+  return dt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function populateExportDateFilter() {
+  const sel = document.getElementById('exportDateFilter');
+  if (!sel) return;
+  // Count entries by date
+  const counts = {};
+  let undatedCount = 0;
+  for (const entry of savedEquipment) {
+    const d = getEntryDate(entry);
+    if (d) counts[d] = (counts[d] || 0) + 1;
+    else undatedCount++;
+  }
+  const dates = Object.keys(counts).sort().reverse(); // newest first
+  const total = savedEquipment.length;
+  sel.innerHTML = `<option value="all">All dates — ${total} entr${total === 1 ? 'y' : 'ies'}</option>`;
+  dates.forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d;
+    opt.textContent = `${formatDateLabel(d)} — ${counts[d]} entr${counts[d] === 1 ? 'y' : 'ies'}`;
+    sel.appendChild(opt);
+  });
+  if (undatedCount > 0) {
+    const opt = document.createElement('option');
+    opt.value = 'undated';
+    opt.textContent = `Undated (older entries) — ${undatedCount} entr${undatedCount === 1 ? 'y' : 'ies'}`;
+    sel.appendChild(opt);
+  }
+  // Default to today if it's one of the options, else 'all'
+  const today = new Date().toISOString().slice(0, 10);
+  if (counts[today]) sel.value = today; else sel.value = 'all';
+  updateExportDateSummary();
+}
+
+function updateExportDateSummary() {
+  const sel = document.getElementById('exportDateFilter');
+  const el = document.getElementById('exportDateSummary');
+  if (!sel || !el) return;
+  const currentName = document.getElementById('equipName').value.trim();
+  const hasCurrent = currentName && sources.length > 0;
+  const filtered = filterEntriesByExportDate(sel.value);
+  const totalIncluding = filtered.length + (hasCurrent ? 1 : 0);
+  el.textContent = hasCurrent
+    ? `${filtered.length} saved + 1 current (unsaved) = ${totalIncluding} total`
+    : `${filtered.length} entr${filtered.length === 1 ? 'y' : 'ies'} will be exported`;
+}
+
+function filterEntriesByExportDate(filterValue) {
+  if (filterValue === 'all') return [...savedEquipment];
+  if (filterValue === 'undated') return savedEquipment.filter(e => !getEntryDate(e));
+  return savedEquipment.filter(e => getEntryDate(e) === filterValue);
+}
+
 function showExportDialog() {
   const allEntries = [...savedEquipment];
   const currentName = document.getElementById('equipName').value.trim();
@@ -4425,6 +4506,7 @@ function showExportDialog() {
 
   if (total === 0) { showToast('Nothing to export', true); return; }
 
+  populateExportDateFilter();
   updateHPreview();
   document.getElementById('exportOverlay').style.display = 'flex';
   setTimeout(() => document.getElementById('photoSeqStart').focus(), 100);
@@ -4466,6 +4548,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (saved !== null) inp.value = saved;
     inp.addEventListener('input', updateHPreview);
   }
+  const dateSel = document.getElementById('exportDateFilter');
+  if (dateSel) dateSel.addEventListener('change', updateExportDateSummary);
 });
 
 // ============================================================================
@@ -4478,12 +4562,16 @@ async function runCombinedExport() {
     showToast('Enter a valid sequence number (0–99999)', true);
     return;
   }
+  const dateFilter = document.getElementById('exportDateFilter').value;
   closeExportDialog();
 
-  // Gather all entries
-  let allEntries = [...savedEquipment];
+  // Gather entries (filtered by date)
+  let allEntries = filterEntriesByExportDate(dateFilter);
   const currentName = document.getElementById('equipName').value.trim();
-  if (currentName && sources.length > 0) {
+  // Include current unsaved entry only when filter is 'all' or today's date
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const includeCurrent = (dateFilter === 'all' || dateFilter === todayIso);
+  if (includeCurrent && currentName && sources.length > 0) {
     allEntries.push({
       equipType:     getEquipType(),
       equipName:     currentName,
@@ -4818,7 +4906,9 @@ async function runCombinedExport() {
     const url = URL.createObjectURL(zipBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'LOTO_Export_' + dateStamp + '.zip';
+    // If filtered to a specific date, include that in the filename
+    const filenameSuffix = (dateFilter !== 'all' && dateFilter !== 'undated') ? '_' + dateFilter : (dateFilter === 'undated' ? '_undated' : '');
+    a.download = 'LOTO_Export_' + dateStamp + filenameSuffix + '.zip';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
