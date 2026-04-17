@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<title>LOTO Field Collector v5.1</title>
+<title>LOTO Field Collector v5.2</title>
 <script>
 if ('serviceWorker' in navigator) {
   // One-time purge: unregister old SW, clear all caches, then reload fresh
@@ -642,7 +642,7 @@ const DATA = {
     "Condensate Return Unit","Condensate Pump","Unit Heater",
     "Domestic Water Heater","Air Compressor","Air Dryer","Vacuum Pump","ATS",
     "Generator","Day Tank","Elevator","Cooling Tower","Chemical Feed Pump","Dishwasher",
-    "Chiller","Refrigerator","Boiler","Steam PRV Station",
+    "Chiller","Refrigerator","Boiler","Steam PRV Station","Humidifier",
     "** New Equipment Type **"
   ],
   energySources: [
@@ -750,9 +750,6 @@ const CHW_ENERGY_SOURCES = [
 ];
 
 function getFilteredVerifications(deviceType, energySource) {
-  const baseList = DEVICE_VERIFICATION_MAP[deviceType];
-  if (!baseList) return DATA.verificationTypes; // unknown device → full list
-
   // Determine temperature variant based on energy source
   let tempSuffix = '';
   if (energySource) {
@@ -773,9 +770,33 @@ function getFilteredVerifications(deviceType, energySource) {
     }
   }
 
+  // Determine the working verification list
+  let workingList = DEVICE_VERIFICATION_MAP[deviceType];
+
+  // If no known device but we have an energy source, compute the union of
+  // verifications across all devices applicable to that energy source
+  if (!workingList && energySource) {
+    const applicableDevices = getFilteredDevices(energySource);
+    if (applicableDevices && applicableDevices !== DATA.deviceTypes) {
+      const seen = new Set();
+      workingList = [];
+      for (const dev of applicableDevices) {
+        const devVerifs = DEVICE_VERIFICATION_MAP[dev];
+        if (devVerifs) {
+          for (const v of devVerifs) {
+            if (!seen.has(v)) { seen.add(v); workingList.push(v); }
+          }
+        }
+      }
+      if (workingList.length === 0) workingList = null;
+    }
+  }
+
+  if (!workingList) return DATA.verificationTypes; // truly unknown → full list
+
   // Resolve placeholders
   const result = [];
-  for (const v of baseList) {
+  for (const v of workingList) {
     if (v === '_gauge') {
       if (tempSuffix === 'hot') result.push('Gauge/Drain - Hot');
       else if (tempSuffix === 'chw') result.push('Gauge/Drain - CHW');
@@ -1160,6 +1181,7 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Heat Exchanger': ['Heat Exchanger'],
   'Boiler': ['Standard Electrical'],
   'Steam PRV Station': ['Standard Electrical'],
+  'Humidifier': ['Water Heater - Steam'],
 };
 
 function filterTemplateDropdown(equipType) {

@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.98</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v5.99</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -753,7 +753,7 @@ const DATA = {
     "Condensate Return Unit","Condensate Pump","Unit Heater",
     "Domestic Water Heater","Air Compressor","Air Dryer","Vacuum Pump","ATS",
     "Generator","Day Tank","Elevator","Cooling Tower","Chemical Feed Pump","Dishwasher",
-    "Chiller","Refrigerator","Boiler","Steam PRV Station",
+    "Chiller","Refrigerator","Boiler","Steam PRV Station","Humidifier",
     "** New Equipment Type **"
   ],
   energySources: [
@@ -861,9 +861,6 @@ const CHW_ENERGY_SOURCES = [
 ];
 
 function getFilteredVerifications(deviceType, energySource) {
-  const baseList = DEVICE_VERIFICATION_MAP[deviceType];
-  if (!baseList) return DATA.verificationTypes; // unknown device → full list
-
   // Determine temperature variant based on energy source
   let tempSuffix = '';
   if (energySource) {
@@ -884,9 +881,33 @@ function getFilteredVerifications(deviceType, energySource) {
     }
   }
 
+  // Determine the working verification list
+  let workingList = DEVICE_VERIFICATION_MAP[deviceType];
+
+  // If no known device but we have an energy source, compute the union of
+  // verifications across all devices applicable to that energy source
+  if (!workingList && energySource) {
+    const applicableDevices = getFilteredDevices(energySource);
+    if (applicableDevices && applicableDevices !== DATA.deviceTypes) {
+      const seen = new Set();
+      workingList = [];
+      for (const dev of applicableDevices) {
+        const devVerifs = DEVICE_VERIFICATION_MAP[dev];
+        if (devVerifs) {
+          for (const v of devVerifs) {
+            if (!seen.has(v)) { seen.add(v); workingList.push(v); }
+          }
+        }
+      }
+      if (workingList.length === 0) workingList = null;
+    }
+  }
+
+  if (!workingList) return DATA.verificationTypes; // truly unknown → full list
+
   // Resolve placeholders
   const result = [];
-  for (const v of baseList) {
+  for (const v of workingList) {
     if (v === '_gauge') {
       if (tempSuffix === 'hot') result.push('Gauge/Drain - Hot');
       else if (tempSuffix === 'chw') result.push('Gauge/Drain - CHW');
@@ -1032,7 +1053,7 @@ const EQUIPMENT_AUTO_SOURCES = {
   ],
   'Condensing Unit': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Unit Heater': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
@@ -1269,6 +1290,12 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Heat Exchanger': ['Heat Exchanger'],
   'Boiler': ['Standard Electrical'],
   'Steam PRV Station': ['Standard Electrical'],
+  'Humidifier': ['Water Heater - Steam'],
+};
+
+// Equipment types that force a specific diagram regardless of template's default
+const EQUIPMENT_DIAGRAM_OVERRIDE = {
+  'Humidifier': 'general',
 };
 
 function filterTemplateDropdown(equipType) {
@@ -2356,7 +2383,9 @@ function renderSketchLabels() {
 
 // Load diagram based on template selection
 function loadSketchDiagram(templateName) {
-  const diagramKey = TEMPLATE_DIAGRAM_MAP[templateName];
+  // Check if current equipment type overrides the diagram (e.g. Humidifier → general)
+  const currentEquipType = getEquipType();
+  const diagramKey = EQUIPMENT_DIAGRAM_OVERRIDE[currentEquipType] || TEMPLATE_DIAGRAM_MAP[templateName];
   const toolbar = document.getElementById('sketchToolbar');
   const placeholder = document.getElementById('sketchPlaceholder');
   const canvasWrap = document.getElementById('sketchCanvasWrap');
@@ -2752,7 +2781,7 @@ const TEMPLATE_AUTO_SOURCES = {
   ],
   'Condensing Unit': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Chilled Water Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
