@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<title>LOTO Field Collector v6.4</title>
+<title>LOTO Field Collector v6.5</title>
 <script>
 if ('serviceWorker' in navigator) {
   // One-time purge: unregister old SW, clear all caches, then reload fresh
@@ -976,6 +976,7 @@ const EQUIPMENT_AUTO_SOURCES = {
 let sources = [];          // Current equipment's energy sources
 let photos = {};           // Current equipment's photos (keyed by slot id)
 let savedEquipment = [];   // Accumulated saved equipment entries
+let editingEntry = null;   // Reference to the saved entry currently being edited (or null)
 let savedPanelOpen = false;
 
 // ============================================================================
@@ -2318,7 +2319,18 @@ function saveAndNew() {
     photos: Object.assign({}, photos)
   };
 
-  savedEquipment.push(entry);
+  if (editingEntry) {
+    const idx = savedEquipment.indexOf(editingEntry);
+    if (idx >= 0) {
+      if (editingEntry.savedAt) entry.savedAt = editingEntry.savedAt;
+      savedEquipment[idx] = entry;
+    } else {
+      savedEquipment.push(entry);
+    }
+    editingEntry = null;
+  } else {
+    savedEquipment.push(entry);
+  }
   saveAll();
   const lastBuilding = entry.equipBuilding;
   const lastRoom = entry.equipRoom;
@@ -2332,8 +2344,12 @@ function saveAndNew() {
 
 function clearForm(confirm_first = true) {
   if (confirm_first && (document.getElementById('equipName').value || sources.length > 0)) {
-    if (!confirm('Clear current form? Unsaved data will be lost.')) return;
+    const msg = editingEntry
+      ? `Discard edits to "${editingEntry.equipName}"? (The original saved entry will be preserved.)`
+      : 'Clear current form? Unsaved data will be lost.';
+    if (!confirm(msg)) return;
   }
+  editingEntry = null;
   sources = [];
   photos = {};
   document.getElementById('equipType').value = '';
@@ -2422,11 +2438,15 @@ function deleteSaved(index) {
 }
 
 function editSaved(index) {
-  // Check if current form has unsaved data
+  if (editingEntry === savedEquipment[index]) return;
   const currentName = document.getElementById('equipName').value.trim();
   if (currentName || sources.length > 0) {
-    if (!confirm(`Current form has unsaved data ("${currentName || 'unnamed'}"). Discard and edit "${savedEquipment[index].equipName}"?`)) return;
+    const confirmMsg = editingEntry
+      ? `Discard edits to "${editingEntry.equipName}" (original preserved) and edit "${savedEquipment[index].equipName}"?`
+      : `Current form has unsaved data ("${currentName || 'unnamed'}"). Discard and edit "${savedEquipment[index].equipName}"?`;
+    if (!confirm(confirmMsg)) return;
   }
+  editingEntry = null;
 
   // Load saved entry into form
   const entry = savedEquipment[index];
@@ -2492,16 +2512,15 @@ function editSaved(index) {
     }
   });
 
-  // Remove from saved list (it's now "in progress" again)
-  savedEquipment.splice(index, 1);
-  saveAll();
+  // Track that this saved entry is being edited — don't remove from the list.
+  editingEntry = entry;
   renderSavedPanel();
   renderSources();
   updateHeaderBadge();
 
   // Scroll to form
   document.querySelector('.equipment-section').scrollIntoView({ behavior: 'smooth' });
-  showToast(`Editing "${entry.equipName}"`);
+  showToast(`Editing "${entry.equipName}" (original preserved until you Save & New)`);
 }
 
 function duplicateSaved(index) {

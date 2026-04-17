@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.13</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.14</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -1089,6 +1089,7 @@ let sources = [];          // Current equipment's energy sources
 let photos = {};           // Current equipment's photos (keyed by slot id)
 let miscPhotos = [];       // Current equipment's misc photos [{dbKey, thumbnail, fileType, timestamp}]
 let savedEquipment = [];   // Accumulated saved equipment entries
+let editingEntry = null;   // Reference to the saved entry currently being edited (or null)
 let savedPanelOpen = false;
 
 // ============================================================================
@@ -2306,15 +2307,25 @@ function getLabelForLinkedSource(linkedTo) {
   }
 
   // Primary path: use the Nth actually-placed label of this prefix on the linked equipment's sketch
-  if (entry.sketch && entry.sketch.labels) {
-    const sameLabels = entry.sketch.labels.filter(l => l.text && l.text.startsWith(prefix + '-'));
-    if (sameLabels[ordinal]) {
-      return { text: sameLabels[ordinal].text, color: ENERGY_LABEL_COLORS[prefix] || sameLabels[ordinal].color || '#222' };
-    }
+  const placedLabels = (entry.sketch && entry.sketch.labels) ? entry.sketch.labels : [];
+  const sameLabels = placedLabels.filter(l => l.text && l.text.startsWith(prefix + '-'));
+  if (sameLabels[ordinal]) {
+    return { text: sameLabels[ordinal].text, color: ENERGY_LABEL_COLORS[prefix] || sameLabels[ordinal].color || '#222' };
   }
 
-  // Fallback: if no label placed for that source yet, compute what the next number would be
-  // (ordinal within linked equipment's same-prefix sources + 1 + max already used in the room by OTHER equipment)
+  // Ordinal exceeds placed labels — continue numbering from the highest label on the linked equipment.
+  // E.g., if W-5 and W-6 are placed (2 labels) but ordinal=2 (3rd water source), return W-7.
+  if (sameLabels.length > 0) {
+    let maxInLinked = 0;
+    for (const lbl of sameLabels) {
+      const m = lbl.text.match(/^([A-Z]+)-(\d+)$/);
+      if (m) maxInLinked = Math.max(maxInLinked, parseInt(m[2]));
+    }
+    const bump = ordinal - sameLabels.length + 1;
+    return { text: prefix + '-' + (maxInLinked + bump), color: ENERGY_LABEL_COLORS[prefix] || '#222' };
+  }
+
+  // No labels placed on linked equipment yet — compute from room max of OTHER equipment
   const bldg = (entry.equipBuilding || '').trim().toLowerCase();
   const room = (entry.equipRoom || '').trim().toLowerCase();
   let roomMax = 0;
@@ -4070,7 +4081,20 @@ function saveAndNew() {
     sketch: getSketchData()
   };
 
-  savedEquipment.push(entry);
+  // If editing an existing saved entry, replace it in place. Otherwise append.
+  if (editingEntry) {
+    const idx = savedEquipment.indexOf(editingEntry);
+    if (idx >= 0) {
+      // Preserve original savedAt so the entry keeps its original date for export filtering
+      if (editingEntry.savedAt) entry.savedAt = editingEntry.savedAt;
+      savedEquipment[idx] = entry;
+    } else {
+      savedEquipment.push(entry);
+    }
+    editingEntry = null;
+  } else {
+    savedEquipment.push(entry);
+  }
   saveAll();
   const lastBuilding = entry.equipBuilding;
   const lastRoom = entry.equipRoom;
@@ -4084,8 +4108,12 @@ function saveAndNew() {
 
 function clearForm(confirm_first = true) {
   if (confirm_first && (document.getElementById('equipName').value || sources.length > 0)) {
-    if (!confirm('Clear current form? Unsaved data will be lost.')) return;
+    const msg = editingEntry
+      ? `Discard edits to "${editingEntry.equipName}"? (The original saved entry will be preserved.)`
+      : 'Clear current form? Unsaved data will be lost.';
+    if (!confirm(msg)) return;
   }
+  editingEntry = null;
   sources = [];
   photos = {};
   miscPhotos = [];
@@ -4133,10 +4161,11 @@ function renderSavedPanel() {
 
   body.innerHTML = savedEquipment.map((entry, i) => {
     const photoCount = entry.photos ? Object.keys(entry.photos).filter(k => entry.photos[k] && entry.photos[k].timestamp).length : 0;
+    const isEditing = editingEntry === entry;
     return `
-    <div class="saved-item">
+    <div class="saved-item" style="${isEditing ? 'border:2px solid var(--accent);background:rgba(74,144,217,0.08);' : ''}">
       <div class="saved-item-info">
-        <div class="saved-item-name">${entry.equipName}</div>
+        <div class="saved-item-name">${entry.equipName}${isEditing ? ' <span style="background:var(--accent);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">EDITING</span>' : ''}</div>
         <div class="saved-item-detail">
           ${entry.equipType || 'No type'} "&#183; ${entry.template || 'No template'}
           "&#183; ${entry.sources.length} source${entry.sources.length !== 1 ? 's' : ''}
@@ -4177,11 +4206,20 @@ function deleteSaved(index) {
 }
 
 function editSaved(index) {
+  // If this entry is already being edited, do nothing
+  if (editingEntry === savedEquipment[index]) return;
+
   // Check if current form has unsaved data
   const currentName = document.getElementById('equipName').value.trim();
   if (currentName || sources.length > 0) {
-    if (!confirm(`Current form has unsaved data ("${currentName || 'unnamed'}"). Discard and edit "${savedEquipment[index].equipName}"?`)) return;
+    const currentDesc = editingEntry ? `edits to "${editingEntry.equipName}"` : `unsaved entry "${currentName || 'unnamed'}"`;
+    const confirmMsg = editingEntry
+      ? `Discard ${currentDesc} (original preserved) and edit "${savedEquipment[index].equipName}"?`
+      : `Current form has ${currentDesc}. Discard and edit "${savedEquipment[index].equipName}"?`;
+    if (!confirm(confirmMsg)) return;
   }
+  // Reset editing state before loading new entry
+  editingEntry = null;
 
   // Load saved entry into form
   const entry = savedEquipment[index];
@@ -4251,9 +4289,9 @@ function editSaved(index) {
   // Restore sketch
   restoreSketch(entry.sketch || null);
 
-  // Remove from saved list (it's now "in progress" again)
-  savedEquipment.splice(index, 1);
-  saveAll();
+  // Track that this saved entry is being edited — don't remove from the list.
+  // If the user Saves & New, we replace it in place; if they discard, the original is preserved.
+  editingEntry = entry;
   renderSavedPanel();
   renderSources();
   renderMiscPhotos();
@@ -4261,7 +4299,7 @@ function editSaved(index) {
 
   // Scroll to form
   document.querySelector('.equipment-section').scrollIntoView({ behavior: 'smooth' });
-  showToast(`Editing "${entry.equipName}"`);
+  showToast(`Editing "${entry.equipName}" (original preserved until you Save & New)`);
 }
 
 function duplicateSaved(index) {
