@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<title>LOTO Field Collector v6.3</title>
+<title>LOTO Field Collector v6.4</title>
 <script>
 if ('serviceWorker' in navigator) {
   // One-time purge: unregister old SW, clear all caches, then reload fresh
@@ -1815,16 +1815,15 @@ function renderLinkDialog() {
   const currentRoom = document.getElementById('equipRoom').value.trim();
   const currentName = document.getElementById('equipName').value.trim();
 
-  let candidates = savedEquipment.filter(e => e.equipName !== currentName);
+  const norm = (v) => (v || '').trim().toLowerCase();
+  const curName = norm(currentName);
+  const curBldg = norm(currentBldg);
+  const curRoom = norm(currentRoom);
+  let candidates = savedEquipment.filter(e => norm(e.equipName) !== curName || !curName);
   if (pendingLinkScope === 'room') {
-    candidates = candidates.filter(e =>
-      (e.equipBuilding || '') === (currentBldg || '') &&
-      (e.equipRoom || '') === (currentRoom || '')
-    );
+    candidates = candidates.filter(e => norm(e.equipBuilding) === curBldg && norm(e.equipRoom) === curRoom);
   } else if (pendingLinkScope === 'building') {
-    candidates = candidates.filter(e =>
-      (e.equipBuilding || '') === (currentBldg || '')
-    );
+    candidates = candidates.filter(e => norm(e.equipBuilding) === curBldg);
   }
 
   const scopeBtn = (val, label) => `
@@ -1833,7 +1832,12 @@ function renderLinkDialog() {
 
   let candidatesHtml = '';
   if (candidates.length === 0) {
-    candidatesHtml = `<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:14px;">No saved equipment found in this scope. Save your current entry first, or expand the scope.</div>`;
+    const scopeDesc = pendingLinkScope === 'room'
+      ? `room "${currentBldg || '(none)'} / ${currentRoom || '(none)'}"`
+      : pendingLinkScope === 'building'
+      ? `building "${currentBldg || '(none)'}"`
+      : 'all saved equipment';
+    candidatesHtml = `<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:13px;line-height:1.5;">No saved equipment found in ${scopeDesc}.<br>Try expanding the scope, or check that the building/room on both entries match.</div>`;
   } else {
     candidatesHtml = candidates.map(entry => {
       const origIndex = savedEquipment.indexOf(entry);

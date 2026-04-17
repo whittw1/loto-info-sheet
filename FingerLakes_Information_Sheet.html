@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.11</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.12</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -3427,17 +3427,17 @@ function renderLinkDialog() {
   const currentRoom = document.getElementById('equipRoom').value.trim();
   const currentName = document.getElementById('equipName').value.trim();
 
-  // Filter saved equipment by scope, exclude the current entry being edited
-  let candidates = savedEquipment.filter(e => e.equipName !== currentName);
+  // Filter saved equipment by scope, exclude the current entry being edited.
+  // Case-insensitive + trimmed comparison for building/room/name to handle typos.
+  const norm = (v) => (v || '').trim().toLowerCase();
+  const curName = norm(currentName);
+  const curBldg = norm(currentBldg);
+  const curRoom = norm(currentRoom);
+  let candidates = savedEquipment.filter(e => norm(e.equipName) !== curName || !curName);
   if (pendingLinkScope === 'room') {
-    candidates = candidates.filter(e =>
-      (e.equipBuilding || '') === (currentBldg || '') &&
-      (e.equipRoom || '') === (currentRoom || '')
-    );
+    candidates = candidates.filter(e => norm(e.equipBuilding) === curBldg && norm(e.equipRoom) === curRoom);
   } else if (pendingLinkScope === 'building') {
-    candidates = candidates.filter(e =>
-      (e.equipBuilding || '') === (currentBldg || '')
-    );
+    candidates = candidates.filter(e => norm(e.equipBuilding) === curBldg);
   }
 
   const scopeBtn = (val, label) => `
@@ -3446,7 +3446,12 @@ function renderLinkDialog() {
 
   let candidatesHtml = '';
   if (candidates.length === 0) {
-    candidatesHtml = `<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:14px;">No saved equipment found in this scope. Save your current entry first, or expand the scope.</div>`;
+    const scopeDesc = pendingLinkScope === 'room'
+      ? `room "${currentBldg || '(none)'} / ${currentRoom || '(none)'}"`
+      : pendingLinkScope === 'building'
+      ? `building "${currentBldg || '(none)'}"`
+      : 'all saved equipment';
+    candidatesHtml = `<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:13px;line-height:1.5;">No saved equipment found in ${scopeDesc}.<br>Try expanding the scope, or check that the building/room on both entries match.</div>`;
   } else {
     candidatesHtml = candidates.map((entry, ei) => {
       const origIndex = savedEquipment.indexOf(entry);
