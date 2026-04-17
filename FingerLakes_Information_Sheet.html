@@ -317,11 +317,11 @@ if ('serviceWorker' in navigator) {
   }
   .label-picker-btn:active { transform: scale(0.92); opacity: 0.8; }
   .sketch-label-marker {
-    position: absolute; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff;
+    position: absolute; min-width: 34px; height: 34px; padding: 0 6px; border-radius: 18px; border: 2px solid #fff;
     display: flex; align-items: center; justify-content: center;
-    font-size: 9px; font-weight: 800; color: #fff; cursor: pointer;
-    transform: translate(-50%, -50%); box-shadow: 0 1px 4px rgba(0,0,0,0.4);
-    z-index: 2;
+    font-size: 14px; font-weight: 800; color: #fff; cursor: pointer;
+    transform: translate(-50%, -50%); box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+    z-index: 2; white-space: nowrap;
   }
   .sketch-no-diagram { padding: 40px 20px; text-align: center; color: var(--text-dim); font-size: 14px; }
   .sketch-hint { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.09</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.10</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -2256,35 +2256,93 @@ function getNextForPrefix(prefix) {
   return { text: prefix + '-' + nextNum, color: ENERGY_LABEL_COLORS[prefix] || '#222' };
 }
 
-// Build the list of prefixes to show in the picker
+// Determine the prefix letter for a given energy source name (same logic as picker)
+function getPrefixForEnergySource(energySource) {
+  if (!energySource) return 'E';
+  let prefix = 'E';
+  let bestLen = 0;
+  for (const [key, val] of Object.entries(ENERGY_LABEL_PREFIX)) {
+    if (energySource.startsWith(key) && key.length > bestLen) { prefix = val; bestLen = key.length; }
+  }
+  if (bestLen === 0) {
+    const lower = energySource.toLowerCase();
+    if (lower.includes('water') || lower.includes('glycol')) prefix = 'W';
+    else if (lower.includes('steam')) prefix = 'S';
+    else if (lower.includes('air') || lower.includes('pneumatic') || lower.includes('compressed')) prefix = 'P';
+    else if (lower.includes('fuel') || lower.includes('oil') || lower.includes('diesel')) prefix = 'F';
+    else if (lower.includes('gas') || lower.includes('propane')) prefix = 'G';
+    else if (lower.includes('kinetic') || lower.includes('rotating')) prefix = 'K';
+    else if (lower.includes('hydraulic')) prefix = 'H';
+    else if (lower.includes('refrigerant')) prefix = 'R';
+    else if (lower.includes('chemical')) prefix = 'CH';
+    else if (lower.includes('thermal')) prefix = 'TH';
+  }
+  return prefix;
+}
+
+// For a linked source, compute the label that should be used on this diagram
+// (pulls the number from the referenced equipment's source ordering, so both
+// diagrams use the same physical tag ID).
+function getLabelForLinkedSource(linkedTo) {
+  if (!linkedTo) return null;
+  const entry = savedEquipment.find(e => e.equipName === linkedTo.equipName);
+  if (!entry || !entry.sources) return null;
+  const srcIdx = linkedTo.sourceIndex;
+  const targetSrc = entry.sources[srcIdx];
+  if (!targetSrc) return null;
+  const prefix = getPrefixForEnergySource(targetSrc.energySource);
+  // Count same-prefix sources at-or-before srcIdx in the linked equipment
+  let ordinal = 0;
+  for (let i = 0; i <= srcIdx; i++) {
+    const s = entry.sources[i];
+    if (s && getPrefixForEnergySource(s.energySource) === prefix) ordinal++;
+  }
+  // Add room-level offset from OTHER equipment in the same room (excluding the linked entry itself,
+  // since its numbering starts from roomMax+1 by convention)
+  const bldg = (entry.equipBuilding || '').trim().toLowerCase();
+  const room = (entry.equipRoom || '').trim().toLowerCase();
+  let roomMax = 0;
+  if (bldg || room) {
+    for (const e of savedEquipment) {
+      if (e === entry) continue; // skip the linked entry — ordinal already handles it
+      if ((e.equipBuilding || '').trim().toLowerCase() !== bldg) continue;
+      if ((e.equipRoom || '').trim().toLowerCase() !== room) continue;
+      if (e.sketch && e.sketch.labels) {
+        for (const lbl of e.sketch.labels) {
+          const m = lbl.text.match(/^([A-Z]+)-(\d+)$/);
+          if (m && m[1] === prefix) roomMax = Math.max(roomMax, parseInt(m[2]));
+        }
+      }
+    }
+  }
+  return { text: prefix + '-' + (roomMax + ordinal), color: ENERGY_LABEL_COLORS[prefix] || '#222' };
+}
+
+// Build the list of labels to show in the picker
 function getLabelPickerOptions() {
-  // Start with prefixes from the current equipment's sources (in order, no duplicates)
-  const seen = new Set();
+  const seenText = new Set();
   const options = [];
+  // Track which prefixes we've already allocated fresh numbers for
+  const freshPrefixUsed = new Set();
   for (const src of sources) {
     if (!src.energySource) continue;
-    let prefix = 'E';
-    let bestLen = 0;
-    for (const [key, val] of Object.entries(ENERGY_LABEL_PREFIX)) {
-      if (src.energySource.startsWith(key) && key.length > bestLen) { prefix = val; bestLen = key.length; }
+    // Linked sources: pull the label from the referenced equipment
+    if (src.linkedTo) {
+      const linkedLabel = getLabelForLinkedSource(src.linkedTo);
+      if (linkedLabel && !seenText.has(linkedLabel.text)) {
+        seenText.add(linkedLabel.text);
+        options.push(linkedLabel);
+      }
+      continue;
     }
-    // Keyword fallback for custom energy sources
-    if (bestLen === 0) {
-      const lower = src.energySource.toLowerCase();
-      if (lower.includes('water') || lower.includes('glycol')) prefix = 'W';
-      else if (lower.includes('steam')) prefix = 'S';
-      else if (lower.includes('air') || lower.includes('pneumatic') || lower.includes('compressed')) prefix = 'P';
-      else if (lower.includes('fuel') || lower.includes('oil') || lower.includes('diesel')) prefix = 'F';
-      else if (lower.includes('gas') || lower.includes('propane')) prefix = 'G';
-      else if (lower.includes('kinetic') || lower.includes('rotating')) prefix = 'K';
-      else if (lower.includes('hydraulic')) prefix = 'H';
-      else if (lower.includes('refrigerant')) prefix = 'R';
-      else if (lower.includes('chemical')) prefix = 'CH';
-      else if (lower.includes('thermal')) prefix = 'TH';
-    }
-    if (!seen.has(prefix)) {
-      seen.add(prefix);
-      options.push(getNextForPrefix(prefix));
+    const prefix = getPrefixForEnergySource(src.energySource);
+    if (!freshPrefixUsed.has(prefix)) {
+      freshPrefixUsed.add(prefix);
+      const opt = getNextForPrefix(prefix);
+      if (!seenText.has(opt.text)) {
+        seenText.add(opt.text);
+        options.push(opt);
+      }
     }
   }
   return options;
