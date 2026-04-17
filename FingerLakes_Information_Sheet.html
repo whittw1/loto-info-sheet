@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.00</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.01</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -1127,6 +1127,22 @@ function init() {
 
 // Called by handleEquipTypeChange with the resolved equipment type
 function equipTypeChanged(equipType) {
+  // Clear auto-populated sources from previous equipment type before adding new ones.
+  // Also shift photos to match new source indices.
+  const keepIndices = [];
+  sources.forEach((s, i) => { if (!s.auto) keepIndices.push(i); });
+  if (keepIndices.length !== sources.length) {
+    const newSources = keepIndices.map(i => sources[i]);
+    const newPhotos = {};
+    keepIndices.forEach((oldI, newI) => {
+      if (photos[`source_${oldI}`]) newPhotos[`source_${newI}`] = photos[`source_${oldI}`];
+    });
+    // Remove any remaining source_N photo keys not in the new map
+    Object.keys(photos).forEach(k => { if (k.startsWith('source_') && !(k in newPhotos)) delete photos[k]; });
+    Object.assign(photos, newPhotos);
+    sources = newSources;
+  }
+
   // Equipment types with voltage prompts
   if (equipType === 'ATS') {
     showVoltageDialog('ATS');
@@ -1154,10 +1170,10 @@ function equipTypeChanged(equipType) {
       }
     }
     if (added) {
-      renderSources();
       showToast(`Added ${added} standard source${added > 1 ? 's' : ''} for ${equipType}`);
     }
   }
+  renderSources();
 
   // Auto-suggest template if there's only one match
   if (equipType && EQUIPMENT_TEMPLATE_MAP[equipType]) {
