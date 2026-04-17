@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.01</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.02</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -430,6 +430,7 @@ if ('serviceWorker' in navigator) {
           <option value="Building 31">Building 31</option>
           <option value="Building 32">Building 32</option>
           <option value="Building 34">Building 34</option>
+          <option value="Building 35">Building 35</option>
           <option value="Building 39">Building 39</option>
           <option value="Building 41">Building 41</option>
           <option value="Building 75">Building 75</option>
@@ -813,7 +814,7 @@ const DATA = {
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
     "Elevator - Traction","Elevator - Hydraulic",
     "ATS - Generic","ASCO 7000","Non Byp","Kohler","Zenith",
-    "Standard Electrical","Heat Exchanger"
+    "Standard Electrical","Heat Exchanger - Steam","Heat Exchanger - CHW/Glycol"
   ],
   tiedToOptions: ["Shut Down","Shut Down & LOTO"]
 };
@@ -1311,7 +1312,7 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Refrigerator': ['Refrigerator'],
   'Elevator': ['Elevator - Traction','Elevator - Hydraulic'],
   'ATS': ['ATS - Generic','ASCO 7000','Non Byp','Kohler','Zenith'],
-  'Heat Exchanger': ['Heat Exchanger'],
+  'Heat Exchanger': ['Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol'],
   'Boiler': ['Standard Electrical'],
   'Steam PRV Station': ['Standard Electrical'],
   'Humidifier': ['Water Heater - Steam'],
@@ -1349,6 +1350,8 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Emergency Generator': 'generator',
   'Chiller': 'chiller', 'Refrigerator': 'general',
   'Heat Exchanger': 'heat_exchanger',
+  'Heat Exchanger - Steam': 'heat_exchanger',
+  'Heat Exchanger - CHW/Glycol': 'heat_exchanger',
   'Exhaust Fan': 'exhaust_fan',
   'Condensing Unit': 'ac_unit', 'Air Compressor': 'air_compressor',
   'Boiler': 'boiler', 'Air Dryer': 'general',
@@ -2782,6 +2785,12 @@ function applyTemplate(val) {
 
 // Template-triggered auto-sources (mirrors EQUIPMENT_AUTO_SOURCES)
 const TEMPLATE_AUTO_SOURCES = {
+  // Heat Exchanger - Steam: LPS source with Gate Valve
+  'Heat Exchanger - Steam': [
+    { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Heat Exchanger - CHW/Glycol: no auto-sources
+  'Heat Exchanger - CHW/Glycol': [],
   // Kinetic for anything with a motor/fan/compressor
   'AHU - Steam': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
