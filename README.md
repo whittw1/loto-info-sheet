@@ -2,11 +2,16 @@
 
 A progressive web app (PWA) for field data collection of Lockout/Tagout (LOTO) information. Built for technicians to document equipment details, energy sources, capture photos, and annotate overhead diagrams directly from mobile devices — fully offline-capable.
 
-**Live URLs (both serve the same merged app):**
-- [whittw1.github.io/loto-info-sheet](https://whittw1.github.io/loto-info-sheet/)
-- [FingerLakes_Information_Sheet.html](https://whittw1.github.io/loto-info-sheet/FingerLakes_Information_Sheet.html)
+**Live URLs (all four URLs serve the same merged app):**
+
+| Platform | Main URL | FL Alias |
+|---|---|---|
+| Azure Static Web Apps | [delightful-bay-02569820f.7.azurestaticapps.net](https://delightful-bay-02569820f.7.azurestaticapps.net/) | [.../FingerLakes_Information_Sheet.html](https://delightful-bay-02569820f.7.azurestaticapps.net/FingerLakes_Information_Sheet.html) |
+| GitHub Pages (legacy) | [whittw1.github.io/loto-info-sheet](https://whittw1.github.io/loto-info-sheet/) | [.../FingerLakes_Information_Sheet.html](https://whittw1.github.io/loto-info-sheet/FingerLakes_Information_Sheet.html) |
 
 > **Note on filenames:** As of v7.0, `index.html` and `FingerLakes_Information_Sheet.html` contain **identical code**. Both URLs are preserved to keep existing PWA installs and bookmarks working. All future changes land in both files simultaneously.
+
+> **Note on deployment:** Each push to `main` deploys to **both** Azure Static Web Apps and GitHub Pages in parallel. Azure is the primary target going forward (proper cache headers fix the SW update propagation issue); GitHub Pages stays live to preserve legacy PWA installs.
 
 ---
 
