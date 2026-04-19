@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<meta name="apple-mobile-web-app-title" content="LOTO Collector">
-<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-title" content="FL VA LOTO">
+<link rel="manifest" href="manifest_fl.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<title>LOTO Field Collector v6.6</title>
+<title>Finger Lakes VA LOTO Collector</title>
 <script>
 if ('serviceWorker' in navigator) {
   // One-time purge: unregister old SW, clear all caches, then reload fresh
@@ -281,6 +281,52 @@ if ('serviceWorker' in navigator) {
   }
   .add-source-btn:hover { border-color: var(--accent); background: var(--card-alt); }
 
+  /* Sketch section */
+  .sketch-container { position: relative; width: 100%; background: #fff; border-radius: 8px; overflow: hidden; touch-action: none; }
+  .sketch-container svg.sketch-bg { width: 100%; height: auto; display: block; }
+  .sketch-container canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; }
+  .sketch-toolbar {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; align-items: center;
+  }
+  .sketch-toolbar .tool-btn {
+    padding: 6px 12px; border: 1.5px solid var(--border); border-radius: 6px;
+    background: var(--input-bg); color: var(--text); font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .sketch-toolbar .tool-btn.active { border-color: var(--accent); background: var(--accent); color: #fff; }
+  .sketch-toolbar .color-swatch {
+    width: 28px; height: 28px; border-radius: 50%; border: 2.5px solid transparent;
+    cursor: pointer; transition: border-color 0.15s;
+  }
+  .sketch-toolbar .color-swatch.active { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+  .sketch-label-overlay {
+    position: absolute; background: rgba(0,0,0,0.85); color: #fff; font-size: 13px; font-weight: 700;
+    padding: 3px 8px; border-radius: 4px; pointer-events: none; white-space: nowrap;
+    transform: translate(-50%, -100%); margin-top: -6px;
+  }
+  .label-picker {
+    position: absolute; z-index: 20; background: #1e2334; border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px; display: flex; flex-wrap: wrap; gap: 6px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 220px; justify-content: center;
+    transform: translate(-50%, -110%);
+  }
+  .label-picker-btn {
+    border: none; border-radius: 6px; padding: 6px 10px; font-size: 13px; font-weight: 700;
+    color: #fff; cursor: pointer; min-width: 48px; text-align: center;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .label-picker-btn:active { transform: scale(0.92); opacity: 0.8; }
+  .sketch-label-marker {
+    position: absolute; min-width: 34px; height: 34px; padding: 0 6px; border-radius: 18px; border: 2px solid #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 800; color: #fff; cursor: pointer;
+    transform: translate(-50%, -50%); box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+    z-index: 2; white-space: nowrap;
+  }
+  .sketch-no-diagram { padding: 40px 20px; text-align: center; color: var(--text-dim); font-size: 14px; }
+  .sketch-hint { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
+  .sketch-status { font-size: 12px; color: var(--success); margin-top: 6px; display: none; }
+
   .bottom-bar {
     position: fixed; bottom: 0; left: 0; right: 0;
     background: var(--card); border-top: 1px solid var(--border);
@@ -332,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>LOTO Collector</h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -372,7 +418,30 @@ if ('serviceWorker' in navigator) {
       </div>
       <div class="form-group">
         <label>Building</label>
-        <input type="text" id="equipBuilding" placeholder="e.g. Building 1">
+        <select id="equipBuilding" onchange="handleBuildingChange()">
+          <option value="">-- Select --</option>
+          <option value="Building 10">Building 10</option>
+          <option value="Building 14">Building 14</option>
+          <option value="Building 17">Building 17</option>
+          <option value="Building 18">Building 18</option>
+          <option value="Building 20">Building 20</option>
+          <option value="Building 24">Building 24</option>
+          <option value="Building 29A">Building 29A</option>
+          <option value="Building 31">Building 31</option>
+          <option value="Building 32">Building 32</option>
+          <option value="Building 34">Building 34</option>
+          <option value="Building 35">Building 35</option>
+          <option value="Building 39">Building 39</option>
+          <option value="Building 41">Building 41</option>
+          <option value="Building 75">Building 75</option>
+          <option value="Building 92">Building 92</option>
+          <option value="Building 104">Building 104</option>
+          <option value="** Custom Building **">Custom...</option>
+        </select>
+      </div>
+      <div class="form-group" id="customBuildingGroup" style="display:none;">
+        <label>Custom Building</label>
+        <input type="text" id="equipBuildingCustom" placeholder="Enter building name" oninput="autoSaveCurrent()">
       </div>
       <div class="form-group">
         <label>Location / Room</label>
@@ -438,6 +507,54 @@ if ('serviceWorker' in navigator) {
   <div id="sourcesContainer"></div>
 
   <button class="add-source-btn" onclick="addSource()">+ Add Energy Source</button>
+
+  <!-- Misc Photos Section -->
+  <div class="equipment-section" id="miscPhotoSection" style="margin-bottom:20px;">
+    <h2>&#128247; Miscellaneous Photos</h2>
+    <p style="font-size:12px;color:#aaa;margin:0 0 10px;">Capture additional photos not tied to a specific energy source (max 10)</p>
+    <div id="miscPhotoGrid" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;"></div>
+    <button class="add-source-btn" onclick="addMiscPhoto()" id="addMiscPhotoBtn">+ Add Misc Photo</button>
+    <input type="file" accept="image/*" capture="environment" id="file_misc_photo" style="display:none;" onchange="handleMiscPhoto(this)">
+  </div>
+
+  <!-- Sketch Section (collapsible) -->
+  <div class="equipment-section" id="sketchSection" style="margin-bottom:20px;">
+    <h2 style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;" onclick="toggleSketchSection()">
+      <span><span id="sketchChevron" style="display:inline-block;transition:transform 0.2s;margin-right:6px;">&#9656;</span>&#9997; Overhead Sketch</span>
+      <span id="sketchSectionStatus" style="font-size:12px;color:var(--text-dim);font-weight:400;"></span>
+    </h2>
+    <div id="sketchSectionBody" style="display:none;">
+    <div class="sketch-toolbar" id="sketchToolbar" style="display:none;">
+      <button class="tool-btn active" onclick="setSketchTool('pen')" id="toolPen">Pen</button>
+      <button class="tool-btn" onclick="setSketchTool('label')" id="toolLabel">Label</button>
+      <button class="tool-btn" onclick="setSketchTool('eraser')" id="toolEraser">Eraser</button>
+      <button class="tool-btn" onclick="sketchUndo()" id="toolUndo">Undo</button>
+      <button class="tool-btn" onclick="undoLastLabel()" id="toolUndoLabel">Undo Label</button>
+      <button class="tool-btn" onclick="clearSketch()" style="color:var(--danger);">Clear</button>
+      <button class="tool-btn" onclick="switchToGeneralDiagram()" id="toolGeneral" style="color:var(--text-dim);font-size:11px;">General</button>
+      <span style="width:1px;height:22px;background:var(--border);margin:0 4px;"></span>
+      <span class="color-swatch active" style="background:#d94a4a;" onclick="setSketchColor('#d94a4a',this)" title="Electrical (Red)"></span>
+      <span class="color-swatch" style="background:#e07020;" onclick="setSketchColor('#e07020',this)" title="Steam (Orange)"></span>
+      <span class="color-swatch" style="background:#2a7fff;" onclick="setSketchColor('#2a7fff',this)" title="Water (Blue)"></span>
+      <span class="color-swatch" style="background:#2ea843;" onclick="setSketchColor('#2ea843',this)" title="Pneumatic (Green)"></span>
+      <span class="color-swatch" style="background:#222;" onclick="setSketchColor('#222',this)" title="Black"></span>
+    </div>
+    <div id="sketchArea">
+      <div class="sketch-no-diagram" id="sketchPlaceholder">
+        Select a <strong>template</strong> above to load the matching equipment diagram.
+      </div>
+      <div id="sketchCanvasWrap" style="display:none;">
+        <div class="sketch-container" id="sketchContainer">
+          <!-- SVG diagram injected here -->
+          <canvas id="sketchCanvas"></canvas>
+          <!-- Labels rendered as absolutely positioned elements -->
+        </div>
+      </div>
+    </div>
+    <div class="sketch-hint" id="sketchHint">Tap to place labels, draw with Apple Pencil or finger</div>
+    <div class="sketch-status" id="sketchStatus">Sketch saved</div>
+    </div>
+  </div>
 
   <!-- Notes -->
   <div class="equipment-section" style="margin-bottom:20px;">
@@ -952,7 +1069,7 @@ const EQUIPMENT_AUTO_SOURCES = {
   ],
   'Condensing Unit': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Mini Split': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
@@ -975,6 +1092,7 @@ const EQUIPMENT_AUTO_SOURCES = {
 // ============================================================================
 let sources = [];          // Current equipment's energy sources
 let photos = {};           // Current equipment's photos (keyed by slot id)
+let miscPhotos = [];       // Current equipment's misc photos [{dbKey, thumbnail, fileType, timestamp}]
 let savedEquipment = [];   // Accumulated saved equipment entries
 let editingEntry = null;   // Reference to the saved entry currently being edited (or null)
 let savedPanelOpen = false;
@@ -1017,19 +1135,16 @@ function init() {
     renderSources();
     updateHeaderBadge();
     checkStorage();
+    updateSketchSectionDefault();
   }).catch(() => {
     renderSavedPanel();
     renderSources();
     updateHeaderBadge();
+    updateSketchSectionDefault();
   });
 }
 
 // Called by handleEquipTypeChange with the resolved equipment type
-function isATSEquipment() {
-  const eqType = document.getElementById('equipType').value;
-  return eqType === 'ATS';
-}
-
 function equipTypeChanged(equipType) {
   // Clear auto-populated sources from previous equipment type before adding new ones.
   // Also shift photos to match new source indices.
@@ -1041,6 +1156,7 @@ function equipTypeChanged(equipType) {
     keepIndices.forEach((oldI, newI) => {
       if (photos[`source_${oldI}`]) newPhotos[`source_${newI}`] = photos[`source_${oldI}`];
     });
+    // Remove any remaining source_N photo keys not in the new map
     Object.keys(photos).forEach(k => { if (k.startsWith('source_') && !(k in newPhotos)) delete photos[k]; });
     Object.assign(photos, newPhotos);
     sources = newSources;
@@ -1088,6 +1204,7 @@ function equipTypeChanged(equipType) {
   }
 }
 
+// Voltage prompt configurations per equipment type
 const VOLTAGE_PROMPT_CONFIG = {
   'ATS': {
     title: 'ATS Voltage',
@@ -1153,6 +1270,7 @@ function showVoltageDialog(equipType) {
   document.body.appendChild(overlay);
   overlay.style.display = 'flex';
 
+  // Also add standard auto-sources for this equipment type (Kinetic, etc.)
   if (EQUIPMENT_AUTO_SOURCES[equipType]) {
     for (const autoSrc of EQUIPMENT_AUTO_SOURCES[equipType]) {
       const alreadyExists = sources.some(s => s.energySource === autoSrc.energySource && s.auto === true);
@@ -1172,6 +1290,7 @@ function applyVoltageChoice(voltage) {
   renderSources();
   autoSaveCurrent();
 
+  // Auto-suggest template
   if (equipType && EQUIPMENT_TEMPLATE_MAP[equipType]) {
     const templates = EQUIPMENT_TEMPLATE_MAP[equipType];
     if (templates.length === 1) {
@@ -1187,7 +1306,6 @@ function closeVoltageDialog() {
   pendingVoltageEquipType = null;
 }
 
-// Map equipment types to likely templates (for auto-suggest)
 // Map equipment types to available templates (filters dropdown + auto-selects if only one)
 const EQUIPMENT_TEMPLATE_MAP = {
   'Air Handler': ['AHU - Steam','AHU - HHW','AHU - Steam, CHW, HHW'],
@@ -1218,6 +1336,11 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Humidifier': ['Water Heater - Steam'],
 };
 
+// Equipment types that force a specific diagram regardless of template's default
+const EQUIPMENT_DIAGRAM_OVERRIDE = {
+  'Humidifier': 'general',
+};
+
 function filterTemplateDropdown(equipType) {
   const sel = document.getElementById('equipTemplate');
   const currentVal = sel.value;
@@ -1233,6 +1356,1482 @@ function filterTemplateDropdown(equipType) {
   // Restore previous selection if still valid
   if (currentVal && templates.includes(currentVal)) sel.value = currentVal;
 }
+
+// ============================================================================
+// SKETCH SYSTEM — SVG Diagrams + Canvas Drawing + Labels
+// ============================================================================
+
+// Template-to-diagram mapping
+const TEMPLATE_DIAGRAM_MAP = {
+  'AHU - Steam': 'ahu', 'AHU - HHW': 'ahu', 'AHU - Steam, CHW, HHW': 'ahu',
+  'Chilled Water Pump': 'pump', 'Heating Hot Water Pump': 'pump', 'Standard Pump': 'pump',
+  'Emergency Generator': 'generator',
+  'Chiller': 'chiller', 'Refrigerator': 'general',
+  'Heat Exchanger': 'heat_exchanger',
+  'Heat Exchanger - Steam': 'heat_exchanger',
+  'Heat Exchanger - CHW/Glycol': 'heat_exchanger',
+  'Exhaust Fan': 'exhaust_fan',
+  'Condensing Unit': 'ac_unit', 'Air Compressor': 'air_compressor',
+  'Boiler': 'boiler', 'Air Dryer': 'general',
+  'ATS - Generic': 'ats', 'ASCO 7000': 'ats', 'Non Byp': 'ats',
+  'Kohler': 'ats', 'Zenith': 'ats',
+  'Water Heater - Steam': 'steam_water_heater', 'Water Heater - Gas': 'electric_water_heater',
+  'Water Heater - Electric': 'general',
+  'Unit Heater - Steam': 'steam_water_heater', 'Unit Heater - HHW': 'heat_exchanger',
+  'Cooling Tower': 'cooling_tower',
+  'Condensate Return Unit': 'condensate_return', 'Condensate Return Unit - Steam': 'condensate_return',
+  'Elevator - Traction': 'traction_elevator', 'Elevator - Hydraulic': 'hydraulic_elevator',
+  'Vaccum Pump': 'medical_vacuum',
+  'Standard Electrical': 'general', 'UPS': 'ups',
+  'Medical Air Compressor': 'medical_air_compressor',
+};
+
+// SVG diagram definitions (colors from PDF: EQUIP_BLUE #3B6EA6, GRID_GRAY #D0D0D0, HEADER_NAVY #1B2A4A)
+const SKETCH_DIAGRAMS = {
+  pump: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <!-- Grid -->
+    <defs><pattern id="grid-pump" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-pump)"/>
+    <!-- Title bar -->
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — PUMP</text>
+    <!-- Motor -->
+    <rect x="140" y="180" width="120" height="90" rx="6" fill="none" stroke="#3B6EA6" stroke-width="2.5"/>
+    <text x="200" y="230" text-anchor="middle" fill="#3B6EA6" font-size="14" font-weight="bold" font-family="sans-serif">MOTOR</text>
+    <!-- Shaft coupling -->
+    <line x1="260" y1="225" x2="300" y2="225" stroke="#3B6EA6" stroke-width="3"/>
+    <rect x="270" y="215" width="20" height="20" rx="2" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <!-- Pump body -->
+    <circle cx="360" cy="225" r="55" fill="none" stroke="#3B6EA6" stroke-width="2.5"/>
+    <text x="360" y="230" text-anchor="middle" fill="#3B6EA6" font-size="14" font-weight="bold" font-family="sans-serif">PUMP</text>
+    <!-- Instruction text -->
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, W-1, etc.)</text>
+  </svg>`,
+
+  ahu: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-ahu" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-ahu)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — AIR HANDLER (AHU)</text>
+    <!-- AHU Cabinet -->
+    <rect x="60" y="100" width="490" height="160" rx="4" fill="none" stroke="#3B6EA6" stroke-width="2.5"/>
+    <!-- Outside Air Damper -->
+    <rect x="20" y="150" width="40" height="60" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <line x1="25" y1="155" x2="55" y2="205" stroke="#3B6EA6" stroke-width="1"/>
+    <line x1="25" y1="175" x2="55" y2="195" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="40" y="145" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">OA</text>
+    <!-- Filter section -->
+    <rect x="80" y="120" width="30" height="120" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <line x1="80" y1="120" x2="110" y2="240" stroke="#3B6EA6" stroke-width="0.8"/>
+    <line x1="110" y1="120" x2="80" y2="240" stroke="#3B6EA6" stroke-width="0.8"/>
+    <text x="95" y="115" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">FILTER</text>
+    <!-- Heating coil -->
+    <rect x="140" y="120" width="50" height="120" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <path d="M148,130 Q155,150 148,170 Q155,190 148,210 Q155,230 148,240" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <path d="M165,130 Q172,150 165,170 Q172,190 165,210 Q172,230 165,240" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <path d="M182,130 Q175,150 182,170 Q175,190 182,210 Q175,230 182,240" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="165" y="115" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">HTG COIL</text>
+    <!-- Cooling coil -->
+    <rect x="220" y="120" width="50" height="120" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <path d="M228,130 Q235,150 228,170 Q235,190 228,210 Q235,230 228,240" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <path d="M245,130 Q252,150 245,170 Q252,190 245,210 Q252,230 245,240" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <path d="M262,130 Q255,150 262,170 Q255,190 262,210 Q255,230 262,240" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="245" y="115" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">CLG COIL</text>
+    <!-- Supply fan -->
+    <circle cx="360" cy="180" r="45" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <circle cx="360" cy="180" r="10" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <line x1="360" y1="135" x2="360" y2="145" stroke="#3B6EA6" stroke-width="1.5"/>
+    <line x1="360" y1="215" x2="360" y2="225" stroke="#3B6EA6" stroke-width="1.5"/>
+    <line x1="315" y1="180" x2="325" y2="180" stroke="#3B6EA6" stroke-width="1.5"/>
+    <line x1="395" y1="180" x2="405" y2="180" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="360" y="240" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">SUPPLY FAN</text>
+    <!-- Motor (connected to fan) -->
+    <rect x="430" y="155" width="70" height="50" rx="4" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <text x="465" y="184" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">MOTOR</text>
+    <line x1="405" y1="180" x2="430" y2="180" stroke="#3B6EA6" stroke-width="2"/>
+    <!-- Instruction -->
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, S-1, W-1, etc.)</text>
+  </svg>`,
+
+  generator: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-gen" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-gen)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — EMERGENCY GENERATOR</text>
+    <!-- Engine block -->
+    <rect x="100" y="140" width="160" height="110" rx="6" fill="none" stroke="#3B6EA6" stroke-width="2.5"/>
+    <text x="180" y="200" text-anchor="middle" fill="#3B6EA6" font-size="14" font-weight="bold" font-family="sans-serif">ENGINE</text>
+    <!-- Alternator -->
+    <rect x="280" y="150" width="120" height="90" rx="6" fill="none" stroke="#3B6EA6" stroke-width="2.5"/>
+    <text x="340" y="200" text-anchor="middle" fill="#3B6EA6" font-size="13" font-weight="bold" font-family="sans-serif">ALTERNATOR</text>
+    <!-- Coupling -->
+    <line x1="260" y1="195" x2="280" y2="195" stroke="#3B6EA6" stroke-width="3"/>
+    <!-- Radiator -->
+    <rect x="100" y="60" width="80" height="50" rx="3" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="140" y="90" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">RADIATOR</text>
+    <!-- Fuel tank -->
+    <rect x="100" y="310" width="120" height="60" rx="8" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <text x="160" y="345" text-anchor="middle" fill="#3B6EA6" font-size="11" font-weight="bold" font-family="sans-serif">FUEL TANK</text>
+    <!-- ATS -->
+    <rect x="430" y="120" width="100" height="70" rx="4" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <text x="480" y="160" text-anchor="middle" fill="#3B6EA6" font-size="12" font-weight="bold" font-family="sans-serif">ATS</text>
+    <!-- Battery -->
+    <rect x="300" y="310" width="80" height="40" rx="4" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="340" y="335" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">BATTERY</text>
+    <!-- Main breaker on alternator output -->
+    <rect x="405" y="180" width="25" height="30" rx="2" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="418" y="218" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">BKR</text>
+    <!-- Block heater -->
+    <rect x="260" y="260" width="70" height="25" rx="3" fill="none" stroke="#3B6EA6" stroke-width="1.2"/>
+    <text x="295" y="277" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">BLK HTR</text>
+    <!-- Instruction -->
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, F-1, etc.)</text>
+  </svg>`,
+
+  general: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-gen2" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-gen2)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — GENERAL EQUIPMENT</text>
+    <text x="306" y="260" text-anchor="middle" fill="#888" font-size="13" font-style="italic" font-family="sans-serif">Use this blank grid to sketch equipment layout</text>
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels</text>
+  </svg>`,
+
+  chiller: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-chl" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-chl)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — CHILLER</text>
+    <!-- Main chiller body -->
+    <rect x="105" y="175" width="400" height="130" rx="4" fill="none" stroke="#3B6EA6" stroke-width="2.5" stroke-dasharray="6,3"/>
+    <!-- Section dividers -->
+    <line x1="238" y1="175" x2="238" y2="305" stroke="#3B6EA6" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <line x1="372" y1="175" x2="372" y2="305" stroke="#3B6EA6" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <!-- Section labels -->
+    <text x="172" y="244" text-anchor="middle" fill="#3B6EA6" font-size="11" font-weight="bold" font-family="sans-serif">COMPRESSOR</text>
+    <text x="305" y="244" text-anchor="middle" fill="#3B6EA6" font-size="11" font-weight="bold" font-family="sans-serif">CONDENSER</text>
+    <text x="438" y="244" text-anchor="middle" fill="#3B6EA6" font-size="11" font-weight="bold" font-family="sans-serif">EVAPORATOR</text>
+    <!-- Instruction -->
+    <text x="306" y="110" text-anchor="middle" fill="#888" font-size="10" font-style="italic" font-family="sans-serif">(Mark electrical disconnects, valve locations, refrigerant isolation, etc.)</text>
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, W-1, etc.)</text>
+  </svg>`,
+
+  heat_exchanger: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-hx" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-hx)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — HEAT EXCHANGER</text>
+    <!-- HX body (tall narrow rect) -->
+    <rect x="225" y="140" width="160" height="220" rx="4" fill="none" stroke="#3B6EA6" stroke-width="2.5" stroke-dasharray="6,3"/>
+    <!-- Plates inside -->
+    <line x1="235" y1="180" x2="375" y2="180" stroke="#3B6EA6" stroke-width="0.5" stroke-dasharray="6,3"/>
+    <line x1="235" y1="216" x2="375" y2="216" stroke="#3B6EA6" stroke-width="0.5" stroke-dasharray="6,3"/>
+    <line x1="235" y1="252" x2="375" y2="252" stroke="#3B6EA6" stroke-width="0.5" stroke-dasharray="6,3"/>
+    <line x1="235" y1="288" x2="375" y2="288" stroke="#3B6EA6" stroke-width="0.5" stroke-dasharray="6,3"/>
+    <line x1="235" y1="324" x2="375" y2="324" stroke="#3B6EA6" stroke-width="0.5" stroke-dasharray="6,3"/>
+    <text x="305" y="255" text-anchor="middle" fill="#3B6EA6" font-size="12" font-weight="bold" font-family="sans-serif">HX</text>
+    <!-- Instruction -->
+    <text x="306" y="420" text-anchor="middle" fill="#888" font-size="10" font-style="italic" font-family="sans-serif">(Mark isolation valves on tube &amp; shell sides, drains, vents, etc.)</text>
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (W-1, S-1, etc.)</text>
+  </svg>`,
+
+  exhaust_fan: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-ef" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-ef)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — EXHAUST FAN</text>
+    <!-- Fan circle -->
+    <circle cx="280" cy="240" r="70" fill="none" stroke="#3B6EA6" stroke-width="2.5" stroke-dasharray="6,3"/>
+    <!-- Fan blades -->
+    <line x1="280" y1="240" x2="329" y2="191" stroke="#3B6EA6" stroke-width="1.5"/>
+    <line x1="280" y1="240" x2="233" y2="186" stroke="#3B6EA6" stroke-width="1.5"/>
+    <line x1="280" y1="240" x2="231" y2="289" stroke="#3B6EA6" stroke-width="1.5"/>
+    <line x1="280" y1="240" x2="327" y2="294" stroke="#3B6EA6" stroke-width="1.5"/>
+    <line x1="280" y1="240" x2="280" y2="172" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="280" y="244" text-anchor="middle" fill="#3B6EA6" font-size="12" font-weight="bold" font-family="sans-serif">FAN</text>
+    <!-- Intake duct (top) -->
+    <rect x="255" y="105" width="50" height="65" fill="none" stroke="#3B6EA6" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="280" y="140" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">INTAKE</text>
+    <text x="280" y="152" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">DUCT</text>
+    <!-- Exhaust duct (bottom) -->
+    <rect x="255" y="310" width="50" height="65" fill="none" stroke="#3B6EA6" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="280" y="345" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">EXHAUST</text>
+    <text x="280" y="357" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">DUCT</text>
+    <!-- Motor -->
+    <rect x="380" y="220" width="70" height="40" rx="4" fill="none" stroke="#3B6EA6" stroke-width="2" stroke-dasharray="6,3"/>
+    <text x="415" y="244" text-anchor="middle" fill="#3B6EA6" font-size="11" font-weight="bold" font-family="sans-serif">MOTOR</text>
+    <!-- Shaft -->
+    <line x1="350" y1="240" x2="380" y2="240" stroke="#3B6EA6" stroke-width="2" stroke-dasharray="2,2"/>
+    <!-- Instruction -->
+    <text x="306" y="430" text-anchor="middle" fill="#888" font-size="10" font-style="italic" font-family="sans-serif">(Mark electrical disconnect, belt guard, damper, etc.)</text>
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, etc.)</text>
+  </svg>`,
+
+  ac_unit: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-ac" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-ac)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — AC UNIT</text>
+    <!-- Main body -->
+    <rect x="155" y="175" width="300" height="130" rx="4" fill="none" stroke="#3B6EA6" stroke-width="2.5" stroke-dasharray="6,3"/>
+    <!-- Divider -->
+    <line x1="305" y1="175" x2="305" y2="305" stroke="#3B6EA6" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <!-- Section labels -->
+    <text x="230" y="238" text-anchor="middle" fill="#3B6EA6" font-size="11" font-weight="bold" font-family="sans-serif">CONDENSER</text>
+    <text x="230" y="254" text-anchor="middle" fill="#3B6EA6" font-size="11" font-weight="bold" font-family="sans-serif">SECTION</text>
+    <text x="380" y="238" text-anchor="middle" fill="#3B6EA6" font-size="11" font-weight="bold" font-family="sans-serif">EVAPORATOR</text>
+    <text x="380" y="254" text-anchor="middle" fill="#3B6EA6" font-size="11" font-weight="bold" font-family="sans-serif">SECTION</text>
+    <!-- Instruction -->
+    <text x="306" y="130" text-anchor="middle" fill="#888" font-size="10" font-style="italic" font-family="sans-serif">(Mark electrical disconnect, refrigerant valves, condensate drain, etc.)</text>
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, etc.)</text>
+  </svg>`,
+
+  air_compressor: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-aircomp" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-aircomp)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — AIR COMPRESSOR</text>
+    <!-- Compressor unit -->
+    <rect x="160" y="210" width="120" height="70" rx="4" fill="none" stroke="#3B6EA6" stroke-width="2.5" stroke-dasharray="6,3"/>
+    <text x="220" y="250" text-anchor="middle" fill="#3B6EA6" font-size="11" font-weight="bold" font-family="sans-serif">COMPRESSOR</text>
+    <!-- Receiver tank -->
+    <rect x="320" y="200" width="80" height="90" rx="20" fill="none" stroke="#3B6EA6" stroke-width="2.5" stroke-dasharray="6,3"/>
+    <text x="360" y="245" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">RECEIVER</text>
+    <text x="360" y="258" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">TANK</text>
+    <!-- Motor -->
+    <rect x="170" y="155" width="70" height="35" rx="4" fill="none" stroke="#3B6EA6" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="205" y="177" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">MOTOR</text>
+    <!-- Instruction -->
+    <text x="306" y="360" text-anchor="middle" fill="#888" font-size="10" font-style="italic" font-family="sans-serif">(Mark electrical disconnect, pressure relief, drain valve, isolation valves, etc.)</text>
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, P-1, etc.)</text>
+  </svg>`,
+
+  boiler: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-blr" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-blr)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — BOILER</text>
+    <!-- Boiler vessel -->
+    <rect x="230" y="165" width="180" height="150" rx="10" fill="none" stroke="#3B6EA6" stroke-width="2.5" stroke-dasharray="6,3"/>
+    <text x="320" y="238" text-anchor="middle" fill="#3B6EA6" font-size="13" font-weight="bold" font-family="sans-serif">BOILER</text>
+    <text x="320" y="254" text-anchor="middle" fill="#3B6EA6" font-size="13" font-weight="bold" font-family="sans-serif">VESSEL</text>
+    <!-- Burner -->
+    <rect x="130" y="215" width="100" height="50" rx="4" fill="none" stroke="#3B6EA6" stroke-width="2" stroke-dasharray="6,3"/>
+    <text x="180" y="244" text-anchor="middle" fill="#3B6EA6" font-size="11" font-weight="bold" font-family="sans-serif">BURNER</text>
+    <!-- Instruction -->
+    <text x="306" y="420" text-anchor="middle" fill="#888" font-size="10" font-style="italic" font-family="sans-serif">(Mark gas valve train, electrical disconnect, steam valves, blowdown, etc.)</text>
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, G-1, S-1, etc.)</text>
+  </svg>`,
+
+  ats: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-ats" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-ats)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — ATS</text>
+    <!-- ATS body -->
+    <rect x="220" y="195" width="170" height="110" rx="4" fill="none" stroke="#3B6EA6" stroke-width="2.5" stroke-dasharray="6,3"/>
+    <text x="305" y="240" text-anchor="middle" fill="#3B6EA6" font-size="13" font-weight="bold" font-family="sans-serif">AUTOMATIC</text>
+    <text x="305" y="256" text-anchor="middle" fill="#3B6EA6" font-size="13" font-weight="bold" font-family="sans-serif">TRANSFER</text>
+    <text x="305" y="272" text-anchor="middle" fill="#3B6EA6" font-size="13" font-weight="bold" font-family="sans-serif">SWITCH</text>
+    <!-- Instruction -->
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, etc.)</text>
+  </svg>`,
+
+  electric_water_heater: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-ewh" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-ewh)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — ELECTRIC WATER HEATER</text>
+    <!-- Tank (vertical) -->
+    <rect x="250" y="120" width="80" height="260" rx="16" fill="none" stroke="#3B6EA6" stroke-width="2.5" stroke-dasharray="6,3"/>
+    <text x="290" y="248" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">ELECTRIC</text>
+    <text x="290" y="262" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">WATER HTR</text>
+    <!-- JBOX -->
+    <rect x="330" y="215" width="50" height="40" rx="3" fill="none" stroke="#3B6EA6" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="355" y="240" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">JBOX</text>
+    <!-- Instruction -->
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, W-1, etc.)</text>
+  </svg>`,
+
+  steam_water_heater: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-swh" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-swh)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — STEAM WATER HEATER</text>
+    <!-- Main shell -->
+    <rect x="240" y="110" width="80" height="280" rx="16" fill="none" stroke="#3B6EA6" stroke-width="2.5" stroke-dasharray="6,3"/>
+    <text x="280" y="245" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">STEAM</text>
+    <text x="280" y="259" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">WATER</text>
+    <text x="280" y="273" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">HEATER</text>
+    <!-- Control box (right) -->
+    <rect x="320" y="175" width="50" height="55" rx="3" fill="none" stroke="#3B6EA6" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="345" y="207" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">CTRL</text>
+    <!-- Base plate -->
+    <rect x="225" y="390" width="110" height="25" rx="3" fill="none" stroke="#3B6EA6" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <!-- Pressure gauge -->
+    <circle cx="332" cy="290" r="8" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="332" y="293" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">P</text>
+    <!-- Instruction -->
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, S-1, W-1, etc.)</text>
+  </svg>`,
+
+  cooling_tower: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-ct" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-ct)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — COOLING TOWER</text>
+    <!-- Tower basin -->
+    <rect x="206" y="90" width="200" height="310" fill="none" stroke="#3B6EA6" stroke-width="2.5"/>
+    <text x="306" y="115" text-anchor="middle" fill="#3B6EA6" font-size="12" font-weight="bold" font-family="sans-serif">COOLING TOWER</text>
+    <text x="306" y="375" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">BASIN</text>
+    <!-- Fan 1 -->
+    <circle cx="266" cy="195" r="35" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <line x1="241" y1="170" x2="291" y2="220" stroke="#3B6EA6" stroke-width="1.2"/>
+    <line x1="291" y1="170" x2="241" y2="220" stroke="#3B6EA6" stroke-width="1.2"/>
+    <text x="266" y="238" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">FAN 1</text>
+    <!-- Fan 2 -->
+    <circle cx="346" cy="195" r="35" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <line x1="321" y1="170" x2="371" y2="220" stroke="#3B6EA6" stroke-width="1.2"/>
+    <line x1="371" y1="170" x2="321" y2="220" stroke="#3B6EA6" stroke-width="1.2"/>
+    <text x="346" y="238" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">FAN 2</text>
+    <!-- Motor -->
+    <rect x="281" y="265" width="50" height="30" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="306" y="284" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">MOTOR</text>
+    <!-- Instruction -->
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, W-1, etc.)</text>
+  </svg>`,
+
+  condensate_return: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-cru" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-cru)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — CONDENSATE RETURN UNIT</text>
+    <!-- Receiver tank -->
+    <rect x="245" y="120" width="120" height="120" fill="none" stroke="#3B6EA6" stroke-width="2.5"/>
+    <text x="305" y="178" text-anchor="middle" fill="#3B6EA6" font-size="11" font-weight="bold" font-family="sans-serif">RECEIVER</text>
+    <text x="305" y="193" text-anchor="middle" fill="#3B6EA6" font-size="11" font-weight="bold" font-family="sans-serif">TANK</text>
+    <!-- Level control -->
+    <rect x="330" y="133" width="30" height="18" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="345" y="145" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">LEVEL</text>
+    <!-- Pump 1 (below left) -->
+    <rect x="190" y="290" width="75" height="50" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <text x="228" y="320" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">PUMP 1</text>
+    <!-- Motor 1 -->
+    <rect x="203" y="350" width="50" height="22" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="228" y="365" text-anchor="middle" fill="#3B6EA6" font-size="8" font-family="sans-serif">MOTOR</text>
+    <!-- Pump 2 (below right) -->
+    <rect x="340" y="290" width="75" height="50" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <text x="378" y="320" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">PUMP 2</text>
+    <!-- Motor 2 -->
+    <rect x="353" y="350" width="50" height="22" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="378" y="365" text-anchor="middle" fill="#3B6EA6" font-size="8" font-family="sans-serif">MOTOR</text>
+    <!-- ELEC J-BOX -->
+    <rect x="480" y="290" width="55" height="40" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="508" y="310" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">ELEC</text>
+    <text x="508" y="322" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">J-BOX</text>
+    <!-- Instruction -->
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, S-1, etc.)</text>
+  </svg>`,
+
+  medical_air_compressor: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-mac" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-mac)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — MEDICAL AIR COMPRESSOR</text>
+    <!-- Intake filter -->
+    <rect x="30" y="225" width="40" height="40" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="50" y="243" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">INTAKE</text>
+    <text x="50" y="254" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">FILTER</text>
+    <!-- Compressor 1 (upper) -->
+    <rect x="105" y="150" width="80" height="55" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <text x="145" y="182" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">COMP 1</text>
+    <rect x="120" y="210" width="50" height="20" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="145" y="224" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">MOTOR 1</text>
+    <!-- Compressor 2 (lower) -->
+    <rect x="105" y="280" width="80" height="55" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <text x="145" y="312" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">COMP 2</text>
+    <rect x="120" y="340" width="50" height="20" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="145" y="354" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">MOTOR 2</text>
+    <!-- Aftercooler -->
+    <rect x="220" y="225" width="50" height="45" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="245" y="246" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">AFTER</text>
+    <text x="245" y="258" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">COOLER</text>
+    <!-- Dryer -->
+    <rect x="295" y="218" width="50" height="58" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="320" y="245" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">AIR</text>
+    <text x="320" y="257" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">DRYER</text>
+    <!-- Receiver tank -->
+    <rect x="370" y="205" width="60" height="90" rx="8" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <text x="400" y="248" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">RECEIVER</text>
+    <text x="400" y="261" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">TANK</text>
+    <!-- Control panel -->
+    <rect x="220" y="370" width="60" height="35" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="250" y="388" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">CONTROL</text>
+    <text x="250" y="399" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">PANEL</text>
+    <!-- Dew point monitor -->
+    <rect x="295" y="140" width="50" height="25" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="320" y="153" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">DEW PT</text>
+    <text x="320" y="162" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">MONITOR</text>
+    <!-- CO monitor -->
+    <rect x="375" y="140" width="50" height="25" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="400" y="153" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">CO MON</text>
+    <text x="400" y="162" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">(NFPA 99)</text>
+    <!-- Instruction -->
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, P-1, etc.)</text>
+  </svg>`,
+
+  traction_elevator: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-te" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-te)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">ELEVATION VIEW — TRACTION ELEVATOR</text>
+    <!-- Machine Room (top zone) -->
+    <rect x="186" y="45" width="240" height="120" fill="none" stroke="#999" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="306" y="60" text-anchor="middle" fill="#999" font-size="10" font-weight="bold" font-family="sans-serif">MACHINE ROOM</text>
+    <!-- Motor/Sheave -->
+    <rect x="200" y="85" width="60" height="40" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="230" y="103" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">MOTOR/</text>
+    <text x="230" y="114" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">SHEAVE</text>
+    <!-- Brake -->
+    <rect x="268" y="93" width="40" height="28" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="288" y="111" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">BRAKE</text>
+    <!-- Governor -->
+    <rect x="316" y="85" width="35" height="40" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="334" y="103" text-anchor="middle" fill="#3B6EA6" font-size="7" font-weight="bold" font-family="sans-serif">GOV-</text>
+    <text x="334" y="114" text-anchor="middle" fill="#3B6EA6" font-size="7" font-weight="bold" font-family="sans-serif">ERNOR</text>
+    <!-- Controller/VFD -->
+    <rect x="360" y="80" width="55" height="48" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="388" y="101" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">CTRL</text>
+    <text x="388" y="113" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">/ VFD</text>
+    <!-- Hoistway (middle zone) -->
+    <rect x="226" y="175" width="160" height="190" fill="none" stroke="#999" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="306" y="190" text-anchor="middle" fill="#999" font-size="10" font-weight="bold" font-family="sans-serif">HOISTWAY</text>
+    <!-- Guide rails -->
+    <line x1="234" y1="180" x2="234" y2="360" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="3,2"/>
+    <line x1="378" y1="180" x2="378" y2="360" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="234" y="200" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">RAIL</text>
+    <text x="378" y="200" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">RAIL</text>
+    <!-- Car -->
+    <rect x="248" y="260" width="70" height="60" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <text x="283" y="295" text-anchor="middle" fill="#3B6EA6" font-size="11" font-weight="bold" font-family="sans-serif">CAR</text>
+    <!-- Door operator -->
+    <rect x="318" y="275" width="30" height="24" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="333" y="287" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">DOOR</text>
+    <text x="333" y="295" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">OPER</text>
+    <!-- Counterweight -->
+    <rect x="350" y="240" width="25" height="45" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="363" y="261" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">CTR</text>
+    <text x="363" y="271" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">WT</text>
+    <!-- Ropes -->
+    <line x1="230" y1="125" x2="283" y2="260" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="2,2"/>
+    <text x="248" y="195" fill="#3B6EA6" font-size="7" font-family="sans-serif">ROPES</text>
+    <!-- Traveling cable -->
+    <line x1="313" y1="260" x2="313" y2="165" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="4,3"/>
+    <text x="322" y="215" fill="#3B6EA6" font-size="7" font-family="sans-serif">T-CABLE</text>
+    <!-- Pit (bottom zone) -->
+    <rect x="226" y="375" width="160" height="75" fill="none" stroke="#999" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="306" y="390" text-anchor="middle" fill="#999" font-size="10" font-weight="bold" font-family="sans-serif">PIT</text>
+    <!-- Buffer -->
+    <rect x="240" y="420" width="35" height="22" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="258" y="435" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">BUFFER</text>
+    <!-- Gov sheave -->
+    <rect x="285" y="420" width="35" height="22" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="303" y="431" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">GOV</text>
+    <text x="303" y="439" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">SHEAVE</text>
+    <!-- Sump -->
+    <rect x="330" y="425" width="35" height="17" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="348" y="437" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">SUMP</text>
+    <!-- Instruction -->
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, K-1, etc.)</text>
+  </svg>`,
+
+  hydraulic_elevator: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-he" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-he)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">ELEVATION VIEW — HYDRAULIC ELEVATOR</text>
+    <!-- Machine Room (left) -->
+    <rect x="40" y="115" width="210" height="250" fill="none" stroke="#999" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="145" y="130" text-anchor="middle" fill="#999" font-size="10" font-weight="bold" font-family="sans-serif">MACHINE ROOM</text>
+    <!-- HPU -->
+    <rect x="55" y="190" width="90" height="100" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <text x="100" y="235" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">HYD POWER</text>
+    <text x="100" y="248" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">UNIT</text>
+    <text x="100" y="265" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">MOTOR</text>
+    <text x="100" y="275" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">PUMP</text>
+    <text x="100" y="285" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">VALVE ASSY</text>
+    <!-- Oil reservoir -->
+    <rect x="55" y="300" width="90" height="45" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="100" y="322" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">OIL</text>
+    <text x="100" y="334" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">RESERVOIR</text>
+    <!-- Controller -->
+    <rect x="165" y="200" width="60" height="60" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="195" y="234" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">CTRL</text>
+    <!-- Manual lowering valve -->
+    <rect x="155" y="145" width="45" height="30" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="178" y="159" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">MANUAL</text>
+    <text x="178" y="169" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">LOWER</text>
+    <!-- Hoistway (right) -->
+    <rect x="280" y="55" width="200" height="395" fill="none" stroke="#999" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="380" y="70" text-anchor="middle" fill="#999" font-size="10" font-weight="bold" font-family="sans-serif">HOISTWAY</text>
+    <!-- Guide rails -->
+    <line x1="290" y1="60" x2="290" y2="440" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="3,2"/>
+    <line x1="470" y1="60" x2="470" y2="440" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="290" y="82" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">RAIL</text>
+    <text x="470" y="82" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">RAIL</text>
+    <!-- Hydraulic jack/cylinder -->
+    <rect x="372" y="120" width="16" height="280" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="380" y="270" text-anchor="middle" fill="#3B6EA6" font-size="7" font-weight="bold" font-family="sans-serif" transform="rotate(-90 380 270)">HYD JACK / CYLINDER</text>
+    <!-- Car -->
+    <rect x="310" y="110" width="80" height="65" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <text x="350" y="148" text-anchor="middle" fill="#3B6EA6" font-size="11" font-weight="bold" font-family="sans-serif">CAR</text>
+    <!-- Door operator -->
+    <rect x="390" y="125" width="30" height="24" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="405" y="137" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">DOOR</text>
+    <text x="405" y="145" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">OPER</text>
+    <!-- Buffer -->
+    <rect x="310" y="425" width="35" height="18" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="328" y="438" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">BUFFER</text>
+    <!-- Instruction -->
+    <text x="306" y="475" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, H-1, etc.)</text>
+  </svg>`,
+
+  medical_vacuum: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-mv" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-mv)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — MEDICAL VACUUM</text>
+    <!-- Bacteria filter -->
+    <rect x="85" y="145" width="50" height="35" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="110" y="162" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">BACT</text>
+    <text x="110" y="173" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">FILTER</text>
+    <!-- Vacuum receiver tank -->
+    <rect x="215" y="100" width="120" height="145" rx="10" fill="none" stroke="#3B6EA6" stroke-width="2.5"/>
+    <text x="275" y="165" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">VACUUM</text>
+    <text x="275" y="179" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">RECEIVER</text>
+    <text x="275" y="193" text-anchor="middle" fill="#3B6EA6" font-size="10" font-weight="bold" font-family="sans-serif">TANK</text>
+    <!-- Vacuum gauge -->
+    <circle cx="310" cy="120" r="12" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="310" y="119" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">VAC</text>
+    <text x="310" y="127" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">GAUGE</text>
+    <!-- Vacuum pump 1 (below left) -->
+    <rect x="170" y="300" width="75" height="50" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <text x="208" y="322" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">VAC</text>
+    <text x="208" y="335" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">PUMP 1</text>
+    <rect x="185" y="358" width="50" height="20" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="210" y="372" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">MOTOR 1</text>
+    <!-- Check valve 1 -->
+    <rect x="250" y="310" width="22" height="18" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="261" y="323" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">CHK</text>
+    <!-- Vacuum pump 2 (below right) -->
+    <rect x="330" y="300" width="75" height="50" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <text x="368" y="322" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">VAC</text>
+    <text x="368" y="335" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">PUMP 2</text>
+    <rect x="345" y="358" width="50" height="20" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="370" y="372" text-anchor="middle" fill="#3B6EA6" font-size="7" font-family="sans-serif">MOTOR 2</text>
+    <!-- Check valve 2 -->
+    <rect x="410" y="310" width="22" height="18" fill="none" stroke="#3B6EA6" stroke-width="1"/>
+    <text x="421" y="323" text-anchor="middle" fill="#3B6EA6" font-size="6" font-family="sans-serif">CHK</text>
+    <!-- Control panel -->
+    <rect x="490" y="140" width="65" height="35" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="523" y="158" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">CONTROL</text>
+    <text x="523" y="169" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">PANEL</text>
+    <!-- Alarm -->
+    <rect x="490" y="100" width="65" height="28" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="523" y="118" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">ALARM</text>
+    <!-- Instruction -->
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, etc.)</text>
+  </svg>`,
+
+  ups: `<svg viewBox="0 0 612 500" xmlns="http://www.w3.org/2000/svg" class="sketch-bg">
+    <rect width="612" height="500" fill="#fff"/>
+    <defs><pattern id="grid-ups" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M 18 0 L 0 0 0 18" fill="none" stroke="#D0D0D0" stroke-width="0.5"/></pattern></defs>
+    <rect width="612" height="500" fill="url(#grid-ups)"/>
+    <rect x="0" y="0" width="612" height="32" fill="#1B2A4A"/>
+    <text x="306" y="22" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold" font-family="sans-serif">OVERHEAD SKETCH — UPS</text>
+    <!-- UPS Cabinet -->
+    <rect x="120" y="100" width="370" height="180" fill="none" stroke="#999" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="305" y="115" text-anchor="middle" fill="#999" font-size="10" font-weight="bold" font-family="sans-serif">UPS CABINET</text>
+    <!-- Power path blocks (left to right) -->
+    <!-- Input breaker -->
+    <rect x="135" y="140" width="45" height="45" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="158" y="161" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">INPUT</text>
+    <text x="158" y="173" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">BRKR</text>
+    <!-- Rectifier/Charger -->
+    <rect x="195" y="140" width="65" height="45" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="228" y="161" text-anchor="middle" fill="#3B6EA6" font-size="7" font-weight="bold" font-family="sans-serif">RECTIFIER</text>
+    <text x="228" y="173" text-anchor="middle" fill="#3B6EA6" font-size="7" font-weight="bold" font-family="sans-serif">/ CHARGER</text>
+    <!-- DC Bus -->
+    <rect x="275" y="140" width="40" height="45" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="295" y="161" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">DC</text>
+    <text x="295" y="173" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">BUS</text>
+    <!-- Inverter -->
+    <rect x="330" y="140" width="55" height="45" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="358" y="161" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">INVER-</text>
+    <text x="358" y="173" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">TER</text>
+    <!-- Output breaker -->
+    <rect x="400" y="140" width="45" height="45" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="423" y="161" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">OUTPUT</text>
+    <text x="423" y="173" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">BRKR</text>
+    <!-- Flow arrows -->
+    <line x1="180" y1="163" x2="195" y2="163" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="3,2"/>
+    <line x1="260" y1="163" x2="275" y2="163" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="3,2"/>
+    <line x1="315" y1="163" x2="330" y2="163" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="3,2"/>
+    <line x1="385" y1="163" x2="400" y2="163" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="3,2"/>
+    <!-- Static bypass -->
+    <rect x="265" y="230" width="80" height="30" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="305" y="249" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">STATIC BYPASS</text>
+    <!-- Bypass path lines -->
+    <line x1="158" y1="185" x2="158" y2="245" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="4,3"/>
+    <line x1="158" y1="245" x2="265" y2="245" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="4,3"/>
+    <line x1="345" y1="245" x2="423" y2="245" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="4,3"/>
+    <line x1="423" y1="245" x2="423" y2="185" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="4,3"/>
+    <!-- Utility feed (left) -->
+    <line x1="30" y1="163" x2="120" y2="163" stroke="#3B6EA6" stroke-width="1.5" stroke-dasharray="5,3"/>
+    <text x="35" y="155" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">UTILITY</text>
+    <text x="35" y="175" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">FEED</text>
+    <!-- Critical loads (right) -->
+    <line x1="490" y1="163" x2="585" y2="163" stroke="#3B6EA6" stroke-width="1.5" stroke-dasharray="5,3"/>
+    <text x="498" y="155" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">TO CRITICAL</text>
+    <text x="498" y="175" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">LOADS</text>
+    <!-- Maintenance bypass breaker (above cabinet) -->
+    <rect x="265" y="55" width="80" height="30" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="305" y="72" text-anchor="middle" fill="#3B6EA6" font-size="7" font-weight="bold" font-family="sans-serif">MAINT BYPASS</text>
+    <text x="305" y="82" text-anchor="middle" fill="#3B6EA6" font-size="7" font-weight="bold" font-family="sans-serif">BREAKER (EXT)</text>
+    <!-- Maint bypass lines -->
+    <line x1="265" y1="70" x2="120" y2="163" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="4,3"/>
+    <line x1="345" y1="70" x2="490" y2="163" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="4,3"/>
+    <!-- Battery Cabinet 1 -->
+    <rect x="155" y="330" width="95" height="55" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <text x="203" y="355" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">BATTERY</text>
+    <text x="203" y="368" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">CAB 1</text>
+    <!-- Battery Cabinet 2 -->
+    <rect x="360" y="330" width="95" height="55" fill="none" stroke="#3B6EA6" stroke-width="2"/>
+    <text x="408" y="355" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">BATTERY</text>
+    <text x="408" y="368" text-anchor="middle" fill="#3B6EA6" font-size="9" font-weight="bold" font-family="sans-serif">CAB 2</text>
+    <!-- Battery breaker -->
+    <rect x="275" y="340" width="50" height="30" fill="none" stroke="#3B6EA6" stroke-width="1.5"/>
+    <text x="300" y="359" text-anchor="middle" fill="#3B6EA6" font-size="8" font-weight="bold" font-family="sans-serif">BATT BRKR</text>
+    <!-- Battery lines to DC bus -->
+    <line x1="250" y1="355" x2="275" y2="355" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="4,3"/>
+    <line x1="360" y1="355" x2="325" y2="355" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="4,3"/>
+    <line x1="300" y1="340" x2="295" y2="185" stroke="#3B6EA6" stroke-width="1" stroke-dasharray="4,3"/>
+    <!-- Warning -->
+    <text x="306" y="430" text-anchor="middle" fill="#C41E3A" font-size="9" font-weight="bold" font-family="sans-serif">WARNING: Batteries remain energized when utility is disconnected</text>
+    <!-- Instruction -->
+    <text x="306" y="470" text-anchor="middle" fill="#888" font-size="11" font-style="italic" font-family="sans-serif">Mark isolation points with energy labels (E-1, etc.)</text>
+  </svg>`
+};
+
+// Energy source prefix mapping for auto-labels
+const ENERGY_LABEL_PREFIX = {
+  'Electrical': 'E', 'HPS': 'S', 'LPS': 'S', 'MPS': 'S', 'Steam': 'S',
+  'Condensate': 'W',
+  'CHW': 'W', 'HHW': 'W', 'CW': 'W', 'Domestic': 'W', 'Water': 'W',
+  'DHW': 'W', 'DW': 'W', 'Condenser': 'W', 'Feedwater': 'W',
+  'Pneumatic': 'P', 'Compressed': 'P', 'Vacuum Air': 'P', 'CA': 'P',
+  'Fuel Oil': 'F', 'Fuel': 'F', 'Diesel': 'F',
+  'Natural Gas': 'G', 'Propane': 'G', 'Gas': 'G',
+  'Hydraulic': 'H', 'Glycol': 'W', 'Kinetic': 'K', 'Gravity': 'GP',
+  'Chemical': 'CH', 'Thermal': 'TH', 'Refrigerant': 'R',
+};
+
+const ENERGY_LABEL_COLORS = {
+  'E': '#d94a4a', 'S': '#e07020', 'W': '#2a7fff', 'P': '#2ea843',
+  'F': '#d9a84a', 'H': '#9b59b6', 'G': '#2ea843', 'K': '#888', 'GP': '#888',
+  'CH': '#c0392b', 'TH': '#e67e22', 'R': '#1abc9c'
+};
+
+// Sketch state
+let sketchTool = 'pen';
+let sketchColor = '#d94a4a';
+let sketchLineWidth = 3;
+let sketchStrokes = [];    // Array of stroke arrays (each stroke = array of {x,y} points + color + width)
+let sketchLabels = [];     // Array of {x, y, text, color} (positions as fraction 0-1 of container)
+let sketchDiagramKey = null;
+let sketchCanvas = null;
+let sketchCtx = null;
+let isDrawing = false;
+let currentStroke = null;
+
+function initSketchCanvas() {
+  sketchCanvas = document.getElementById('sketchCanvas');
+  if (!sketchCanvas) return;
+  sketchCtx = sketchCanvas.getContext('2d');
+
+  // Pointer events for Apple Pencil + touch + mouse
+  sketchCanvas.addEventListener('pointerdown', sketchPointerDown);
+  sketchCanvas.addEventListener('pointermove', sketchPointerMove);
+  sketchCanvas.addEventListener('pointerup', sketchPointerUp);
+  sketchCanvas.addEventListener('pointercancel', sketchPointerUp);
+  // Prevent scroll while drawing
+  sketchCanvas.addEventListener('touchstart', e => { if (sketchTool !== 'label') e.preventDefault(); }, { passive: false });
+  sketchCanvas.addEventListener('touchmove', e => { if (sketchTool !== 'label') e.preventDefault(); }, { passive: false });
+}
+
+function resizeSketchCanvas() {
+  if (!sketchCanvas) return;
+  const container = document.getElementById('sketchContainer');
+  const svg = container.querySelector('svg');
+  if (!svg) return;
+  const rect = svg.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 2;
+  sketchCanvas.width = rect.width * dpr;
+  sketchCanvas.height = rect.height * dpr;
+  sketchCanvas.style.width = rect.width + 'px';
+  sketchCanvas.style.height = rect.height + 'px';
+  sketchCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  redrawSketchStrokes();
+}
+
+function getSketchPos(e) {
+  const rect = sketchCanvas.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+function sketchPointerDown(e) {
+  if (sketchTool === 'label') {
+    e.preventDefault();
+    const pos = getSketchPos(e);
+    placeLabel(pos);
+    return;
+  }
+  isDrawing = true;
+  sketchCanvas.setPointerCapture(e.pointerId);
+  const pos = getSketchPos(e);
+  const width = sketchTool === 'eraser' ? 20 : sketchLineWidth;
+  currentStroke = {
+    points: [pos],
+    color: sketchTool === 'eraser' ? '#ffffff' : sketchColor,
+    width: width,
+    isEraser: sketchTool === 'eraser'
+  };
+}
+
+function sketchPointerMove(e) {
+  if (!isDrawing || !currentStroke) return;
+  const pos = getSketchPos(e);
+  currentStroke.points.push(pos);
+  // Draw the latest segment
+  const pts = currentStroke.points;
+  sketchCtx.beginPath();
+  sketchCtx.strokeStyle = currentStroke.color;
+  sketchCtx.lineWidth = currentStroke.width;
+  sketchCtx.lineCap = 'round';
+  sketchCtx.lineJoin = 'round';
+  if (currentStroke.isEraser) {
+    sketchCtx.globalCompositeOperation = 'destination-out';
+  }
+  if (pts.length >= 2) {
+    sketchCtx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
+    sketchCtx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+  }
+  sketchCtx.stroke();
+  sketchCtx.globalCompositeOperation = 'source-over';
+}
+
+function sketchPointerUp(e) {
+  if (!isDrawing) return;
+  isDrawing = false;
+  if (currentStroke && currentStroke.points.length > 1) {
+    sketchStrokes.push(currentStroke);
+    autoSaveSketch();
+  }
+  currentStroke = null;
+}
+
+function redrawSketchStrokes() {
+  if (!sketchCtx) return;
+  const w = sketchCanvas.width / (window.devicePixelRatio || 2);
+  const h = sketchCanvas.height / (window.devicePixelRatio || 2);
+  sketchCtx.clearRect(0, 0, w, h);
+  for (const stroke of sketchStrokes) {
+    if (stroke.points.length < 2) continue;
+    sketchCtx.beginPath();
+    sketchCtx.strokeStyle = stroke.color;
+    sketchCtx.lineWidth = stroke.width;
+    sketchCtx.lineCap = 'round';
+    sketchCtx.lineJoin = 'round';
+    if (stroke.isEraser) sketchCtx.globalCompositeOperation = 'destination-out';
+    sketchCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
+    for (let i = 1; i < stroke.points.length; i++) {
+      sketchCtx.lineTo(stroke.points[i].x, stroke.points[i].y);
+    }
+    sketchCtx.stroke();
+    sketchCtx.globalCompositeOperation = 'source-over';
+  }
+}
+
+function setSketchTool(tool) {
+  closeLabelPicker();
+  sketchTool = tool;
+  document.querySelectorAll('#sketchToolbar .tool-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('tool' + tool.charAt(0).toUpperCase() + tool.slice(1));
+  if (btn) btn.classList.add('active');
+  // Update cursor
+  if (sketchCanvas) {
+    sketchCanvas.style.cursor = tool === 'eraser' ? 'cell' : tool === 'label' ? 'crosshair' : 'crosshair';
+  }
+}
+
+function setSketchColor(color, el) {
+  sketchColor = color;
+  document.querySelectorAll('#sketchToolbar .color-swatch').forEach(s => s.classList.remove('active'));
+  if (el) el.classList.add('active');
+  // Switch to pen tool when picking a color
+  setSketchTool('pen');
+}
+
+function sketchUndo() {
+  if (sketchStrokes.length > 0) {
+    sketchStrokes.pop();
+    redrawSketchStrokes();
+    autoSaveSketch();
+  } else if (sketchLabels.length > 0) {
+    sketchLabels.pop();
+    renderSketchLabels();
+    autoSaveSketch();
+  }
+}
+
+function undoLastLabel() {
+  if (sketchLabels.length > 0) {
+    sketchLabels.pop();
+    renderSketchLabels();
+    autoSaveSketch();
+  } else {
+    showToast('No labels to undo', true);
+  }
+}
+
+function clearSketch() {
+  if (sketchStrokes.length === 0 && sketchLabels.length === 0) return;
+  if (!confirm('Clear all sketch annotations?')) return;
+  sketchStrokes = [];
+  sketchLabels = [];
+  redrawSketchStrokes();
+  renderSketchLabels();
+  autoSaveSketch();
+}
+
+// Label placement — room-based numbering
+// Counts labels from all saved equipment in the same building+room so numbering continues
+function getRoomLabelCounts() {
+  const building = (getBuilding() || '').trim().toLowerCase();
+  const room = (document.getElementById('equipRoom').value || '').trim().toLowerCase();
+  const counts = {}; // { prefix: totalCount }
+
+  if (!building && !room) return counts;
+
+  for (const entry of savedEquipment) {
+    const eBldg = (entry.equipBuilding || '').trim().toLowerCase();
+    const eRoom = (entry.equipRoom || '').trim().toLowerCase();
+    if (eBldg !== building || eRoom !== room) continue;
+
+    // Count labels from this entry's sketch
+    if (entry.sketch && entry.sketch.labels) {
+      for (const lbl of entry.sketch.labels) {
+        const match = lbl.text.match(/^([A-Z]+)-(\d+)$/);
+        if (match) {
+          const p = match[1];
+          const n = parseInt(match[2]);
+          counts[p] = Math.max(counts[p] || 0, n);
+        }
+      }
+    }
+  }
+  return counts;
+}
+
+// Get the next label number for a given prefix, accounting for room history
+function getNextForPrefix(prefix) {
+  const roomCounts = getRoomLabelCounts();
+  const roomMax = roomCounts[prefix] || 0;
+  const currentPlaced = sketchLabels.filter(l => l.text.startsWith(prefix + '-')).length;
+  const nextNum = roomMax + currentPlaced + 1;
+  return { text: prefix + '-' + nextNum, color: ENERGY_LABEL_COLORS[prefix] || '#222' };
+}
+
+// Determine the prefix letter for a given energy source name (same logic as picker)
+function getPrefixForEnergySource(energySource) {
+  if (!energySource) return 'E';
+  let prefix = 'E';
+  let bestLen = 0;
+  for (const [key, val] of Object.entries(ENERGY_LABEL_PREFIX)) {
+    if (energySource.startsWith(key) && key.length > bestLen) { prefix = val; bestLen = key.length; }
+  }
+  if (bestLen === 0) {
+    const lower = energySource.toLowerCase();
+    if (lower.includes('water') || lower.includes('glycol')) prefix = 'W';
+    else if (lower.includes('steam')) prefix = 'S';
+    else if (lower.includes('air') || lower.includes('pneumatic') || lower.includes('compressed')) prefix = 'P';
+    else if (lower.includes('fuel') || lower.includes('oil') || lower.includes('diesel')) prefix = 'F';
+    else if (lower.includes('gas') || lower.includes('propane')) prefix = 'G';
+    else if (lower.includes('kinetic') || lower.includes('rotating')) prefix = 'K';
+    else if (lower.includes('hydraulic')) prefix = 'H';
+    else if (lower.includes('refrigerant')) prefix = 'R';
+    else if (lower.includes('chemical')) prefix = 'CH';
+    else if (lower.includes('thermal')) prefix = 'TH';
+  }
+  return prefix;
+}
+
+// For a linked source, pull the label from the linked equipment's actual placed
+// labels. Assumes the Nth same-prefix label on the linked diagram corresponds to
+// the Nth same-prefix source. Falls back to computed numbering if no label exists.
+function getLabelForLinkedSource(linkedTo) {
+  if (!linkedTo) return null;
+  const entry = savedEquipment.find(e => e.equipName === linkedTo.equipName);
+  if (!entry || !entry.sources) return null;
+  const srcIdx = linkedTo.sourceIndex;
+  const targetSrc = entry.sources[srcIdx];
+  if (!targetSrc) return null;
+  const prefix = getPrefixForEnergySource(targetSrc.energySource);
+
+  // 0-based ordinal: how many same-prefix sources come BEFORE this one in linked equipment
+  let ordinal = 0;
+  for (let i = 0; i < srcIdx; i++) {
+    const s = entry.sources[i];
+    if (s && getPrefixForEnergySource(s.energySource) === prefix) ordinal++;
+  }
+
+  // Primary path: use the Nth actually-placed label of this prefix on the linked equipment's sketch
+  const placedLabels = (entry.sketch && entry.sketch.labels) ? entry.sketch.labels : [];
+  const sameLabels = placedLabels.filter(l => l.text && l.text.startsWith(prefix + '-'));
+  if (sameLabels[ordinal]) {
+    return { text: sameLabels[ordinal].text, color: ENERGY_LABEL_COLORS[prefix] || sameLabels[ordinal].color || '#222' };
+  }
+
+  // Ordinal exceeds placed labels — continue numbering from the highest label on the linked equipment.
+  // E.g., if W-5 and W-6 are placed (2 labels) but ordinal=2 (3rd water source), return W-7.
+  if (sameLabels.length > 0) {
+    let maxInLinked = 0;
+    for (const lbl of sameLabels) {
+      const m = lbl.text.match(/^([A-Z]+)-(\d+)$/);
+      if (m) maxInLinked = Math.max(maxInLinked, parseInt(m[2]));
+    }
+    const bump = ordinal - sameLabels.length + 1;
+    return { text: prefix + '-' + (maxInLinked + bump), color: ENERGY_LABEL_COLORS[prefix] || '#222' };
+  }
+
+  // No labels placed on linked equipment yet — compute from room max of OTHER equipment
+  const bldg = (entry.equipBuilding || '').trim().toLowerCase();
+  const room = (entry.equipRoom || '').trim().toLowerCase();
+  let roomMax = 0;
+  if (bldg || room) {
+    for (const e of savedEquipment) {
+      if (e === entry) continue;
+      if ((e.equipBuilding || '').trim().toLowerCase() !== bldg) continue;
+      if ((e.equipRoom || '').trim().toLowerCase() !== room) continue;
+      if (e.sketch && e.sketch.labels) {
+        for (const lbl of e.sketch.labels) {
+          const m = lbl.text.match(/^([A-Z]+)-(\d+)$/);
+          if (m && m[1] === prefix) roomMax = Math.max(roomMax, parseInt(m[2]));
+        }
+      }
+    }
+  }
+  return { text: prefix + '-' + (roomMax + ordinal + 1), color: ENERGY_LABEL_COLORS[prefix] || '#222' };
+}
+
+// Build the list of labels to show in the picker
+function getLabelPickerOptions() {
+  const seenText = new Set();
+  const options = [];
+  // Track which prefixes we've already allocated fresh numbers for
+  const freshPrefixUsed = new Set();
+  for (const src of sources) {
+    if (!src.energySource) continue;
+    // Linked sources: pull the label from the referenced equipment
+    if (src.linkedTo) {
+      const linkedLabel = getLabelForLinkedSource(src.linkedTo);
+      if (linkedLabel && !seenText.has(linkedLabel.text)) {
+        seenText.add(linkedLabel.text);
+        options.push(linkedLabel);
+      }
+      continue;
+    }
+    const prefix = getPrefixForEnergySource(src.energySource);
+    if (!freshPrefixUsed.has(prefix)) {
+      freshPrefixUsed.add(prefix);
+      const opt = getNextForPrefix(prefix);
+      if (!seenText.has(opt.text)) {
+        seenText.add(opt.text);
+        options.push(opt);
+      }
+    }
+  }
+  return options;
+}
+
+let pendingLabelPos = null; // Stores tap position while picker is open
+
+function showLabelPicker(pos) {
+  closeLabelPicker();
+  const container = document.getElementById('sketchContainer');
+  const rect = container.getBoundingClientRect();
+  const xPct = pos.x / rect.width;
+  const yPct = pos.y / rect.height;
+  pendingLabelPos = { xPct, yPct };
+
+  const options = getLabelPickerOptions();
+  const picker = document.createElement('div');
+  picker.className = 'label-picker';
+  picker.id = 'labelPicker';
+  picker.style.left = (xPct * 100) + '%';
+  picker.style.top = (yPct * 100) + '%';
+
+  for (const opt of options) {
+    const btn = document.createElement('button');
+    btn.className = 'label-picker-btn';
+    btn.style.background = opt.color;
+    btn.textContent = opt.text;
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      placeLabelWithChoice(opt);
+    };
+    picker.appendChild(btn);
+  }
+
+  container.appendChild(picker);
+}
+
+function closeLabelPicker() {
+  const existing = document.getElementById('labelPicker');
+  if (existing) existing.remove();
+  pendingLabelPos = null;
+}
+
+function placeLabelWithChoice(opt) {
+  if (!pendingLabelPos) return;
+  sketchLabels.push({ x: pendingLabelPos.xPct, y: pendingLabelPos.yPct, text: opt.text, color: opt.color });
+  closeLabelPicker();
+  renderSketchLabels();
+  autoSaveSketch();
+}
+
+function placeLabel(pos) {
+  showLabelPicker(pos);
+}
+
+function renderSketchLabels() {
+  const container = document.getElementById('sketchContainer');
+  // Remove existing label elements
+  container.querySelectorAll('.sketch-label-marker').forEach(el => el.remove());
+
+  sketchLabels.forEach((lbl, i) => {
+    const el = document.createElement('div');
+    el.className = 'sketch-label-marker';
+    el.style.left = (lbl.x * 100) + '%';
+    el.style.top = (lbl.y * 100) + '%';
+    el.style.background = lbl.color;
+    el.textContent = lbl.text;
+    el.title = 'Drag to move, tap to remove';
+    el.style.touchAction = 'none';
+
+    let dragStartX, dragStartY, dragMoved = false;
+
+    el.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      el.setPointerCapture(e.pointerId);
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      dragMoved = false;
+      el.style.zIndex = '10';
+      el.style.boxShadow = '0 2px 10px rgba(0,0,0,0.6)';
+    });
+
+    el.addEventListener('pointermove', (e) => {
+      if (dragStartX === undefined) return;
+      e.stopPropagation();
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) dragMoved = true;
+      if (dragMoved) {
+        const rect = container.getBoundingClientRect();
+        const newX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const newY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+        el.style.left = (newX * 100) + '%';
+        el.style.top = (newY * 100) + '%';
+      }
+    });
+
+    el.addEventListener('pointerup', (e) => {
+      e.stopPropagation();
+      el.style.zIndex = '2';
+      el.style.boxShadow = '0 1px 4px rgba(0,0,0,0.4)';
+      if (dragMoved) {
+        const rect = container.getBoundingClientRect();
+        lbl.x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        lbl.y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+        autoSaveSketch();
+      } else {
+        if (confirm(`Remove label "${lbl.text}"?`)) {
+          sketchLabels.splice(i, 1);
+          renderSketchLabels();
+          autoSaveSketch();
+        }
+      }
+      dragStartX = undefined;
+    });
+
+    el.addEventListener('pointercancel', () => {
+      el.style.zIndex = '2';
+      el.style.boxShadow = '0 1px 4px rgba(0,0,0,0.4)';
+      dragStartX = undefined;
+    });
+
+    container.appendChild(el);
+  });
+}
+
+// Load diagram based on template selection
+function loadSketchDiagram(templateName) {
+  // Check if current equipment type overrides the diagram (e.g. Humidifier → general)
+  const currentEquipType = getEquipType();
+  const diagramKey = EQUIPMENT_DIAGRAM_OVERRIDE[currentEquipType] || TEMPLATE_DIAGRAM_MAP[templateName];
+  const toolbar = document.getElementById('sketchToolbar');
+  const placeholder = document.getElementById('sketchPlaceholder');
+  const canvasWrap = document.getElementById('sketchCanvasWrap');
+  const container = document.getElementById('sketchContainer');
+
+  if (!diagramKey || !SKETCH_DIAGRAMS[diagramKey]) {
+    // No diagram for this template
+    toolbar.style.display = 'none';
+    canvasWrap.style.display = 'none';
+    placeholder.style.display = 'block';
+    placeholder.innerHTML = 'No diagram available for this template yet.';
+    sketchDiagramKey = null;
+    return;
+  }
+
+  sketchDiagramKey = diagramKey;
+  placeholder.style.display = 'none';
+  canvasWrap.style.display = 'block';
+  toolbar.style.display = 'flex';
+  // Auto-expand the sketch section now that a diagram is available
+  setSketchSectionExpanded(true);
+
+  // Remove old labels
+  container.querySelectorAll('.sketch-label-marker').forEach(el => el.remove());
+
+  // Insert SVG (before the canvas)
+  const oldSvg = container.querySelector('svg');
+  if (oldSvg) oldSvg.remove();
+  const canvas = document.getElementById('sketchCanvas');
+  canvas.insertAdjacentHTML('beforebegin', SKETCH_DIAGRAMS[diagramKey]);
+
+  // Init canvas
+  initSketchCanvas();
+  // Slight delay for SVG to render, then size canvas
+  requestAnimationFrame(() => {
+    resizeSketchCanvas();
+    renderSketchLabels();
+  });
+}
+
+function switchToGeneralDiagram() {
+  if (sketchDiagramKey === 'general') {
+    showToast('Already using general diagram');
+    return;
+  }
+  const hasAnnotations = sketchStrokes.length > 0 || sketchLabels.length > 0;
+  if (hasAnnotations && !confirm('Switch to general diagram? Your labels will be kept but pen strokes may not align.')) {
+    return;
+  }
+  const container = document.getElementById('sketchContainer');
+  const oldSvg = container.querySelector('svg');
+  if (oldSvg) oldSvg.remove();
+  sketchDiagramKey = 'general';
+  const canvas = document.getElementById('sketchCanvas');
+  canvas.insertAdjacentHTML('beforebegin', SKETCH_DIAGRAMS['general']);
+  sketchStrokes = [];
+  initSketchCanvas();
+  requestAnimationFrame(() => {
+    resizeSketchCanvas();
+    renderSketchLabels();
+  });
+  autoSaveSketch();
+  showToast('Switched to general diagram');
+}
+
+// Auto-save sketch data (strokes + labels + diagram key) to current entry state
+function autoSaveSketch() {
+  const status = document.getElementById('sketchStatus');
+  if (status) { status.style.display = 'block'; setTimeout(() => { status.style.display = 'none'; }, 1500); }
+  autoSaveCurrent();
+}
+
+// Get sketch data for saving with entry
+function getSketchData() {
+  if (!sketchDiagramKey && sketchStrokes.length === 0 && sketchLabels.length === 0) return null;
+  return {
+    diagramKey: sketchDiagramKey,
+    strokes: sketchStrokes,
+    labels: sketchLabels
+  };
+}
+
+// Restore sketch from saved data
+// Collapse/expand the Overhead Sketch section. State persists for the current session.
+function setSketchSectionExpanded(expanded) {
+  const body = document.getElementById('sketchSectionBody');
+  const chevron = document.getElementById('sketchChevron');
+  const status = document.getElementById('sketchSectionStatus');
+  if (!body) return;
+  body.style.display = expanded ? 'block' : 'none';
+  if (chevron) chevron.style.transform = expanded ? 'rotate(90deg)' : 'rotate(0deg)';
+  // Show status summary when collapsed (e.g. "3 labels")
+  if (!expanded && status) {
+    const labelCount = (sketchLabels || []).length;
+    const strokeCount = (sketchStrokes || []).length;
+    if (labelCount || strokeCount) {
+      const parts = [];
+      if (labelCount) parts.push(`${labelCount} label${labelCount === 1 ? '' : 's'}`);
+      if (strokeCount) parts.push(`${strokeCount} stroke${strokeCount === 1 ? '' : 's'}`);
+      status.textContent = parts.join(', ') + ' (tap to edit)';
+    } else {
+      status.textContent = 'tap to expand';
+    }
+  } else if (status) {
+    status.textContent = '';
+  }
+  // If just expanded, resize canvas (needs to happen after display:block for correct dimensions)
+  if (expanded) {
+    requestAnimationFrame(() => {
+      try { resizeSketchCanvas(); renderSketchLabels(); } catch (e) {}
+    });
+  }
+}
+
+function toggleSketchSection() {
+  const body = document.getElementById('sketchSectionBody');
+  if (!body) return;
+  setSketchSectionExpanded(body.style.display === 'none');
+}
+
+// Auto-expand if there's existing sketch data; otherwise collapse
+function updateSketchSectionDefault() {
+  const hasData = (sketchLabels && sketchLabels.length > 0) || (sketchStrokes && sketchStrokes.length > 0) || sketchDiagramKey;
+  setSketchSectionExpanded(!!hasData);
+}
+
+function restoreSketch(data) {
+  sketchStrokes = [];
+  sketchLabels = [];
+  sketchDiagramKey = null;
+
+  if (!data) {
+    document.getElementById('sketchToolbar').style.display = 'none';
+    document.getElementById('sketchCanvasWrap').style.display = 'none';
+    document.getElementById('sketchPlaceholder').style.display = 'block';
+    document.getElementById('sketchPlaceholder').innerHTML = 'Select a <strong>template</strong> above to load the matching equipment diagram.';
+    return;
+  }
+
+  if (data.diagramKey && SKETCH_DIAGRAMS[data.diagramKey]) {
+    loadSketchDiagram(Object.keys(TEMPLATE_DIAGRAM_MAP).find(k => TEMPLATE_DIAGRAM_MAP[k] === data.diagramKey) || '');
+    // Actually just load by key directly
+    sketchDiagramKey = data.diagramKey;
+    const container = document.getElementById('sketchContainer');
+    const oldSvg = container.querySelector('svg');
+    if (oldSvg) oldSvg.remove();
+    const canvas = document.getElementById('sketchCanvas');
+    canvas.insertAdjacentHTML('beforebegin', SKETCH_DIAGRAMS[data.diagramKey]);
+    document.getElementById('sketchPlaceholder').style.display = 'none';
+    document.getElementById('sketchCanvasWrap').style.display = 'block';
+    document.getElementById('sketchToolbar').style.display = 'flex';
+    initSketchCanvas();
+  }
+
+  sketchStrokes = data.strokes || [];
+  sketchLabels = data.labels || [];
+
+  requestAnimationFrame(() => {
+    resizeSketchCanvas();
+    renderSketchLabels();
+  });
+  updateSketchSectionDefault();
+}
+
+// Clear sketch state (for clearForm)
+function clearSketchState() {
+  sketchStrokes = [];
+  sketchLabels = [];
+  sketchDiagramKey = null;
+  if (sketchCtx) {
+    const w = sketchCanvas.width / (window.devicePixelRatio || 2);
+    const h = sketchCanvas.height / (window.devicePixelRatio || 2);
+    sketchCtx.clearRect(0, 0, w, h);
+  }
+  const container = document.getElementById('sketchContainer');
+  if (container) container.querySelectorAll('.sketch-label-marker').forEach(el => el.remove());
+  document.getElementById('sketchToolbar').style.display = 'none';
+  document.getElementById('sketchCanvasWrap').style.display = 'none';
+  document.getElementById('sketchPlaceholder').style.display = 'block';
+  document.getElementById('sketchPlaceholder').innerHTML = 'Select a <strong>template</strong> above to load the matching equipment diagram.';
+  setSketchSectionExpanded(false);
+}
+
+// Export sketch to PNG data URL for saving to IndexedDB
+async function exportSketchPNG() {
+  if (!sketchDiagramKey || (!sketchStrokes.length && !sketchLabels.length)) return null;
+
+  const container = document.getElementById('sketchContainer');
+  const svg = container.querySelector('svg');
+  if (!svg) return null;
+
+  // Create an offscreen canvas at high resolution
+  const svgRect = svg.getBoundingClientRect();
+  const scale = 2; // 2x for quality
+  const w = svgRect.width * scale;
+  const h = svgRect.height * scale;
+  const offscreen = document.createElement('canvas');
+  offscreen.width = w;
+  offscreen.height = h;
+  const ctx = offscreen.getContext('2d');
+  ctx.scale(scale, scale);
+
+  // Draw SVG background
+  const svgData = new XMLSerializer().serializeToString(svg);
+  const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+  const svgUrl = URL.createObjectURL(svgBlob);
+  const img = new Image();
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = reject;
+    img.src = svgUrl;
+  });
+  ctx.drawImage(img, 0, 0, svgRect.width, svgRect.height);
+  URL.revokeObjectURL(svgUrl);
+
+  // Draw canvas strokes
+  for (const stroke of sketchStrokes) {
+    if (stroke.points.length < 2) continue;
+    ctx.beginPath();
+    ctx.strokeStyle = stroke.color;
+    ctx.lineWidth = stroke.width;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (stroke.isEraser) ctx.globalCompositeOperation = 'destination-out';
+    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+    for (let i = 1; i < stroke.points.length; i++) {
+      ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+    }
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // Draw labels
+  for (const lbl of sketchLabels) {
+    const lx = lbl.x * svgRect.width;
+    const ly = lbl.y * svgRect.height;
+    ctx.beginPath();
+    ctx.arc(lx, ly, 11, 0, Math.PI * 2);
+    ctx.fillStyle = lbl.color;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(lbl.text, lx, ly);
+  }
+
+  return offscreen.toDataURL('image/png');
+}
+
+// Render a saved sketch entry offscreen to PNG (for export of non-current entries)
+async function renderSketchOffscreen(sketchData) {
+  if (!sketchData || !sketchData.diagramKey || !SKETCH_DIAGRAMS[sketchData.diagramKey]) return null;
+
+  const svgMarkup = SKETCH_DIAGRAMS[sketchData.diagramKey];
+  // Parse viewBox to get dimensions
+  const vbMatch = svgMarkup.match(/viewBox="(\d+)\s+(\d+)\s+(\d+)\s+(\d+)"/);
+  const svgW = vbMatch ? parseInt(vbMatch[3]) : 612;
+  const svgH = vbMatch ? parseInt(vbMatch[4]) : 500;
+  const scale = 2;
+  const offscreen = document.createElement('canvas');
+  offscreen.width = svgW * scale;
+  offscreen.height = svgH * scale;
+  const ctx = offscreen.getContext('2d');
+  ctx.scale(scale, scale);
+
+  // Draw SVG
+  const svgBlob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
+  const svgUrl = URL.createObjectURL(svgBlob);
+  const img = new Image();
+  await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = svgUrl; });
+  ctx.drawImage(img, 0, 0, svgW, svgH);
+  URL.revokeObjectURL(svgUrl);
+
+  // Draw strokes (stored coordinates are relative to the on-screen canvas size,
+  // but for offscreen we render at SVG viewBox scale — need to approximate)
+  // Strokes are stored in CSS pixel coords at the time of drawing.
+  // We'll render them at viewBox coords (which is what the SVG uses).
+  for (const stroke of (sketchData.strokes || [])) {
+    if (stroke.points.length < 2) continue;
+    ctx.beginPath();
+    ctx.strokeStyle = stroke.color;
+    ctx.lineWidth = stroke.width;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (stroke.isEraser) ctx.globalCompositeOperation = 'destination-out';
+    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+    for (let i = 1; i < stroke.points.length; i++) {
+      ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+    }
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // Draw labels
+  for (const lbl of (sketchData.labels || [])) {
+    const lx = lbl.x * svgW;
+    const ly = lbl.y * svgH;
+    ctx.beginPath();
+    ctx.arc(lx, ly, 11, 0, Math.PI * 2);
+    ctx.fillStyle = lbl.color;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(lbl.text, lx, ly);
+  }
+
+  return offscreen.toDataURL('image/png');
+}
+
+// Handle window resize
+window.addEventListener('resize', () => {
+  if (sketchDiagramKey) resizeSketchCanvas();
+});
 
 function handleTemplateChange() {
   const val = document.getElementById('equipTemplate').value;
@@ -1295,10 +2894,16 @@ function confirmTemplateChange(templateVal) {
 function cancelTemplateChange() {
   const overlay = document.getElementById('templateConfirmOverlay');
   if (overlay) overlay.remove();
+  // Revert dropdown to empty since we're cancelling
   document.getElementById('equipTemplate').value = '';
 }
 
 function applyTemplate(val) {
+  // Load matching sketch diagram
+  if (val && val !== '** New Template **') {
+    loadSketchDiagram(val);
+  }
+
   // Clear existing sources and replace with template sources
   if (val && TEMPLATE_AUTO_SOURCES[val]) {
     sources = [];
@@ -1312,6 +2917,7 @@ function applyTemplate(val) {
     renderSources();
     showToast(`Set ${sources.length} source${sources.length > 1 ? 's' : ''} for ${val}`);
   } else if (!val) {
+    // Cleared the template selection — clear sources if no data
     if (sources.length > 0 && !sourcesHaveData()) {
       sources = [];
       renderSources();
@@ -1369,7 +2975,7 @@ const TEMPLATE_AUTO_SOURCES = {
   ],
   'Condensing Unit': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Chilled Water Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
@@ -1454,6 +3060,47 @@ function getEquipType() {
   return sel;
 }
 
+function handleBuildingChange() {
+  const val = document.getElementById('equipBuilding').value;
+  const customGroup = document.getElementById('customBuildingGroup');
+  if (val === '** Custom Building **') {
+    customGroup.style.display = 'flex';
+    document.getElementById('equipBuildingCustom').focus();
+  } else {
+    customGroup.style.display = 'none';
+    document.getElementById('equipBuildingCustom').value = '';
+  }
+  autoSaveCurrent();
+}
+
+function getBuilding() {
+  const sel = document.getElementById('equipBuilding').value;
+  if (sel === '** Custom Building **') {
+    return document.getElementById('equipBuildingCustom').value.trim();
+  }
+  return sel;
+}
+
+function setBuilding(value) {
+  const sel = document.getElementById('equipBuilding');
+  const customGroup = document.getElementById('customBuildingGroup');
+  // Check if value matches one of the preset options
+  const options = Array.from(sel.options).map(o => o.value);
+  if (value && options.includes(value)) {
+    sel.value = value;
+    customGroup.style.display = 'none';
+    document.getElementById('equipBuildingCustom').value = '';
+  } else if (value) {
+    sel.value = '** Custom Building **';
+    customGroup.style.display = 'flex';
+    document.getElementById('equipBuildingCustom').value = value;
+  } else {
+    sel.value = '';
+    customGroup.style.display = 'none';
+    document.getElementById('equipBuildingCustom').value = '';
+  }
+}
+
 function getTemplate() {
   const sel = document.getElementById('equipTemplate').value;
   if (sel === '** New Template **') {
@@ -1484,6 +3131,11 @@ function getSourceColorClass(sourceType) {
       s.includes('condenser water') || s.includes('feedwater') || s.includes('glycol')) return 'source-water';
   if (s.includes('gas') || s.includes('propane')) return 'source-gas';
   return 'source-default';
+}
+
+function isATSEquipment() {
+  const eqType = document.getElementById('equipType').value;
+  return eqType === 'ATS';
 }
 
 function addSource() {
@@ -1519,7 +3171,7 @@ function renderSources() {
           <span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
           <div class="source-summary-text">
             <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${src.linkedTo ? ' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>' : ''}
-            ${src.deviceType ? ' &mdash; ' + src.deviceType : ''}
+            ${src.deviceType ? ' &mdash; ' + src.deviceType : ''}${src.deviceId ? ' <span style="color:#7eb8da;">(' + src.deviceId + ')</span>' : ''}
             ${src.location ? ' &mdash; ' + src.location : ''}
             ${src.detail ? ' <span style="color:var(--accent);font-weight:600;font-family:monospace;">(' + src.detail + ')</span>' : ''}
             ${src.linkedTo ? `<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">→ ${src.linkedTo.equipName} / ${src.linkedTo.sourceLabel}</div>` : ''}
@@ -1561,6 +3213,7 @@ function renderSources() {
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:${isFirstExp?'#555':'var(--text-dim)'};padding:6px 10px;" onclick="moveSource(${i},-1)" ${isFirstExp?'disabled':''}>&#9650;</button>
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:${isLastExp?'#555':'var(--text-dim)'};padding:6px 10px;" onclick="moveSource(${i},1)" ${isLastExp?'disabled':''}>&#9660;</button>
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="showLinkDialog(${i})">${src.linkedTo ? '🔗 Linked' : 'Link'}</button>
+            <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="duplicateSource(${i})">Dup</button>
             <button class="btn btn-danger btn-sm" onclick="removeSource(${i})">Remove</button>
             <button class="btn btn-outline btn-sm" onclick="collapseSource(${i})">Done</button>
           </div>
@@ -1595,6 +3248,11 @@ function renderSources() {
               <input type="text" id="src_device_custom_${i}" value="${src.deviceType||''}" placeholder="Enter custom device type"
                 oninput="updateSourceCustomField(${i},'deviceType',this.value)">
             </div>` : `<div id="customDeviceGroup_${i}" style="display:none;"></div>`}
+            <div class="form-group">
+              <label>Device ID</label>
+              <input type="text" id="src_deviceId_${i}" value="${src.deviceId||''}" placeholder="e.g. Pump 3, V-201"
+                oninput="updateSource(${i},'deviceId',this.value)">
+            </div>
             <div class="form-group">
               <label>Location</label>
               <select onchange="handleLocationChange(${i},this.value)" id="src_loc_${i}">
@@ -1760,6 +3418,8 @@ function handleLocationChange(index, value) {
   } else {
     sources[index]._customLoc = false;
     sources[index].location = value;
+    const cg = document.getElementById('customLocGroup_' + index);
+    if (cg) cg.style.display = 'none';
     autoSaveCurrent();
   }
 }
@@ -1786,12 +3446,39 @@ function removeSource(index) {
   }
 }
 
+function duplicateSource(index) {
+  const src = sources[index];
+  const newSrc = JSON.parse(JSON.stringify(src));
+  newSrc.auto = false;
+  newSrc.collapsed = false;
+  sources.splice(index + 1, 0, newSrc);
+  // Shift photos for sources after the insertion point
+  for (let i = sources.length - 1; i > index + 1; i--) {
+    if (photos[`source_${i-1}`]) {
+      photos[`source_${i}`] = photos[`source_${i-1}`];
+    } else {
+      delete photos[`source_${i}`];
+    }
+  }
+  // Copy photo from original source if it exists
+  if (photos[`source_${index}`]) {
+    photos[`source_${index + 1}`] = JSON.parse(JSON.stringify(photos[`source_${index}`]));
+  } else {
+    delete photos[`source_${index + 1}`];
+  }
+  renderSources();
+  autoSaveCurrent();
+  showToast(`Duplicated source #${index + 1}`);
+}
+
 function moveSource(index, direction) {
   const newIndex = index + direction;
   if (newIndex < 0 || newIndex >= sources.length) return;
+  // Swap sources
   const tmp = sources[index];
   sources[index] = sources[newIndex];
   sources[newIndex] = tmp;
+  // Swap corresponding photos
   const keyA = `source_${index}`;
   const keyB = `source_${newIndex}`;
   const photoA = photos[keyA];
@@ -1818,10 +3505,12 @@ function renderLinkDialog() {
   const existing = document.getElementById('linkDialogOverlay');
   if (existing) existing.remove();
 
-  const currentBldg = document.getElementById('equipBuilding').value.trim();
+  const currentBldg = getBuilding();
   const currentRoom = document.getElementById('equipRoom').value.trim();
   const currentName = document.getElementById('equipName').value.trim();
 
+  // Filter saved equipment by scope, exclude the current entry being edited.
+  // Case-insensitive + trimmed comparison for building/room/name to handle typos.
   const norm = (v) => (v || '').trim().toLowerCase();
   const curName = norm(currentName);
   const curBldg = norm(currentBldg);
@@ -1846,7 +3535,7 @@ function renderLinkDialog() {
       : 'all saved equipment';
     candidatesHtml = `<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:13px;line-height:1.5;">No saved equipment found in ${scopeDesc}.<br>Try expanding the scope, or check that the building/room on both entries match.</div>`;
   } else {
-    candidatesHtml = candidates.map(entry => {
+    candidatesHtml = candidates.map((entry, ei) => {
       const origIndex = savedEquipment.indexOf(entry);
       const srcCount = (entry.sources || []).length;
       return `
@@ -1908,6 +3597,7 @@ function showLinkSourcePicker(equipIndex) {
       const parts = [];
       if (s.energySource) parts.push(s.energySource);
       if (s.deviceType) parts.push(s.deviceType);
+      if (s.deviceId) parts.push('(' + s.deviceId + ')');
       if (s.location) parts.push(s.location);
       if (s.detail) parts.push('[' + s.detail + ']');
       return `
@@ -1946,9 +3636,11 @@ function applyLink(equipIndex, sourceIndex) {
   const src = entry.sources[sourceIndex];
   if (!src) { closeLinkDialog(); return; }
 
+  // Build the label for display
   const parts = [];
   if (src.energySource) parts.push(src.energySource);
   if (src.deviceType) parts.push(src.deviceType);
+  if (src.deviceId) parts.push('(' + src.deviceId + ')');
   const label = parts.join(' — ') || 'Source #' + (sourceIndex + 1);
 
   sources[pendingLinkSourceIndex].linkedTo = {
@@ -1959,6 +3651,7 @@ function applyLink(equipIndex, sourceIndex) {
     sourceIndex: sourceIndex,
     sourceLabel: label,
   };
+  // Remove the photo since it's redundant
   delete photos[`source_${pendingLinkSourceIndex}`];
 
   closeLinkDialog();
@@ -1979,6 +3672,37 @@ function unlinkSource(index) {
 // PHOTO HANDLING - stores timestamp + tiny thumbnail, NOT full image
 // ============================================================================
 function takePhoto(slotId) {
+  // If photo already exists, show view/retake dialog
+  if (photos[slotId] && photos[slotId].thumbnail) {
+    showPhotoDialog(slotId);
+    return;
+  }
+  document.getElementById(`file_${slotId}`).click();
+}
+
+function showPhotoDialog(slotId) {
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'photoDialogOverlay';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:360px;">
+      <div style="text-align:center;margin-bottom:12px;">
+        <img src="${photos[slotId].thumbnail}" style="max-width:100%;border-radius:8px;border:1px solid var(--border);">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <button class="btn btn-primary" onclick="retakePhoto('${slotId}')" style="padding:12px;font-size:15px;">Retake Photo</button>
+        <button class="btn" onclick="document.getElementById('photoDialogOverlay').remove()" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Close</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+}
+
+function retakePhoto(slotId) {
+  const overlay = document.getElementById('photoDialogOverlay');
+  if (overlay) overlay.remove();
   document.getElementById(`file_${slotId}`).click();
 }
 
@@ -2294,6 +4018,97 @@ function handlePhoto(input, slotId) {
 }
 
 // ============================================================================
+// MISC PHOTOS
+// ============================================================================
+const MAX_MISC_PHOTOS = 10;
+
+function addMiscPhoto() {
+  if (miscPhotos.length >= MAX_MISC_PHOTOS) {
+    showToast('Maximum ' + MAX_MISC_PHOTOS + ' misc photos reached', true);
+    return;
+  }
+  document.getElementById('file_misc_photo').click();
+}
+
+function handleMiscPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (miscPhotos.length >= MAX_MISC_PHOTOS) return;
+
+  const equipName = document.getElementById('equipName').value.trim() || 'equipment';
+  const idx = miscPhotos.length;
+  const slotId = 'misc_' + idx;
+  const dbKey = photoDBKey(equipName, slotId);
+  const settings = getPhotoSettings();
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      let w = img.width, h = img.height;
+      const maxW = settings.maxWidth, maxH = settings.maxHeight;
+      if (w > maxW || h > maxH) {
+        const ratio = Math.min(maxW / w, maxH / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
+      const resizeCanvas = document.createElement('canvas');
+      resizeCanvas.width = w; resizeCanvas.height = h;
+      resizeCanvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      const resizedDataUrl = resizeCanvas.toDataURL('image/jpeg', settings.quality);
+      const resizedKB = Math.round(resizedDataUrl.length * 0.75 / 1024);
+
+      savePhotoFallback(dbKey, resizedDataUrl);
+      if (idbAvailable) {
+        const arrBuf = dataUrlToUint8Array(resizedDataUrl).buffer;
+        savePhotoToDB(dbKey, arrBuf, 'image/jpeg').catch(() => { idbAvailable = false; });
+      }
+
+      const thumbCanvas = document.createElement('canvas');
+      const thumbScale = 80 / w;
+      thumbCanvas.width = 80;
+      thumbCanvas.height = Math.round(h * thumbScale);
+      thumbCanvas.getContext('2d').drawImage(resizeCanvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
+      const thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.4);
+
+      miscPhotos.push({
+        dbKey: dbKey,
+        thumbnail: thumbnail,
+        fileType: 'image/jpeg',
+        timestamp: new Date().toISOString()
+      });
+      renderMiscPhotos();
+      showToast('Misc photo ' + miscPhotos.length + ' saved (' + w + 'x' + h + ', ~' + resizedKB + 'KB)');
+      autoSaveCurrent();
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
+}
+
+function removeMiscPhoto(idx) {
+  if (!confirm('Remove misc photo ' + (idx + 1) + '?')) return;
+  miscPhotos.splice(idx, 1);
+  renderMiscPhotos();
+  autoSaveCurrent();
+}
+
+function renderMiscPhotos() {
+  const grid = document.getElementById('miscPhotoGrid');
+  const btn = document.getElementById('addMiscPhotoBtn');
+  if (!grid) return;
+  grid.innerHTML = miscPhotos.map((p, i) => `
+    <div style="position:relative;width:80px;">
+      <img src="${p.thumbnail}" style="width:80px;border-radius:6px;border:2px solid #333;">
+      <span style="position:absolute;top:2px;left:4px;background:rgba(0,0,0,0.7);color:#fff;font-size:9px;padding:1px 5px;border-radius:3px;">Misc ${i+1}</span>
+      <button onclick="removeMiscPhoto(${i})" style="position:absolute;top:2px;right:2px;background:rgba(200,40,40,0.9);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;line-height:18px;padding:0;">&#10005;</button>
+    </div>
+  `).join('');
+  btn.style.display = miscPhotos.length >= MAX_MISC_PHOTOS ? 'none' : '';
+}
+
+// ============================================================================
 // SAVE & NEW - Core multi-equipment feature
 // ============================================================================
 function saveAndNew() {
@@ -2313,7 +4128,7 @@ function saveAndNew() {
     equipType: getEquipType(),
     equipName: equipName,
     equipRoom: document.getElementById('equipRoom').value,
-    equipBuilding: document.getElementById('equipBuilding').value,
+    equipBuilding: getBuilding(),
     template: getTemplate(),
     tiedTo: document.getElementById('equipTiedTo').value,
     tiedToName: document.getElementById('equipTiedToName').value.trim(),
@@ -2322,12 +4137,16 @@ function saveAndNew() {
     photoCount: Object.keys(photos).filter(k => photos[k] && photos[k].timestamp).length,
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     savedAt: new Date().toISOString(),
-    photos: Object.assign({}, photos)
+    photos: Object.assign({}, photos),
+    miscPhotos: JSON.parse(JSON.stringify(miscPhotos)),
+    sketch: getSketchData()
   };
 
+  // If editing an existing saved entry, replace it in place. Otherwise append.
   if (editingEntry) {
     const idx = savedEquipment.indexOf(editingEntry);
     if (idx >= 0) {
+      // Preserve original savedAt so the entry keeps its original date for export filtering
       if (editingEntry.savedAt) entry.savedAt = editingEntry.savedAt;
       savedEquipment[idx] = entry;
     } else {
@@ -2341,7 +4160,7 @@ function saveAndNew() {
   const lastBuilding = entry.equipBuilding;
   const lastRoom = entry.equipRoom;
   clearForm(false); // Don't confirm
-  document.getElementById('equipBuilding').value = lastBuilding || '';
+  setBuilding(lastBuilding || '');
   document.getElementById('equipRoom').value = lastRoom || '';
   renderSavedPanel();
   updateHeaderBadge();
@@ -2358,13 +4177,14 @@ function clearForm(confirm_first = true) {
   editingEntry = null;
   sources = [];
   photos = {};
+  miscPhotos = [];
   document.getElementById('equipType').value = '';
   document.getElementById('equipTypeCustom').value = '';
   document.getElementById('customEquipTypeGroup').style.display = 'none';
   filterTemplateDropdown('');
   document.getElementById('equipName').value = '';
   document.getElementById('equipRoom').value = '';
-  document.getElementById('equipBuilding').value = '';
+  setBuilding('');
   document.getElementById('equipTemplate').value = '';
   document.getElementById('equipTemplateCustom').value = '';
   document.getElementById('customTemplateGroup').style.display = 'none';
@@ -2381,6 +4201,8 @@ function clearForm(confirm_first = true) {
     </span>`;
   });
   renderSources();
+  renderMiscPhotos();
+  clearSketchState();
   localStorage.removeItem('loto_current');
   window.scrollTo(0, 0);
 }
@@ -2400,10 +4222,11 @@ function renderSavedPanel() {
 
   body.innerHTML = savedEquipment.map((entry, i) => {
     const photoCount = entry.photos ? Object.keys(entry.photos).filter(k => entry.photos[k] && entry.photos[k].timestamp).length : 0;
+    const isEditing = editingEntry === entry;
     return `
-    <div class="saved-item">
+    <div class="saved-item" style="${isEditing ? 'border:2px solid var(--accent);background:rgba(74,144,217,0.08);' : ''}">
       <div class="saved-item-info">
-        <div class="saved-item-name">${entry.equipName}</div>
+        <div class="saved-item-name">${entry.equipName}${isEditing ? ' <span style="background:var(--accent);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">EDITING</span>' : ''}</div>
         <div class="saved-item-detail">
           ${entry.equipType || 'No type'} "&#183; ${entry.template || 'No template'}
           "&#183; ${entry.sources.length} source${entry.sources.length !== 1 ? 's' : ''}
@@ -2444,14 +4267,19 @@ function deleteSaved(index) {
 }
 
 function editSaved(index) {
+  // If this entry is already being edited, do nothing
   if (editingEntry === savedEquipment[index]) return;
+
+  // Check if current form has unsaved data
   const currentName = document.getElementById('equipName').value.trim();
   if (currentName || sources.length > 0) {
+    const currentDesc = editingEntry ? `edits to "${editingEntry.equipName}"` : `unsaved entry "${currentName || 'unnamed'}"`;
     const confirmMsg = editingEntry
-      ? `Discard edits to "${editingEntry.equipName}" (original preserved) and edit "${savedEquipment[index].equipName}"?`
-      : `Current form has unsaved data ("${currentName || 'unnamed'}"). Discard and edit "${savedEquipment[index].equipName}"?`;
+      ? `Discard ${currentDesc} (original preserved) and edit "${savedEquipment[index].equipName}"?`
+      : `Current form has ${currentDesc}. Discard and edit "${savedEquipment[index].equipName}"?`;
     if (!confirm(confirmMsg)) return;
   }
+  // Reset editing state before loading new entry
   editingEntry = null;
 
   // Load saved entry into form
@@ -2471,9 +4299,9 @@ function editSaved(index) {
   }
   document.getElementById('equipName').value = entry.equipName || '';
   document.getElementById('equipRoom').value = entry.equipRoom || '';
-  document.getElementById('equipBuilding').value = entry.equipBuilding || '';
+  setBuilding(entry.equipBuilding || '');
   document.getElementById('equipTiedTo').value = entry.tiedTo || '';
-  
+
   // Restore tied-to equipment name
   if (entry.tiedTo) {
     document.getElementById('tiedToNameGroup').style.display = 'flex';
@@ -2482,10 +4310,10 @@ function editSaved(index) {
     document.getElementById('tiedToNameGroup').style.display = 'none';
     document.getElementById('equipTiedToName').value = '';
   }
-  
+
   // Restore notes
   document.getElementById('equipNotes').value = entry.notes || '';
-  
+
   // Restore template "" check if it's a custom value
   const templateSel = document.getElementById('equipTemplate');
   if (entry.template && !DATA.templates.includes(entry.template)) {
@@ -2500,6 +4328,7 @@ function editSaved(index) {
   
   sources = JSON.parse(JSON.stringify(entry.sources));
   photos = Object.assign({}, entry.photos || {});
+  miscPhotos = JSON.parse(JSON.stringify(entry.miscPhotos || []));
 
   // Restore equipment photos
   ['equip_main','equip_dataplate','equip_ee'].forEach(slot => {
@@ -2518,10 +4347,15 @@ function editSaved(index) {
     }
   });
 
+  // Restore sketch
+  restoreSketch(entry.sketch || null);
+
   // Track that this saved entry is being edited — don't remove from the list.
+  // If the user Saves & New, we replace it in place; if they discard, the original is preserved.
   editingEntry = entry;
   renderSavedPanel();
   renderSources();
+  renderMiscPhotos();
   updateHeaderBadge();
 
   // Scroll to form
@@ -2542,7 +4376,8 @@ function duplicateSaved(index) {
 
 function showDuplicateDialog(index) {
   const entry = savedEquipment[index];
-  const photoCount = entry.photos ? Object.keys(entry.photos).filter(k => entry.photos[k] && entry.photos[k].thumbnail).length : 0;
+  const photoCount = (entry.photos ? Object.keys(entry.photos).filter(k => entry.photos[k] && entry.photos[k].thumbnail).length : 0)
+    + (entry.miscPhotos ? entry.miscPhotos.length : 0);
 
   const overlay = document.createElement('div');
   overlay.id = 'duplicateDialog';
@@ -2582,7 +4417,7 @@ function executeDuplicate(index, withPhotos) {
   }
   document.getElementById('equipName').value = entry.equipName || '';
   document.getElementById('equipRoom').value = entry.equipRoom || '';
-  document.getElementById('equipBuilding').value = entry.equipBuilding || '';
+  setBuilding(entry.equipBuilding || '');
   document.getElementById('equipTiedTo').value = entry.tiedTo || '';
 
   // Restore tied-to equipment name
@@ -2611,10 +4446,14 @@ function executeDuplicate(index, withPhotos) {
 
   // Deep copy sources
   sources = JSON.parse(JSON.stringify(entry.sources));
+
   photos = {};
+  miscPhotos = [];
 
   if (withPhotos) {
+    // Duplicate photos — copy thumbnails and queue IDB copy of full-res
     const dupName = (entry.equipName || 'unknown') + '_dup_' + Date.now();
+
     if (entry.photos) {
       for (const [slot, photo] of Object.entries(entry.photos)) {
         if (!photo || !photo.thumbnail) continue;
@@ -2622,6 +4461,20 @@ function executeDuplicate(index, withPhotos) {
         photos[slot] = { ...photo, dbKey: newDbKey };
         if (photo.dbKey && idbAvailable) {
           getPhotoFromDB(photo.dbKey).then(data => {
+            if (data && data.data) savePhotoToDB(newDbKey, data.data, data.type || 'image/jpeg');
+          }).catch(() => {});
+        }
+      }
+    }
+
+    if (entry.miscPhotos && entry.miscPhotos.length > 0) {
+      for (let mi = 0; mi < entry.miscPhotos.length; mi++) {
+        const mp = entry.miscPhotos[mi];
+        if (!mp || !mp.thumbnail) continue;
+        const newDbKey = photoDBKey(dupName, 'misc_' + mi);
+        miscPhotos.push({ ...mp, dbKey: newDbKey });
+        if (mp.dbKey && idbAvailable) {
+          getPhotoFromDB(mp.dbKey).then(data => {
             if (data && data.data) savePhotoToDB(newDbKey, data.data, data.type || 'image/jpeg');
           }).catch(() => {});
         }
@@ -2646,13 +4499,21 @@ function executeDuplicate(index, withPhotos) {
     }
   });
 
+  // Load diagram but clear annotations (user re-annotates for duplicate)
+  if (entry.template && TEMPLATE_DIAGRAM_MAP[entry.template]) {
+    loadSketchDiagram(entry.template);
+  } else {
+    clearSketchState();
+  }
+
   // Original stays in saved list — do NOT splice
   renderSources();
+  renderMiscPhotos();
   autoSaveCurrent();
 
   // Scroll to form
   document.querySelector('.equipment-section').scrollIntoView({ behavior: 'smooth' });
-  const photoCount = Object.keys(photos).filter(k => photos[k] && photos[k].thumbnail).length;
+  const photoCount = Object.keys(photos).filter(k => photos[k] && photos[k].thumbnail).length + miscPhotos.length;
   if (withPhotos) {
     showToast(`Duplicated "${entry.equipName}" with ${photoCount} photo${photoCount !== 1 ? 's' : ''} — update name`);
   } else {
@@ -2680,6 +4541,7 @@ function updateHeaderBadge() {
 // Extract YYYY-MM-DD from a saved entry (uses savedAt ISO, falls back to any photo timestamp)
 function getEntryDate(entry) {
   if (entry.savedAt) return entry.savedAt.slice(0, 10);
+  // Fallback: check photo timestamps
   if (entry.photos) {
     for (const k of Object.keys(entry.photos)) {
       const p = entry.photos[k];
@@ -2689,7 +4551,7 @@ function getEntryDate(entry) {
       }
     }
   }
-  return null;
+  return null; // undated
 }
 
 function formatDateLabel(isoDate) {
@@ -2702,6 +4564,7 @@ function formatDateLabel(isoDate) {
 function populateExportDateFilter() {
   const sel = document.getElementById('exportDateFilter');
   if (!sel) return;
+  // Count entries by date
   const counts = {};
   let undatedCount = 0;
   for (const entry of savedEquipment) {
@@ -2709,7 +4572,7 @@ function populateExportDateFilter() {
     if (d) counts[d] = (counts[d] || 0) + 1;
     else undatedCount++;
   }
-  const dates = Object.keys(counts).sort().reverse();
+  const dates = Object.keys(counts).sort().reverse(); // newest first
   const total = savedEquipment.length;
   sel.innerHTML = `<option value="all">All dates — ${total} entr${total === 1 ? 'y' : 'ies'}</option>`;
   dates.forEach(d => {
@@ -2724,6 +4587,7 @@ function populateExportDateFilter() {
     opt.textContent = `Undated (older entries) — ${undatedCount} entr${undatedCount === 1 ? 'y' : 'ies'}`;
     sel.appendChild(opt);
   }
+  // Default to today if it's one of the options, else 'all'
   const today = new Date().toISOString().slice(0, 10);
   if (counts[today]) sel.value = today; else sel.value = 'all';
   updateExportDateSummary();
@@ -2818,6 +4682,7 @@ async function runCombinedExport() {
   // Gather entries (filtered by date)
   let allEntries = filterEntriesByExportDate(dateFilter);
   const currentName = document.getElementById('equipName').value.trim();
+  // Include current unsaved entry only when filter is 'all' or today's date
   const todayIso = new Date().toISOString().slice(0, 10);
   const includeCurrent = (dateFilter === 'all' || dateFilter === todayIso);
   if (includeCurrent && currentName && sources.length > 0) {
@@ -2825,13 +4690,15 @@ async function runCombinedExport() {
       equipType:     getEquipType(),
       equipName:     currentName,
       equipRoom:     document.getElementById('equipRoom').value,
-      equipBuilding: document.getElementById('equipBuilding').value,
+      equipBuilding: getBuilding(),
       template:      getTemplate(),
       tiedTo:        document.getElementById('equipTiedTo').value,
       tiedToName:    document.getElementById('equipTiedToName').value.trim(),
       notes:         document.getElementById('equipNotes').value.trim(),
       sources:       sources,
-      photos:        photos
+      photos:        photos,
+      miscPhotos:    miscPhotos,
+      sketch:        getSketchData()
     });
   }
 
@@ -2936,8 +4803,62 @@ async function runCombinedExport() {
     entryMaps.push(map);
   }
 
+  // ---- PASS 1B: export sketch diagrams ----
+  const diagramsFolder = zip.folder('diagrams');
+  const diagramFiles = []; // one per entry: filename or ''
+
+  for (let ei = 0; ei < allEntries.length; ei++) {
+    const entry = allEntries[ei];
+    let diagramFile = '';
+    if (entry.sketch && entry.sketch.diagramKey && (entry.sketch.strokes.length > 0 || entry.sketch.labels.length > 0)) {
+      // We need to render the sketch to PNG — temporarily load it if not current
+      const isCurrentEntry = (ei === allEntries.length - 1 && currentName);
+      let pngDataUrl = null;
+      if (isCurrentEntry && sketchDiagramKey) {
+        // Current form entry — can export directly
+        pngDataUrl = await exportSketchPNG();
+      } else {
+        // Saved entry — render offscreen
+        pngDataUrl = await renderSketchOffscreen(entry.sketch);
+      }
+      if (pngDataUrl) {
+        const safeName = [entry.equipBuilding, entry.equipRoom, entry.equipName || 'equipment'].filter(Boolean).join('_').replace(/[^a-zA-Z0-9_-]/g, '_');
+        diagramFile = safeName + '_diagram.png';
+        const pngBytes = dataUrlToUint8Array(pngDataUrl);
+        diagramsFolder.file(diagramFile, pngBytes);
+      }
+    }
+    diagramFiles.push(diagramFile);
+  }
+
+  // ---- PASS 1C: export misc photos ----
+  const miscFileNames = []; // one per entry: comma-separated filenames or ''
+
+  for (let ei = 0; ei < allEntries.length; ei++) {
+    const entry = allEntries[ei];
+    const entryMiscPhotos = entry.miscPhotos || [];
+    const names = [];
+    if (entryMiscPhotos.length > 0) {
+      const safeName = [entry.equipBuilding, entry.equipRoom, entry.equipName || 'equipment'].filter(Boolean).join('_').replace(/[^a-zA-Z0-9_-]/g, '_');
+      for (let mi = 0; mi < entryMiscPhotos.length; mi++) {
+        const mp = entryMiscPhotos[mi];
+        if (mp.dbKey) {
+          const pd = await getPhotoData(mp.dbKey, mp.fileType || 'image/jpeg');
+          if (pd) {
+            const ext = pd.type.includes('png') ? '.png' : '.jpg';
+            const fname = safeName + '_Misc' + (mi + 1) + ext;
+            photosFolder.file(fname, pd.bytes);
+            names.push(fname);
+            photoCount++;
+          }
+        }
+      }
+    }
+    miscFileNames.push(names.join(', '));
+  }
+
   // ---- PASS 2: build CSV ----
-  let csv = 'Equipment Type,Equipment Name,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Quantity,Location,Duplicate,Verification,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename\n';
+  let csv = 'Equipment Type,Equipment Name,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames\n';
 
   allEntries.forEach((entry, ei) => {
     const map = entryMaps[ei];
@@ -2950,12 +4871,14 @@ async function runCombinedExport() {
         quote(entry.equipRoom), quote(entry.equipBuilding),
         quote(entry.template || ''), quote(entry.tiedTo || ''),
         quote(entry.tiedToName || ''), quote(entry.notes || ''),
-        i + 1, quote(src.energySource), quote(src.deviceType), src.quantity,
+        i + 1, quote(src.energySource), quote(src.deviceType), quote(src.deviceId || ''), src.quantity,
         quote(src.location), src.duplicate, quote(src.verification),
         quote(map.sourceHs[i] || ''), quote(src.detail || ''),
         quote(linkedStr),
         quote(map.mainH || ''),
-        quote(map.dpH || ''), quote(map.eeH || '')
+        quote(map.dpH || ''), quote(map.eeH || ''),
+        quote(diagramFiles[ei] || ''),
+        quote(miscFileNames[ei] || '')
       ].join(',') + '\n';
     });
   });
@@ -2968,7 +4891,7 @@ async function runCombinedExport() {
     // Column widths matching original
     ws.columns = [
       { width: 28 }, { width: 22 }, { width: 16 }, { width: 26 }, { width: 18 },
-      { width: 14 }, { width: 10 }, { width: 22 }, { width: 18 }, { width: 8 }
+      { width: 14 }, { width: 10 }, { width: 22 }, { width: 18 }, { width: 8 }, { width: 22 }, { width: 30 }
     ];
 
     // Style definitions matching original info sheet
@@ -2983,7 +4906,7 @@ async function runCombinedExport() {
 
     function applyRow(row, font, fill, borders) {
       row.eachCell({ includeEmpty: true }, (cell, colNum) => {
-        if (colNum <= 10) {
+        if (colNum <= 12) {
           cell.font = font;
           if (fill) cell.fill = fill;
           if (borders) cell.border = borders;
@@ -2993,7 +4916,7 @@ async function runCombinedExport() {
     }
 
     // Title row (light blue-gray fill like original)
-    const titleRow = ws.addRow(['Energy Sources','Source Devices','','Location','Photo #','','','','','Page #']);
+    const titleRow = ws.addRow(['Energy Sources','Source Devices','','Location','Photo #','','','','','Page #','Diagram','Misc Photos']);
     applyRow(titleRow, { bold: true, size: 10, name: 'Calibri' }, topHeaderFill, allBorders);
 
     // Blank separator
@@ -3005,13 +4928,13 @@ async function runCombinedExport() {
       const location = [entry.equipBuilding, entry.equipRoom].filter(Boolean).join(' ');
 
       // Equipment header row (light yellow fill like original)
-      const eqHeaderRow = ws.addRow(['Equipment ID/Name','','','Location','Main Photo','Details','','Data Plate Photo','EE Number Photo','Page #']);
+      const eqHeaderRow = ws.addRow(['Equipment ID/Name','','','Location','Main Photo','Details','','Data Plate Photo','EE Number Photo','Page #','Diagram File','Misc Photo Files']);
       applyRow(eqHeaderRow, headerFont, labelFill, allBorders);
       const eqHdrNum = eqHeaderRow.number;
       ws.mergeCells(eqHdrNum, 1, eqHdrNum, 2); // A:B merge
 
       // Equipment data row
-      const eqDataRow = ws.addRow([entry.equipName || '', '', '', location, map.mainH || '', entry.equipType || '', '', map.dpH || '', map.eeH || '', pageNum]);
+      const eqDataRow = ws.addRow([entry.equipName || '', '', '', location, map.mainH || '', entry.equipType || '', '', map.dpH || '', map.eeH || '', pageNum, diagramFiles[ei] || '', miscFileNames[ei] || '']);
       applyRow(eqDataRow, dataFont, null, allBorders);
       eqDataRow.getCell(10).font = boldData;
       const eqDataNum = eqDataRow.number;
@@ -3028,7 +4951,7 @@ async function runCombinedExport() {
 
         // Source label row (light fill)
         const srcLabelRow = ws.addRow([
-          `Energy Source #${n}`, ` Source #${n} Device`, 'Total Device Quantity',
+          `Energy Source #${n}`, ` Source #${n} Device`, 'Device ID', 'Total Device Quantity',
           ` Source #${n} Location`, `Source #${n} Photo`, '', 'Dup Photo',
           `Source #${n} Verification`, `Verification Photo #${n}`, ''
         ]);
@@ -3045,6 +4968,7 @@ async function runCombinedExport() {
         const srcDataRow = ws.addRow([
           src ? (src.energySource || '') : '',
           src ? (src.deviceType   || '') : '',
+          src ? (src.deviceId     || '') : '',
           src ? (src.quantity     || '') : '',
           src ? (src.location     || '') : '',
           srcH || '',
@@ -3096,6 +5020,7 @@ async function runCombinedExport() {
     const url = URL.createObjectURL(zipBlob);
     const a = document.createElement('a');
     a.href = url;
+    // If filtered to a specific date, include that in the filename
     const filenameSuffix = (dateFilter !== 'all' && dateFilter !== 'undated') ? '_' + dateFilter : (dateFilter === 'undated' ? '_undated' : '');
     a.download = 'LOTO_Export_' + dateStamp + filenameSuffix + '.zip';
     document.body.appendChild(a);
@@ -3128,7 +5053,7 @@ function saveBackup() {
       equipType:     getEquipType(),
       equipName:     currentName,
       equipRoom:     document.getElementById('equipRoom').value,
-      equipBuilding: document.getElementById('equipBuilding').value,
+      equipBuilding: getBuilding(),
       template:      getTemplate(),
       tiedTo:        document.getElementById('equipTiedTo').value,
       tiedToName:    document.getElementById('equipTiedToName').value.trim(),
@@ -3260,10 +5185,11 @@ function getDateStamp() {
 // PERSISTENCE - survives close/reopen
 // ============================================================================
 function checkStorage() {
+  // Use Storage Manager API if available (works on iPad Safari 17+)
   if (navigator.storage && navigator.storage.estimate) {
     navigator.storage.estimate().then(est => {
       const used = est.usage || 0;
-      const quota = est.quota || (500 * 1024 * 1024);
+      const quota = est.quota || (500 * 1024 * 1024); // fallback 500MB
       const pct = Math.round((used / quota) * 100);
       const indicator = document.getElementById('storageIndicator');
       const label = document.getElementById('storageUsed');
@@ -3283,6 +5209,7 @@ function checkStorage() {
       }
     }).catch(() => {});
   } else {
+    // Fallback: just hide the indicator since IndexedDB has plenty of room
     document.getElementById('storageIndicator').style.display = 'none';
   }
 }
@@ -3294,17 +5221,20 @@ function autoSaveCurrent() {
       equipTypeCustom: document.getElementById('equipTypeCustom').value.trim(),
       equipName: document.getElementById('equipName').value,
       equipRoom: document.getElementById('equipRoom').value,
-      equipBuilding: document.getElementById('equipBuilding').value,
+      equipBuilding: getBuilding(),
       template: getTemplate(),
       tiedTo: document.getElementById('equipTiedTo').value,
       tiedToName: document.getElementById('equipTiedToName').value.trim(),
       notes: document.getElementById('equipNotes').value.trim(),
       sources: sources,
-      photos: photos
+      photos: photos,
+      miscPhotos: miscPhotos,
+      sketch: getSketchData()
     };
     saveMetadata('current_wip', state).then(() => {
       checkStorage();
     }).catch(() => {
+      // Fallback to localStorage if IDB fails
       try {
         localStorage.setItem('loto_current', JSON.stringify(state));
       } catch(e2) {
@@ -3320,6 +5250,7 @@ function saveAll() {
   saveMetadata('saved_equipment', savedEquipment).then(() => {
     checkStorage();
   }).catch(() => {
+    // Fallback to localStorage if IDB fails
     try {
       localStorage.setItem('loto_saved', JSON.stringify(savedEquipment));
     } catch(e) {
@@ -3346,6 +5277,7 @@ async function loadAll() {
       const lsSaved = localStorage.getItem('loto_saved');
       if (lsSaved) {
         savedEquipment = JSON.parse(lsSaved);
+        // Migrate to IndexedDB and remove from localStorage
         saveMetadata('saved_equipment', savedEquipment).then(() => {
           localStorage.removeItem('loto_saved');
           console.log('Migrated loto_saved from localStorage to IndexedDB');
@@ -3366,6 +5298,7 @@ async function loadAll() {
       const lsCurrent = localStorage.getItem('loto_current');
       if (lsCurrent) {
         state = JSON.parse(lsCurrent);
+        // Migrate to IndexedDB and remove from localStorage
         saveMetadata('current_wip', state).then(() => {
           localStorage.removeItem('loto_current');
           console.log('Migrated loto_current from localStorage to IndexedDB');
@@ -3385,7 +5318,7 @@ async function loadAll() {
     }
     document.getElementById('equipName').value = state.equipName || '';
     document.getElementById('equipRoom').value = state.equipRoom || '';
-    document.getElementById('equipBuilding').value = state.equipBuilding || '';
+    setBuilding(state.equipBuilding || '');
     document.getElementById('equipTiedTo').value = state.tiedTo || '';
 
     // Restore tied-to equipment name
@@ -3411,6 +5344,7 @@ async function loadAll() {
 
     sources = state.sources || [];
     photos = state.photos || {};
+    miscPhotos = state.miscPhotos || [];
 
     // Restore equipment photos
     ['equip_main','equip_dataplate','equip_ee'].forEach(slot => {
@@ -3422,6 +5356,14 @@ async function loadAll() {
           <span style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);color:#4ab86a;font-size:10px;padding:2px 6px;border-radius:3px;font-weight:600;">&#10004; Captured</span>`;
       }
     });
+
+    // Restore sketch
+    if (state.sketch) {
+      restoreSketch(state.sketch);
+    }
+
+    // Restore misc photos
+    renderMiscPhotos();
 
     if (state.photosDropped) {
       showToast('Previous session photos were not saved (storage full)', true);

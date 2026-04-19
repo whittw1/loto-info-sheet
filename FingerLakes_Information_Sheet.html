@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v6.15</span></h1>
+    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -517,9 +517,13 @@ if ('serviceWorker' in navigator) {
     <input type="file" accept="image/*" capture="environment" id="file_misc_photo" style="display:none;" onchange="handleMiscPhoto(this)">
   </div>
 
-  <!-- Sketch Section -->
+  <!-- Sketch Section (collapsible) -->
   <div class="equipment-section" id="sketchSection" style="margin-bottom:20px;">
-    <h2>&#9997; Overhead Sketch</h2>
+    <h2 style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;" onclick="toggleSketchSection()">
+      <span><span id="sketchChevron" style="display:inline-block;transition:transform 0.2s;margin-right:6px;">&#9656;</span>&#9997; Overhead Sketch</span>
+      <span id="sketchSectionStatus" style="font-size:12px;color:var(--text-dim);font-weight:400;"></span>
+    </h2>
+    <div id="sketchSectionBody" style="display:none;">
     <div class="sketch-toolbar" id="sketchToolbar" style="display:none;">
       <button class="tool-btn active" onclick="setSketchTool('pen')" id="toolPen">Pen</button>
       <button class="tool-btn" onclick="setSketchTool('label')" id="toolLabel">Label</button>
@@ -549,6 +553,7 @@ if ('serviceWorker' in navigator) {
     </div>
     <div class="sketch-hint" id="sketchHint">Tap to place labels, draw with Apple Pencil or finger</div>
     <div class="sketch-status" id="sketchStatus">Sketch saved</div>
+    </div>
   </div>
 
   <!-- Notes -->
@@ -1130,10 +1135,12 @@ function init() {
     renderSources();
     updateHeaderBadge();
     checkStorage();
+    updateSketchSectionDefault();
   }).catch(() => {
     renderSavedPanel();
     renderSources();
     updateHeaderBadge();
+    updateSketchSectionDefault();
   });
 }
 
@@ -2522,6 +2529,8 @@ function loadSketchDiagram(templateName) {
   placeholder.style.display = 'none';
   canvasWrap.style.display = 'block';
   toolbar.style.display = 'flex';
+  // Auto-expand the sketch section now that a diagram is available
+  setSketchSectionExpanded(true);
 
   // Remove old labels
   container.querySelectorAll('.sketch-label-marker').forEach(el => el.remove());
@@ -2584,6 +2593,49 @@ function getSketchData() {
 }
 
 // Restore sketch from saved data
+// Collapse/expand the Overhead Sketch section. State persists for the current session.
+function setSketchSectionExpanded(expanded) {
+  const body = document.getElementById('sketchSectionBody');
+  const chevron = document.getElementById('sketchChevron');
+  const status = document.getElementById('sketchSectionStatus');
+  if (!body) return;
+  body.style.display = expanded ? 'block' : 'none';
+  if (chevron) chevron.style.transform = expanded ? 'rotate(90deg)' : 'rotate(0deg)';
+  // Show status summary when collapsed (e.g. "3 labels")
+  if (!expanded && status) {
+    const labelCount = (sketchLabels || []).length;
+    const strokeCount = (sketchStrokes || []).length;
+    if (labelCount || strokeCount) {
+      const parts = [];
+      if (labelCount) parts.push(`${labelCount} label${labelCount === 1 ? '' : 's'}`);
+      if (strokeCount) parts.push(`${strokeCount} stroke${strokeCount === 1 ? '' : 's'}`);
+      status.textContent = parts.join(', ') + ' (tap to edit)';
+    } else {
+      status.textContent = 'tap to expand';
+    }
+  } else if (status) {
+    status.textContent = '';
+  }
+  // If just expanded, resize canvas (needs to happen after display:block for correct dimensions)
+  if (expanded) {
+    requestAnimationFrame(() => {
+      try { resizeSketchCanvas(); renderSketchLabels(); } catch (e) {}
+    });
+  }
+}
+
+function toggleSketchSection() {
+  const body = document.getElementById('sketchSectionBody');
+  if (!body) return;
+  setSketchSectionExpanded(body.style.display === 'none');
+}
+
+// Auto-expand if there's existing sketch data; otherwise collapse
+function updateSketchSectionDefault() {
+  const hasData = (sketchLabels && sketchLabels.length > 0) || (sketchStrokes && sketchStrokes.length > 0) || sketchDiagramKey;
+  setSketchSectionExpanded(!!hasData);
+}
+
 function restoreSketch(data) {
   sketchStrokes = [];
   sketchLabels = [];
@@ -2619,6 +2671,7 @@ function restoreSketch(data) {
     resizeSketchCanvas();
     renderSketchLabels();
   });
+  updateSketchSectionDefault();
 }
 
 // Clear sketch state (for clearForm)
@@ -2637,6 +2690,7 @@ function clearSketchState() {
   document.getElementById('sketchCanvasWrap').style.display = 'none';
   document.getElementById('sketchPlaceholder').style.display = 'block';
   document.getElementById('sketchPlaceholder').innerHTML = 'Select a <strong>template</strong> above to load the matching equipment diagram.';
+  setSketchSectionExpanded(false);
 }
 
 // Export sketch to PNG data URL for saving to IndexedDB
