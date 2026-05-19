@@ -4,7 +4,7 @@
   "description": "A progressive web app (PWA) for field data collection of Lockout/Tagout (LOTO) information. Built for technicians to document equipment details, energy sources, capture photos, and annotate overhead diagrams directly from mobile devices — fully offline-capable.",
   "main": "sw.js",
   "scripts": {
-    "build": "cp index.html FingerLakes_Information_Sheet.html sw.js manifest.json manifest_fl.json www/",
+    "build": "mkdir -p www && cp index.html FingerLakes_Information_Sheet.html sw.js manifest.json manifest_fl.json www/",
     "sync": "npm run build && npx cap sync ios",
     "open": "npx cap open ios",
     "icons": "python3 assets/make_icon.py && npx capacitor-assets generate --ios"
