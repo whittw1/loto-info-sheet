@@ -1,0 +1,32 @@
+{
+  "name": "loto-info-sheet",
+  "version": "1.0.0",
+  "description": "A progressive web app (PWA) for field data collection of Lockout/Tagout (LOTO) information. Built for technicians to document equipment details, energy sources, capture photos, and annotate overhead diagrams directly from mobile devices — fully offline-capable.",
+  "main": "sw.js",
+  "scripts": {
+    "build": "cp index.html FingerLakes_Information_Sheet.html sw.js manifest.json manifest_fl.json www/",
+    "sync": "npm run build && npx cap sync ios",
+    "open": "npx cap open ios",
+    "icons": "python3 assets/make_icon.py && npx capacitor-assets generate --ios"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/whittw1/loto-info-sheet.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/whittw1/loto-info-sheet/issues"
+  },
+  "homepage": "https://github.com/whittw1/loto-info-sheet#readme",
+  "dependencies": {
+    "@capacitor/cli": "^8.3.4",
+    "@capacitor/core": "^8.3.4",
+    "@capacitor/ios": "^8.3.4"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5"
+  }
+}
