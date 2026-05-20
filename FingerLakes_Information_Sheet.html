@@ -1194,14 +1194,64 @@ function equipTypeChanged(equipType) {
   }
   renderSources();
 
-  // Auto-suggest template if there's only one match
+  // Auto-suggest template:
+  //  - If exactly one template → auto-select silently (existing behavior)
+  //  - If equip type is in EQUIPMENT_PROMPT_FOR_TEMPLATE and has multiple templates → prompt
   if (equipType && EQUIPMENT_TEMPLATE_MAP[equipType]) {
     const templates = EQUIPMENT_TEMPLATE_MAP[equipType];
     if (templates.length === 1) {
       document.getElementById('equipTemplate').value = templates[0];
       handleTemplateChange();
+    } else if (EQUIPMENT_PROMPT_FOR_TEMPLATE.has(equipType) && templates.length > 1) {
+      showTemplatePrompt(equipType, templates);
     }
   }
+}
+
+// Equipment types that should prompt the user to pick a template after type selection
+// (only multi-template types — single-template types still auto-select silently).
+const EQUIPMENT_PROMPT_FOR_TEMPLATE = new Set([
+  'Air Handler',
+  'Domestic Water Heater',
+  'Condensate Return Unit',
+  'Elevator',
+]);
+
+function showTemplatePrompt(equipType, templates) {
+  // Avoid stacking dialogs (e.g. on rapid type-change clicks)
+  closeTemplatePrompt();
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'templatePromptOverlay';
+  const buttons = templates.map(t =>
+    `<button class="btn btn-primary" onclick="applyTemplatePromptChoice(${JSON.stringify(t).replace(/"/g, '&quot;')})" style="padding:12px;font-size:16px;text-align:left;">${t}</button>`
+  ).join('');
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:360px;">
+      <h3 style="margin:0 0 6px 0;color:var(--accent);">Select Template</h3>
+      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">Pick a template for <strong>${equipType}</strong>:</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        ${buttons}
+        <button class="btn" onclick="closeTemplatePrompt()" style="padding:10px;font-size:13px;background:transparent;color:var(--text-dim);">Skip / Choose Later</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+}
+
+function applyTemplatePromptChoice(template) {
+  closeTemplatePrompt();
+  const sel = document.getElementById('equipTemplate');
+  if (sel) {
+    sel.value = template;
+    handleTemplateChange();
+  }
+}
+
+function closeTemplatePrompt() {
+  const overlay = document.getElementById('templatePromptOverlay');
+  if (overlay) overlay.remove();
 }
 
 // Voltage prompt configurations per equipment type

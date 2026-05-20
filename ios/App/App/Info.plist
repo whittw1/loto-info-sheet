@@ -47,5 +47,13 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Used to photograph equipment, data plates, and energy sources for LOTO field documentation.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Used to attach existing photos to LOTO equipment entries.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Used to save exported LOTO photo bundles to your photo library.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
