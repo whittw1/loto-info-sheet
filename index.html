@@ -3066,7 +3066,10 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Chilled Water Pump':      ['120V', '208V', '240V', '480V'],
   'Heating Hot Water Pump':  ['120V', '208V', '240V', '480V'],
   'Standard Pump':           ['120V', '208V', '240V', '480V'],
-  // Cooling Tower: only 120/208/480 per spec.
+  // AHUs and Cooling Tower: only 120/208/480 per spec (no 240, no 4160).
+  'AHU - Steam':             ['120V', '208V', '480V'],
+  'AHU - HHW':               ['120V', '208V', '480V'],
+  'AHU - Steam, CHW, HHW':   ['120V', '208V', '480V'],
   'Cooling Tower':           ['120V', '208V', '480V'],
   // Feedwater Pump: feedwater pumps run at higher voltages, never 120/240.
   'Feedwater Pump':          ['208V', '480V'],
