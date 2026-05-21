@@ -1098,6 +1098,7 @@ const EQUIPMENT_AUTO_SOURCES = {
   ],
   'Exhaust Fan': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Air Handler': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
@@ -3066,11 +3067,12 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Chilled Water Pump':      ['120V', '208V', '240V', '480V'],
   'Heating Hot Water Pump':  ['120V', '208V', '240V', '480V'],
   'Standard Pump':           ['120V', '208V', '240V', '480V'],
-  // AHUs and Cooling Tower: only 120/208/480 per spec (no 240, no 4160).
+  // AHUs, Cooling Tower, Exhaust Fan: only 120/208/480 per spec (no 240, no 4160).
   'AHU - Steam':             ['120V', '208V', '480V'],
   'AHU - HHW':               ['120V', '208V', '480V'],
   'AHU - Steam, CHW, HHW':   ['120V', '208V', '480V'],
   'Cooling Tower':           ['120V', '208V', '480V'],
+  'Exhaust Fan':             ['120V', '208V', '480V'],
   // Feedwater Pump: feedwater pumps run at higher voltages, never 120/240.
   'Feedwater Pump':          ['208V', '480V'],
 };
@@ -3172,6 +3174,7 @@ const TEMPLATE_AUTO_SOURCES = {
   ],
   'Exhaust Fan': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Air Compressor': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
