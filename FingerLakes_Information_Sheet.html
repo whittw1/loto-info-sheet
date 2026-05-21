@@ -1286,21 +1286,46 @@ const EQUIPMENT_PROMPT_FOR_TEMPLATE = new Set([
   'Elevator',
   'Unit Heater',
   'Heat Exchanger',
+  // Dishwasher prompts for fuel type (Electric / Steam) and reuses the
+  // matching Water Heater template (see EQUIPMENT_TEMPLATE_LABELS for the
+  // friendlier button labels).
+  'Dishwasher',
 ]);
+
+// Optional per-equipment-type display-label overrides for the template-pick
+// modal. Use when the template's filename isn't the friendliest thing to
+// show the user — e.g. a Dishwasher prompt should say "Electric" / "Steam"
+// even though the underlying templates are "Water Heater - Electric" /
+// "Water Heater - Steam".
+const EQUIPMENT_TEMPLATE_LABELS = {
+  'Dishwasher': {
+    'Water Heater - Electric': 'Electric',
+    'Water Heater - Steam':    'Steam',
+  },
+};
 
 function showTemplatePrompt(equipType, templates) {
   // Avoid stacking dialogs (e.g. on rapid type-change clicks)
   closeTemplatePrompt();
+  const labels = EQUIPMENT_TEMPLATE_LABELS[equipType] || {};
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.id = 'templatePromptOverlay';
-  const buttons = templates.map(t =>
-    `<button class="btn btn-primary" onclick="applyTemplatePromptChoice(${JSON.stringify(t).replace(/"/g, '&quot;')})" style="padding:12px;font-size:16px;text-align:left;">${t}</button>`
-  ).join('');
+  const buttons = templates.map(t => {
+    const display = labels[t] || t;
+    return `<button class="btn btn-primary" onclick="applyTemplatePromptChoice(${JSON.stringify(t).replace(/"/g, '&quot;')})" style="padding:12px;font-size:16px;text-align:left;">${display}</button>`;
+  }).join('');
+  // Customise the heading + lead-in copy too, so the Dishwasher prompt
+  // doesn't say "Select Template" with "Electric/Steam" buttons (mismatched).
+  const isLabelOverride = Object.keys(labels).length > 0;
+  const heading = isLabelOverride ? `${equipType} Type` : 'Select Template';
+  const lead    = isLabelOverride
+    ? `What kind of <strong>${equipType}</strong>?`
+    : `Pick a template for <strong>${equipType}</strong>:`;
   overlay.innerHTML = `
     <div class="dialog" style="max-width:360px;">
-      <h3 style="margin:0 0 6px 0;color:var(--accent);">Select Template</h3>
-      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">Pick a template for <strong>${equipType}</strong>:</p>
+      <h3 style="margin:0 0 6px 0;color:var(--accent);">${heading}</h3>
+      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">${lead}</p>
       <div style="display:flex;flex-direction:column;gap:10px;">
         ${buttons}
         <button class="btn" onclick="closeTemplatePrompt()" style="padding:10px;font-size:13px;background:transparent;color:var(--text-dim);">Skip / Choose Later</button>
@@ -1450,6 +1475,8 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'DA Tank': ['Heat Exchanger - Steam'],
   // Condensate Surge Tank — holds condensate; standard (non-steam) CRU template.
   'Condensate Surge Tank': ['Condensate Return Unit'],
+  // Dishwasher — Electric or Steam variant. Reuses the Water Heater templates.
+  'Dishwasher': ['Water Heater - Electric', 'Water Heater - Steam'],
   'Chemical Feed Pump': ['Standard Pump'],
   'Condensate Pump': ['Heating Hot Water Pump'],
   'Condensate Return Unit': ['Condensate Return Unit','Condensate Return Unit - Steam'],
@@ -3092,7 +3119,10 @@ const EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT = new Set(['ATS', 'Generator', 'Chiller']
 
 // Templates whose Electrical voltage is fixed (no point in prompting). Example:
 // Air Dryer is always 120V via a wall plug — the prompt would just be noise.
-const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank']);
+// Templates whose electrical voltage is fixed by design — no voltage prompt.
+// Water Heater - Steam has a 120V control circuit only (no choice between
+// 208/240/etc.); same for Air Dryer (always a 120V plug) and Day Tank.
+const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam']);
 
 // Per-template voltage option overrides. Falls back to all available
 // "Electrical NNN" entries in DATA.energySources if not listed here.
