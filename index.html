@@ -103,6 +103,27 @@ if ('serviceWorker' in navigator) {
   .btn-accent:hover { background: var(--accent-hover); }
   .btn-primary { background: var(--accent); }
   .btn-primary:hover { background: var(--accent-hover); }
+  /* OCR scan button — small icon button next to text inputs, iOS-only */
+  .scan-btn {
+    flex: 0 0 auto;
+    width: 44px; height: 44px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card-alt);
+    color: var(--accent);
+    font-size: 20px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .scan-btn:active, .scan-btn:hover { background: var(--accent); color: white; }
+  .scan-btn:disabled { opacity: 0.4; cursor: default; }
+  .scan-input-row { display: flex; gap: 6px; align-items: stretch; }
+  .scan-input-row > input { flex: 1; min-width: 0; }
+  body.web-platform .scan-btn { display: none; }
   .btn-success { background: var(--success); }
   .btn-success:hover { background: var(--success-hover); }
   .btn-danger { background: var(--danger); }
@@ -416,7 +437,10 @@ if ('serviceWorker' in navigator) {
       </div>
       <div class="form-group">
         <label>Equipment ID / Name</label>
-        <input type="text" id="equipName" placeholder="e.g. AHU-3000">
+        <div class="scan-input-row">
+          <input type="text" id="equipName" placeholder="e.g. AHU-3000">
+          <button type="button" class="scan-btn" onclick="scanTextToField('equipName')" title="Scan label">&#128247;</button>
+        </div>
       </div>
       <div class="form-group">
         <label>Building</label>
@@ -1108,6 +1132,10 @@ let savedPanelOpen = false;
 // INIT
 // ============================================================================
 function init() {
+  // Tag body so CSS can show/hide native-only affordances (e.g. scan buttons)
+  const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  document.body.classList.add(isNative ? 'native-platform' : 'web-platform');
+
   populateDropdown(document.getElementById('equipType'), DATA.equipmentTypes, 'Select Type');
   populateDropdown(document.getElementById('equipTemplate'), DATA.templates, 'Select Template');
   populateDropdown(document.getElementById('equipTiedTo'), DATA.tiedToOptions, 'Select');
@@ -3309,8 +3337,11 @@ function renderSources() {
             </div>` : `<div id="customDeviceGroup_${i}" style="display:none;"></div>`}
             <div class="form-group">
               <label>Device ID</label>
-              <input type="text" id="src_deviceId_${i}" value="${src.deviceId||''}" placeholder="e.g. Pump 3, V-201"
-                oninput="updateSource(${i},'deviceId',this.value)">
+              <div class="scan-input-row">
+                <input type="text" id="src_deviceId_${i}" value="${src.deviceId||''}" placeholder="e.g. Pump 3, V-201"
+                  oninput="updateSource(${i},'deviceId',this.value)">
+                <button type="button" class="scan-btn" onclick="scanTextToField('src_deviceId_${i}')" title="Scan label">&#128247;</button>
+              </div>
             </div>
             <div class="form-group">
               <label>Location</label>
@@ -3369,9 +3400,12 @@ function renderSources() {
             </div>
             <div style="flex:0 0 auto;">
               <label style="font-size:11px;font-weight:600;color:var(--text-label);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;">Detail</label>
-              <input type="text" value="${src.detail||''}" placeholder="LR, TL…"
-                oninput="updateSource(${i},'detail',this.value)"
-                style="text-transform:uppercase;font-family:monospace;width:160px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-main);font-size:14px;text-align:center;">
+              <div class="scan-input-row" style="width:160px;">
+                <input type="text" id="src_detail_${i}" value="${src.detail||''}" placeholder="LR, TL…"
+                  oninput="updateSource(${i},'detail',this.value)"
+                  style="text-transform:uppercase;font-family:monospace;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-main);font-size:14px;text-align:center;">
+                <button type="button" class="scan-btn" onclick="scanTextToField('src_detail_${i}')" title="Scan label" style="width:38px;height:38px;font-size:16px;">&#128247;</button>
+              </div>
             </div>
           </div>`}
         </div>
@@ -5543,6 +5577,85 @@ async function saveOrShare(blob, filename, _mimeType) {
   }
 
   return { saved: true, native: true, uri: fileUri };
+}
+
+// ============================================================================
+// OCR — Camera capture → Apple Vision text recognition → field
+// ----------------------------------------------------------------------------
+// Tapping a .scan-btn calls scanTextToField(inputId). Opens the native iOS
+// camera via @capacitor/camera (rear, no save to gallery), gets a base64
+// JPEG back, hands it to our custom TextRecognition plugin (AppDelegate.swift)
+// which runs VNRecognizeTextRequest, then sets the input value and dispatches
+// an `input` event so any oninput="..." handlers on the target field fire
+// (auto-save, source state updates, etc.). User can edit after.
+//
+// Hidden on the web build via the body.web-platform class. The scan button
+// itself stays in the DOM so renderSources() doesn't have to branch.
+// ============================================================================
+async function scanTextToField(inputId) {
+  const native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  if (!native) {
+    showToast('Scan only works in the iOS app.', true);
+    return;
+  }
+  const Camera = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Camera;
+  const TextRecognition = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.TextRecognition;
+  if (!Camera || !TextRecognition) {
+    showToast('Scanner plugins not loaded.', true);
+    return;
+  }
+
+  let photo;
+  try {
+    photo = await Camera.getPhoto({
+      quality: 80,
+      resultType: 'base64',
+      source: 'CAMERA',
+      saveToGallery: false,
+      correctOrientation: true,
+      direction: 'REAR',
+      allowEditing: false,
+    });
+  } catch (err) {
+    const msg = String((err && err.message) || err || '').toLowerCase();
+    if (msg.includes('cancel') || msg.includes('user did not') || msg.includes('denied')) return;
+    console.error('Camera error:', err);
+    showToast('Camera failed: ' + (err && err.message ? err.message : err), true);
+    return;
+  }
+
+  const base64 = photo && (photo.base64String || photo.base64Data);
+  if (!base64) {
+    showToast('No image captured.', true);
+    return;
+  }
+
+  let result;
+  try {
+    result = await TextRecognition.recognizeText({ base64Image: base64 });
+  } catch (err) {
+    console.error('OCR error:', err);
+    showToast('OCR failed: ' + (err && err.message ? err.message : err), true);
+    return;
+  }
+
+  const rawText = (result && result.text) || '';
+  // Most labels are 1–3 lines; collapse line breaks into spaces so the field
+  // ends up with a single clean string the user can edit.
+  const text = rawText.replace(/\s+/g, ' ').trim();
+
+  const input = document.getElementById(inputId);
+  if (!input) return;
+
+  if (!text) {
+    showToast('No text detected — try again with more light or a closer angle.', true);
+    return;
+  }
+
+  input.value = text;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  const preview = text.length > 40 ? text.slice(0, 40) + '…' : text;
+  showToast(`Scanned: "${preview}"`);
 }
 
 // ============================================================================

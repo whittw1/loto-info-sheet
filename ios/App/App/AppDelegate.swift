@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import Vision
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -46,4 +47,110 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
+}
+
+// ============================================================================
+// TextRecognition — custom Capacitor plugin using Apple's Vision framework
+// ----------------------------------------------------------------------------
+// Exposed to JS as `Capacitor.Plugins.TextRecognition`. Single method:
+//
+//   TextRecognition.recognizeText({ base64Image: string })
+//      → { text: string, blocks: [{ text: string, confidence: number }] }
+//
+// `base64Image` is the raw base64 payload with or without a data-URL prefix
+// (e.g. "data:image/jpeg;base64,..."). Returns concatenated text plus
+// per-line blocks with confidence scores.
+//
+// Uses VNRecognizeTextRequest with .accurate recognition level and English
+// language correction enabled. Runs on a background queue; resolves the
+// CAPPluginCall when Vision completes. Auto-discovered by Capacitor at
+// runtime via Objective-C class introspection (no project.pbxproj edits
+// required, no external SDK, no model download — Vision is built into iOS).
+// ============================================================================
+@objc(TextRecognition)
+public class TextRecognition: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "TextRecognition"
+    public let jsName = "TextRecognition"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "recognizeText", returnType: CAPPluginReturnPromise)
+    ]
+
+    @objc public func recognizeText(_ call: CAPPluginCall) {
+        guard var base64String = call.getString("base64Image") else {
+            call.reject("base64Image is required")
+            return
+        }
+
+        // Strip a "data:image/...;base64," prefix if the caller included it
+        if let commaIndex = base64String.firstIndex(of: ","),
+           base64String[..<commaIndex].contains("base64") {
+            base64String = String(base64String[base64String.index(after: commaIndex)...])
+        }
+
+        guard let imageData = Data(base64Encoded: base64String),
+              let uiImage = UIImage(data: imageData),
+              let cgImage = uiImage.cgImage else {
+            call.reject("Could not decode image data")
+            return
+        }
+
+        let orientation = CGImagePropertyOrientation(uiImage.imageOrientation)
+
+        let request = VNRecognizeTextRequest { request, error in
+            if let error = error {
+                call.reject("Vision OCR error: \(error.localizedDescription)")
+                return
+            }
+            let observations = (request.results as? [VNRecognizedTextObservation]) ?? []
+            var lines: [String] = []
+            var blocks: [[String: Any]] = []
+            for obs in observations {
+                guard let top = obs.topCandidates(1).first else { continue }
+                lines.append(top.string)
+                blocks.append([
+                    "text": top.string,
+                    "confidence": top.confidence
+                ])
+            }
+            call.resolve([
+                "text": lines.joined(separator: "\n"),
+                "blocks": blocks
+            ])
+        }
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        if #available(iOS 16.0, *) {
+            request.recognitionLanguages = ["en-US"]
+        }
+
+        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try handler.perform([request])
+            } catch {
+                DispatchQueue.main.async {
+                    call.reject("Vision OCR perform failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+}
+
+// Bridge from UIImage.Orientation → CGImagePropertyOrientation so Vision can
+// read the captured photo at the correct rotation regardless of how the
+// device was held when the user tapped Scan.
+private extension CGImagePropertyOrientation {
+    init(_ uiOrientation: UIImage.Orientation) {
+        switch uiOrientation {
+        case .up: self = .up
+        case .down: self = .down
+        case .left: self = .left
+        case .right: self = .right
+        case .upMirrored: self = .upMirrored
+        case .downMirrored: self = .downMirrored
+        case .leftMirrored: self = .leftMirrored
+        case .rightMirrored: self = .rightMirrored
+        @unknown default: self = .up
+        }
+    }
 }
