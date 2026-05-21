@@ -857,7 +857,7 @@ const DATA = {
     "Air Compressor","Air Dryer","Vaccum Pump","Condensing Unit",
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
     "Elevator - Traction","Elevator - Hydraulic",
-    "ATS - Generic","ASCO 7000","Non Byp","Kohler","Zenith",
+    "ATS - Generic","ASCO 7000","Non Byp","Kohler","Zenith","Humidifier",
     "Standard Electrical","Heat Exchanger - Steam","Heat Exchanger - CHW/Glycol"
   ],
   tiedToOptions: ["Shut Down","Shut Down & LOTO"]
@@ -1494,13 +1494,14 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Heat Exchanger': ['Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol'],
   'Boiler': ['Standard Electrical'],
   'Steam PRV Station': ['Standard Electrical'],
-  'Humidifier': ['Water Heater - Steam'],
+  'Humidifier': ['Humidifier'],
 };
 
 // Equipment types that force a specific diagram regardless of template's default
-const EQUIPMENT_DIAGRAM_OVERRIDE = {
-  'Humidifier': 'general',
-};
+// Humidifier formerly overrode here when it reused the Water Heater - Steam
+// template; now Humidifier has its own template with its own diagram, so the
+// override map is intentionally empty. Keep the structure for future use.
+const EQUIPMENT_DIAGRAM_OVERRIDE = {};
 
 function filterTemplateDropdown(equipType) {
   const sel = document.getElementById('equipTemplate');
@@ -1540,6 +1541,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Water Heater - Steam': 'steam_water_heater', 'Water Heater - Gas': 'electric_water_heater',
   'Water Heater - Electric': 'general',
   'Unit Heater - Steam': 'steam_water_heater', 'Unit Heater - HHW': 'heat_exchanger',
+  'Humidifier': 'general',
   'Cooling Tower': 'cooling_tower',
   'Condensate Return Unit': 'condensate_return', 'Condensate Return Unit - Steam': 'condensate_return',
   'Elevator - Traction': 'traction_elevator', 'Elevator - Hydraulic': 'hydraulic_elevator',
@@ -3141,6 +3143,11 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Exhaust Fan':             ['120V', '208V', '480V'],
   // Feedwater Pump: feedwater pumps run at higher voltages, never 120/240.
   'Feedwater Pump':          ['208V', '480V'],
+  // Humidifier: 120/208/480 — same shape as AHU/Cooling Tower/Exhaust Fan.
+  'Humidifier':              ['120V', '208V', '480V'],
+  // Unit Heater (both variants): cap at 480V — 4160V is never realistic.
+  'Unit Heater - Steam':     ['120V', '208V', '240V', '480V'],
+  'Unit Heater - HHW':       ['120V', '208V', '240V', '480V'],
 };
 
 function getElectricalVoltageOptions(template) {
@@ -3290,6 +3297,14 @@ const TEMPLATE_AUTO_SOURCES = {
   'Elevator - Traction': [
     { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+  ],
+  // Humidifier — dedicated template (was previously reusing Water Heater - Steam
+  // with a general-diagram override). Has its own voltage prompt so the user
+  // can pick a real power-feed voltage instead of the steam water heater's
+  // hardcoded 120V control circuit.
+  'Humidifier': [
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   'Unit Heater - Steam': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
