@@ -795,7 +795,7 @@ const DATA = {
     "CHW Pump","Domestic HW Pump","Domestic Water Pump","Feedwater Pump","Heat Exchanger",
     "Condensate Return Unit","Condensate Pump","Unit Heater",
     "Domestic Water Heater","Air Compressor","Air Dryer","Vacuum Pump","ATS",
-    "Generator","Day Tank","Elevator","Cooling Tower","Chemical Feed Pump","Dishwasher",
+    "Generator","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Cooling Tower","Chemical Feed Pump","Dishwasher",
     "Chiller","Refrigerator","Boiler","Steam PRV Station","Humidifier",
     "** New Equipment Type **"
   ],
@@ -1445,6 +1445,11 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Domestic Water Pump': ['Standard Pump'],
   'Feedwater Pump': ['Feedwater Pump'],
   'Day Tank': ['Day Tank'],
+  // DA Tank (deaerator) — uses steam to deaerate boiler feedwater.
+  // Steam heat-exchanger semantics.
+  'DA Tank': ['Heat Exchanger - Steam'],
+  // Condensate Surge Tank — holds condensate; standard (non-steam) CRU template.
+  'Condensate Surge Tank': ['Condensate Return Unit'],
   'Chemical Feed Pump': ['Standard Pump'],
   'Condensate Pump': ['Heating Hot Water Pump'],
   'Condensate Return Unit': ['Condensate Return Unit','Condensate Return Unit - Steam'],
