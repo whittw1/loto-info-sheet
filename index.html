@@ -5607,16 +5607,37 @@ async function saveOrShare(blob, filename, _mimeType) {
 // Hidden on the web build via the body.web-platform class. The scan button
 // itself stays in the DOM so renderSources() doesn't have to branch.
 // ============================================================================
+// Resolve a Capacitor plugin proxy. In bundled apps, `import { Plugin } from
+// '@capacitor/plugin-name'` triggers a registerPlugin('Name') call at module
+// load that populates Capacitor.Plugins.Name. Our HTML is inline (no module
+// imports), so we have to call registerPlugin ourselves. Idempotent — safe
+// to call repeatedly. Falls back to Capacitor.Plugins.X if registerPlugin
+// isn't on the global (older runtimes).
+function getCapPlugin(name) {
+  const C = window.Capacitor;
+  if (!C) return null;
+  if (typeof C.registerPlugin === 'function') {
+    return C.registerPlugin(name);
+  }
+  return C.Plugins && C.Plugins[name];
+}
+
 async function scanTextToField(inputId) {
   const native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   if (!native) {
     showToast('Scan only works in the iOS app.', true);
     return;
   }
-  const Camera = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Camera;
-  const TextRecognition = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.TextRecognition;
-  if (!Camera || !TextRecognition) {
-    showToast('Scanner plugins not loaded.', true);
+  const Camera = getCapPlugin('Camera');
+  const TextRecognition = getCapPlugin('TextRecognition');
+  if (!Camera) {
+    console.error('Camera plugin not available. window.Capacitor:', window.Capacitor);
+    showToast('Camera plugin not loaded — try reinstalling the build.', true);
+    return;
+  }
+  if (!TextRecognition) {
+    console.error('TextRecognition plugin not available. window.Capacitor:', window.Capacitor);
+    showToast('OCR plugin not loaded — try reinstalling the build.', true);
     return;
   }
 
