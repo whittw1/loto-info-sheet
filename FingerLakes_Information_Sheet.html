@@ -811,7 +811,7 @@ const DATA = {
     "Vacuum Air In","Vacuum Air Out",
     "Fuel Oil In/Out","Fuel Oil In","Fuel Oil Out",
     "Natural Gas","Propane",
-    "Condenser Water In","Condenser Water Out",
+    "Condenser Water In/Out","Condenser Water In","Condenser Water Out",
     "Feedwater In/Out","Feedwater In","Feedwater Out",
     "Gravity/Potential","Chemical In","Chemical Out",
     "Glycol HW In/Out","Glycol CHW In/Out","Kinetic",
@@ -843,7 +843,7 @@ const DATA = {
     "Button (FWD/STOP) - VFD","Button (Start/Stop) - Retractable","Button (Other)",
     "Controls","Meter","Rotating","Block"
   ],
-  quantities: [1,2,3,4,5],
+  quantities: [1,2,3,4,5,6,7,8],
   duplicateOptions: ["No","Yes"],
   templates: [
     "** New Template **",
@@ -902,9 +902,12 @@ const HOT_ENERGY_SOURCES = [
   'HHW','DHW','DW','Feedwater','Condensate'
 ];
 
-// Energy sources that get "- CHW" suffix on gauge/drain verifications
+// Energy sources that get "- CHW" suffix on gauge/drain verifications.
+// Only true chilled water gets the CHW variant — condenser water (CW /
+// "Condenser Water") is on the warm tower side of a chiller and uses
+// the plain valve verifications (Gauge/Drain, GaugeOnly, Drain Only).
 const CHW_ENERGY_SOURCES = [
-  'CHW','CW','Condenser'
+  'CHW'
 ];
 
 function getFilteredVerifications(deviceType, energySource) {
@@ -1325,7 +1328,7 @@ const VOLTAGE_PROMPT_CONFIG = {
     apply: function(voltage) {
       const energyName = voltage ? 'Electrical ' + voltage : 'Electrical';
       sources.push({
-        energySource: energyName, deviceType: 'Disconnect', quantity: 1, location: '',
+        energySource: energyName, deviceType: 'Disconnect', quantity: 1, location: 'On Equipment',
         duplicate: 'No', verification: 'Controls', detail: '', collapsed: true, auto: true
       });
       showToast(`Added Electrical source${voltage ? ' (' + voltage + ')' : ''} for Chiller`);
@@ -1371,13 +1374,11 @@ function showVoltageDialog(equipType) {
 function applyVoltageChoice(voltage) {
   const equipType = pendingVoltageEquipType;
   closeVoltageDialog();
-  if (equipType && VOLTAGE_PROMPT_CONFIG[equipType]) {
-    VOLTAGE_PROMPT_CONFIG[equipType].apply(voltage);
-  }
-  renderSources();
-  autoSaveCurrent();
 
-  // Auto-suggest template
+  // Apply the auto-template FIRST (it would otherwise wipe any source we push).
+  // Single-template equipment types like Chiller / Generator have a template
+  // that includes Kinetic etc. — we want those, then we add the voltage-specific
+  // Electrical source on top so it survives applyTemplate's sources = [].
   if (equipType && EQUIPMENT_TEMPLATE_MAP[equipType]) {
     const templates = EQUIPMENT_TEMPLATE_MAP[equipType];
     if (templates.length === 1) {
@@ -1385,6 +1386,14 @@ function applyVoltageChoice(voltage) {
       handleTemplateChange();
     }
   }
+
+  // Now push the voltage-specific source(s). This runs AFTER applyTemplate so
+  // it doesn't get cleared by the template's sources = [] reset.
+  if (equipType && VOLTAGE_PROMPT_CONFIG[equipType]) {
+    VOLTAGE_PROMPT_CONFIG[equipType].apply(voltage);
+  }
+  renderSources();
+  autoSaveCurrent();
 }
 
 function closeVoltageDialog() {
@@ -3469,6 +3478,12 @@ function handleEnergySourceChange(index, value) {
     if (value && value.startsWith('Condensate') && CONDENSATE_AUTO_EQUIP.includes(getEquipType())) {
       if (!sources[index].deviceType) sources[index].deviceType = 'Gate Valve';
       if (!sources[index].verification) sources[index].verification = 'Temp Only - Hot';
+    }
+    // Combined "In/Out" sources default to a device count of 2 (one device
+    // on each side). Only bumps from the standard default of 1 — if the user
+    // has already set a custom quantity, leave it alone.
+    if (value && /In\/Out\b/.test(value) && (sources[index].quantity == null || sources[index].quantity === 1)) {
+      sources[index].quantity = 2;
     }
     // Re-render to update device + verification dropdowns
     renderSources();
