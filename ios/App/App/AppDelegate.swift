@@ -136,6 +136,27 @@ public class TextRecognition: CAPPlugin, CAPBridgedPlugin {
     }
 }
 
+// ============================================================================
+// LotoBridgeViewController
+// ----------------------------------------------------------------------------
+// Capacitor 8's automatic plugin discovery via objc runtime scan picks up
+// SwiftPM-packaged plugins (like @capacitor/camera, which is declared in
+// CapApp-SPM/Package.swift) but does NOT reliably discover in-app Swift
+// classes defined in the App target itself. Result: TextRecognition was
+// compiled into the binary and registered with the ObjC runtime, but the
+// Capacitor bridge never called registerPluginType on it, so JS calls
+// failed with "plugin not loaded".
+//
+// Fix: subclass CAPBridgeViewController and explicitly register the
+// TextRecognition instance once the bridge is ready. Main.storyboard
+// points at this subclass instead of CAPBridgeViewController directly.
+// ============================================================================
+public class LotoBridgeViewController: CAPBridgeViewController {
+    override open func capacitorDidLoad() {
+        bridge?.registerPluginInstance(TextRecognition())
+    }
+}
+
 // Bridge from UIImage.Orientation → CGImagePropertyOrientation so Vision can
 // read the captured photo at the correct rotation regardless of how the
 // device was held when the user tapped Scan.
