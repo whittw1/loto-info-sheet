@@ -837,6 +837,7 @@ const DATA = {
     "Gauge/Drain - Hot","Gauge/Drain - CHW","Gauge/Drain",
     "Drain Only - Hot","Drain Only - CHW","Drain Only",
     "G/Tmp/Drain - Hot","G/Tmp/Drain - CHW",
+    "Zero Flow",
     "SW (On/Off)","SW (Hand/Off/Auto)","SW (H/O/A)",
     "SW (Drive/Off/Bypass)","SW (VFD/Off/Bypass)","SW (Other)",
     "Screen","Button (Start/Stop) - VFD","Button (Hand/Off/Auto) - VFD",
@@ -896,10 +897,13 @@ const DEVICE_VERIFICATION_MAP = {
   'Cable':                ['Controls'],
 };
 
-// Energy sources that get "- Hot" suffix on gauge/drain verifications
+// Energy sources that get "- Hot" suffix on gauge/drain verifications.
+// NOTE: 'DW' (Domestic Water) is intentionally NOT here — that's cold tap
+// water, distinct from 'DHW' (Domestic Hot Water) which IS hot. DW sources
+// should show plain Gauge/Drain, GaugeOnly, Drain Only (no -Hot variants).
 const HOT_ENERGY_SOURCES = [
   'LPS','MPS','HPS','Steam',
-  'HHW','DHW','DW','Feedwater','Condensate'
+  'HHW','DHW','Feedwater','Condensate'
 ];
 
 // Energy sources that get "- CHW" suffix on gauge/drain verifications.
@@ -1034,7 +1038,9 @@ const ENERGY_KEYWORD_DEVICE_MAP = [
 // Keyword fallback for temperature variant detection on custom energy sources
 const ENERGY_KEYWORD_TEMP = [
   { keywords: ['steam','hps','lps','mps','hhw','dhw','feedwater','condensate','hot'], temp: 'hot' },
-  { keywords: ['chw','chilled','condenser','cold'], temp: 'chw' },
+  // 'condenser' intentionally removed — condenser water is on the warm tower
+  // side of a chiller, not chilled. Use plain valve verifications instead.
+  { keywords: ['chw','chilled','cold'], temp: 'chw' },
 ];
 
 function getFilteredDevices(energySource) {
@@ -3054,6 +3060,13 @@ const EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT = new Set(['ATS', 'Generator', 'Chiller']
 // "Electrical NNN" entries in DATA.energySources if not listed here.
 const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Water Heater - Electric': ['120V', '208V', '240V', '480V'],
+  // Pumps: 4160V dropped — that's substation-scale, not realistic for a
+  // standard building pump.
+  'Chilled Water Pump':      ['120V', '208V', '240V', '480V'],
+  'Heating Hot Water Pump':  ['120V', '208V', '240V', '480V'],
+  'Standard Pump':           ['120V', '208V', '240V', '480V'],
+  // Cooling Tower: only 120/208/480 per spec.
+  'Cooling Tower':           ['120V', '208V', '480V'],
 };
 
 function getElectricalVoltageOptions(template) {
