@@ -3012,6 +3012,18 @@ function applyTemplate(val) {
     }
     renderSources();
     showToast(`Set ${sources.length} source${sources.length > 1 ? 's' : ''} for ${val}`);
+
+    // If the template pushed at least one auto Electrical source, prompt the
+    // user to pick the voltage — but NOT for equipment types that already
+    // ran their own voltage prompt at equipment-type selection (ATS,
+    // Generator, Chiller); those handle voltage at a different layer.
+    const equipType = getEquipType();
+    if (!EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT.has(equipType)) {
+      const hasAutoElectrical = sources.some(s => s.auto && /^Electrical(?:\s|$)/.test(s.energySource || ''));
+      if (hasAutoElectrical) {
+        promptForTemplateVoltage(val);
+      }
+    }
   } else if (!val) {
     // Cleared the template selection — clear sources if no data
     if (sources.length > 0 && !sourcesHaveData()) {
@@ -3021,6 +3033,84 @@ function applyTemplate(val) {
   }
 
   autoSaveCurrent();
+}
+
+// ============================================================================
+// TEMPLATE VOLTAGE PROMPT
+// ----------------------------------------------------------------------------
+// When a template that auto-populates an Electrical source is applied, ask
+// the user to pick the voltage. Default voltage list comes from the
+// DATA.energySources entries matching "Electrical NNN". A per-template
+// override may narrow the list (e.g. Water Heater - Electric only offers
+// 120/208/240/480 — no 4160V for a residential / small commercial heater).
+//
+// Skipped for equipment types listed in EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT
+// (ATS, Generator, Chiller) — those already prompt at equipment-type
+// selection and would otherwise double-prompt.
+// ============================================================================
+const EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT = new Set(['ATS', 'Generator', 'Chiller']);
+
+// Per-template voltage option overrides. Falls back to all available
+// "Electrical NNN" entries in DATA.energySources if not listed here.
+const TEMPLATE_VOLTAGE_OVERRIDES = {
+  'Water Heater - Electric': ['120V', '208V', '240V', '480V'],
+};
+
+function getElectricalVoltageOptions(template) {
+  if (TEMPLATE_VOLTAGE_OVERRIDES[template]) {
+    return TEMPLATE_VOLTAGE_OVERRIDES[template];
+  }
+  return DATA.energySources
+    .filter(s => /^Electrical \d/.test(s))
+    .map(s => s.replace(/^Electrical /, ''));
+}
+
+function promptForTemplateVoltage(template) {
+  // Avoid stacking dialogs (e.g. on rapid template changes)
+  closeTemplateVoltagePrompt();
+  const options = getElectricalVoltageOptions(template);
+  if (!options.length) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'templateVoltageOverlay';
+  const buttons = options.map(v =>
+    `<button class="btn btn-primary" onclick="applyTemplateVoltageChoice(${JSON.stringify(v).replace(/"/g, '&quot;')})" style="padding:12px;font-size:16px;">${v}</button>`
+  ).join('');
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:340px;">
+      <h3 style="margin:0 0 6px 0;color:var(--accent);">Electrical Voltage</h3>
+      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">Pick the voltage for <strong>${template}</strong>:</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        ${buttons}
+        <button class="btn" onclick="closeTemplateVoltagePrompt()" style="padding:10px;font-size:13px;background:transparent;color:var(--text-dim);">Keep Default</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+}
+
+function applyTemplateVoltageChoice(voltage) {
+  closeTemplateVoltagePrompt();
+  // Update every auto Electrical source in the current set with the chosen
+  // voltage. Non-auto sources (user-added) are left alone.
+  let updated = 0;
+  for (const src of sources) {
+    if (src.auto && /^Electrical(?:\s|$)/.test(src.energySource || '')) {
+      src.energySource = 'Electrical ' + voltage;
+      updated++;
+    }
+  }
+  renderSources();
+  autoSaveCurrent();
+  if (updated) {
+    showToast(`Set ${updated} Electrical source${updated > 1 ? 's' : ''} to ${voltage}`);
+  }
+}
+
+function closeTemplateVoltagePrompt() {
+  const overlay = document.getElementById('templateVoltageOverlay');
+  if (overlay) overlay.remove();
 }
 
 // Template-triggered auto-sources (mirrors EQUIPMENT_AUTO_SOURCES)
