@@ -5076,19 +5076,20 @@ async function runCombinedExport() {
 
   try {
     const zipBlob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(zipBlob);
-    const a = document.createElement('a');
-    a.href = url;
     // If filtered to a specific date, include that in the filename
     const filenameSuffix = (dateFilter !== 'all' && dateFilter !== 'undated') ? '_' + dateFilter : (dateFilter === 'undated' ? '_undated' : '');
-    a.download = 'LOTO_Export_' + dateStamp + filenameSuffix + '.zip';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const exportFilename = 'LOTO_Export_' + dateStamp + filenameSuffix + '.zip';
+    const saveResult = await saveOrShare(zipBlob, exportFilename, 'application/zip');
     const firstName = formatPhotoName(datePrefix, startNum);
     const lastName = formatPhotoName(datePrefix, seqCounter - 1);
-    showToast(`Exported ${allEntries.length} equipment, ${photoCount} photos (${firstName} – ${lastName}). Next start: ${seqCounter}`);
+    if (saveResult && saveResult.cancelled) {
+      showToast(`Export ready — share cancelled. ${allEntries.length} equipment, ${photoCount} photos.`);
+    } else if (saveResult && saveResult.saved === false) {
+      showToast('Export error - file did not save', true);
+      return;
+    } else {
+      showToast(`Exported ${allEntries.length} equipment, ${photoCount} photos (${firstName} – ${lastName}). Next start: ${seqCounter}`);
+    }
     // Auto-update and persist the starting number for the next export
     document.getElementById('photoSeqStart').value = seqCounter;
     localStorage.setItem('photoSeqNext', seqCounter);
@@ -5103,7 +5104,7 @@ async function runCombinedExport() {
 // BACKUP / IMPORT
 // ============================================================================
 
-function saveBackup() {
+async function saveBackup() {
   // Gather all entries including any unsaved current form data
   let allEntries = [...savedEquipment];
   const currentName = document.getElementById('equipName').value.trim();
@@ -5131,15 +5132,15 @@ function saveBackup() {
   });
 
   const blob = new Blob([JSON.stringify({ version: 1, exported: new Date().toISOString(), entries: clean }, null, 2)], { type: 'application/json' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `LOTO_Backup_${getDateStamp()}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast(`Backup saved — ${clean.length} entries`);
+  const backupFilename = `LOTO_Backup_${getDateStamp()}.json`;
+  const saveResult = await saveOrShare(blob, backupFilename, 'application/json');
+  if (saveResult && saveResult.cancelled) {
+    showToast(`Backup ready — share cancelled. ${clean.length} entries.`);
+  } else if (saveResult && saveResult.saved === false) {
+    showToast('Backup error - file did not save', true);
+  } else {
+    showToast(`Backup saved — ${clean.length} entries`);
+  }
 }
 
 function importBackup() {
@@ -5459,6 +5460,89 @@ function showToast(msg, isWarning = false) {
   t.textContent = msg;
   t.className = 'toast show' + (isWarning ? ' toast-warning' : '');
   setTimeout(() => t.className = 'toast', 2000);
+}
+
+// ============================================================================
+// FILE SAVE / SHARE — unified helper
+// ----------------------------------------------------------------------------
+// On a desktop / mobile browser:  triggers a normal browser download via
+//   <a download> (the classic pattern).
+// Inside the Capacitor iOS WebView:  <a download> is silently ignored. We
+//   instead write the blob to the app's Cache directory and present the
+//   native iOS share sheet so the user can pick "Save to Files", AirDrop,
+//   email, etc.  This is the only iOS-compatible way to get a file off
+//   the device; anything that calls a.click() with a blob URL is a no-op
+//   on iOS and the file is discarded.
+// ============================================================================
+async function saveOrShare(blob, filename, _mimeType) {
+  const native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+
+  if (!native) {
+    // Web fallback: classic browser download
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    return { saved: true, native: false };
+  }
+
+  // Native iOS path
+  const FS = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
+  const SH = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share;
+  if (!FS || !SH) {
+    showToast('Share unavailable — file not saved.', true);
+    return { saved: false, native: true, error: 'plugins-missing' };
+  }
+
+  // Blob → base64 via FileReader (works for binary + text blobs alike)
+  const base64 = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = () => reject(r.error || new Error('FileReader failed'));
+    r.onloadend = () => {
+      const s = String(r.result || '');
+      const idx = s.indexOf(',');
+      resolve(idx >= 0 ? s.slice(idx + 1) : s);
+    };
+    r.readAsDataURL(blob);
+  });
+
+  // Write to Cache (iOS auto-cleans this) and open share sheet
+  let fileUri;
+  try {
+    const writeResult = await FS.writeFile({
+      path: filename,
+      data: base64,
+      directory: 'CACHE',
+      recursive: true,
+    });
+    fileUri = writeResult && writeResult.uri;
+  } catch (err) {
+    showToast('Could not write file: ' + (err && err.message ? err.message : err), true);
+    return { saved: false, native: true, error: err };
+  }
+
+  try {
+    await SH.share({
+      title: filename,
+      url: fileUri,
+      dialogTitle: 'Save or share ' + filename,
+    });
+  } catch (err) {
+    // User cancelled the share sheet — file is still on disk at fileUri,
+    // just not exported anywhere yet. Treat as a no-op.
+    const msg = String((err && err.message) || err || '').toLowerCase();
+    if (msg.includes('cancel') || msg.includes('user did not share')) {
+      return { saved: true, native: true, cancelled: true, uri: fileUri };
+    }
+    showToast('Share failed: ' + (err && err.message ? err.message : err), true);
+    return { saved: false, native: true, error: err, uri: fileUri };
+  }
+
+  return { saved: true, native: true, uri: fileUri };
 }
 
 // ============================================================================
