@@ -807,7 +807,7 @@ const DATA = {
     "CHW In/Out","CHW In","CHW Out",
     "DHW In/Out","DHW In","DHW Out",
     "DW In/Out","DW In","DW Out",
-    "CA In","CA Out",
+    "Compressed Air In/Out","Compressed Air In","Compressed Air Out",
     "Vacuum Air In","Vacuum Air Out",
     "Fuel Oil In/Out","Fuel Oil In","Fuel Oil Out",
     "Natural Gas","Propane",
@@ -1106,7 +1106,7 @@ const EQUIPMENT_AUTO_SOURCES = {
   'Air Compressor': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
     { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
-    { energySource: 'CA Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Compressed Air Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensing Unit': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
@@ -3022,11 +3022,12 @@ function applyTemplate(val) {
     showToast(`Set ${sources.length} source${sources.length > 1 ? 's' : ''} for ${val}`);
 
     // If the template pushed at least one auto Electrical source, prompt the
-    // user to pick the voltage — but NOT for equipment types that already
-    // ran their own voltage prompt at equipment-type selection (ATS,
-    // Generator, Chiller); those handle voltage at a different layer.
+    // user to pick the voltage — except for:
+    //  - Equipment types that already ran their own voltage prompt at
+    //    equipment-type selection (ATS / Generator / Chiller)
+    //  - Templates whose voltage is fixed by design (Air Dryer = 120V plug)
     const equipType = getEquipType();
-    if (!EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT.has(equipType)) {
+    if (!EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT.has(equipType) && !TEMPLATE_SKIPS_VOLTAGE_PROMPT.has(val)) {
       const hasAutoElectrical = sources.some(s => s.auto && /^Electrical(?:\s|$)/.test(s.energySource || ''));
       if (hasAutoElectrical) {
         promptForTemplateVoltage(val);
@@ -3057,6 +3058,10 @@ function applyTemplate(val) {
 // selection and would otherwise double-prompt.
 // ============================================================================
 const EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT = new Set(['ATS', 'Generator', 'Chiller']);
+
+// Templates whose Electrical voltage is fixed (no point in prompting). Example:
+// Air Dryer is always 120V via a wall plug — the prompt would just be noise.
+const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer']);
 
 // Per-template voltage option overrides. Falls back to all available
 // "Electrical NNN" entries in DATA.energySources if not listed here.
@@ -3157,7 +3162,7 @@ const TEMPLATE_AUTO_SOURCES = {
   // Air Dryer: 120V Plug + CA In Ball Valve
   'Air Dryer': [
     { energySource: 'Electrical 120V', deviceType: 'Plug', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
-    { energySource: 'CA In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Compressed Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   // Kinetic for anything with a motor/fan/compressor
   'AHU - Steam': [
@@ -3179,7 +3184,7 @@ const TEMPLATE_AUTO_SOURCES = {
   'Air Compressor': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
     { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
-    { energySource: 'CA Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Compressed Air Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensing Unit': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
@@ -5487,6 +5492,31 @@ function saveAll() {
   });
 }
 
+// Energy source name migrations — applied to saved entries on load so old
+// data still maps to the current dropdown values. Map: oldName → newName.
+const ENERGY_SOURCE_RENAMES = {
+  'CA In':     'Compressed Air In',
+  'CA Out':    'Compressed Air Out',
+  'CA In/Out': 'Compressed Air In/Out',
+};
+
+function migrateSavedEnergySources(entries) {
+  let changedEntries = 0;
+  let changedSources = 0;
+  for (const entry of entries || []) {
+    let entryChanged = false;
+    for (const src of entry.sources || []) {
+      if (ENERGY_SOURCE_RENAMES[src.energySource]) {
+        src.energySource = ENERGY_SOURCE_RENAMES[src.energySource];
+        changedSources++;
+        entryChanged = true;
+      }
+    }
+    if (entryChanged) changedEntries++;
+  }
+  return { changedEntries, changedSources };
+}
+
 async function loadAll() {
   let loadedFromIDB = false;
 
@@ -5512,6 +5542,14 @@ async function loadAll() {
         }).catch(() => {});
       }
     } catch(e) {}
+  }
+
+  // Rename any legacy CA In / CA Out energy sources to "Compressed Air ..."
+  // so saved entries still match dropdown values after the source-list change.
+  const migration = migrateSavedEnergySources(savedEquipment);
+  if (migration.changedSources > 0) {
+    console.log(`Renamed ${migration.changedSources} CA → Compressed Air sources across ${migration.changedEntries} entries`);
+    saveMetadata('saved_equipment', savedEquipment).catch(() => {});
   }
 
   // Load current work-in-progress from IndexedDB
@@ -5571,6 +5609,14 @@ async function loadAll() {
     }
 
     sources = state.sources || [];
+    // Apply the same CA → Compressed Air rename to the work-in-progress state
+    // so a session that was open when the app updated doesn't show a blank
+    // source dropdown for the renamed entries.
+    for (const src of sources) {
+      if (ENERGY_SOURCE_RENAMES[src.energySource]) {
+        src.energySource = ENERGY_SOURCE_RENAMES[src.energySource];
+      }
+    }
     photos = state.photos || {};
     miscPhotos = state.miscPhotos || [];
 
