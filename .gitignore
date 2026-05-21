@@ -15,3 +15,14 @@ ios/DerivedData/
 # IDE
 .vscode/
 .idea/
+
+# fastlane
+ios/App/fastlane/report.xml
+ios/App/fastlane/Preview.html
+ios/App/fastlane/screenshots/
+ios/App/fastlane/test_output/
+ios/App/fastlane/README.md
+ios/App/.bundle/
+ios/App/vendor/bundle/
+ios/App/Gemfile.lock
+build/
