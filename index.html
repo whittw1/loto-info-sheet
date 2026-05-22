@@ -883,7 +883,7 @@ const DEVICE_VERIFICATION_MAP = {
   'VFD':                  ['Controls','Meter','SW (Hand/Off/Auto)','SW (H/O/A)','SW (Drive/Off/Bypass)','SW (VFD/Off/Bypass)','SW (Other)','Button (Start/Stop) - VFD','Button (Hand/Off/Auto) - VFD','Button (Other)'],
   'Switch':               ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
   'Switch w/Padlock':     ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
-  'Plug':                 ['Controls'],
+  'Plug':                 ['Controls','SW (On/Off)','Button (Other)'],
   'Fuse':                 ['Meter','Controls'],
   'Gate Valve':           ['_temponly','_gauge','_gaugeonly','_drain'],
   'Gate Valve w/Cable':   ['_temponly','_gauge','_gaugeonly','_drain'],
@@ -1005,7 +1005,8 @@ function getFilteredVerifications(deviceType, energySource) {
 // cross-cutting cases like "Controls" being valid on any Fuel Oil source
 // regardless of whether the device is a valve, breaker, or solenoid.
 const SOURCE_EXTRA_VERIFICATIONS = {
-  'Fuel Oil': ['Controls'],
+  'Fuel Oil':    ['Controls'],
+  'Natural Gas': ['Controls'],
 };
 
 // Energy Source → Device type mapping (filters device dropdown based on selected energy source)
@@ -3078,6 +3079,19 @@ function applyTemplate(val) {
       if (atsOverride) src.verification = 'Meter';
       sources.push(src);
     }
+
+    // Append any equipment-type-specific extras AFTER the template's sources.
+    // Lets multiple equipment types share a single generic template (e.g.
+    // Domestic HW Pump / Domestic Water Pump both use "Standard Pump") while
+    // still adding equipment-specific sources like DHW In or DW In.
+    const equipType = getEquipType();
+    const extras = EQUIPMENT_EXTRA_SOURCES[equipType];
+    if (extras) {
+      for (const extra of extras) {
+        sources.push({ ...extra, collapsed: true, auto: true });
+      }
+    }
+
     renderSources();
     showToast(`Set ${sources.length} source${sources.length > 1 ? 's' : ''} for ${val}`);
 
@@ -3086,7 +3100,6 @@ function applyTemplate(val) {
     //  - Equipment types that already ran their own voltage prompt at
     //    equipment-type selection (ATS / Generator / Chiller)
     //  - Templates whose voltage is fixed by design (Air Dryer = 120V plug)
-    const equipType = getEquipType();
     if (!EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT.has(equipType) && !TEMPLATE_SKIPS_VOLTAGE_PROMPT.has(val)) {
       const hasAutoElectrical = sources.some(s => s.auto && /^Electrical(?:\s|$)/.test(s.energySource || ''));
       if (hasAutoElectrical) {
@@ -3121,10 +3134,24 @@ const EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT = new Set(['ATS', 'Generator', 'Chiller']
 
 // Templates whose Electrical voltage is fixed (no point in prompting). Example:
 // Air Dryer is always 120V via a wall plug — the prompt would just be noise.
+// Equipment-type-specific extra sources appended AFTER applyTemplate has run.
+// Lets multiple equipment types share a single generic template (e.g. all
+// pumps using "Standard Pump") while still adding their own equipment-
+// specific source like a DHW In or DW In. Sources here are pushed with
+// auto:true + collapsed:true and the user can customise / delete as usual.
+const EQUIPMENT_EXTRA_SOURCES = {
+  'Domestic HW Pump': [
+    { energySource: 'DHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '' },
+  ],
+  'Domestic Water Pump': [
+    { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly', duplicate: 'No', detail: '' },
+  ],
+};
+
 // Templates whose electrical voltage is fixed by design — no voltage prompt.
 // Water Heater - Steam has a 120V control circuit only (no choice between
 // 208/240/etc.); same for Air Dryer (always a 120V plug) and Day Tank.
-const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam']);
+const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas']);
 
 // Per-template voltage option overrides. Falls back to all available
 // "Electrical NNN" entries in DATA.energySources if not listed here.
@@ -3148,6 +3175,8 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   // Unit Heater (both variants): cap at 480V — 4160V is never realistic.
   'Unit Heater - Steam':     ['120V', '208V', '240V', '480V'],
   'Unit Heater - HHW':       ['120V', '208V', '240V', '480V'],
+  // Air Compressor: cap at 480V (no 4160V).
+  'Air Compressor':          ['120V', '208V', '240V', '480V'],
 };
 
 function getElectricalVoltageOptions(template) {
@@ -3216,10 +3245,16 @@ const TEMPLATE_AUTO_SOURCES = {
   ],
   // Heat Exchanger - CHW/Glycol: no auto-sources
   'Heat Exchanger - CHW/Glycol': [],
-  // Water Heater - Steam: 120V Breaker + LPS Gate Valve (also inherited by Humidifier)
+  // Water Heater - Steam: 120V Breaker + LPS Gate Valve + Condensate Out
   'Water Heater - Steam': [
     { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Water Heater - Gas: 120V control circuit + Natural Gas Ball Valve / Controls
+  'Water Heater - Gas': [
+    { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Natural Gas', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   // Water Heater - Electric: 240V Disconnect + DW In Ball Valve + DHW Out Ball Valve
   'Water Heater - Electric': [
@@ -3261,10 +3296,12 @@ const TEMPLATE_AUTO_SOURCES = {
   'Chilled Water Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'CHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly - CHW', duplicate: 'No', detail: '', auto: true },
   ],
   'Heating Hot Water Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'HHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   'Standard Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
