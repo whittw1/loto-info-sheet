@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest_fl.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<title>Finger Lakes VA LOTO Collector</title>
+<title>VA LOTO Collector</title>
 <script>
 if ('serviceWorker' in navigator) {
   // One-time purge: unregister old SW, clear all caches, then reload fresh
@@ -401,7 +401,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -433,7 +433,7 @@ if ('serviceWorker' in navigator) {
       </div>
       <div class="form-group" id="customEquipTypeGroup" style="display:none;">
         <label>Custom Equipment Type</label>
-        <input type="text" id="equipTypeCustom" placeholder="Enter new equipment type" oninput="autoSaveCurrent()">
+        <input type="text" id="equipTypeCustom" placeholder="Enter new equipment type" oninput="autoSaveCurrent()" onchange="handleCustomEquipTypeChange()">
       </div>
       <div class="form-group">
         <label>Equipment ID / Name</label>
@@ -446,27 +446,9 @@ if ('serviceWorker' in navigator) {
         <label>Building</label>
         <select id="equipBuilding" onchange="handleBuildingChange()">
           <option value="">-- Select --</option>
-          <option value="Building 1">Building 1</option>
-          <option value="Building 2">Building 2</option>
-          <option value="Building 3">Building 3</option>
-          <option value="Building 4">Building 4</option>
-          <option value="Building 5">Building 5</option>
-          <option value="Building 6">Building 6</option>
-          <option value="Building 7">Building 7</option>
-          <option value="Building 8">Building 8</option>
-          <option value="Building 9">Building 9</option>
-          <option value="Building 10">Building 10</option>
-          <option value="Building 11">Building 11</option>
-          <option value="Building 12">Building 12</option>
-          <option value="Building 13">Building 13</option>
-          <option value="Building 16">Building 16</option>
-          <option value="Building 33">Building 33</option>
-          <option value="Building 34">Building 34</option>
-          <option value="Building 36">Building 36</option>
-          <option value="Building 37">Building 37</option>
-          <option value="Building 80">Building 80</option>
-          <option value="Building 118">Building 118</option>
-          <option value="Building 121">Building 121</option>
+          <option value="Building A">Building A</option>
+          <option value="Building B">Building B</option>
+          <option value="Building C">Building C</option>
           <option value="** Custom Building **">Custom...</option>
         </select>
       </div>
@@ -795,7 +777,7 @@ const DATA = {
     "CHW Pump","Domestic HW Pump","Domestic Water Pump","Feedwater Pump","Heat Exchanger",
     "Condensate Return Unit","Condensate Pump","Unit Heater",
     "Domestic Water Heater","Air Compressor","Air Dryer","Vacuum Pump","ATS",
-    "Generator","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Cooling Tower","Chemical Feed Pump","Dishwasher",
+    "Generator","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
     "Chiller","Refrigerator","Boiler","Steam PRV Station","Humidifier",
     "** New Equipment Type **"
   ],
@@ -915,6 +897,10 @@ const CHW_ENERGY_SOURCES = [
   'CHW'
 ];
 
+// Equipment types that always offer the "- Hot" verification choices in addition
+// to whatever the energy source's temperature classification would normally show.
+const HOT_VERIFICATION_EQUIP = ['Domestic Water Heater'];
+
 function getFilteredVerifications(deviceType, energySource) {
   // Determine temperature variant based on energy source
   let tempSuffix = '';
@@ -960,26 +946,34 @@ function getFilteredVerifications(deviceType, energySource) {
 
   if (!workingList) return DATA.verificationTypes; // truly unknown → full list
 
-  // Resolve placeholders
+  // Some equipment (e.g. Domestic Water Heater) always offers the "- Hot"
+  // verification choices in addition to whatever the source temperature implies.
+  const alwaysHot = HOT_VERIFICATION_EQUIP.includes(getEquipType());
+
+  // Resolve placeholders (add() de-dupes so we never list the same option twice)
   const result = [];
+  const add = (val) => { if (val && !result.includes(val)) result.push(val); };
   for (const v of workingList) {
     if (v === '_gauge') {
-      if (tempSuffix === 'hot') result.push('Gauge/Drain - Hot');
-      else if (tempSuffix === 'chw') result.push('Gauge/Drain - CHW');
-      else result.push('Gauge/Drain');
+      if (tempSuffix === 'hot') add('Gauge/Drain - Hot');
+      else if (tempSuffix === 'chw') add('Gauge/Drain - CHW');
+      else add('Gauge/Drain');
+      if (alwaysHot) add('Gauge/Drain - Hot');
     } else if (v === '_gaugeonly') {
-      if (tempSuffix === 'hot') result.push('GaugeOnly - Hot');
-      else if (tempSuffix === 'chw') result.push('GaugeOnly - CHW');
-      else result.push('GaugeOnly');
+      if (tempSuffix === 'hot') add('GaugeOnly - Hot');
+      else if (tempSuffix === 'chw') add('GaugeOnly - CHW');
+      else add('GaugeOnly');
+      if (alwaysHot) add('GaugeOnly - Hot');
     } else if (v === '_drain') {
-      if (tempSuffix === 'hot') result.push('Drain Only - Hot');
-      else result.push('Drain Only');
+      if (tempSuffix === 'hot') add('Drain Only - Hot');
+      else add('Drain Only');
+      if (alwaysHot) add('Drain Only - Hot');
     } else if (v === '_temponly') {
-      // Only show Temp Only for hot sources
-      if (tempSuffix === 'hot') result.push('Temp Only - Hot');
-      // Skip for non-hot sources
+      // Show Temp Only for hot sources, or for any source on always-hot equipment
+      if (tempSuffix === 'hot' || alwaysHot) add('Temp Only - Hot');
+      // Otherwise skip for non-hot sources
     } else {
-      result.push(v);
+      add(v);
     }
   }
 
@@ -1150,6 +1144,10 @@ const EQUIPMENT_AUTO_SOURCES = {
   'Cooling Tower': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+  ],
+  'Chemical Pump': [
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Electrical 120V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
 };
 
@@ -1479,6 +1477,7 @@ const EQUIPMENT_TEMPLATE_MAP = {
   // Dishwasher — Electric or Steam variant. Reuses the Water Heater templates.
   'Dishwasher': ['Water Heater - Electric', 'Water Heater - Steam'],
   'Chemical Feed Pump': ['Standard Pump'],
+  'Chemical Pump': ['Standard Pump'],
   'Condensate Pump': ['Heating Hot Water Pump'],
   'Condensate Return Unit': ['Condensate Return Unit','Condensate Return Unit - Steam'],
   'Unit Heater': ['Unit Heater - Steam','Unit Heater - HHW'],
@@ -3074,9 +3073,13 @@ function applyTemplate(val) {
     sources = [];
     const autoSources = TEMPLATE_AUTO_SOURCES[val];
     const atsOverride = isATSEquipment();
+    const voltOverride = EQUIPMENT_VOLTAGE_OVERRIDE[getEquipType()];
     for (const autoSrc of autoSources) {
       const src = { ...autoSrc, collapsed: true };
       if (atsOverride) src.verification = 'Meter';
+      // Equipment-specific electrical voltage override: lets an equipment type reuse a
+      // shared template (e.g. Standard Pump) but at a different default voltage.
+      if (voltOverride && /^Electrical/.test(src.energySource)) src.energySource = voltOverride;
       sources.push(src);
     }
 
@@ -3361,6 +3364,12 @@ const TEMPLATE_AUTO_SOURCES = {
   ],
 };
 
+// Equipment types that override the electrical voltage their (possibly shared) template
+// would otherwise set. Lets Chemical Pump reuse the Standard Pump template but at 120V.
+const EQUIPMENT_VOLTAGE_OVERRIDE = {
+  'Chemical Pump': 'Electrical 120V',
+};
+
 function handleTiedToChange() {
   const val = document.getElementById('equipTiedTo').value;
   const nameGroup = document.getElementById('tiedToNameGroup');
@@ -3387,9 +3396,36 @@ function handleEquipTypeChange() {
   // Filter template dropdown based on equipment type
   const resolvedType = val === '** New Equipment Type **' ? '' : val;
   filterTemplateDropdown(resolvedType);
+  // A brand-new (custom) equipment type shouldn't inherit the previous type's template;
+  // clear it so the name-based suggestion (handleCustomEquipTypeChange) starts clean.
+  if (val === '** New Equipment Type **') document.getElementById('equipTemplate').value = '';
   // Fire the existing auto-source / auto-template logic
   equipTypeChanged(resolvedType);
   autoSaveCurrent();
+}
+
+// Keyword → template suggestion for custom ("** New Equipment Type **") names.
+// First match wins; applied only when no template is chosen yet, and always overridable.
+const CUSTOM_EQUIP_KEYWORD_TEMPLATE = [
+  { keyword: 'pump', template: 'Standard Pump' },
+];
+
+// Fired when a custom equipment type name is entered. If the name matches a keyword
+// (e.g. contains "Pump") and no template is selected yet, auto-pick the suggested
+// template and apply its auto-sources — the user can still change it afterward.
+function handleCustomEquipTypeChange() {
+  autoSaveCurrent();
+  const name = document.getElementById('equipTypeCustom').value.trim();
+  if (!name) return;
+  const tmplSel = document.getElementById('equipTemplate');
+  if (tmplSel.value) return; // respect a template the user already chose
+  const lower = name.toLowerCase();
+  const match = CUSTOM_EQUIP_KEYWORD_TEMPLATE.find(e => lower.includes(e.keyword));
+  if (match && [...tmplSel.options].some(o => o.value === match.template)) {
+    tmplSel.value = match.template;
+    handleTemplateChange(); // applies the template's auto-sources + diagram
+    showToast(`Auto-selected ${match.template} template — change it if needed`);
+  }
 }
 
 function getEquipType() {
