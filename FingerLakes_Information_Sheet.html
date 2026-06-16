@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest_fl.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<title>Finger Lakes VA LOTO Collector</title>
+<title>VA LOTO Collector</title>
 <script>
 if ('serviceWorker' in navigator) {
   // One-time purge: unregister old SW, clear all caches, then reload fresh
@@ -378,7 +378,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>Finger Lakes VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
   </div>
   <div class="header-actions">
@@ -764,7 +764,7 @@ const DATA = {
     "CHW Pump","Domestic HW Pump","Domestic Water Pump","Heat Exchanger",
     "Condensate Return Unit","Condensate Pump","Unit Heater",
     "Domestic Water Heater","Air Compressor","Air Dryer","Vacuum Pump","ATS",
-    "Generator","Day Tank","Elevator","Cooling Tower","Chemical Feed Pump","Dishwasher",
+    "Generator","Day Tank","Elevator","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
     "Chiller","Refrigerator","Boiler","Steam PRV Station","Humidifier",
     "** New Equipment Type **"
   ],
@@ -876,6 +876,10 @@ const CHW_ENERGY_SOURCES = [
   'CHW','CW','Condenser'
 ];
 
+// Equipment types that always offer the "- Hot" verification choices in addition
+// to whatever the energy source's temperature classification would normally show.
+const HOT_VERIFICATION_EQUIP = ['Domestic Water Heater'];
+
 function getFilteredVerifications(deviceType, energySource) {
   // Determine temperature variant based on energy source
   let tempSuffix = '';
@@ -921,26 +925,34 @@ function getFilteredVerifications(deviceType, energySource) {
 
   if (!workingList) return DATA.verificationTypes; // truly unknown → full list
 
-  // Resolve placeholders
+  // Some equipment (e.g. Domestic Water Heater) always offers the "- Hot"
+  // verification choices in addition to whatever the source temperature implies.
+  const alwaysHot = HOT_VERIFICATION_EQUIP.includes(getEquipType());
+
+  // Resolve placeholders (add() de-dupes so we never list the same option twice)
   const result = [];
+  const add = (val) => { if (val && !result.includes(val)) result.push(val); };
   for (const v of workingList) {
     if (v === '_gauge') {
-      if (tempSuffix === 'hot') result.push('Gauge/Drain - Hot');
-      else if (tempSuffix === 'chw') result.push('Gauge/Drain - CHW');
-      else result.push('Gauge/Drain');
+      if (tempSuffix === 'hot') add('Gauge/Drain - Hot');
+      else if (tempSuffix === 'chw') add('Gauge/Drain - CHW');
+      else add('Gauge/Drain');
+      if (alwaysHot) add('Gauge/Drain - Hot');
     } else if (v === '_gaugeonly') {
-      if (tempSuffix === 'hot') result.push('GaugeOnly - Hot');
-      else if (tempSuffix === 'chw') result.push('GaugeOnly - CHW');
-      else result.push('GaugeOnly');
+      if (tempSuffix === 'hot') add('GaugeOnly - Hot');
+      else if (tempSuffix === 'chw') add('GaugeOnly - CHW');
+      else add('GaugeOnly');
+      if (alwaysHot) add('GaugeOnly - Hot');
     } else if (v === '_drain') {
-      if (tempSuffix === 'hot') result.push('Drain Only - Hot');
-      else result.push('Drain Only');
+      if (tempSuffix === 'hot') add('Drain Only - Hot');
+      else add('Drain Only');
+      if (alwaysHot) add('Drain Only - Hot');
     } else if (v === '_temponly') {
-      // Only show Temp Only for hot sources
-      if (tempSuffix === 'hot') result.push('Temp Only - Hot');
-      // Skip for non-hot sources
+      // Show Temp Only for hot sources, or for any source on always-hot equipment
+      if (tempSuffix === 'hot' || alwaysHot) add('Temp Only - Hot');
+      // Otherwise skip for non-hot sources
     } else {
-      result.push(v);
+      add(v);
     }
   }
   return result;
@@ -1084,6 +1096,10 @@ const EQUIPMENT_AUTO_SOURCES = {
   'Cooling Tower': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+  ],
+  'Chemical Pump': [
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Electrical 120V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
 };
 
@@ -1317,6 +1333,7 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Domestic HW Pump': ['Standard Pump'],
   'Domestic Water Pump': ['Standard Pump'],
   'Chemical Feed Pump': ['Standard Pump'],
+  'Chemical Pump': ['Standard Pump'],
   'Condensate Pump': ['Heating Hot Water Pump'],
   'Condensate Return Unit': ['Condensate Return Unit','Condensate Return Unit - Steam'],
   'Unit Heater': ['Unit Heater - Steam','Unit Heater - HHW'],
@@ -2909,9 +2926,13 @@ function applyTemplate(val) {
     sources = [];
     const autoSources = TEMPLATE_AUTO_SOURCES[val];
     const atsOverride = isATSEquipment();
+    const voltOverride = EQUIPMENT_VOLTAGE_OVERRIDE[getEquipType()];
     for (const autoSrc of autoSources) {
       const src = { ...autoSrc, collapsed: true };
       if (atsOverride) src.verification = 'Meter';
+      // Equipment-specific electrical voltage override: lets an equipment type reuse a
+      // shared template (e.g. Standard Pump) but at a different default voltage.
+      if (voltOverride && /^Electrical/.test(src.energySource)) src.energySource = voltOverride;
       sources.push(src);
     }
     renderSources();
@@ -3019,6 +3040,12 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
     { energySource: 'Hydraulic', deviceType: 'Hydraulic', location: 'On Equipment', verification: 'GaugeOnly', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
   ],
+};
+
+// Equipment types that override the electrical voltage their (possibly shared) template
+// would otherwise set. Lets Chemical Pump reuse the Standard Pump template but at 120V.
+const EQUIPMENT_VOLTAGE_OVERRIDE = {
+  'Chemical Pump': 'Electrical 120V',
 };
 
 function handleTiedToChange() {
