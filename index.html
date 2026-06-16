@@ -1003,6 +1003,19 @@ const SOURCE_EXTRA_VERIFICATIONS = {
   'Natural Gas': ['Controls'],
 };
 
+// Per-equipment-type allowlist of (equipType, energySource) combos that should
+// show a photo slot even though the source kind is normally photo-suppressed
+// via SOURCE_DEFAULTS[*].noPhoto. Used by the render check in renderSources.
+// Field crews want a fan-housing photo on AHU Kinetic, for example.
+const EQUIPMENT_ALLOW_PHOTO_FOR_SOURCE = {
+  'Air Handler': new Set(['Kinetic']),
+};
+
+function shouldAllowPhotoForSource(equipType, energySource) {
+  const set = EQUIPMENT_ALLOW_PHOTO_FOR_SOURCE[equipType];
+  return !!(set && set.has(energySource));
+}
+
 // Energy Source → Device type mapping (filters device dropdown based on selected energy source)
 const ELECTRICAL_DEVICES = ['Disconnect','VFD','Switch','Switch w/Padlock','Breaker','Breaker w/Padlock','Plug','Fuse','Quick Disconnect'];
 const VALVE_DEVICES_WITH_CKT = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Butterfly Valve','Butterfly w/Padlock','Ckt Setter - Universal Valve','Chain'];
@@ -3566,7 +3579,13 @@ function renderSources() {
     } else {
       const isDuplicate = src.duplicate === 'Yes';
       const isLinked = !!src.linkedTo;
-      const isNoPhoto = src.noPhoto || isDuplicate || isLinked || (SOURCE_DEFAULTS[src.energySource] && SOURCE_DEFAULTS[src.energySource].noPhoto);
+      // Per-equipment-type override: certain (equipType, energySource) combos
+      // should always show a photo slot even if the source kind is normally
+      // photo-suppressed (e.g. Air Handler + Kinetic — field crews want a
+      // fan-housing photo). Beats both src.noPhoto AND SOURCE_DEFAULTS.noPhoto.
+      const photoAllowedForKind = shouldAllowPhotoForSource(getEquipType(), src.energySource);
+      const noPhotoFromKind = src.noPhoto || (SOURCE_DEFAULTS[src.energySource] && SOURCE_DEFAULTS[src.energySource].noPhoto);
+      const isNoPhoto = isDuplicate || isLinked || (noPhotoFromKind && !photoAllowedForKind);
       const noPhotoMessage = isLinked
         ? `🔗 Linked to ${src.linkedTo.equipName} &mdash; ${src.linkedTo.sourceLabel}`
         : isDuplicate
@@ -3717,7 +3736,7 @@ function updateSource(index, field, value) {
     if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
     if (!sources[index].location) sources[index].location = defaults.location;
     if (!sources[index].verification) sources[index].verification = defaults.verification;
-    if (defaults.noPhoto) sources[index].noPhoto = true;
+    if (defaults.noPhoto && !shouldAllowPhotoForSource(getEquipType(), value)) sources[index].noPhoto = true;
     renderSources();
     showToast(`Auto-filled defaults for ${value}`);
     return;
@@ -3754,7 +3773,7 @@ function handleEnergySourceChange(index, value) {
       if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
       if (!sources[index].location) sources[index].location = defaults.location;
       if (!sources[index].verification) sources[index].verification = defaults.verification;
-      if (defaults.noPhoto) sources[index].noPhoto = true;
+      if (defaults.noPhoto && !shouldAllowPhotoForSource(getEquipType(), value)) sources[index].noPhoto = true;
       showToast(`Auto-filled defaults for ${value}`);
     }
     // Condensate on specific equipment types → Gate Valve + Temp Only - Hot
