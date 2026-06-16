@@ -1120,7 +1120,8 @@ const EQUIPMENT_AUTO_SOURCES = {
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Air Handler': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    // noPhoto deliberately omitted on AHU Kinetic — field crews want a fan-housing photo.
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
   'Air Compressor': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
@@ -3271,16 +3272,18 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Compressed Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   // Kinetic for anything with a motor/fan/compressor
+  // noPhoto deliberately omitted on AHU Kinetic across all three AHU templates —
+  // field crews want a fan-housing photo for the kinetic source.
   'AHU - Steam': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'VFD', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'AHU - HHW': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'VFD', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'AHU - Steam, CHW, HHW': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'VFD', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Exhaust Fan': [
