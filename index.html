@@ -410,7 +410,7 @@ if ('serviceWorker' in navigator) {
       </div>
       <div class="form-group" id="customEquipTypeGroup" style="display:none;">
         <label>Custom Equipment Type</label>
-        <input type="text" id="equipTypeCustom" placeholder="Enter new equipment type" oninput="autoSaveCurrent()">
+        <input type="text" id="equipTypeCustom" placeholder="Enter new equipment type" oninput="autoSaveCurrent()" onchange="handleCustomEquipTypeChange()">
       </div>
       <div class="form-group">
         <label>Equipment ID / Name</label>
@@ -3074,9 +3074,36 @@ function handleEquipTypeChange() {
   // Filter template dropdown based on equipment type
   const resolvedType = val === '** New Equipment Type **' ? '' : val;
   filterTemplateDropdown(resolvedType);
+  // A brand-new (custom) equipment type shouldn't inherit the previous type's template;
+  // clear it so the name-based suggestion (handleCustomEquipTypeChange) starts clean.
+  if (val === '** New Equipment Type **') document.getElementById('equipTemplate').value = '';
   // Fire the existing auto-source / auto-template logic
   equipTypeChanged(resolvedType);
   autoSaveCurrent();
+}
+
+// Keyword → template suggestion for custom ("** New Equipment Type **") names.
+// First match wins; applied only when no template is chosen yet, and always overridable.
+const CUSTOM_EQUIP_KEYWORD_TEMPLATE = [
+  { keyword: 'pump', template: 'Standard Pump' },
+];
+
+// Fired when a custom equipment type name is entered. If the name matches a keyword
+// (e.g. contains "Pump") and no template is selected yet, auto-pick the suggested
+// template and apply its auto-sources — the user can still change it afterward.
+function handleCustomEquipTypeChange() {
+  autoSaveCurrent();
+  const name = document.getElementById('equipTypeCustom').value.trim();
+  if (!name) return;
+  const tmplSel = document.getElementById('equipTemplate');
+  if (tmplSel.value) return; // respect a template the user already chose
+  const lower = name.toLowerCase();
+  const match = CUSTOM_EQUIP_KEYWORD_TEMPLATE.find(e => lower.includes(e.keyword));
+  if (match && [...tmplSel.options].some(o => o.value === match.template)) {
+    tmplSel.value = match.template;
+    handleTemplateChange(); // applies the template's auto-sources + diagram
+    showToast(`Auto-selected ${match.template} template — change it if needed`);
+  }
 }
 
 function getEquipType() {
