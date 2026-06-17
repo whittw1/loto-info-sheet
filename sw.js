@@ -1,4 +1,4 @@
-const CACHE_NAME = 'loto-collector-v7.29';
+const CACHE_NAME = 'loto-collector-v7.30';
 const URLS_TO_CACHE = [
   './',
   './index.html',

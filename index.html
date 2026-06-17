@@ -3225,6 +3225,8 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Unit Heater - HHW':       ['120V', '208V', '240V', '480V'],
   // Air Compressor: cap at 480V (no 4160V).
   'Air Compressor':          ['120V', '208V', '240V', '480V'],
+  // Condensate Return Unit (the electric variant): standard pump-scale voltages.
+  'Condensate Return Unit':  ['120V', '208V', '240V', '480V'],
 };
 
 function getElectricalVoltageOptions(template) {
@@ -3309,6 +3311,18 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: 'Above Equipment', verification: 'Drain Only - Hot', duplicate: 'No', detail: '', auto: true },
     { energySource: 'DHW Out', deviceType: 'Ball Valve', quantity: 1, location: 'Above Equipment', verification: 'Drain Only - Hot', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Condensate Return Unit (electric pump): Electrical Disconnect + Condensate In/Out
+  'Condensate Return Unit': [
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: 'On Equipment', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condensate In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Condensate Return Unit - Steam: MPS supply + Condensate In/Out (no electrical)
+  'Condensate Return Unit - Steam': [
+    { energySource: 'MPS 20 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condensate In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   // Air Dryer: 120V Plug + CA In Ball Valve
   'Air Dryer': [
