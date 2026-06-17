@@ -420,6 +420,12 @@ if ('serviceWorker' in navigator) {
       <h2>&#9989; Saved Equipment <span class="saved-count-badge" id="savedCountBadge">0</span></h2>
       <span id="savedToggle" style="color:var(--text-dim);font-size:13px;">&#9660; Show</span>
     </div>
+    <div id="savedFilterBar" style="display:none;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--card-alt);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <span style="font-size:12px;color:var(--text-dim);">Show:</span>
+      <button id="savedFilterAll" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('all')">All</button>
+      <button id="savedFilterToday" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('today')">Today</button>
+      <span id="savedFilterSummary" style="font-size:11px;color:var(--text-dim);margin-left:auto;"></span>
+    </div>
     <div class="saved-panel-body collapsed" id="savedPanelBody"></div>
   </div>
 
@@ -796,7 +802,9 @@ const DATA = {
     "Condenser Water In/Out","Condenser Water In","Condenser Water Out",
     "Feedwater In/Out","Feedwater In","Feedwater Out",
     "Gravity/Potential","Chemical In","Chemical Out",
-    "Glycol HW In/Out","Glycol CHW In/Out","Kinetic",
+    "Glycol HW In/Out","Glycol CHW In/Out",
+    "Glycol ER Water In/Out","Glycol ER Water In","Glycol ER Water Out",
+    "Kinetic",
     "Thermal","Refrigerant","Hydraulic"
   ],
   deviceTypes: [
@@ -1200,6 +1208,10 @@ let miscPhotos = [];       // Current equipment's misc photos [{dbKey, thumbnail
 let savedEquipment = [];   // Accumulated saved equipment entries
 let editingEntry = null;   // Reference to the saved entry currently being edited (or null)
 let savedPanelOpen = false;
+// 'all' (default) shows every saved entry; 'today' shows only entries whose
+// savedAt is on the current local day. UI toggle lives in the saved-panel
+// header; render in renderSavedPanel.
+let savedFilter = 'all';
 // Last value the equipment-type change handler wrote into the Equipment ID/Name
 // field. If the current name still equals this, switching equipment types
 // replaces the name (the user hadn't customised it). A user-edited name won't
@@ -4700,17 +4712,70 @@ function clearForm(confirm_first = true) {
 // ============================================================================
 // SAVED EQUIPMENT PANEL
 // ============================================================================
+function isSavedToday(entry) {
+  if (!entry || !entry.savedAt) return false;
+  const d = new Date(entry.savedAt);
+  if (isNaN(d.getTime())) return false;
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear()
+      && d.getMonth() === now.getMonth()
+      && d.getDate() === now.getDate();
+}
+
+function setSavedFilter(value) {
+  savedFilter = value === 'today' ? 'today' : 'all';
+  renderSavedPanel();
+}
+
+function updateSavedFilterButtonStyles() {
+  const all = document.getElementById('savedFilterAll');
+  const today = document.getElementById('savedFilterToday');
+  if (!all || !today) return;
+  // Active button uses the accent style; inactive is muted card.
+  const activeStyle = 'background:var(--accent);color:#fff;border:1px solid var(--accent);';
+  const idleStyle   = 'background:var(--card);color:var(--text-dim);border:1px solid var(--border);';
+  all.style.cssText   = 'padding:5px 12px;font-size:12px;' + (savedFilter === 'all'   ? activeStyle : idleStyle);
+  today.style.cssText = 'padding:5px 12px;font-size:12px;' + (savedFilter === 'today' ? activeStyle : idleStyle);
+}
+
 function renderSavedPanel() {
   const body = document.getElementById('savedPanelBody');
   const badge = document.getElementById('savedCountBadge');
   badge.textContent = savedEquipment.length;
+
+  // Show the filter bar only when the panel is open AND there are entries
+  // (no point asking to filter an empty list).
+  const filterBar = document.getElementById('savedFilterBar');
+  if (filterBar) {
+    filterBar.style.display = (savedPanelOpen && savedEquipment.length > 0) ? 'flex' : 'none';
+  }
+  updateSavedFilterButtonStyles();
 
   if (savedEquipment.length === 0) {
     body.innerHTML = '<div class="saved-empty">No equipment saved yet. Fill out the form and tap "Save & New" to add.</div>';
     return;
   }
 
-  body.innerHTML = savedEquipment.map((entry, i) => {
+  // Build the list of (entry, originalIndex) pairs so the action button
+  // indices still point at the right savedEquipment[i] regardless of filter.
+  const visible = savedEquipment
+    .map((entry, i) => ({ entry, i }))
+    .filter(({ entry }) => savedFilter === 'today' ? isSavedToday(entry) : true);
+
+  const summary = document.getElementById('savedFilterSummary');
+  if (summary) {
+    const todayCount = savedEquipment.filter(isSavedToday).length;
+    summary.textContent = savedFilter === 'today'
+      ? `${visible.length} today / ${savedEquipment.length} total`
+      : `${todayCount} today / ${savedEquipment.length} total`;
+  }
+
+  if (visible.length === 0) {
+    body.innerHTML = `<div class="saved-empty">No entries match "Today" — switch back to All to see the others.</div>`;
+    return;
+  }
+
+  body.innerHTML = visible.map(({ entry, i }) => {
     const photoCount = entry.photos ? Object.keys(entry.photos).filter(k => entry.photos[k] && entry.photos[k].timestamp).length : 0;
     const isEditing = editingEntry === entry;
     return `
@@ -4738,6 +4803,11 @@ function toggleSavedPanel() {
   savedPanelOpen = !savedPanelOpen;
   document.getElementById('savedPanelBody').classList.toggle('collapsed', !savedPanelOpen);
   document.getElementById('savedToggle').innerHTML = savedPanelOpen ? '&#9650; Hide' : '&#9660; Show';
+  // Filter bar visibility piggybacks on panel-open state.
+  const filterBar = document.getElementById('savedFilterBar');
+  if (filterBar) {
+    filterBar.style.display = (savedPanelOpen && savedEquipment.length > 0) ? 'flex' : 'none';
+  }
 }
 
 function showSavedList() {
