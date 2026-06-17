@@ -3240,8 +3240,8 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Air Compressor':          ['120V', '208V', '240V', '480V'],
   // Condensate Return Unit (the electric variant): standard pump-scale voltages.
   'Condensate Return Unit':  ['120V', '208V', '240V', '480V'],
-  // Glycol Pump: standard pump-scale voltages.
-  'Glycol Pump':             ['120V', '208V', '240V', '480V'],
+  // Glycol Pump: 120/208/480 — no 240V realistic for a glycol loop.
+  'Glycol Pump':             ['120V', '208V', '480V'],
 };
 
 function getElectricalVoltageOptions(template) {
