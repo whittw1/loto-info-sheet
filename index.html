@@ -3441,6 +3441,18 @@ function handleEquipTypeChange() {
   // A brand-new (custom) equipment type shouldn't inherit the previous type's template;
   // clear it so the name-based suggestion (handleCustomEquipTypeChange) starts clean.
   if (val === '** New Equipment Type **') document.getElementById('equipTemplate').value = '';
+  // Auto-fill Equipment ID/Name with the equipment type when the name is
+  // empty — saves typing "CHW Pump" again when the user already picked
+  // "CHW Pump" as the type. Preserved if the user already entered a name.
+  // Skipped for the "** New Equipment Type **" path since there's no
+  // canonical type string yet.
+  if (resolvedType) {
+    const nameInput = document.getElementById('equipName');
+    if (nameInput && !nameInput.value.trim()) {
+      nameInput.value = resolvedType;
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
   // Fire the existing auto-source / auto-template logic
   equipTypeChanged(resolvedType);
   autoSaveCurrent();
