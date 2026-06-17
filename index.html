@@ -4880,8 +4880,9 @@ function executeDuplicate(index, withPhotos) {
     document.getElementById('equipTiedToName').value = '';
   }
 
-  // Notes intentionally left blank for duplicates
-  document.getElementById('equipNotes').value = '';
+  // Copy notes from the original entry — duplicates inherit the note text
+  // and the user can edit/clear as needed.
+  document.getElementById('equipNotes').value = entry.notes || '';
 
   // Restore template — check if it's a custom value
   const templateSel = document.getElementById('equipTemplate');
