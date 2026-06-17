@@ -1007,12 +1007,24 @@ const SOURCE_EXTRA_VERIFICATIONS = {
 // Per-equipment-type allowlist of (equipType, energySource) combos that should
 // show a photo slot even though the source kind is normally photo-suppressed
 // via SOURCE_DEFAULTS[*].noPhoto. Used by the render check in renderSources.
-// Field crews want a fan-housing photo on AHU Kinetic, for example.
 const EQUIPMENT_ALLOW_PHOTO_FOR_SOURCE = {
-  'Air Handler': new Set(['Kinetic']),
+  // 'Air Handler' was here originally; Kinetic is now allowed everywhere
+  // (see SOURCES_PHOTO_ALWAYS_ALLOWED below). Keep the map shape for
+  // future per-equipment-type exceptions.
 };
 
+// Sources that should always allow photos regardless of equipment type.
+// Beats both src.noPhoto and SOURCE_DEFAULTS[*].noPhoto. Lets field crews
+// optionally photograph the rotating equipment (fan, pump, motor, etc.) —
+// taking the photo is still optional; the slot is just available.
+//
+// Gravity/Potential and Hydraulic deliberately NOT included — those are
+// "no moving part to photograph" sources where the main equipment photo
+// already covers the visual.
+const SOURCES_PHOTO_ALWAYS_ALLOWED = new Set(['Kinetic']);
+
 function shouldAllowPhotoForSource(equipType, energySource) {
+  if (SOURCES_PHOTO_ALWAYS_ALLOWED.has(energySource)) return true;
   const set = EQUIPMENT_ALLOW_PHOTO_FOR_SOURCE[equipType];
   return !!(set && set.has(energySource));
 }
