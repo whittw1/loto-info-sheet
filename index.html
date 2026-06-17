@@ -780,7 +780,7 @@ function resetPhotoSettings() {
 const DATA = {
   equipmentTypes: [
     "Air Handler","Mini Split","Condensing Unit","Exhaust Fan","Heating HW Pump",
-    "CHW Pump","Domestic HW Pump","Domestic Water Pump","Feedwater Pump","Heat Exchanger",
+    "CHW Pump","Domestic HW Pump","Domestic Water Pump","Feedwater Pump","Glycol Pump","Heat Exchanger",
     "Condensate Return Unit","Condensate Pump","Unit Heater",
     "Domestic Water Heater","Air Compressor","Air Dryer","Vacuum Pump","ATS",
     "Generator","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
@@ -840,7 +840,7 @@ const DATA = {
   templates: [
     "** New Template **",
     "AHU - Steam","AHU - HHW","AHU - Steam, CHW, HHW",
-    "Chilled Water Pump","Heating Hot Water Pump","Standard Pump","Feedwater Pump",
+    "Chilled Water Pump","Heating Hot Water Pump","Standard Pump","Feedwater Pump","Glycol Pump",
     "Day Tank",
     "Condensate Return Unit","Condensate Return Unit - Steam",
     "Exhaust Fan","Water Heater - Steam","Water Heater - Gas","Water Heater - Electric",
@@ -1525,6 +1525,7 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Domestic HW Pump': ['Standard Pump'],
   'Domestic Water Pump': ['Standard Pump'],
   'Feedwater Pump': ['Feedwater Pump'],
+  'Glycol Pump': ['Glycol Pump'],
   'Day Tank': ['Day Tank'],
   // DA Tank (deaerator) — uses steam to deaerate boiler feedwater.
   // Steam heat-exchanger semantics.
@@ -1583,7 +1584,7 @@ function filterTemplateDropdown(equipType) {
 // Template-to-diagram mapping
 const TEMPLATE_DIAGRAM_MAP = {
   'AHU - Steam': 'ahu', 'AHU - HHW': 'ahu', 'AHU - Steam, CHW, HHW': 'ahu',
-  'Chilled Water Pump': 'pump', 'Heating Hot Water Pump': 'pump', 'Standard Pump': 'pump', 'Feedwater Pump': 'pump',
+  'Chilled Water Pump': 'pump', 'Heating Hot Water Pump': 'pump', 'Standard Pump': 'pump', 'Feedwater Pump': 'pump', 'Glycol Pump': 'pump',
   'Day Tank': 'general',
   'Emergency Generator': 'generator',
   'Chiller': 'chiller', 'Refrigerator': 'general',
@@ -3239,6 +3240,8 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Air Compressor':          ['120V', '208V', '240V', '480V'],
   // Condensate Return Unit (the electric variant): standard pump-scale voltages.
   'Condensate Return Unit':  ['120V', '208V', '240V', '480V'],
+  // Glycol Pump: standard pump-scale voltages.
+  'Glycol Pump':             ['120V', '208V', '240V', '480V'],
 };
 
 function getElectricalVoltageOptions(template) {
@@ -3389,6 +3392,12 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Feedwater In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Glycol Pump: standard pump shape but with the Electrical pre-set to
+  // Disconnect / Controls so the user doesn't have to fill those each time.
+  'Glycol Pump': [
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   // Day Tank: 120V control circuit + Fuel Oil In. Electrical is fixed at
   // 120V (a control / instrumentation circuit), so the template-level
