@@ -848,7 +848,9 @@ const DATA = {
 
 // Auto-fill defaults when energy source is selected
 const SOURCE_DEFAULTS = {
-  'Kinetic':            { device: 'Rotating',   location: 'On Equipment', verification: 'Rotating',  noPhoto: true },
+  // Kinetic intentionally has no noPhoto default — visibility is controlled
+  // per source via the photo-slot toggle (SOURCE_KINDS_WITH_PHOTO_TOGGLE).
+  'Kinetic':            { device: 'Rotating',   location: 'On Equipment', verification: 'Rotating' },
   'Gravity/Potential':  { device: 'Potential',   location: 'On Equipment', verification: 'Block',     noPhoto: true },
   'Hydraulic':          { device: 'Hydraulic',   location: 'On Equipment', verification: 'GaugeOnly', noPhoto: true },
   // Steam: default to Gate Valve, verification stays open (filtered to valve options)
@@ -1005,28 +1007,39 @@ const SOURCE_EXTRA_VERIFICATIONS = {
 };
 
 // Per-equipment-type allowlist of (equipType, energySource) combos that should
-// show a photo slot even though the source kind is normally photo-suppressed
-// via SOURCE_DEFAULTS[*].noPhoto. Used by the render check in renderSources.
-const EQUIPMENT_ALLOW_PHOTO_FOR_SOURCE = {
-  // 'Air Handler' was here originally; Kinetic is now allowed everywhere
-  // (see SOURCES_PHOTO_ALWAYS_ALLOWED below). Keep the map shape for
-  // future per-equipment-type exceptions.
-};
+// always show a photo slot regardless of the source-kind default. Used by the
+// render check in renderSources. Empty for now (Kinetic uses the toggle path
+// below); kept around for future cases where a specific equipType needs to
+// force a photo slot on a normally-suppressed source.
+const EQUIPMENT_ALLOW_PHOTO_FOR_SOURCE = {};
 
-// Sources that should always allow photos regardless of equipment type.
-// Beats both src.noPhoto and SOURCE_DEFAULTS[*].noPhoto. Lets field crews
-// optionally photograph the rotating equipment (fan, pump, motor, etc.) —
-// taking the photo is still optional; the slot is just available.
+// Source kinds whose photo-slot visibility is user-toggleable per source.
+// For these:
+//   - Default (after migration / on a freshly-added source): photo slot VISIBLE
+//   - render reads only src.noPhoto — ignores SOURCE_DEFAULTS[*].noPhoto
+//   - source card shows a small toggle button to hide/show the slot
 //
-// Gravity/Potential and Hydraulic deliberately NOT included — those are
-// "no moving part to photograph" sources where the main equipment photo
-// already covers the visual.
-const SOURCES_PHOTO_ALWAYS_ALLOWED = new Set(['Kinetic']);
+// Adding 'Hydraulic' or 'Gravity/Potential' here would extend the toggle
+// to those source kinds too; left out per spec.
+const SOURCE_KINDS_WITH_PHOTO_TOGGLE = new Set(['Kinetic']);
+
+function isPhotoToggleable(energySource) {
+  return SOURCE_KINDS_WITH_PHOTO_TOGGLE.has(energySource);
+}
 
 function shouldAllowPhotoForSource(equipType, energySource) {
-  if (SOURCES_PHOTO_ALWAYS_ALLOWED.has(energySource)) return true;
   const set = EQUIPMENT_ALLOW_PHOTO_FOR_SOURCE[equipType];
   return !!(set && set.has(energySource));
+}
+
+// User-toggled per-source photo visibility. Flips src.noPhoto for a
+// toggleable source and re-renders.
+function togglePhotoSlot(index) {
+  const src = sources[index];
+  if (!src || !isPhotoToggleable(src.energySource)) return;
+  src.noPhoto = !src.noPhoto;
+  renderSources();
+  autoSaveCurrent();
 }
 
 // Energy Source → Device type mapping (filters device dropdown based on selected energy source)
@@ -1114,35 +1127,35 @@ const EQUIPMENT_AUTO_SOURCES = {
     { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
   ],
   'CHW Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Heating HW Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Domestic HW Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Domestic Water Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensate Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Chemical Feed Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Vacuum Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Exhaust Fan': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Air Handler': [
@@ -1150,30 +1163,30 @@ const EQUIPMENT_AUTO_SOURCES = {
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
   'Air Compressor': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Compressed Air Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensing Unit': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Mini Split': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   'Unit Heater': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
   'Generator': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
   'Cooling Tower': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   'Chemical Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 120V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
 };
@@ -3313,36 +3326,36 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Electrical 208V', deviceType: 'VFD', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Exhaust Fan': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Air Compressor': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Compressed Air Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensing Unit': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Chilled Water Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'CHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly - CHW', duplicate: 'No', detail: '', auto: true },
   ],
   'Heating Hot Water Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'HHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   'Standard Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   // Mirrors Heating Hot Water Pump (Kinetic + Electrical, voltage is prompted)
   // and adds a Feedwater In source pre-configured with Gate Valve / GaugeOnly - Hot.
   'Feedwater Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Feedwater In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
   ],
@@ -3354,18 +3367,18 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Fuel Oil In', deviceType: '', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   'Cooling Tower': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
   'Chiller': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
   'Emergency Generator': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
   // Elevator templates
   'Elevator - Traction': [
     { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
   // Humidifier — dedicated template (was previously reusing Water Heater - Steam
   // with a general-diagram override). Has its own voltage prompt so the user
@@ -3376,13 +3389,13 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   'Unit Heater - Steam': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   'Unit Heater - HHW': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'HHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
     { energySource: 'HHW Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
@@ -3592,18 +3605,32 @@ function renderSources() {
     } else {
       const isDuplicate = src.duplicate === 'Yes';
       const isLinked = !!src.linkedTo;
-      // Per-equipment-type override: certain (equipType, energySource) combos
-      // should always show a photo slot even if the source kind is normally
-      // photo-suppressed (e.g. Air Handler + Kinetic — field crews want a
-      // fan-housing photo). Beats both src.noPhoto AND SOURCE_DEFAULTS.noPhoto.
+      // Photo-toggle path: for source kinds in SOURCE_KINDS_WITH_PHOTO_TOGGLE
+      // (currently Kinetic), the user can hide/show the photo slot via the
+      // toggle button on the source card. The render check reads ONLY
+      // src.noPhoto — no SOURCE_DEFAULTS[*].noPhoto fallback — so the user's
+      // explicit choice is the source of truth.
+      // For other source kinds, behavior is unchanged: src.noPhoto OR the
+      // SOURCE_DEFAULTS[*].noPhoto fallback hides the slot, unless the
+      // equipment-type override allows it.
       const photoAllowedForKind = shouldAllowPhotoForSource(getEquipType(), src.energySource);
-      const noPhotoFromKind = src.noPhoto || (SOURCE_DEFAULTS[src.energySource] && SOURCE_DEFAULTS[src.energySource].noPhoto);
+      const sourceIsToggleable = isPhotoToggleable(src.energySource);
+      const noPhotoFromKind = sourceIsToggleable
+        ? !!src.noPhoto
+        : (src.noPhoto || (SOURCE_DEFAULTS[src.energySource] && SOURCE_DEFAULTS[src.energySource].noPhoto));
       const isNoPhoto = isDuplicate || isLinked || (noPhotoFromKind && !photoAllowedForKind);
       const noPhotoMessage = isLinked
         ? `🔗 Linked to ${src.linkedTo.equipName} &mdash; ${src.linkedTo.sourceLabel}`
         : isDuplicate
         ? 'Duplicate "" photo captured on another source'
+        : sourceIsToggleable
+        ? 'No photo on this source'
         : 'No photo needed "" uses main equipment photo';
+      // Toggle button — only on toggleable sources that aren't duplicate/linked.
+      const showPhotoToggle = sourceIsToggleable && !isDuplicate && !isLinked;
+      const photoToggleBtn = showPhotoToggle
+        ? `<button class="btn btn-sm" style="padding:6px 12px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="togglePhotoSlot(${i})">${isNoPhoto ? '&#128247; Add photo for this source' : '&#10005; Hide photo slot'}</button>`
+        : '';
       const autoBadge = src.auto ? ' <span class="auto-badge">AUTO</span>' : '';
       const linkedBanner = isLinked ? `
         <div style="background:rgba(74,144,217,0.15);border:1px solid var(--accent);border-radius:6px;padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
@@ -3701,7 +3728,7 @@ function renderSources() {
               </select>
             </div>
           </div>
-          ${isNoPhoto ? `<div style="padding:8px 0;color:var(--text-dim);font-size:13px;">${noPhotoMessage}</div>` : `
+          ${isNoPhoto ? `<div style="padding:8px 0;color:var(--text-dim);font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span>${noPhotoMessage}</span>${photoToggleBtn}</div>` : `
           <div class="photo-section" style="display:flex;gap:16px;align-items:flex-start;">
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--text-label);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;">Source Photo</label>
@@ -3721,6 +3748,7 @@ function renderSources() {
                 `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;text-align:center;">
                   &#128247; ${new Date(photos['source_'+i].timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}
                 </div>` : ''}
+              ${photoToggleBtn ? `<div style="margin-top:8px;text-align:center;">${photoToggleBtn}</div>` : ''}
             </div>
             <div style="flex:0 0 auto;">
               <label style="font-size:11px;font-weight:600;color:var(--text-label);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;">Detail</label>
@@ -5708,6 +5736,25 @@ function migrateSavedEnergySources(entries) {
   return { changedEntries, changedSources };
 }
 
+// Clear the noPhoto flag on existing saved sources whose energy source is now
+// user-toggleable (SOURCE_KINDS_WITH_PHOTO_TOGGLE — currently Kinetic). Older
+// saves baked in noPhoto:true on every Kinetic source via SOURCE_DEFAULTS and
+// the auto-source templates. Now we want those sources to default to "photo
+// slot visible" so the user actually sees and can use the slot. The toggle
+// button on the source card still lets them hide it again if they want.
+function migrateToggleablePhotoFlags(entriesAndSources) {
+  let cleared = 0;
+  for (const sources of entriesAndSources) {
+    for (const src of sources || []) {
+      if (isPhotoToggleable(src.energySource) && src.noPhoto) {
+        src.noPhoto = false;
+        cleared++;
+      }
+    }
+  }
+  return cleared;
+}
+
 async function loadAll() {
   let loadedFromIDB = false;
 
@@ -5740,6 +5787,14 @@ async function loadAll() {
   const migration = migrateSavedEnergySources(savedEquipment);
   if (migration.changedSources > 0) {
     console.log(`Renamed ${migration.changedSources} CA → Compressed Air sources across ${migration.changedEntries} entries`);
+    saveMetadata('saved_equipment', savedEquipment).catch(() => {});
+  }
+
+  // Clear noPhoto:true on any Kinetic source in saved entries — the photo
+  // slot is now controlled per source via the toggle button.
+  const cleared = migrateToggleablePhotoFlags((savedEquipment || []).map(e => e.sources));
+  if (cleared > 0) {
+    console.log(`Cleared noPhoto on ${cleared} toggleable saved sources (Kinetic)`);
     saveMetadata('saved_equipment', savedEquipment).catch(() => {});
   }
 
@@ -5808,6 +5863,9 @@ async function loadAll() {
         src.energySource = ENERGY_SOURCE_RENAMES[src.energySource];
       }
     }
+    // Clear noPhoto on toggleable sources in the in-progress entry too —
+    // matches the savedEquipment migration above.
+    migrateToggleablePhotoFlags([sources]);
     photos = state.photos || {};
     miscPhotos = state.miscPhotos || [];
 
