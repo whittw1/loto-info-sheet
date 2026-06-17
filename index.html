@@ -1200,6 +1200,11 @@ let miscPhotos = [];       // Current equipment's misc photos [{dbKey, thumbnail
 let savedEquipment = [];   // Accumulated saved equipment entries
 let editingEntry = null;   // Reference to the saved entry currently being edited (or null)
 let savedPanelOpen = false;
+// Last value the equipment-type change handler wrote into the Equipment ID/Name
+// field. If the current name still equals this, switching equipment types
+// replaces the name (the user hadn't customised it). A user-edited name won't
+// equal this value, so it's preserved. Reset to null when not in auto-fill state.
+let lastAutoFilledEquipName = null;
 
 // ============================================================================
 // INIT
@@ -3441,16 +3446,22 @@ function handleEquipTypeChange() {
   // A brand-new (custom) equipment type shouldn't inherit the previous type's template;
   // clear it so the name-based suggestion (handleCustomEquipTypeChange) starts clean.
   if (val === '** New Equipment Type **') document.getElementById('equipTemplate').value = '';
-  // Auto-fill Equipment ID/Name with the equipment type when the name is
-  // empty — saves typing "CHW Pump" again when the user already picked
-  // "CHW Pump" as the type. Preserved if the user already entered a name.
-  // Skipped for the "** New Equipment Type **" path since there's no
-  // canonical type string yet.
+  // Auto-fill Equipment ID/Name with the equipment type — handles three cases:
+  //   1. Name is empty             → fill with the new type
+  //   2. Name equals the value we   → replace with the new type
+  //      auto-filled previously       (user hasn't customised it yet)
+  //   3. Name is anything else     → leave alone (user typed/edited it)
+  // Skipped for the "** New Equipment Type **" path (no canonical type yet).
   if (resolvedType) {
     const nameInput = document.getElementById('equipName');
-    if (nameInput && !nameInput.value.trim()) {
-      nameInput.value = resolvedType;
-      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    if (nameInput) {
+      const currentName = nameInput.value.trim();
+      const stillAutoFilled = currentName === lastAutoFilledEquipName;
+      if (!currentName || stillAutoFilled) {
+        nameInput.value = resolvedType;
+        nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+        lastAutoFilledEquipName = resolvedType;
+      }
     }
   }
   // Fire the existing auto-source / auto-template logic
@@ -4646,6 +4657,8 @@ function clearForm(confirm_first = true) {
   document.getElementById('customEquipTypeGroup').style.display = 'none';
   filterTemplateDropdown('');
   document.getElementById('equipName').value = '';
+  // Form is fresh — auto-fill state has nothing to chase.
+  lastAutoFilledEquipName = null;
   document.getElementById('equipRoom').value = '';
   setBuilding('');
   document.getElementById('equipTemplate').value = '';
@@ -4761,6 +4774,9 @@ function editSaved(index) {
     filterTemplateDropdown(entry.equipType || '');
   }
   document.getElementById('equipName').value = entry.equipName || '';
+  // Loaded an existing entry — its name is the user's, not an auto-fill.
+  // Switching equipment types from here should NOT clobber it.
+  lastAutoFilledEquipName = null;
   document.getElementById('equipRoom').value = entry.equipRoom || '';
   setBuilding(entry.equipBuilding || '');
   document.getElementById('equipTiedTo').value = entry.tiedTo || '';
@@ -4879,6 +4895,9 @@ function executeDuplicate(index, withPhotos) {
     filterTemplateDropdown(entry.equipType || '');
   }
   document.getElementById('equipName').value = entry.equipName || '';
+  // Loaded an existing entry — its name is the user's, not an auto-fill.
+  // Switching equipment types from here should NOT clobber it.
+  lastAutoFilledEquipName = null;
   document.getElementById('equipRoom').value = entry.equipRoom || '';
   setBuilding(entry.equipBuilding || '');
   document.getElementById('equipTiedTo').value = entry.tiedTo || '';
@@ -5842,6 +5861,9 @@ async function loadAll() {
       document.getElementById('equipTypeCustom').value = state.equipTypeCustom;
     }
     document.getElementById('equipName').value = state.equipName || '';
+    // App reloaded mid-edit — treat the restored name as the user's own,
+    // so a subsequent equipment-type change doesn't auto-clobber it.
+    lastAutoFilledEquipName = null;
     document.getElementById('equipRoom').value = state.equipRoom || '';
     setBuilding(state.equipBuilding || '');
     document.getElementById('equipTiedTo').value = state.tiedTo || '';
