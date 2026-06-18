@@ -424,6 +424,7 @@ if ('serviceWorker' in navigator) {
       <span style="font-size:12px;color:var(--text-dim);">Show:</span>
       <button id="savedFilterAll" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('all')">All</button>
       <button id="savedFilterToday" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('today')">Today</button>
+      <button id="savedFilterYesterday" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('yesterday')">Yesterday</button>
       <span id="savedFilterSummary" style="font-size:11px;color:var(--text-dim);margin-left:auto;"></span>
     </div>
     <div class="saved-panel-body collapsed" id="savedPanelBody"></div>
@@ -4721,30 +4722,41 @@ function clearForm(confirm_first = true) {
 // ============================================================================
 // SAVED EQUIPMENT PANEL
 // ============================================================================
-function isSavedToday(entry) {
+function isSavedOnLocalDay(entry, refDate) {
   if (!entry || !entry.savedAt) return false;
   const d = new Date(entry.savedAt);
   if (isNaN(d.getTime())) return false;
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear()
-      && d.getMonth() === now.getMonth()
-      && d.getDate() === now.getDate();
+  return d.getFullYear() === refDate.getFullYear()
+      && d.getMonth() === refDate.getMonth()
+      && d.getDate() === refDate.getDate();
 }
 
+function isSavedToday(entry)     { return isSavedOnLocalDay(entry, new Date()); }
+function isSavedYesterday(entry) {
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  return isSavedOnLocalDay(entry, y);
+}
+
+const SAVED_FILTERS = new Set(['all', 'today', 'yesterday']);
 function setSavedFilter(value) {
-  savedFilter = value === 'today' ? 'today' : 'all';
+  savedFilter = SAVED_FILTERS.has(value) ? value : 'all';
   renderSavedPanel();
 }
 
 function updateSavedFilterButtonStyles() {
-  const all = document.getElementById('savedFilterAll');
-  const today = document.getElementById('savedFilterToday');
-  if (!all || !today) return;
+  const buttons = {
+    all:       document.getElementById('savedFilterAll'),
+    today:     document.getElementById('savedFilterToday'),
+    yesterday: document.getElementById('savedFilterYesterday'),
+  };
   // Active button uses the accent style; inactive is muted card.
   const activeStyle = 'background:var(--accent);color:#fff;border:1px solid var(--accent);';
   const idleStyle   = 'background:var(--card);color:var(--text-dim);border:1px solid var(--border);';
-  all.style.cssText   = 'padding:5px 12px;font-size:12px;' + (savedFilter === 'all'   ? activeStyle : idleStyle);
-  today.style.cssText = 'padding:5px 12px;font-size:12px;' + (savedFilter === 'today' ? activeStyle : idleStyle);
+  for (const [key, btn] of Object.entries(buttons)) {
+    if (!btn) continue;
+    btn.style.cssText = 'padding:5px 12px;font-size:12px;' + (savedFilter === key ? activeStyle : idleStyle);
+  }
 }
 
 function renderSavedPanel() {
@@ -4767,20 +4779,24 @@ function renderSavedPanel() {
 
   // Build the list of (entry, originalIndex) pairs so the action button
   // indices still point at the right savedEquipment[i] regardless of filter.
+  const matchesFilter =
+    savedFilter === 'today'     ? isSavedToday
+    : savedFilter === 'yesterday' ? isSavedYesterday
+    : () => true;
   const visible = savedEquipment
     .map((entry, i) => ({ entry, i }))
-    .filter(({ entry }) => savedFilter === 'today' ? isSavedToday(entry) : true);
+    .filter(({ entry }) => matchesFilter(entry));
 
   const summary = document.getElementById('savedFilterSummary');
   if (summary) {
-    const todayCount = savedEquipment.filter(isSavedToday).length;
-    summary.textContent = savedFilter === 'today'
-      ? `${visible.length} today / ${savedEquipment.length} total`
-      : `${todayCount} today / ${savedEquipment.length} total`;
+    const todayCount     = savedEquipment.filter(isSavedToday).length;
+    const yesterdayCount = savedEquipment.filter(isSavedYesterday).length;
+    summary.textContent = `${todayCount} today · ${yesterdayCount} yesterday · ${savedEquipment.length} total`;
   }
 
   if (visible.length === 0) {
-    body.innerHTML = `<div class="saved-empty">No entries match "Today" — switch back to All to see the others.</div>`;
+    const label = savedFilter === 'today' ? 'Today' : savedFilter === 'yesterday' ? 'Yesterday' : '';
+    body.innerHTML = `<div class="saved-empty">No entries match "${label}" — switch back to All to see the others.</div>`;
     return;
   }
 
