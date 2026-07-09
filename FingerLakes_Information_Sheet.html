@@ -3410,9 +3410,10 @@ const TEMPLATE_AUTO_SOURCES = {
   'Cooling Tower': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
-  'Chiller': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
-  ],
+  // Chiller intentionally has no template auto-sources — the Kinetic source
+  // was removed per user request. The voltage dialog for Chiller still
+  // pushes the Electrical source via VOLTAGE_PROMPT_CONFIG['Chiller'].apply,
+  // so the final source set for a Chiller is just that Electrical.
   'Emergency Generator': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
