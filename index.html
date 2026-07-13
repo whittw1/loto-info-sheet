@@ -5814,6 +5814,44 @@ async function runCombinedExport() {
     });
   });
 
+  // ---- PASS 2B: build entries.json (structured data for downstream ingest) ----
+  // Same shape as the JSON backup envelope (version 2), but enriched with the
+  // photo/diagram filenames actually written into this ZIP so an ingester can
+  // bind photos to sources without parsing the CSV. Photo bytes and thumbnails
+  // are stripped (the files live under photos/ and diagrams/); paths are
+  // folder-qualified relative to the ZIP root.
+  const jsonEntries = allEntries.map((entry, ei) => {
+    const map = entryMaps[ei];
+    // Drop bulky/binary-ish fields; keep all structural data.
+    const { photos, miscPhotos, ...rest } = entry;
+    const srcOut = (rest.sources || []).map((src, i) => ({
+      ...src,
+      photoFile: map.sourceHs[i] ? 'photos/' + map.sourceHs[i] : ''
+    }));
+    const miscOut = miscFileNames[ei]
+      ? miscFileNames[ei].split(', ').filter(Boolean).map(n => 'photos/' + n)
+      : [];
+    return {
+      ...rest,
+      hospitalCode: entryHospitalCode(entry),   // resolved (falls back to setting)
+      sources: srcOut,
+      photoFiles: {
+        main:      map.mainH ? 'photos/' + map.mainH : '',
+        dataplate: map.dpH   ? 'photos/' + map.dpH   : '',
+        ee:        map.eeH   ? 'photos/' + map.eeH   : '',
+        diagram:   diagramFiles[ei] ? 'diagrams/' + diagramFiles[ei] : '',
+        misc:      miscOut
+      }
+    };
+  });
+  zip.file('entries.json', JSON.stringify({
+    version: 2,
+    exported: new Date().toISOString(),
+    hospitalCode: getHospitalCode(),
+    deviceId: ensureDeviceId(),
+    entries: jsonEntries
+  }, null, 2));
+
   // ---- PASS 3: build Info Sheet xlsx (ExcelJS with formatting) ----
   if (typeof ExcelJS !== 'undefined') {
     const ewb = new ExcelJS.Workbook();
