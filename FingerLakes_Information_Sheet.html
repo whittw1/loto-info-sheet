@@ -1232,9 +1232,62 @@ let savedSearchTerm = '';
 let lastAutoFilledEquipName = null;
 
 // ============================================================================
+// STABLE IDENTIFIERS  (ARCHITECTURE.md §5 / improvement plan §2.1)
+// ============================================================================
+// Per-device UUID: minted once on first launch and persisted in localStorage.
+// It feeds the export filename convention and lets downstream systems tell
+// devices apart when the same day's data is uploaded from more than one iPad.
+// Invisible to the user.
+let deviceId = null;
+
+// crypto.randomUUID() exists in modern browsers and iOS 15.4+ WKWebViews, but
+// fall back to a v4-style generator for older runtimes / non-secure contexts so
+// callers always get a valid UUID.
+function genUuid() {
+  try {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      return window.crypto.randomUUID();
+    }
+  } catch (e) { /* fall through to manual generation */ }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+// Mint the per-device id once, then reuse it for the life of the install.
+function ensureDeviceId() {
+  try {
+    deviceId = localStorage.getItem('loto_device_id');
+    if (!deviceId) {
+      deviceId = genUuid();
+      localStorage.setItem('loto_device_id', deviceId);
+    }
+  } catch (e) {
+    // localStorage blocked — fall back to a per-session id so downstream code
+    // always has something usable.
+    if (!deviceId) deviceId = genUuid();
+  }
+  return deviceId;
+}
+
+// Give a source a stable UUID if it lacks one. Called at save time so the id
+// survives edits (it round-trips through the entry's cloned sources) while
+// duplicated sources still get fresh ids (executeDuplicate strips sourceId
+// before the copy is saved).
+function ensureSourceId(src) {
+  if (src && !src.sourceId) src.sourceId = genUuid();
+  return src;
+}
+
+// ============================================================================
 // INIT
 // ============================================================================
 function init() {
+  // Mint / load the per-device id before anything else touches storage.
+  ensureDeviceId();
+
   // Tag body so CSS can show/hide native-only affordances (e.g. scan buttons)
   const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   document.body.classList.add(isNative ? 'native-platform' : 'web-platform');
@@ -4757,9 +4810,13 @@ function saveAndNew() {
     return;
   }
 
+  // Ensure every source carries a stable UUID before it's cloned into the
+  // saved entry. Assigned on the live objects so it round-trips through edits.
+  sources.forEach(ensureSourceId);
+
   // Package current equipment into saved list
   const entry = {
-    id: Date.now(),
+    id: genUuid(),
     equipType: getEquipType(),
     equipName: equipName,
     lotoId: document.getElementById('equipLotoId').value.trim(),
@@ -4784,6 +4841,9 @@ function saveAndNew() {
     if (idx >= 0) {
       // Preserve original savedAt so the entry keeps its original date for export filtering
       if (editingEntry.savedAt) entry.savedAt = editingEntry.savedAt;
+      // Preserve the original entry UUID so re-uploads dedupe against the same
+      // row downstream — an edit updates the equipment, it isn't a new one.
+      if (editingEntry.id) entry.id = editingEntry.id;
       savedEquipment[idx] = entry;
     } else {
       savedEquipment.push(entry);
@@ -5143,6 +5203,10 @@ function executeDuplicate(index, withPhotos) {
   document.getElementById('duplicateDialog').remove();
   const entry = savedEquipment[index];
 
+  // A duplicate is always a new entry — clear any lingering edit target so the
+  // save appends (and mints a fresh entry UUID) instead of overwriting.
+  editingEntry = null;
+
   // Restore equipment type — check if it's a custom value
   if (entry.equipType && !DATA.equipmentTypes.includes(entry.equipType)) {
     document.getElementById('equipType').value = '** New Equipment Type **';
@@ -5189,8 +5253,11 @@ function executeDuplicate(index, withPhotos) {
     document.getElementById('customTemplateGroup').style.display = 'none';
   }
 
-  // Deep copy sources
+  // Deep copy sources. Strip sourceId so the duplicate mints fresh source
+  // UUIDs on save — a duplicate is a distinct piece of equipment, not an edit,
+  // so it must not share stable ids with the original.
   sources = JSON.parse(JSON.stringify(entry.sources));
+  sources.forEach(s => { if (s) delete s.sourceId; });
 
   photos = {};
   miscPhotos = [];

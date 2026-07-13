@@ -1,6 +1,6 @@
 # LOTO Field Collector — Architecture Reference
 
-**Date:** 2026-07-13 (rev 2 — added `lotoId` field to entries)
+**Date:** 2026-07-13 (rev 3 — stable UUIDs on entries + sources, per-device id)
 **Repo:** [github.com/whittw1/loto-info-sheet](https://github.com/whittw1/loto-info-sheet)
 **Prior standalone doc:** `LOTO_Integration_Architecture.md` in `~/Desktop/Claude Apps/LOTO Information Sheet App/` (April 2026, pre-iOS work — kept for reference, superseded by this file).
 
@@ -92,9 +92,16 @@ The `savedEquipment[]` array is where everything lives. Each entry is a plain JS
 ```typescript
 // One equipment entry
 interface SavedEntry {
-  id: number;                    // Date.now() — unique within the session (will
-                                 // migrate to crypto.randomUUID() in a follow-up
-                                 // step per the improvement plan §2.1)
+  id: string;                    // crypto.randomUUID() (v4), minted at first save
+                                 // via genUuid() — a manual v4 generator is used
+                                 // as a fallback on runtimes without
+                                 // crypto.randomUUID. STABLE: preserved across
+                                 // edits (an edit updates the equipment, it isn't
+                                 // a new one) so downstream re-uploads dedupe
+                                 // against the same row. Duplicates get a fresh
+                                 // id. Old backups may still carry a numeric
+                                 // (Date.now()) id — those keep working and are
+                                 // preserved on edit; only new entries get UUIDs.
   equipType: string;             // e.g. "Air Handler", "CHW Pump", "ATS"
   equipName: string;             // user-provided; auto-filled from equipType on selection
   lotoId?: string;               // Optional office-inventory LOTO ID
@@ -120,6 +127,13 @@ interface SavedEntry {
 
 // One energy source within an equipment entry
 interface EnergySource {
+  sourceId?: string;             // crypto.randomUUID() (v4), assigned at save
+                                 // time via ensureSourceId(). STABLE across
+                                 // edits of the parent entry (round-trips through
+                                 // the cloned sources); duplicated sources have
+                                 // it stripped so they mint fresh ids. Absent on
+                                 // sources from pre-UUID backups until re-saved.
+                                 // Maps to loto-web EnergySource identity.
   energySource: string;          // e.g. "Electrical 208V", "LPS 10 PSI", "Condensate In"
   deviceType: string;            // e.g. "Disconnect", "Gate Valve", "Rotating"
   deviceId: string;              // free-text device identifier (e.g. "Pump 3", "V-201")
@@ -230,6 +244,7 @@ Kept small because iOS Safari can be miserly with it. Holds:
 | `loto_current_state` | Legacy — same migration path. |
 | `photoSeqNext` | Next photo-sequence starting number for filename generation |
 | `photo_full_<dbKey>` | Base64 fallback copy of a photo, in case IndexedDB write failed |
+| `loto_device_id` | Per-device UUID (v4), minted once on first launch by `ensureDeviceId()` in `init()`. Identifies the device across exports so the same day's data from two iPads doesn't collide; feeds the planned export-filename convention (§5 improvement plan). Never changes once set. |
 
 ### The "belt-and-suspenders" photo fallback
 
@@ -298,7 +313,7 @@ The **primary integration surface**. Format:
   "version": 1,
   "exported": "2026-06-17T14:23:45.123Z",
   "entries": [
-    { "id": 1687001111000, "equipType": "Air Handler", "equipName": "AHU-1", ... }
+    { "id": "b3f1c2a4-5d6e-4f70-8a91-2c3d4e5f6a7b", "equipType": "Air Handler", "equipName": "AHU-1", ... }
   ]
 }
 ```
@@ -357,7 +372,7 @@ Required by Apple even though the app only uses `<input type="file" capture="env
 
 ### Service worker cache
 
-`sw.js` uses network-first for HTML/JSON, cache-first for static assets. **`CACHE_NAME` must be bumped every time cached files change** — otherwise the WebView serves stale HTML on next launch. Currently `loto-collector-v7.37`.
+`sw.js` uses network-first for HTML/JSON, cache-first for static assets. **`CACHE_NAME` must be bumped every time cached files change** — otherwise the WebView serves stale HTML on next launch. Currently `loto-collector-v7.40`.
 
 ---
 
@@ -446,7 +461,7 @@ ingest paths:
 - **Field crew captures the same AHU-1 with `lotoId = "BATH-AHU-001"`** → same `loto_id` matches → row is updated in place, not duplicated.
 - **Field crew leaves `lotoId` blank** → the ingester should fall back to the entry UUID as `loto_id` (creating a distinct row). Admin can merge later via the loto-web UI.
 
-Recommendation for the ingester: if `entry.lotoId` is non-empty use it as `Equipment.loto_id`; otherwise use `"field-" + entry.id` (or the UUID once §2.1 lands) so the row is still uniquely keyed but recognisable as origin=field-app.
+Recommendation for the ingester: if `entry.lotoId` is non-empty use it as `Equipment.loto_id`; otherwise use `"field-" + entry.id` so the row is still uniquely keyed but recognisable as origin=field-app. As of rev 3, `entry.id` is a stable `crypto.randomUUID()` (§5, improvement plan §2.1) that is preserved across edits, so `"field-" + entry.id` is now a durable dedup key — re-uploading an edited entry updates the same row instead of creating a duplicate. Each source likewise carries a stable `sourceId` for source-level reconciliation.
 
 ### Auth options for automating the upload
 
