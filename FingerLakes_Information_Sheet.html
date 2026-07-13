@@ -101,6 +101,29 @@ if ('serviceWorker' in navigator) {
   }
   .btn-accent { background: var(--accent); }
   .btn-accent:hover { background: var(--accent-hover); }
+  .btn-primary { background: var(--accent); }
+  .btn-primary:hover { background: var(--accent-hover); }
+  /* OCR scan button — small icon button next to text inputs, iOS-only */
+  .scan-btn {
+    flex: 0 0 auto;
+    width: 44px; height: 44px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card-alt);
+    color: var(--accent);
+    font-size: 20px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .scan-btn:active, .scan-btn:hover { background: var(--accent); color: white; }
+  .scan-btn:disabled { opacity: 0.4; cursor: default; }
+  .scan-input-row { display: flex; gap: 6px; align-items: stretch; }
+  .scan-input-row > input { flex: 1; min-width: 0; }
+  body.web-platform .scan-btn { display: none; }
   .btn-success { background: var(--success); }
   .btn-success:hover { background: var(--success-hover); }
   .btn-danger { background: var(--danger); }
@@ -380,6 +403,8 @@ if ('serviceWorker' in navigator) {
   <div style="display:flex;align-items:center;">
     <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
+    <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
+    <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
   </div>
   <div class="header-actions">
     <button class="btn btn-outline btn-sm" onclick="showSavedList()">&#128203; List</button>
@@ -396,6 +421,14 @@ if ('serviceWorker' in navigator) {
     <div class="saved-panel-header" onclick="toggleSavedPanel()">
       <h2>&#9989; Saved Equipment <span class="saved-count-badge" id="savedCountBadge">0</span></h2>
       <span id="savedToggle" style="color:var(--text-dim);font-size:13px;">&#9660; Show</span>
+    </div>
+    <div id="savedFilterBar" style="display:none;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--card-alt);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <span style="font-size:12px;color:var(--text-dim);">Show:</span>
+      <button id="savedFilterAll" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('all')">All</button>
+      <button id="savedFilterToday" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('today')">Today</button>
+      <button id="savedFilterYesterday" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('yesterday')">Yesterday</button>
+      <input id="savedSearchInput" type="search" placeholder="Search name / room / template…" oninput="setSavedSearch(this.value)" style="flex:1 1 180px;min-width:140px;padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);">
+      <span id="savedFilterSummary" style="font-size:11px;color:var(--text-dim);"></span>
     </div>
     <div class="saved-panel-body collapsed" id="savedPanelBody"></div>
   </div>
@@ -414,7 +447,17 @@ if ('serviceWorker' in navigator) {
       </div>
       <div class="form-group">
         <label>Equipment ID / Name</label>
-        <input type="text" id="equipName" placeholder="e.g. AHU-3000">
+        <div class="scan-input-row">
+          <input type="text" id="equipName" placeholder="e.g. AHU-3000">
+          <button type="button" class="scan-btn" onclick="scanTextToField('equipName')" title="Scan label">&#128247;</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>LOTO ID <span style="font-size:11px;font-weight:400;color:var(--text-dim);">(optional — matches office inventory ID)</span></label>
+        <div class="scan-input-row">
+          <input type="text" id="equipLotoId" placeholder="e.g. BATH-AHU-001" oninput="autoSaveCurrent()">
+          <button type="button" class="scan-btn" onclick="scanTextToField('equipLotoId')" title="Scan label">&#128247;</button>
+        </div>
       </div>
       <div class="form-group">
         <label>Building</label>
@@ -602,7 +645,17 @@ if ('serviceWorker' in navigator) {
 <!-- Photo Settings Modal -->
 <div class="dialog-overlay" id="settingsOverlay" style="display:none;">
   <div class="dialog" style="max-width:440px;">
-    <h3>&#9881; Photo Settings</h3>
+    <h3>&#9881; Settings</h3>
+    <div style="margin-bottom:16px;">
+      <label style="display:block;font-size:13px;color:var(--text-label);margin-bottom:6px;">&#127973; Facility / Hospital</label>
+      <select id="settingsHospital" onchange="onHospitalSelectChange()" style="width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
+        <option value="">&mdash; Not set &mdash;</option>
+        <option value="__custom__">Custom&hellip;</option>
+      </select>
+      <input type="text" id="settingsHospitalCustom" placeholder="Hospital key (must match loto-web exactly)" style="display:none;margin-top:8px;width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
+      <div style="font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.4;">Stamped on every saved entry and on every export so loto-web files the data under the right facility.</div>
+    </div>
+    <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
     <div style="margin-bottom:16px;">
       <label style="display:block;font-size:13px;color:var(--text-label);margin-bottom:6px;">Resolution Preset</label>
       <select id="photoPreset" onchange="applyPhotoPreset()" style="width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
@@ -659,8 +712,63 @@ function getPhotoSettings() {
   return { ...PHOTO_DEFAULTS };
 }
 
+// Build the hospital <select> once from the HOSPITALS roster (keeping the
+// "Not set" and "Custom…" bookend options that live in the HTML).
+function populateHospitalSelect() {
+  const sel = document.getElementById('settingsHospital');
+  if (!sel || sel.dataset.filled) return;
+  const customOpt = sel.querySelector('option[value="__custom__"]');
+  HOSPITALS.forEach(h => {
+    const o = document.createElement('option');
+    o.value = h.code;
+    o.textContent = h.name + '  [' + h.code + ']';
+    sel.insertBefore(o, customOpt);
+  });
+  sel.dataset.filled = '1';
+}
+
+function onHospitalSelectChange() {
+  const sel = document.getElementById('settingsHospital');
+  document.getElementById('settingsHospitalCustom').style.display =
+    sel.value === '__custom__' ? 'block' : 'none';
+}
+
+// Small header chip showing the active facility (or a warning when unset, so a
+// whole day doesn't get captured under the wrong / no facility).
+function updateFacilityBadge() {
+  const badge = document.getElementById('facilityBadge');
+  if (!badge) return;
+  const code = getHospitalCode();
+  if (code) {
+    badge.textContent = '🏥 ' + code;
+    badge.style.background = 'rgba(74,184,106,0.18)';
+    badge.style.color = 'var(--text)';
+    badge.title = 'Facility "' + hospitalName(code) + '" — stamped on every entry & export. Tap to change.';
+  } else {
+    badge.textContent = '⚠️ No facility';
+    badge.style.background = 'rgba(224,168,0,0.20)';
+    badge.style.color = 'var(--text)';
+    badge.title = 'No facility set — entries and exports won’t be tagged. Tap to set one.';
+  }
+  badge.style.display = 'inline';
+}
+
 function showSettings() {
   const s = getPhotoSettings();
+  // Facility picker
+  populateHospitalSelect();
+  const hc = getHospitalCode();
+  const hospSel = document.getElementById('settingsHospital');
+  const custom = document.getElementById('settingsHospitalCustom');
+  if (hc && !HOSPITALS.some(h => h.code === hc)) {
+    hospSel.value = '__custom__';
+    custom.style.display = 'block';
+    custom.value = hc;
+  } else {
+    hospSel.value = hc;
+    custom.style.display = 'none';
+    custom.value = '';
+  }
   document.getElementById('photoPreset').value = s.preset || '1920x1080';
   document.getElementById('photoMaxW').value = s.maxWidth;
   document.getElementById('photoMaxH').value = s.maxHeight;
@@ -728,8 +836,16 @@ function savePhotoSettings() {
     settings.maxHeight = 99999;
   }
   localStorage.setItem('loto_photo_settings', JSON.stringify(settings));
+
+  // Persist facility selection alongside the photo settings (one Save button).
+  const hospSel = document.getElementById('settingsHospital');
+  let hc = hospSel.value;
+  if (hc === '__custom__') hc = document.getElementById('settingsHospitalCustom').value.trim();
+  setHospitalCode(hc);
+  updateFacilityBadge();
+
   document.getElementById('settingsOverlay').style.display = 'none';
-  showToast('Photo settings saved');
+  showToast('Settings saved');
 }
 
 function resetPhotoSettings() {
@@ -748,35 +864,37 @@ function resetPhotoSettings() {
 const DATA = {
   equipmentTypes: [
     "Air Handler","Mini Split","Condensing Unit","Exhaust Fan","Heating HW Pump",
-    "CHW Pump","Domestic HW Pump","Domestic Water Pump","Heat Exchanger",
+    "CHW Pump","Domestic HW Pump","Domestic Water Pump","Feedwater Pump","Glycol Pump","Heat Exchanger",
     "Condensate Return Unit","Condensate Pump","Unit Heater",
     "Domestic Water Heater","Air Compressor","Air Dryer","Vacuum Pump","ATS",
-    "Generator","Day Tank","Elevator","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
+    "Generator","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
     "Chiller","Refrigerator","Boiler","Steam PRV Station","Humidifier",
     "** New Equipment Type **"
   ],
   energySources: [
-    "Electrical 120V","Electrical 208V","Electrical 240V","Electrical 480V","Electrical 4160V",
+    "Electrical 24V","Electrical 120V","Electrical 208V","Electrical 240V","Electrical 480V","Electrical 4160V",
     "LPS 10 PSI","MPS 20 PSI","HPS 100 PSI",
     "Condensate In/Out","Condensate In","Condensate Out",
     "HHW In/Out","HHW In","HHW Out",
     "CHW In/Out","CHW In","CHW Out",
     "DHW In/Out","DHW In","DHW Out",
     "DW In/Out","DW In","DW Out",
-    "CA In","CA Out",
+    "Compressed Air In/Out","Compressed Air In","Compressed Air Out",
     "Vacuum Air In","Vacuum Air Out",
     "Fuel Oil In/Out","Fuel Oil In","Fuel Oil Out",
     "Natural Gas","Propane",
-    "Condenser Water In","Condenser Water Out",
+    "Condenser Water In/Out","Condenser Water In","Condenser Water Out",
     "Feedwater In/Out","Feedwater In","Feedwater Out",
     "Gravity/Potential","Chemical In","Chemical Out",
-    "Glycol HW In/Out","Glycol CHW In/Out","Kinetic",
+    "Glycol HW In/Out","Glycol CHW In/Out",
+    "Glycol ER Water In/Out","Glycol ER Water In","Glycol ER Water Out",
+    "Kinetic",
     "Thermal","Refrigerant","Hydraulic"
   ],
   deviceTypes: [
     "Disconnect","VFD","Switch","Switch w/Padlock","Breaker","Breaker w/Padlock",
     "Gate Valve","Gate Valve w/Cable","Ball Valve","Butterfly Valve","Butterfly w/Padlock",
-    "Ckt Setter - Universal Valve","Plug","Chain","Cable",
+    "Ckt Setter - Universal Valve","Plug","Chain","Cable","Bag",
     "Potential","Rotating","Hydraulic","Fuse","Quick Disconnect"
   ],
   locations: [
@@ -785,6 +903,7 @@ const DATA = {
     "Left of Equipment","Right of Equipment","In Ceiling",
     "Front Left Corner of Equipment","Front Right Corner of Equipment",
     "Back Left Corner of Equipment","Back Right Corner of Equipment",
+    "At Supply Fan","At Return Fan",
     "Front of","Above","** Custom Location **"
   ],
   verificationTypes: [
@@ -793,25 +912,27 @@ const DATA = {
     "Gauge/Drain - Hot","Gauge/Drain - CHW","Gauge/Drain",
     "Drain Only - Hot","Drain Only - CHW","Drain Only",
     "G/Tmp/Drain - Hot","G/Tmp/Drain - CHW",
+    "Zero Flow",
     "SW (On/Off)","SW (Hand/Off/Auto)","SW (H/O/A)",
     "SW (Drive/Off/Bypass)","SW (VFD/Off/Bypass)","SW (Other)",
     "Screen","Button (Start/Stop) - VFD","Button (Hand/Off/Auto) - VFD",
     "Button (FWD/STOP) - VFD","Button (Start/Stop) - Retractable","Button (Other)",
     "Controls","Meter","Rotating","Block"
   ],
-  quantities: [1,2,3,4,5],
+  quantities: [1,2,3,4,5,6,7,8],
   duplicateOptions: ["No","Yes"],
   templates: [
     "** New Template **",
     "AHU - Steam","AHU - HHW","AHU - Steam, CHW, HHW",
-    "Chilled Water Pump","Heating Hot Water Pump","Standard Pump",
+    "Chilled Water Pump","Heating Hot Water Pump","Standard Pump","Feedwater Pump","Glycol Pump",
+    "Day Tank",
     "Condensate Return Unit","Condensate Return Unit - Steam",
     "Exhaust Fan","Water Heater - Steam","Water Heater - Gas","Water Heater - Electric",
     "Unit Heater - Steam","Unit Heater - HHW",
     "Air Compressor","Air Dryer","Vaccum Pump","Condensing Unit",
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
     "Elevator - Traction","Elevator - Hydraulic",
-    "ATS - Generic","ASCO 7000","Non Byp","Kohler","Zenith",
+    "ATS - Generic","ASCO 7000","Non Byp","Kohler","Zenith","Humidifier",
     "Standard Electrical","Heat Exchanger - Steam","Heat Exchanger - CHW/Glycol"
   ],
   tiedToOptions: ["Shut Down","Shut Down & LOTO"]
@@ -819,7 +940,9 @@ const DATA = {
 
 // Auto-fill defaults when energy source is selected
 const SOURCE_DEFAULTS = {
-  'Kinetic':            { device: 'Rotating',   location: 'On Equipment', verification: 'Rotating',  noPhoto: true },
+  // Kinetic intentionally has no noPhoto default — visibility is controlled
+  // per source via the photo-slot toggle (SOURCE_KINDS_WITH_PHOTO_TOGGLE).
+  'Kinetic':            { device: 'Rotating',   location: 'On Equipment', verification: 'Rotating' },
   'Gravity/Potential':  { device: 'Potential',   location: 'On Equipment', verification: 'Block',     noPhoto: true },
   'Hydraulic':          { device: 'Hydraulic',   location: 'On Equipment', verification: 'GaugeOnly', noPhoto: true },
   // Steam: default to Gate Valve, verification stays open (filtered to valve options)
@@ -837,7 +960,7 @@ const DEVICE_VERIFICATION_MAP = {
   'VFD':                  ['Controls','Meter','SW (Hand/Off/Auto)','SW (H/O/A)','SW (Drive/Off/Bypass)','SW (VFD/Off/Bypass)','SW (Other)','Button (Start/Stop) - VFD','Button (Hand/Off/Auto) - VFD','Button (Other)'],
   'Switch':               ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
   'Switch w/Padlock':     ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
-  'Plug':                 ['Controls'],
+  'Plug':                 ['Controls','SW (On/Off)','Button (Other)'],
   'Fuse':                 ['Meter','Controls'],
   'Gate Valve':           ['_temponly','_gauge','_gaugeonly','_drain'],
   'Gate Valve w/Cable':   ['_temponly','_gauge','_gaugeonly','_drain'],
@@ -852,15 +975,21 @@ const DEVICE_VERIFICATION_MAP = {
   'Cable':                ['Controls'],
 };
 
-// Energy sources that get "- Hot" suffix on gauge/drain verifications
+// Energy sources that get "- Hot" suffix on gauge/drain verifications.
+// NOTE: 'DW' (Domestic Water) is intentionally NOT here — that's cold tap
+// water, distinct from 'DHW' (Domestic Hot Water) which IS hot. DW sources
+// should show plain Gauge/Drain, GaugeOnly, Drain Only (no -Hot variants).
 const HOT_ENERGY_SOURCES = [
   'LPS','MPS','HPS','Steam',
-  'HHW','DHW','DW','Feedwater','Condensate'
+  'HHW','DHW','Feedwater','Condensate'
 ];
 
-// Energy sources that get "- CHW" suffix on gauge/drain verifications
+// Energy sources that get "- CHW" suffix on gauge/drain verifications.
+// Only true chilled water gets the CHW variant — condenser water (CW /
+// "Condenser Water") is on the warm tower side of a chiller and uses
+// the plain valve verifications (Gauge/Drain, GaugeOnly, Drain Only).
 const CHW_ENERGY_SOURCES = [
-  'CHW','CW','Condenser'
+  'CHW'
 ];
 
 // Equipment types that always offer the "- Hot" verification choices in addition
@@ -942,13 +1071,73 @@ function getFilteredVerifications(deviceType, energySource) {
       add(v);
     }
   }
+
+  // Union in any source-type-specific extra verifications (matched by prefix
+  // on the energy source name). Lets us add e.g. "Controls" to Fuel Oil
+  // sources regardless of which valve device is picked.
+  if (energySource) {
+    for (const [prefix, extras] of Object.entries(SOURCE_EXTRA_VERIFICATIONS)) {
+      if (energySource.startsWith(prefix)) {
+        for (const extra of extras) {
+          if (!result.includes(extra)) result.push(extra);
+        }
+      }
+    }
+  }
+
   return result;
+}
+
+// Energy-source-specific verifications to add on top of the device-derived
+// list. Keyed by source-name prefix (matched via startsWith). Use sparingly —
+// most verifications should live in DEVICE_VERIFICATION_MAP. This map is for
+// cross-cutting cases like "Controls" being valid on any Fuel Oil source
+// regardless of whether the device is a valve, breaker, or solenoid.
+const SOURCE_EXTRA_VERIFICATIONS = {
+  'Fuel Oil':    ['Controls'],
+  'Natural Gas': ['Controls'],
+};
+
+// Per-equipment-type allowlist of (equipType, energySource) combos that should
+// always show a photo slot regardless of the source-kind default. Used by the
+// render check in renderSources. Empty for now (Kinetic uses the toggle path
+// below); kept around for future cases where a specific equipType needs to
+// force a photo slot on a normally-suppressed source.
+const EQUIPMENT_ALLOW_PHOTO_FOR_SOURCE = {};
+
+// Source kinds whose photo-slot visibility is user-toggleable per source.
+// For these:
+//   - Default (after migration / on a freshly-added source): photo slot VISIBLE
+//   - render reads only src.noPhoto — ignores SOURCE_DEFAULTS[*].noPhoto
+//   - source card shows a small toggle button to hide/show the slot
+//
+// Adding 'Hydraulic' or 'Gravity/Potential' here would extend the toggle
+// to those source kinds too; left out per spec.
+const SOURCE_KINDS_WITH_PHOTO_TOGGLE = new Set(['Kinetic']);
+
+function isPhotoToggleable(energySource) {
+  return SOURCE_KINDS_WITH_PHOTO_TOGGLE.has(energySource);
+}
+
+function shouldAllowPhotoForSource(equipType, energySource) {
+  const set = EQUIPMENT_ALLOW_PHOTO_FOR_SOURCE[equipType];
+  return !!(set && set.has(energySource));
+}
+
+// User-toggled per-source photo visibility. Flips src.noPhoto for a
+// toggleable source and re-renders.
+function togglePhotoSlot(index) {
+  const src = sources[index];
+  if (!src || !isPhotoToggleable(src.energySource)) return;
+  src.noPhoto = !src.noPhoto;
+  renderSources();
+  autoSaveCurrent();
 }
 
 // Energy Source → Device type mapping (filters device dropdown based on selected energy source)
 const ELECTRICAL_DEVICES = ['Disconnect','VFD','Switch','Switch w/Padlock','Breaker','Breaker w/Padlock','Plug','Fuse','Quick Disconnect'];
-const VALVE_DEVICES_WITH_CKT = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Butterfly Valve','Butterfly w/Padlock','Ckt Setter - Universal Valve','Chain'];
-const VALVE_DEVICES_NO_CKT = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Butterfly Valve','Butterfly w/Padlock','Chain'];
+const VALVE_DEVICES_WITH_CKT = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Butterfly Valve','Butterfly w/Padlock','Ckt Setter - Universal Valve','Chain','Cable'];
+const VALVE_DEVICES_NO_CKT = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Butterfly Valve','Butterfly w/Padlock','Chain','Cable'];
 
 const ENERGY_DEVICE_MAP = {
   'Electrical': ELECTRICAL_DEVICES,
@@ -999,7 +1188,9 @@ const ENERGY_KEYWORD_DEVICE_MAP = [
 // Keyword fallback for temperature variant detection on custom energy sources
 const ENERGY_KEYWORD_TEMP = [
   { keywords: ['steam','hps','lps','mps','hhw','dhw','feedwater','condensate','hot'], temp: 'hot' },
-  { keywords: ['chw','chilled','condenser','cold'], temp: 'chw' },
+  // 'condenser' intentionally removed — condenser water is on the warm tower
+  // side of a chiller, not chilled. Use plain valve verifications instead.
+  { keywords: ['chw','chilled','cold'], temp: 'chw' },
 ];
 
 function getFilteredDevices(energySource) {
@@ -1028,64 +1219,66 @@ const EQUIPMENT_AUTO_SOURCES = {
     { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
   ],
   'CHW Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Heating HW Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Domestic HW Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Domestic Water Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensate Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Chemical Feed Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Vacuum Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Exhaust Fan': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Air Handler': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    // noPhoto deliberately omitted on AHU Kinetic — field crews want a fan-housing photo.
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
   'Air Compressor': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
-    { energySource: 'CA Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Compressed Air Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensing Unit': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Mini Split': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   'Unit Heater': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
   'Generator': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
   'Cooling Tower': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   'Chemical Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 120V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
 };
@@ -1099,11 +1292,122 @@ let miscPhotos = [];       // Current equipment's misc photos [{dbKey, thumbnail
 let savedEquipment = [];   // Accumulated saved equipment entries
 let editingEntry = null;   // Reference to the saved entry currently being edited (or null)
 let savedPanelOpen = false;
+// 'all' (default) shows every saved entry; 'today' shows only entries whose
+// savedAt is on the current local day. UI toggle lives in the saved-panel
+// header; render in renderSavedPanel.
+let savedFilter = 'all';
+// Free-text search term applied on top of savedFilter. Matches equipName,
+// equipRoom, template (case-insensitive substring). Empty string = no filter.
+let savedSearchTerm = '';
+// Last value the equipment-type change handler wrote into the Equipment ID/Name
+// field. If the current name still equals this, switching equipment types
+// replaces the name (the user hadn't customised it). A user-edited name won't
+// equal this value, so it's preserved. Reset to null when not in auto-fill state.
+let lastAutoFilledEquipName = null;
+
+// ============================================================================
+// STABLE IDENTIFIERS  (ARCHITECTURE.md §5 / improvement plan §2.1)
+// ============================================================================
+// Per-device UUID: minted once on first launch and persisted in localStorage.
+// It feeds the export filename convention and lets downstream systems tell
+// devices apart when the same day's data is uploaded from more than one iPad.
+// Invisible to the user.
+let deviceId = null;
+
+// crypto.randomUUID() exists in modern browsers and iOS 15.4+ WKWebViews, but
+// fall back to a v4-style generator for older runtimes / non-secure contexts so
+// callers always get a valid UUID.
+function genUuid() {
+  try {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      return window.crypto.randomUUID();
+    }
+  } catch (e) { /* fall through to manual generation */ }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+// Mint the per-device id once, then reuse it for the life of the install.
+function ensureDeviceId() {
+  try {
+    deviceId = localStorage.getItem('loto_device_id');
+    if (!deviceId) {
+      deviceId = genUuid();
+      localStorage.setItem('loto_device_id', deviceId);
+    }
+  } catch (e) {
+    // localStorage blocked — fall back to a per-session id so downstream code
+    // always has something usable.
+    if (!deviceId) deviceId = genUuid();
+  }
+  return deviceId;
+}
+
+// Give a source a stable UUID if it lacks one. Called at save time so the id
+// survives edits (it round-trips through the entry's cloned sources) while
+// duplicated sources still get fresh ids (executeDuplicate strips sourceId
+// before the copy is saved).
+function ensureSourceId(src) {
+  if (src && !src.sourceId) src.sourceId = genUuid();
+  return src;
+}
+
+// ============================================================================
+// FACILITY / HOSPITAL
+// ============================================================================
+// The roster the Settings picker offers. Each `code` MUST match a loto-web
+// Hospital.key byte-for-byte — that's the join key the field-import path uses
+// to file equipment under the right facility. Extend this list as loto-web
+// adds hospitals (and make sure the matching Hospital row exists on that side,
+// or its imports won't match). The picker also offers a free-text "Custom…"
+// option for anything not yet listed.
+const HOSPITALS = [
+  { code: 'Marion',                  name: 'Marion VA Medical Center' },
+  { code: 'Kansas City',             name: 'Kansas City VA Medical Center' },
+  { code: 'Atlanta',                 name: 'Atlanta VA Medical Center' },
+  { code: 'Atlanta - Fort McPherson', name: 'Atlanta VAMC - Fort McPherson VA Clinic' },
+  { code: 'Atlanta - Trinka Davis',  name: 'Atlanta VAMC - Trinka Davis Veterans Village' },
+];
+
+// Currently-selected facility code (a loto-web Hospital.key or a custom string),
+// persisted so it survives reloads. '' means "not set".
+function getHospitalCode() {
+  try { return localStorage.getItem('loto_hospital_code') || ''; } catch (e) { return ''; }
+}
+function setHospitalCode(code) {
+  try {
+    if (code) localStorage.setItem('loto_hospital_code', code);
+    else localStorage.removeItem('loto_hospital_code');
+  } catch (e) { /* localStorage blocked — nothing persists, exports fall back to '' */ }
+}
+// Human-facing name for a code (falls back to the code itself for custom values).
+function hospitalName(code) {
+  const h = HOSPITALS.find(x => x.code === code);
+  return h ? h.name : (code || '');
+}
+// The code an entry should export under: its own stamp, else the current
+// setting (covers pre-feature entries and the unsaved current-form entry).
+function entryHospitalCode(entry) {
+  return (entry && entry.hospitalCode) || getHospitalCode() || '';
+}
 
 // ============================================================================
 // INIT
 // ============================================================================
 function init() {
+  // Mint / load the per-device id before anything else touches storage.
+  ensureDeviceId();
+
+  // Reflect the persisted facility in the header chip on startup.
+  updateFacilityBadge();
+
+  // Tag body so CSS can show/hide native-only affordances (e.g. scan buttons)
+  const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  document.body.classList.add(isNative ? 'native-platform' : 'web-platform');
+
   populateDropdown(document.getElementById('equipType'), DATA.equipmentTypes, 'Select Type');
   populateDropdown(document.getElementById('equipTemplate'), DATA.templates, 'Select Template');
   populateDropdown(document.getElementById('equipTiedTo'), DATA.tiedToOptions, 'Select');
@@ -1197,14 +1501,91 @@ function equipTypeChanged(equipType) {
   }
   renderSources();
 
-  // Auto-suggest template if there's only one match
+  // Auto-suggest template:
+  //  - If exactly one template → auto-select silently (existing behavior)
+  //  - If equip type is in EQUIPMENT_PROMPT_FOR_TEMPLATE and has multiple templates → prompt
   if (equipType && EQUIPMENT_TEMPLATE_MAP[equipType]) {
     const templates = EQUIPMENT_TEMPLATE_MAP[equipType];
     if (templates.length === 1) {
       document.getElementById('equipTemplate').value = templates[0];
       handleTemplateChange();
+    } else if (EQUIPMENT_PROMPT_FOR_TEMPLATE.has(equipType) && templates.length > 1) {
+      showTemplatePrompt(equipType, templates);
     }
   }
+}
+
+// Equipment types that should prompt the user to pick a template after type selection
+// (only multi-template types — single-template types still auto-select silently).
+const EQUIPMENT_PROMPT_FOR_TEMPLATE = new Set([
+  'Air Handler',
+  'Domestic Water Heater',
+  'Condensate Return Unit',
+  'Elevator',
+  'Unit Heater',
+  'Heat Exchanger',
+  // Dishwasher prompts for fuel type (Electric / Steam) and reuses the
+  // matching Water Heater template (see EQUIPMENT_TEMPLATE_LABELS for the
+  // friendlier button labels).
+  'Dishwasher',
+]);
+
+// Optional per-equipment-type display-label overrides for the template-pick
+// modal. Use when the template's filename isn't the friendliest thing to
+// show the user — e.g. a Dishwasher prompt should say "Electric" / "Steam"
+// even though the underlying templates are "Water Heater - Electric" /
+// "Water Heater - Steam".
+const EQUIPMENT_TEMPLATE_LABELS = {
+  'Dishwasher': {
+    'Water Heater - Electric': 'Electric',
+    'Water Heater - Steam':    'Steam',
+  },
+};
+
+function showTemplatePrompt(equipType, templates) {
+  // Avoid stacking dialogs (e.g. on rapid type-change clicks)
+  closeTemplatePrompt();
+  const labels = EQUIPMENT_TEMPLATE_LABELS[equipType] || {};
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'templatePromptOverlay';
+  const buttons = templates.map(t => {
+    const display = labels[t] || t;
+    return `<button class="btn btn-primary" onclick="applyTemplatePromptChoice(${JSON.stringify(t).replace(/"/g, '&quot;')})" style="padding:12px;font-size:16px;text-align:left;">${display}</button>`;
+  }).join('');
+  // Customise the heading + lead-in copy too, so the Dishwasher prompt
+  // doesn't say "Select Template" with "Electric/Steam" buttons (mismatched).
+  const isLabelOverride = Object.keys(labels).length > 0;
+  const heading = isLabelOverride ? `${equipType} Type` : 'Select Template';
+  const lead    = isLabelOverride
+    ? `What kind of <strong>${equipType}</strong>?`
+    : `Pick a template for <strong>${equipType}</strong>:`;
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:360px;">
+      <h3 style="margin:0 0 6px 0;color:var(--accent);">${heading}</h3>
+      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">${lead}</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        ${buttons}
+        <button class="btn" onclick="closeTemplatePrompt()" style="padding:10px;font-size:13px;background:transparent;color:var(--text-dim);">Skip / Choose Later</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+}
+
+function applyTemplatePromptChoice(template) {
+  closeTemplatePrompt();
+  const sel = document.getElementById('equipTemplate');
+  if (sel) {
+    sel.value = template;
+    handleTemplateChange();
+  }
+}
+
+function closeTemplatePrompt() {
+  const overlay = document.getElementById('templatePromptOverlay');
+  if (overlay) overlay.remove();
 }
 
 // Voltage prompt configurations per equipment type
@@ -1241,7 +1622,7 @@ const VOLTAGE_PROMPT_CONFIG = {
     apply: function(voltage) {
       const energyName = voltage ? 'Electrical ' + voltage : 'Electrical';
       sources.push({
-        energySource: energyName, deviceType: 'Disconnect', quantity: 1, location: '',
+        energySource: energyName, deviceType: 'Disconnect', quantity: 1, location: 'On Equipment',
         duplicate: 'No', verification: 'Controls', detail: '', collapsed: true, auto: true
       });
       showToast(`Added Electrical source${voltage ? ' (' + voltage + ')' : ''} for Chiller`);
@@ -1287,13 +1668,11 @@ function showVoltageDialog(equipType) {
 function applyVoltageChoice(voltage) {
   const equipType = pendingVoltageEquipType;
   closeVoltageDialog();
-  if (equipType && VOLTAGE_PROMPT_CONFIG[equipType]) {
-    VOLTAGE_PROMPT_CONFIG[equipType].apply(voltage);
-  }
-  renderSources();
-  autoSaveCurrent();
 
-  // Auto-suggest template
+  // Apply the auto-template FIRST (it would otherwise wipe any source we push).
+  // Single-template equipment types like Chiller / Generator have a template
+  // that includes Kinetic etc. — we want those, then we add the voltage-specific
+  // Electrical source on top so it survives applyTemplate's sources = [].
   if (equipType && EQUIPMENT_TEMPLATE_MAP[equipType]) {
     const templates = EQUIPMENT_TEMPLATE_MAP[equipType];
     if (templates.length === 1) {
@@ -1301,6 +1680,14 @@ function applyVoltageChoice(voltage) {
       handleTemplateChange();
     }
   }
+
+  // Now push the voltage-specific source(s). This runs AFTER applyTemplate so
+  // it doesn't get cleared by the template's sources = [] reset.
+  if (equipType && VOLTAGE_PROMPT_CONFIG[equipType]) {
+    VOLTAGE_PROMPT_CONFIG[equipType].apply(voltage);
+  }
+  renderSources();
+  autoSaveCurrent();
 }
 
 function closeVoltageDialog() {
@@ -1319,6 +1706,16 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Heating HW Pump': ['Heating Hot Water Pump'],
   'Domestic HW Pump': ['Standard Pump'],
   'Domestic Water Pump': ['Standard Pump'],
+  'Feedwater Pump': ['Feedwater Pump'],
+  'Glycol Pump': ['Glycol Pump'],
+  'Day Tank': ['Day Tank'],
+  // DA Tank (deaerator) — uses steam to deaerate boiler feedwater.
+  // Steam heat-exchanger semantics.
+  'DA Tank': ['Heat Exchanger - Steam'],
+  // Condensate Surge Tank — holds condensate; standard (non-steam) CRU template.
+  'Condensate Surge Tank': ['Condensate Return Unit'],
+  // Dishwasher — Electric or Steam variant. Reuses the Water Heater templates.
+  'Dishwasher': ['Water Heater - Electric', 'Water Heater - Steam'],
   'Chemical Feed Pump': ['Standard Pump'],
   'Chemical Pump': ['Standard Pump'],
   'Condensate Pump': ['Heating Hot Water Pump'],
@@ -1337,13 +1734,14 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Heat Exchanger': ['Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol'],
   'Boiler': ['Standard Electrical'],
   'Steam PRV Station': ['Standard Electrical'],
-  'Humidifier': ['Water Heater - Steam'],
+  'Humidifier': ['Humidifier'],
 };
 
 // Equipment types that force a specific diagram regardless of template's default
-const EQUIPMENT_DIAGRAM_OVERRIDE = {
-  'Humidifier': 'general',
-};
+// Humidifier formerly overrode here when it reused the Water Heater - Steam
+// template; now Humidifier has its own template with its own diagram, so the
+// override map is intentionally empty. Keep the structure for future use.
+const EQUIPMENT_DIAGRAM_OVERRIDE = {};
 
 function filterTemplateDropdown(equipType) {
   const sel = document.getElementById('equipTemplate');
@@ -1368,7 +1766,8 @@ function filterTemplateDropdown(equipType) {
 // Template-to-diagram mapping
 const TEMPLATE_DIAGRAM_MAP = {
   'AHU - Steam': 'ahu', 'AHU - HHW': 'ahu', 'AHU - Steam, CHW, HHW': 'ahu',
-  'Chilled Water Pump': 'pump', 'Heating Hot Water Pump': 'pump', 'Standard Pump': 'pump',
+  'Chilled Water Pump': 'pump', 'Heating Hot Water Pump': 'pump', 'Standard Pump': 'pump', 'Feedwater Pump': 'pump', 'Glycol Pump': 'pump',
+  'Day Tank': 'general',
   'Emergency Generator': 'generator',
   'Chiller': 'chiller', 'Refrigerator': 'general',
   'Heat Exchanger': 'heat_exchanger',
@@ -1382,6 +1781,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Water Heater - Steam': 'steam_water_heater', 'Water Heater - Gas': 'electric_water_heater',
   'Water Heater - Electric': 'general',
   'Unit Heater - Steam': 'steam_water_heater', 'Unit Heater - HHW': 'heat_exchanger',
+  'Humidifier': 'general',
   'Cooling Tower': 'cooling_tower',
   'Condensate Return Unit': 'condensate_return', 'Condensate Return Unit - Steam': 'condensate_return',
   'Elevator - Traction': 'traction_elevator', 'Elevator - Hydraulic': 'hydraulic_elevator',
@@ -2922,8 +3322,33 @@ function applyTemplate(val) {
       if (voltOverride && /^Electrical/.test(src.energySource)) src.energySource = voltOverride;
       sources.push(src);
     }
+
+    // Append any equipment-type-specific extras AFTER the template's sources.
+    // Lets multiple equipment types share a single generic template (e.g.
+    // Domestic HW Pump / Domestic Water Pump both use "Standard Pump") while
+    // still adding equipment-specific sources like DHW In or DW In.
+    const equipType = getEquipType();
+    const extras = EQUIPMENT_EXTRA_SOURCES[equipType];
+    if (extras) {
+      for (const extra of extras) {
+        sources.push({ ...extra, collapsed: true, auto: true });
+      }
+    }
+
     renderSources();
     showToast(`Set ${sources.length} source${sources.length > 1 ? 's' : ''} for ${val}`);
+
+    // If the template pushed at least one auto Electrical source, prompt the
+    // user to pick the voltage — except for:
+    //  - Equipment types that already ran their own voltage prompt at
+    //    equipment-type selection (ATS / Generator / Chiller)
+    //  - Templates whose voltage is fixed by design (Air Dryer = 120V plug)
+    if (!EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT.has(equipType) && !TEMPLATE_SKIPS_VOLTAGE_PROMPT.has(val)) {
+      const hasAutoElectrical = sources.some(s => s.auto && /^Electrical(?:\s|$)/.test(s.energySource || ''));
+      if (hasAutoElectrical) {
+        promptForTemplateVoltage(val);
+      }
+    }
   } else if (!val) {
     // Cleared the template selection — clear sources if no data
     if (sources.length > 0 && !sourcesHaveData()) {
@@ -2935,6 +3360,129 @@ function applyTemplate(val) {
   autoSaveCurrent();
 }
 
+// ============================================================================
+// TEMPLATE VOLTAGE PROMPT
+// ----------------------------------------------------------------------------
+// When a template that auto-populates an Electrical source is applied, ask
+// the user to pick the voltage. Default voltage list comes from the
+// DATA.energySources entries matching "Electrical NNN". A per-template
+// override may narrow the list (e.g. Water Heater - Electric only offers
+// 120/208/240/480 — no 4160V for a residential / small commercial heater).
+//
+// Skipped for equipment types listed in EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT
+// (ATS, Generator, Chiller) — those already prompt at equipment-type
+// selection and would otherwise double-prompt.
+// ============================================================================
+const EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT = new Set(['ATS', 'Generator', 'Chiller']);
+
+// Templates whose Electrical voltage is fixed (no point in prompting). Example:
+// Air Dryer is always 120V via a wall plug — the prompt would just be noise.
+// Equipment-type-specific extra sources appended AFTER applyTemplate has run.
+// Lets multiple equipment types share a single generic template (e.g. all
+// pumps using "Standard Pump") while still adding their own equipment-
+// specific source like a DHW In or DW In. Sources here are pushed with
+// auto:true + collapsed:true and the user can customise / delete as usual.
+const EQUIPMENT_EXTRA_SOURCES = {
+  'Domestic HW Pump': [
+    { energySource: 'DHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '' },
+  ],
+  'Domestic Water Pump': [
+    { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly', duplicate: 'No', detail: '' },
+  ],
+};
+
+// Templates whose electrical voltage is fixed by design — no voltage prompt.
+// Water Heater - Steam has a 120V control circuit only (no choice between
+// 208/240/etc.); same for Air Dryer (always a 120V plug) and Day Tank.
+const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas']);
+
+// Per-template voltage option overrides. Falls back to all available
+// "Electrical NNN" entries in DATA.energySources if not listed here.
+const TEMPLATE_VOLTAGE_OVERRIDES = {
+  'Water Heater - Electric': ['120V', '208V', '240V', '480V'],
+  // Pumps: 4160V dropped — that's substation-scale, not realistic for a
+  // standard building pump.
+  'Chilled Water Pump':      ['120V', '208V', '240V', '480V'],
+  'Heating Hot Water Pump':  ['120V', '208V', '240V', '480V'],
+  'Standard Pump':           ['120V', '208V', '240V', '480V'],
+  // AHUs, Cooling Tower, Exhaust Fan: only 120/208/480 per spec (no 240, no 4160).
+  'AHU - Steam':             ['120V', '208V', '480V'],
+  'AHU - HHW':               ['120V', '208V', '480V'],
+  'AHU - Steam, CHW, HHW':   ['120V', '208V', '480V'],
+  'Cooling Tower':           ['120V', '208V', '480V'],
+  'Exhaust Fan':             ['120V', '208V', '480V'],
+  // Feedwater Pump: feedwater pumps run at higher voltages, never 120/240.
+  'Feedwater Pump':          ['208V', '480V'],
+  // Humidifier: 120/208/480 — same shape as AHU/Cooling Tower/Exhaust Fan.
+  'Humidifier':              ['120V', '208V', '480V'],
+  // Unit Heater (both variants): cap at 480V — 4160V is never realistic.
+  'Unit Heater - Steam':     ['120V', '208V', '240V', '480V'],
+  'Unit Heater - HHW':       ['120V', '208V', '240V', '480V'],
+  // Air Compressor: cap at 480V (no 4160V).
+  'Air Compressor':          ['120V', '208V', '240V', '480V'],
+  // Condensate Return Unit (the electric variant): standard pump-scale voltages.
+  'Condensate Return Unit':  ['120V', '208V', '240V', '480V'],
+  // Glycol Pump: 120/208/480 — no 240V realistic for a glycol loop.
+  'Glycol Pump':             ['120V', '208V', '480V'],
+};
+
+function getElectricalVoltageOptions(template) {
+  if (TEMPLATE_VOLTAGE_OVERRIDES[template]) {
+    return TEMPLATE_VOLTAGE_OVERRIDES[template];
+  }
+  return DATA.energySources
+    .filter(s => /^Electrical \d/.test(s))
+    .map(s => s.replace(/^Electrical /, ''));
+}
+
+function promptForTemplateVoltage(template) {
+  // Avoid stacking dialogs (e.g. on rapid template changes)
+  closeTemplateVoltagePrompt();
+  const options = getElectricalVoltageOptions(template);
+  if (!options.length) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'templateVoltageOverlay';
+  const buttons = options.map(v =>
+    `<button class="btn btn-primary" onclick="applyTemplateVoltageChoice(${JSON.stringify(v).replace(/"/g, '&quot;')})" style="padding:12px;font-size:16px;">${v}</button>`
+  ).join('');
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:340px;">
+      <h3 style="margin:0 0 6px 0;color:var(--accent);">Electrical Voltage</h3>
+      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">Pick the voltage for <strong>${template}</strong>:</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        ${buttons}
+        <button class="btn" onclick="closeTemplateVoltagePrompt()" style="padding:10px;font-size:13px;background:transparent;color:var(--text-dim);">Keep Default</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+}
+
+function applyTemplateVoltageChoice(voltage) {
+  closeTemplateVoltagePrompt();
+  // Update every auto Electrical source in the current set with the chosen
+  // voltage. Non-auto sources (user-added) are left alone.
+  let updated = 0;
+  for (const src of sources) {
+    if (src.auto && /^Electrical(?:\s|$)/.test(src.energySource || '')) {
+      src.energySource = 'Electrical ' + voltage;
+      updated++;
+    }
+  }
+  renderSources();
+  autoSaveCurrent();
+  if (updated) {
+    showToast(`Set ${updated} Electrical source${updated > 1 ? 's' : ''} to ${voltage}`);
+  }
+}
+
+function closeTemplateVoltagePrompt() {
+  const overlay = document.getElementById('templateVoltageOverlay');
+  if (overlay) overlay.remove();
+}
+
 // Template-triggered auto-sources (mirrors EQUIPMENT_AUTO_SOURCES)
 const TEMPLATE_AUTO_SOURCES = {
   // Heat Exchanger - Steam: LPS source + Condensate Out
@@ -2944,10 +3492,16 @@ const TEMPLATE_AUTO_SOURCES = {
   ],
   // Heat Exchanger - CHW/Glycol: no auto-sources
   'Heat Exchanger - CHW/Glycol': [],
-  // Water Heater - Steam: 120V Breaker + LPS Gate Valve (also inherited by Humidifier)
+  // Water Heater - Steam: 120V Breaker + LPS Gate Valve + Condensate Out
   'Water Heater - Steam': [
     { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Water Heater - Gas: 120V control circuit + Natural Gas Ball Valve / Controls
+  'Water Heater - Gas': [
+    { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Natural Gas', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   // Water Heater - Electric: 240V Disconnect + DW In Ball Valve + DHW Out Ball Valve
   'Water Heater - Electric': [
@@ -2955,70 +3509,116 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: 'Above Equipment', verification: 'Drain Only - Hot', duplicate: 'No', detail: '', auto: true },
     { energySource: 'DHW Out', deviceType: 'Ball Valve', quantity: 1, location: 'Above Equipment', verification: 'Drain Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
+  // Condensate Return Unit (electric pump): Electrical Disconnect + Condensate In/Out
+  'Condensate Return Unit': [
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: 'On Equipment', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condensate In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Condensate Return Unit - Steam: MPS supply + Condensate In/Out (no electrical)
+  'Condensate Return Unit - Steam': [
+    { energySource: 'MPS 20 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condensate In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+  ],
   // Air Dryer: 120V Plug + CA In Ball Valve
   'Air Dryer': [
     { energySource: 'Electrical 120V', deviceType: 'Plug', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
-    { energySource: 'CA In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Compressed Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   // Kinetic for anything with a motor/fan/compressor
+  // noPhoto deliberately omitted on AHU Kinetic across all three AHU templates —
+  // field crews want a fan-housing photo for the kinetic source.
   'AHU - Steam': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'VFD', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'AHU - HHW': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'VFD', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'AHU - Steam, CHW, HHW': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'VFD', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Exhaust Fan': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Air Compressor': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
-    { energySource: 'CA Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Compressed Air Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensing Unit': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Chilled Water Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'CHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly - CHW', duplicate: 'No', detail: '', auto: true },
   ],
   'Heating Hot Water Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'HHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   'Standard Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
+  // Mirrors Heating Hot Water Pump (Kinetic + Electrical, voltage is prompted)
+  // and adds a Feedwater In source pre-configured with Gate Valve / GaugeOnly - Hot.
+  'Feedwater Pump': [
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Feedwater In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Glycol Pump: standard pump shape but with the Electrical pre-set to
+  // Disconnect / Controls so the user doesn't have to fill those each time.
+  'Glycol Pump': [
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Day Tank: 120V control circuit + Fuel Oil In. Electrical is fixed at
+  // 120V (a control / instrumentation circuit), so the template-level
+  // voltage prompt is suppressed via TEMPLATE_SKIPS_VOLTAGE_PROMPT.
+  'Day Tank': [
+    { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Fuel Oil In', deviceType: '', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+  ],
   'Cooling Tower': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
-  'Chiller': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-  ],
+  // Chiller intentionally has no template auto-sources — the Kinetic source
+  // was removed per user request. The voltage dialog for Chiller still
+  // pushes the Electrical source via VOLTAGE_PROMPT_CONFIG['Chiller'].apply,
+  // so the final source set for a Chiller is just that Electrical.
   'Emergency Generator': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
   // Elevator templates
   'Elevator - Traction': [
     { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+  ],
+  // Humidifier — dedicated template (was previously reusing Water Heater - Steam
+  // with a general-diagram override). Has its own voltage prompt so the user
+  // can pick a real power-feed voltage instead of the steam water heater's
+  // hardcoded 120V control circuit.
+  'Humidifier': [
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   'Unit Heater - Steam': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   'Unit Heater - HHW': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'HHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
     { energySource: 'HHW Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
@@ -3064,6 +3664,24 @@ function handleEquipTypeChange() {
   // A brand-new (custom) equipment type shouldn't inherit the previous type's template;
   // clear it so the name-based suggestion (handleCustomEquipTypeChange) starts clean.
   if (val === '** New Equipment Type **') document.getElementById('equipTemplate').value = '';
+  // Auto-fill Equipment ID/Name with the equipment type — handles three cases:
+  //   1. Name is empty             → fill with the new type
+  //   2. Name equals the value we   → replace with the new type
+  //      auto-filled previously       (user hasn't customised it yet)
+  //   3. Name is anything else     → leave alone (user typed/edited it)
+  // Skipped for the "** New Equipment Type **" path (no canonical type yet).
+  if (resolvedType) {
+    const nameInput = document.getElementById('equipName');
+    if (nameInput) {
+      const currentName = nameInput.value.trim();
+      const stillAutoFilled = currentName === lastAutoFilledEquipName;
+      if (!currentName || stillAutoFilled) {
+        nameInput.value = resolvedType;
+        nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+        lastAutoFilledEquipName = resolvedType;
+      }
+    }
+  }
   // Fire the existing auto-source / auto-template logic
   equipTypeChanged(resolvedType);
   autoSaveCurrent();
@@ -3228,12 +3846,32 @@ function renderSources() {
     } else {
       const isDuplicate = src.duplicate === 'Yes';
       const isLinked = !!src.linkedTo;
-      const isNoPhoto = src.noPhoto || isDuplicate || isLinked || (SOURCE_DEFAULTS[src.energySource] && SOURCE_DEFAULTS[src.energySource].noPhoto);
+      // Photo-toggle path: for source kinds in SOURCE_KINDS_WITH_PHOTO_TOGGLE
+      // (currently Kinetic), the user can hide/show the photo slot via the
+      // toggle button on the source card. The render check reads ONLY
+      // src.noPhoto — no SOURCE_DEFAULTS[*].noPhoto fallback — so the user's
+      // explicit choice is the source of truth.
+      // For other source kinds, behavior is unchanged: src.noPhoto OR the
+      // SOURCE_DEFAULTS[*].noPhoto fallback hides the slot, unless the
+      // equipment-type override allows it.
+      const photoAllowedForKind = shouldAllowPhotoForSource(getEquipType(), src.energySource);
+      const sourceIsToggleable = isPhotoToggleable(src.energySource);
+      const noPhotoFromKind = sourceIsToggleable
+        ? !!src.noPhoto
+        : (src.noPhoto || (SOURCE_DEFAULTS[src.energySource] && SOURCE_DEFAULTS[src.energySource].noPhoto));
+      const isNoPhoto = isDuplicate || isLinked || (noPhotoFromKind && !photoAllowedForKind);
       const noPhotoMessage = isLinked
         ? `🔗 Linked to ${src.linkedTo.equipName} &mdash; ${src.linkedTo.sourceLabel}`
         : isDuplicate
         ? 'Duplicate "" photo captured on another source'
+        : sourceIsToggleable
+        ? 'No photo on this source'
         : 'No photo needed "" uses main equipment photo';
+      // Toggle button — only on toggleable sources that aren't duplicate/linked.
+      const showPhotoToggle = sourceIsToggleable && !isDuplicate && !isLinked;
+      const photoToggleBtn = showPhotoToggle
+        ? `<button class="btn btn-sm" style="padding:6px 12px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="togglePhotoSlot(${i})">${isNoPhoto ? '&#128247; Add photo for this source' : '&#10005; Hide photo slot'}</button>`
+        : '';
       const autoBadge = src.auto ? ' <span class="auto-badge">AUTO</span>' : '';
       const linkedBanner = isLinked ? `
         <div style="background:rgba(74,144,217,0.15);border:1px solid var(--accent);border-radius:6px;padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
@@ -3254,6 +3892,7 @@ function renderSources() {
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:${isFirstExp?'#555':'var(--text-dim)'};padding:6px 10px;" onclick="moveSource(${i},-1)" ${isFirstExp?'disabled':''}>&#9650;</button>
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:${isLastExp?'#555':'var(--text-dim)'};padding:6px 10px;" onclick="moveSource(${i},1)" ${isLastExp?'disabled':''}>&#9660;</button>
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="showLinkDialog(${i})">${src.linkedTo ? '🔗 Linked' : 'Link'}</button>
+            <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="showCopySourceDialog(${i})" title="Copy source config from a saved entry">Copy</button>
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="duplicateSource(${i})">Dup</button>
             <button class="btn btn-danger btn-sm" onclick="removeSource(${i})">Remove</button>
             <button class="btn btn-outline btn-sm" onclick="collapseSource(${i})">Done</button>
@@ -3291,8 +3930,11 @@ function renderSources() {
             </div>` : `<div id="customDeviceGroup_${i}" style="display:none;"></div>`}
             <div class="form-group">
               <label>Device ID</label>
-              <input type="text" id="src_deviceId_${i}" value="${src.deviceId||''}" placeholder="e.g. Pump 3, V-201"
-                oninput="updateSource(${i},'deviceId',this.value)">
+              <div class="scan-input-row">
+                <input type="text" id="src_deviceId_${i}" value="${src.deviceId||''}" placeholder="e.g. Pump 3, V-201"
+                  oninput="updateSource(${i},'deviceId',this.value)">
+                <button type="button" class="scan-btn" onclick="scanTextToField('src_deviceId_${i}')" title="Scan label">&#128247;</button>
+              </div>
             </div>
             <div class="form-group">
               <label>Location</label>
@@ -3328,7 +3970,7 @@ function renderSources() {
               </select>
             </div>
           </div>
-          ${isNoPhoto ? `<div style="padding:8px 0;color:var(--text-dim);font-size:13px;">${noPhotoMessage}</div>` : `
+          ${isNoPhoto ? `<div style="padding:8px 0;color:var(--text-dim);font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span>${noPhotoMessage}</span>${photoToggleBtn}</div>` : `
           <div class="photo-section" style="display:flex;gap:16px;align-items:flex-start;">
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--text-label);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;">Source Photo</label>
@@ -3348,12 +3990,16 @@ function renderSources() {
                 `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;text-align:center;">
                   &#128247; ${new Date(photos['source_'+i].timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}
                 </div>` : ''}
+              ${photoToggleBtn ? `<div style="margin-top:8px;text-align:center;">${photoToggleBtn}</div>` : ''}
             </div>
             <div style="flex:0 0 auto;">
               <label style="font-size:11px;font-weight:600;color:var(--text-label);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;">Detail</label>
-              <input type="text" value="${src.detail||''}" placeholder="LR, TL…"
-                oninput="updateSource(${i},'detail',this.value)"
-                style="text-transform:uppercase;font-family:monospace;width:160px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-main);font-size:14px;text-align:center;">
+              <div class="scan-input-row" style="width:160px;">
+                <input type="text" id="src_detail_${i}" value="${src.detail||''}" placeholder="LR, TL…"
+                  oninput="updateSource(${i},'detail',this.value)"
+                  style="text-transform:uppercase;font-family:monospace;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-main);font-size:14px;text-align:center;">
+                <button type="button" class="scan-btn" onclick="scanTextToField('src_detail_${i}')" title="Scan label" style="width:38px;height:38px;font-size:16px;">&#128247;</button>
+              </div>
             </div>
           </div>`}
         </div>
@@ -3373,7 +4019,7 @@ function updateSource(index, field, value) {
     if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
     if (!sources[index].location) sources[index].location = defaults.location;
     if (!sources[index].verification) sources[index].verification = defaults.verification;
-    if (defaults.noPhoto) sources[index].noPhoto = true;
+    if (defaults.noPhoto && !shouldAllowPhotoForSource(getEquipType(), value)) sources[index].noPhoto = true;
     renderSources();
     showToast(`Auto-filled defaults for ${value}`);
     return;
@@ -3410,13 +4056,19 @@ function handleEnergySourceChange(index, value) {
       if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
       if (!sources[index].location) sources[index].location = defaults.location;
       if (!sources[index].verification) sources[index].verification = defaults.verification;
-      if (defaults.noPhoto) sources[index].noPhoto = true;
+      if (defaults.noPhoto && !shouldAllowPhotoForSource(getEquipType(), value)) sources[index].noPhoto = true;
       showToast(`Auto-filled defaults for ${value}`);
     }
     // Condensate on specific equipment types → Gate Valve + Temp Only - Hot
     if (value && value.startsWith('Condensate') && CONDENSATE_AUTO_EQUIP.includes(getEquipType())) {
       if (!sources[index].deviceType) sources[index].deviceType = 'Gate Valve';
       if (!sources[index].verification) sources[index].verification = 'Temp Only - Hot';
+    }
+    // Combined "In/Out" sources default to a device count of 2 (one device
+    // on each side). Only bumps from the standard default of 1 — if the user
+    // has already set a custom quantity, leave it alone.
+    if (value && /In\/Out\b/.test(value) && (sources[index].quantity == null || sources[index].quantity === 1)) {
+      sources[index].quantity = 2;
     }
     // Re-render to update device + verification dropdowns
     renderSources();
@@ -3485,6 +4137,117 @@ function removeSource(index) {
     sources.splice(index, 1);
     renderSources();
   }
+}
+
+// ============================================================================
+// COPY SOURCE FROM ANOTHER SAVED ENTRY — two-step modal:
+//   1) pick an entry from savedEquipment
+//   2) pick one of that entry's sources
+// Applies the selected source's config fields (energy source, device, location,
+// verification, quantity, duplicate, detail, custom-flag markers) onto the
+// currently-open source card. Does NOT copy: deviceId (typically unique per
+// device), photos, linkedTo, or the auto/collapsed UI flags.
+// ============================================================================
+function showCopySourceDialog(targetSourceIndex) {
+  closeCopySourceDialog();
+  if (!Array.isArray(savedEquipment) || savedEquipment.length === 0) {
+    showToast('No saved entries to copy from yet.', true);
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'copySourceOverlay';
+  overlay.dataset.targetIndex = String(targetSourceIndex);
+  // Reverse so the newest saved entries appear first — they're usually the
+  // ones you want to copy from.
+  const entries = savedEquipment.map((e, i) => ({ e, i })).slice().reverse();
+  const rows = entries.map(({ e, i }) => {
+    const bldg = e.equipBuilding || '—';
+    const room = e.equipRoom || '';
+    const srcCount = (e.sources || []).length;
+    return `<button class="btn" style="text-align:left;padding:10px 12px;background:var(--card);border:1px solid var(--border);color:var(--text);display:block;width:100%;margin-bottom:6px;" onclick="pickCopySourceEntry(${i})">
+      <div style="font-weight:600;">${e.equipName || '(unnamed)'}</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${e.equipType || ''} &middot; ${bldg}${room ? ' / ' + room : ''} &middot; ${srcCount} source${srcCount !== 1 ? 's' : ''}</div>
+    </button>`;
+  }).join('');
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:420px;max-height:85vh;display:flex;flex-direction:column;">
+      <h3 style="margin:0 0 6px 0;color:var(--accent);">Copy Source</h3>
+      <p style="margin:0 0 12px 0;color:var(--text-dim);font-size:13px;">Step 1 of 2 — pick the equipment to copy from:</p>
+      <div style="overflow-y:auto;flex:1 1 auto;padding-right:4px;">${rows}</div>
+      <button class="btn" onclick="closeCopySourceDialog()" style="margin-top:10px;padding:8px;background:transparent;color:var(--text-dim);">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+}
+
+function pickCopySourceEntry(entryIndex) {
+  const overlay = document.getElementById('copySourceOverlay');
+  if (!overlay) return;
+  const targetIndex = parseInt(overlay.dataset.targetIndex || '-1', 10);
+  const entry = savedEquipment[entryIndex];
+  if (!entry) { closeCopySourceDialog(); return; }
+  const srcs = entry.sources || [];
+  if (srcs.length === 0) {
+    showToast(`"${entry.equipName}" has no sources to copy.`, true);
+    closeCopySourceDialog();
+    return;
+  }
+  const rows = srcs.map((s, si) => {
+    const dev = s.deviceType || '—';
+    const ver = s.verification || '—';
+    const loc = s.location || '';
+    return `<button class="btn" style="text-align:left;padding:10px 12px;background:var(--card);border:1px solid var(--border);color:var(--text);display:block;width:100%;margin-bottom:6px;" onclick="applyCopySource(${entryIndex},${si})">
+      <div style="font-weight:600;">${si + 1}. ${s.energySource || '(no source)'}</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${dev}${loc ? ' &middot; ' + loc : ''} &middot; ${ver}${s.detail ? ' <span style="color:var(--accent);">(' + s.detail + ')</span>' : ''}</div>
+    </button>`;
+  }).join('');
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:420px;max-height:85vh;display:flex;flex-direction:column;">
+      <h3 style="margin:0 0 6px 0;color:var(--accent);">Copy Source</h3>
+      <p style="margin:0 0 12px 0;color:var(--text-dim);font-size:13px;">Step 2 of 2 — pick which source of <strong>${entry.equipName || '(unnamed)'}</strong> to copy into source #${targetIndex + 1}:</p>
+      <div style="overflow-y:auto;flex:1 1 auto;padding-right:4px;">${rows}</div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn" onclick="showCopySourceDialog(${targetIndex})" style="flex:1;padding:8px;background:transparent;color:var(--text-dim);">&larr; Back</button>
+        <button class="btn" onclick="closeCopySourceDialog()" style="flex:1;padding:8px;background:transparent;color:var(--text-dim);">Cancel</button>
+      </div>
+    </div>
+  `;
+}
+
+function applyCopySource(entryIndex, sourceIndex) {
+  const overlay = document.getElementById('copySourceOverlay');
+  const targetIndex = overlay ? parseInt(overlay.dataset.targetIndex || '-1', 10) : -1;
+  const entry = savedEquipment[entryIndex];
+  const src   = entry && entry.sources ? entry.sources[sourceIndex] : null;
+  const dest  = sources[targetIndex];
+  if (!src || !dest) { closeCopySourceDialog(); return; }
+  // Fields carried over — cover both regular and _customEnergy/_customDevice
+  // /_customLoc markers so custom-typed values still show as "custom".
+  const carry = [
+    'energySource','deviceType','quantity','location','verification',
+    'duplicate','detail','_customEnergy','_customDevice','_customLoc',
+  ];
+  for (const k of carry) {
+    if (src[k] !== undefined) dest[k] = src[k];
+  }
+  // The source is now user-configured (not auto) and expanded so the copy
+  // is visible to the user immediately.
+  dest.auto = false;
+  dest.collapsed = false;
+  // Explicitly do NOT copy: deviceId (typically unique per device), photos,
+  // linkedTo (linking is per-source, per-entry), noPhoto (user's choice on
+  // this new source).
+  closeCopySourceDialog();
+  renderSources();
+  autoSaveCurrent();
+  showToast(`Copied source #${sourceIndex + 1} from "${entry.equipName || '(unnamed)'}"`);
+}
+
+function closeCopySourceDialog() {
+  const overlay = document.getElementById('copySourceOverlay');
+  if (overlay) overlay.remove();
 }
 
 function duplicateSource(index) {
@@ -4163,11 +4926,17 @@ function saveAndNew() {
     return;
   }
 
+  // Ensure every source carries a stable UUID before it's cloned into the
+  // saved entry. Assigned on the live objects so it round-trips through edits.
+  sources.forEach(ensureSourceId);
+
   // Package current equipment into saved list
   const entry = {
-    id: Date.now(),
+    id: genUuid(),
     equipType: getEquipType(),
     equipName: equipName,
+    lotoId: document.getElementById('equipLotoId').value.trim(),
+    hospitalCode: getHospitalCode(),   // facility this entry was captured under
     equipRoom: document.getElementById('equipRoom').value,
     equipBuilding: getBuilding(),
     template: getTemplate(),
@@ -4189,6 +4958,9 @@ function saveAndNew() {
     if (idx >= 0) {
       // Preserve original savedAt so the entry keeps its original date for export filtering
       if (editingEntry.savedAt) entry.savedAt = editingEntry.savedAt;
+      // Preserve the original entry UUID so re-uploads dedupe against the same
+      // row downstream — an edit updates the equipment, it isn't a new one.
+      if (editingEntry.id) entry.id = editingEntry.id;
       savedEquipment[idx] = entry;
     } else {
       savedEquipment.push(entry);
@@ -4224,6 +4996,9 @@ function clearForm(confirm_first = true) {
   document.getElementById('customEquipTypeGroup').style.display = 'none';
   filterTemplateDropdown('');
   document.getElementById('equipName').value = '';
+  document.getElementById('equipLotoId').value = '';
+  // Form is fresh — auto-fill state has nothing to chase.
+  lastAutoFilledEquipName = null;
   document.getElementById('equipRoom').value = '';
   setBuilding('');
   document.getElementById('equipTemplate').value = '';
@@ -4251,17 +5026,109 @@ function clearForm(confirm_first = true) {
 // ============================================================================
 // SAVED EQUIPMENT PANEL
 // ============================================================================
+function isSavedOnLocalDay(entry, refDate) {
+  if (!entry || !entry.savedAt) return false;
+  const d = new Date(entry.savedAt);
+  if (isNaN(d.getTime())) return false;
+  return d.getFullYear() === refDate.getFullYear()
+      && d.getMonth() === refDate.getMonth()
+      && d.getDate() === refDate.getDate();
+}
+
+function isSavedToday(entry)     { return isSavedOnLocalDay(entry, new Date()); }
+function isSavedYesterday(entry) {
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  return isSavedOnLocalDay(entry, y);
+}
+
+const SAVED_FILTERS = new Set(['all', 'today', 'yesterday']);
+function setSavedFilter(value) {
+  savedFilter = SAVED_FILTERS.has(value) ? value : 'all';
+  renderSavedPanel();
+}
+function setSavedSearch(value) {
+  savedSearchTerm = (value || '').trim().toLowerCase();
+  renderSavedPanel();
+}
+function matchesSavedSearch(entry) {
+  if (!savedSearchTerm) return true;
+  const haystack = [
+    entry.equipName || '',
+    entry.equipRoom || '',
+    entry.template  || '',
+    entry.equipType || '',
+    entry.equipBuilding || '',
+  ].join(' ').toLowerCase();
+  return haystack.includes(savedSearchTerm);
+}
+
+function updateSavedFilterButtonStyles() {
+  const buttons = {
+    all:       document.getElementById('savedFilterAll'),
+    today:     document.getElementById('savedFilterToday'),
+    yesterday: document.getElementById('savedFilterYesterday'),
+  };
+  // Active button uses the accent style; inactive is muted card.
+  const activeStyle = 'background:var(--accent);color:#fff;border:1px solid var(--accent);';
+  const idleStyle   = 'background:var(--card);color:var(--text-dim);border:1px solid var(--border);';
+  for (const [key, btn] of Object.entries(buttons)) {
+    if (!btn) continue;
+    btn.style.cssText = 'padding:5px 12px;font-size:12px;' + (savedFilter === key ? activeStyle : idleStyle);
+  }
+}
+
 function renderSavedPanel() {
   const body = document.getElementById('savedPanelBody');
   const badge = document.getElementById('savedCountBadge');
   badge.textContent = savedEquipment.length;
+
+  // Show the filter bar only when the panel is open AND there are entries
+  // (no point asking to filter an empty list).
+  const filterBar = document.getElementById('savedFilterBar');
+  if (filterBar) {
+    filterBar.style.display = (savedPanelOpen && savedEquipment.length > 0) ? 'flex' : 'none';
+  }
+  updateSavedFilterButtonStyles();
 
   if (savedEquipment.length === 0) {
     body.innerHTML = '<div class="saved-empty">No equipment saved yet. Fill out the form and tap "Save & New" to add.</div>';
     return;
   }
 
-  body.innerHTML = savedEquipment.map((entry, i) => {
+  // Build the list of (entry, originalIndex) pairs so the action button
+  // indices still point at the right savedEquipment[i] regardless of filter.
+  const matchesFilter =
+    savedFilter === 'today'     ? isSavedToday
+    : savedFilter === 'yesterday' ? isSavedYesterday
+    : () => true;
+  const visible = savedEquipment
+    .map((entry, i) => ({ entry, i }))
+    .filter(({ entry }) => matchesFilter(entry) && matchesSavedSearch(entry));
+
+  const summary = document.getElementById('savedFilterSummary');
+  if (summary) {
+    const todayCount     = savedEquipment.filter(isSavedToday).length;
+    const yesterdayCount = savedEquipment.filter(isSavedYesterday).length;
+    const parts = [
+      `${todayCount} today`,
+      `${yesterdayCount} yesterday`,
+      `${savedEquipment.length} total`,
+    ];
+    if (savedSearchTerm) parts.push(`${visible.length} match`);
+    summary.textContent = parts.join(' · ');
+  }
+
+  if (visible.length === 0) {
+    const parts = [];
+    if (savedFilter !== 'all') parts.push(`"${savedFilter === 'today' ? 'Today' : 'Yesterday'}"`);
+    if (savedSearchTerm) parts.push(`search "${savedSearchTerm}"`);
+    const summary = parts.length ? parts.join(' + ') : 'the current filters';
+    body.innerHTML = `<div class="saved-empty">No entries match ${summary}. Clear filters to see the others.</div>`;
+    return;
+  }
+
+  body.innerHTML = visible.map(({ entry, i }) => {
     const photoCount = entry.photos ? Object.keys(entry.photos).filter(k => entry.photos[k] && entry.photos[k].timestamp).length : 0;
     const isEditing = editingEntry === entry;
     return `
@@ -4289,6 +5156,11 @@ function toggleSavedPanel() {
   savedPanelOpen = !savedPanelOpen;
   document.getElementById('savedPanelBody').classList.toggle('collapsed', !savedPanelOpen);
   document.getElementById('savedToggle').innerHTML = savedPanelOpen ? '&#9650; Hide' : '&#9660; Show';
+  // Filter bar visibility piggybacks on panel-open state.
+  const filterBar = document.getElementById('savedFilterBar');
+  if (filterBar) {
+    filterBar.style.display = (savedPanelOpen && savedEquipment.length > 0) ? 'flex' : 'none';
+  }
 }
 
 function showSavedList() {
@@ -4339,6 +5211,10 @@ function editSaved(index) {
     filterTemplateDropdown(entry.equipType || '');
   }
   document.getElementById('equipName').value = entry.equipName || '';
+  document.getElementById('equipLotoId').value = entry.lotoId || '';
+  // Loaded an existing entry — its name is the user's, not an auto-fill.
+  // Switching equipment types from here should NOT clobber it.
+  lastAutoFilledEquipName = null;
   document.getElementById('equipRoom').value = entry.equipRoom || '';
   setBuilding(entry.equipBuilding || '');
   document.getElementById('equipTiedTo').value = entry.tiedTo || '';
@@ -4444,6 +5320,10 @@ function executeDuplicate(index, withPhotos) {
   document.getElementById('duplicateDialog').remove();
   const entry = savedEquipment[index];
 
+  // A duplicate is always a new entry — clear any lingering edit target so the
+  // save appends (and mints a fresh entry UUID) instead of overwriting.
+  editingEntry = null;
+
   // Restore equipment type — check if it's a custom value
   if (entry.equipType && !DATA.equipmentTypes.includes(entry.equipType)) {
     document.getElementById('equipType').value = '** New Equipment Type **';
@@ -4457,6 +5337,10 @@ function executeDuplicate(index, withPhotos) {
     filterTemplateDropdown(entry.equipType || '');
   }
   document.getElementById('equipName').value = entry.equipName || '';
+  document.getElementById('equipLotoId').value = entry.lotoId || '';
+  // Loaded an existing entry — its name is the user's, not an auto-fill.
+  // Switching equipment types from here should NOT clobber it.
+  lastAutoFilledEquipName = null;
   document.getElementById('equipRoom').value = entry.equipRoom || '';
   setBuilding(entry.equipBuilding || '');
   document.getElementById('equipTiedTo').value = entry.tiedTo || '';
@@ -4470,8 +5354,9 @@ function executeDuplicate(index, withPhotos) {
     document.getElementById('equipTiedToName').value = '';
   }
 
-  // Notes intentionally left blank for duplicates
-  document.getElementById('equipNotes').value = '';
+  // Copy notes from the original entry — duplicates inherit the note text
+  // and the user can edit/clear as needed.
+  document.getElementById('equipNotes').value = entry.notes || '';
 
   // Restore template — check if it's a custom value
   const templateSel = document.getElementById('equipTemplate');
@@ -4485,8 +5370,11 @@ function executeDuplicate(index, withPhotos) {
     document.getElementById('customTemplateGroup').style.display = 'none';
   }
 
-  // Deep copy sources
+  // Deep copy sources. Strip sourceId so the duplicate mints fresh source
+  // UUIDs on save — a duplicate is a distinct piece of equipment, not an edit,
+  // so it must not share stable ids with the original.
   sources = JSON.parse(JSON.stringify(entry.sources));
+  sources.forEach(s => { if (s) delete s.sourceId; });
 
   photos = {};
   miscPhotos = [];
@@ -4752,6 +5640,11 @@ async function runCombinedExport() {
   const datePrefix = getDatePrefix();
   const nextH = () => formatPhotoName(datePrefix, seqCounter++);
 
+  // Identity for this bundle: a fresh per-export id (import idempotency) and
+  // the stable per-device id (cross-device filename disambiguation, §1b).
+  const exportId = genUuid();
+  const exportDeviceId = ensureDeviceId();
+
   const zip = new JSZip();
   const photosFolder = zip.folder('photos');
   let photoCount = 0;
@@ -4899,7 +5792,7 @@ async function runCombinedExport() {
   }
 
   // ---- PASS 2: build CSV ----
-  let csv = 'Equipment Type,Equipment Name,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames\n';
+  let csv = 'Hospital Code,Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames\n';
 
   allEntries.forEach((entry, ei) => {
     const map = entryMaps[ei];
@@ -4908,7 +5801,9 @@ async function runCombinedExport() {
         ? `${src.linkedTo.equipName} / Source #${src.linkedTo.sourceIndex + 1} (${src.linkedTo.sourceLabel})`
         : '';
       csv += [
+        quote(entryHospitalCode(entry)),
         quote(entry.equipType), quote(entry.equipName),
+        quote(entry.lotoId || ''),
         quote(entry.equipRoom), quote(entry.equipBuilding),
         quote(entry.template || ''), quote(entry.tiedTo || ''),
         quote(entry.tiedToName || ''), quote(entry.notes || ''),
@@ -4923,6 +5818,45 @@ async function runCombinedExport() {
       ].join(',') + '\n';
     });
   });
+
+  // ---- PASS 2B: build entries.json (structured data for downstream ingest) ----
+  // Same shape as the JSON backup envelope (version 2), but enriched with the
+  // photo/diagram filenames actually written into this ZIP so an ingester can
+  // bind photos to sources without parsing the CSV. Photo bytes and thumbnails
+  // are stripped (the files live under photos/ and diagrams/); paths are
+  // folder-qualified relative to the ZIP root.
+  const jsonEntries = allEntries.map((entry, ei) => {
+    const map = entryMaps[ei];
+    // Drop bulky/binary-ish fields; keep all structural data.
+    const { photos, miscPhotos, ...rest } = entry;
+    const srcOut = (rest.sources || []).map((src, i) => ({
+      ...src,
+      photoFile: map.sourceHs[i] ? 'photos/' + map.sourceHs[i] : ''
+    }));
+    const miscOut = miscFileNames[ei]
+      ? miscFileNames[ei].split(', ').filter(Boolean).map(n => 'photos/' + n)
+      : [];
+    return {
+      ...rest,
+      hospitalCode: entryHospitalCode(entry),   // resolved (falls back to setting)
+      sources: srcOut,
+      photoFiles: {
+        main:      map.mainH ? 'photos/' + map.mainH : '',
+        dataplate: map.dpH   ? 'photos/' + map.dpH   : '',
+        ee:        map.eeH   ? 'photos/' + map.eeH   : '',
+        diagram:   diagramFiles[ei] ? 'diagrams/' + diagramFiles[ei] : '',
+        misc:      miscOut
+      }
+    };
+  });
+  zip.file('entries.json', JSON.stringify({
+    version: 2,
+    exportId: exportId,
+    exported: new Date().toISOString(),
+    hospitalCode: getHospitalCode(),
+    deviceId: exportDeviceId,
+    entries: jsonEntries
+  }, null, 2));
 
   // ---- PASS 3: build Info Sheet xlsx (ExcelJS with formatting) ----
   if (typeof ExcelJS !== 'undefined') {
@@ -4954,6 +5888,17 @@ async function runCombinedExport() {
           cell.alignment = { vertical: 'middle', wrapText: true };
         }
       });
+    }
+
+    // Facility banner row (only if a facility is known for this export) — a
+    // single sheet-level header; the CSV/JSON carry the authoritative per-entry
+    // code. Prefer the current setting, else the first stamped entry.
+    const sheetHospitalCode = getHospitalCode() || (allEntries.find(e => e.hospitalCode) || {}).hospitalCode || '';
+    if (sheetHospitalCode) {
+      const facRow = ws.addRow(['Facility', hospitalName(sheetHospitalCode) + ' [' + sheetHospitalCode + ']']);
+      applyRow(facRow, { bold: true, size: 10, name: 'Calibri' }, topHeaderFill, allBorders);
+      ws.mergeCells(facRow.number, 2, facRow.number, 12); // span the name across the row
+      ws.addRow([]); // spacer before the column titles
     }
 
     // Title row (light blue-gray fill like original)
@@ -5049,28 +5994,55 @@ async function runCombinedExport() {
     // Generate xlsx bytes
     const xlsxBuffer = await ewb.xlsx.writeBuffer();
     const dateStamp = getDateStamp();
-    zip.file('Information_Sheet_' + dateStamp + '.xlsx', xlsxBuffer);
+    zip.file('info_sheets/Information_Sheet_' + dateStamp + '.xlsx', xlsxBuffer);
   }
 
-  // ---- Add CSV + download ZIP ----
+  // ---- Add CSV + manifest, then download ZIP ----
   const dateStamp = getDateStamp();
-  zip.file('LOTO_FieldData_' + dateStamp + '.csv', csv);
+  zip.file('info_sheets/LOTO_FieldData_' + dateStamp + '.csv', csv);
+
+  // Bundle index — a lightweight manifest an ingester reads first to discover
+  // the bundle's shape, facility/device, and where each part lives.
+  const diagramCount = diagramFiles.filter(Boolean).length;
+  zip.file('manifest.json', JSON.stringify({
+    schema: 'loto-field-export',
+    version: 1,
+    exportId: exportId,
+    exported: new Date().toISOString(),
+    deviceId: exportDeviceId,
+    hospitalCode: getHospitalCode(),
+    hospitalName: hospitalName(getHospitalCode()),
+    dateFilter: dateFilter,
+    counts: { entries: allEntries.length, photos: photoCount, diagrams: diagramCount },
+    files: {
+      entries: 'entries.json',
+      csv:  'info_sheets/LOTO_FieldData_' + dateStamp + '.csv',
+      xlsx: 'info_sheets/Information_Sheet_' + dateStamp + '.xlsx',
+      photosDir: 'photos/',
+      diagramsDir: 'diagrams/'
+    }
+  }, null, 2));
 
   try {
     const zipBlob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(zipBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    // If filtered to a specific date, include that in the filename
-    const filenameSuffix = (dateFilter !== 'all' && dateFilter !== 'undated') ? '_' + dateFilter : (dateFilter === 'undated' ? '_undated' : '');
-    a.download = 'LOTO_Export_' + dateStamp + filenameSuffix + '.zip';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // FieldExport_{code}_{MMDDYY}_{deviceShort}.zip — facility + date + a short
+    // per-device id so same-day exports from two iPads don't collide. Date
+    // filter / full ids live in manifest.json. Facility falls back to
+    // "NoFacility" when unset; the code is sanitised to filename-safe chars.
+    const codeSan = (getHospitalCode() || 'NoFacility').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'NoFacility';
+    const deviceShort = (exportDeviceId || '').replace(/-/g, '').slice(0, 8) || 'device';
+    const exportFilename = 'FieldExport_' + codeSan + '_' + dateStamp + '_' + deviceShort + '.zip';
+    const saveResult = await saveOrShare(zipBlob, exportFilename, 'application/zip');
     const firstName = formatPhotoName(datePrefix, startNum);
     const lastName = formatPhotoName(datePrefix, seqCounter - 1);
-    showToast(`Exported ${allEntries.length} equipment, ${photoCount} photos (${firstName} – ${lastName}). Next start: ${seqCounter}`);
+    if (saveResult && saveResult.cancelled) {
+      showToast(`Export ready — share cancelled. ${allEntries.length} equipment, ${photoCount} photos.`);
+    } else if (saveResult && saveResult.saved === false) {
+      showToast('Export error - file did not save', true);
+      return;
+    } else {
+      showToast(`Exported ${allEntries.length} equipment, ${photoCount} photos (${firstName} – ${lastName}). Next start: ${seqCounter}`);
+    }
     // Auto-update and persist the starting number for the next export
     document.getElementById('photoSeqStart').value = seqCounter;
     localStorage.setItem('photoSeqNext', seqCounter);
@@ -5085,7 +6057,7 @@ async function runCombinedExport() {
 // BACKUP / IMPORT
 // ============================================================================
 
-function saveBackup() {
+async function saveBackup() {
   // Gather all entries including any unsaved current form data
   let allEntries = [...savedEquipment];
   const currentName = document.getElementById('equipName').value.trim();
@@ -5093,6 +6065,7 @@ function saveBackup() {
     allEntries.push({
       equipType:     getEquipType(),
       equipName:     currentName,
+      hospitalCode:  getHospitalCode(),
       equipRoom:     document.getElementById('equipRoom').value,
       equipBuilding: getBuilding(),
       template:      getTemplate(),
@@ -5112,16 +6085,16 @@ function saveBackup() {
     return rest;
   });
 
-  const blob = new Blob([JSON.stringify({ version: 1, exported: new Date().toISOString(), entries: clean }, null, 2)], { type: 'application/json' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `LOTO_Backup_${getDateStamp()}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast(`Backup saved — ${clean.length} entries`);
+  const blob = new Blob([JSON.stringify({ version: 2, exported: new Date().toISOString(), hospitalCode: getHospitalCode(), entries: clean }, null, 2)], { type: 'application/json' });
+  const backupFilename = `LOTO_Backup_${getDateStamp()}.json`;
+  const saveResult = await saveOrShare(blob, backupFilename, 'application/json');
+  if (saveResult && saveResult.cancelled) {
+    showToast(`Backup ready — share cancelled. ${clean.length} entries.`);
+  } else if (saveResult && saveResult.saved === false) {
+    showToast('Backup error - file did not save', true);
+  } else {
+    showToast(`Backup saved — ${clean.length} entries`);
+  }
 }
 
 function importBackup() {
@@ -5187,7 +6160,13 @@ function handleBackupFile(event) {
 
 // Ensure every imported entry has the fields the app expects
 function normaliseEntry(en) {
+  // Spread the original first so identity / integration fields (id, lotoId,
+  // hospitalCode, savedAt, sketch, miscPhotos, and per-source sourceId,
+  // deviceId, detail, linkedTo, …) survive a backup round-trip — then enforce
+  // defaults on the known fields. photos is reset last: the JSON backup carries
+  // no photo bytes, so there's nothing to restore.
   return {
+    ...en,
     equipType:     en.equipType     || '',
     equipName:     en.equipName     || 'Unnamed',
     equipRoom:     en.equipRoom     || '',
@@ -5197,6 +6176,7 @@ function normaliseEntry(en) {
     tiedToName:    en.tiedToName    || '',
     notes:         en.notes         || '',
     sources:       (en.sources || []).map(s => ({
+      ...s,
       energySource: s.energySource || '',
       deviceType:   s.deviceType   || '',
       quantity:     s.quantity      || 1,
@@ -5255,12 +6235,35 @@ function checkStorage() {
   }
 }
 
+function setAutosaveStatus(kind) {
+  const el = document.getElementById('autosaveStatus');
+  if (!el) return;
+  // 'saving' | 'saved' | 'error'
+  if (kind === 'saving') {
+    el.innerHTML = '&#128190; Saving…';
+    el.style.color = 'var(--text-dim)';
+  } else if (kind === 'saved') {
+    const t = new Date();
+    const hh = t.getHours(), mm = t.getMinutes();
+    const ampm = hh >= 12 ? 'PM' : 'AM';
+    const h12 = ((hh + 11) % 12) + 1;
+    const stamp = `${h12}:${mm < 10 ? '0' + mm : mm} ${ampm}`;
+    el.innerHTML = `&#10003; Saved at ${stamp}`;
+    el.style.color = 'var(--success, #4ab86a)';
+  } else if (kind === 'error') {
+    el.innerHTML = '&#9888; Storage issue';
+    el.style.color = 'var(--danger, #d34141)';
+  }
+}
+
 function autoSaveCurrent() {
+  setAutosaveStatus('saving');
   try {
     const state = {
       equipType: document.getElementById('equipType').value,
       equipTypeCustom: document.getElementById('equipTypeCustom').value.trim(),
       equipName: document.getElementById('equipName').value,
+      lotoId: document.getElementById('equipLotoId').value.trim(),
       equipRoom: document.getElementById('equipRoom').value,
       equipBuilding: getBuilding(),
       template: getTemplate(),
@@ -5274,15 +6277,19 @@ function autoSaveCurrent() {
     };
     saveMetadata('current_wip', state).then(() => {
       checkStorage();
+      setAutosaveStatus('saved');
     }).catch(() => {
       // Fallback to localStorage if IDB fails
       try {
         localStorage.setItem('loto_current', JSON.stringify(state));
+        setAutosaveStatus('saved');
       } catch(e2) {
+        setAutosaveStatus('error');
         showToast('Storage issue - export soon', true);
       }
     });
   } catch(e) {
+    setAutosaveStatus('error');
     showToast('Storage issue - export soon', true);
   }
 }
@@ -5298,6 +6305,50 @@ function saveAll() {
       showToast('Storage error - export soon!', true);
     }
   });
+}
+
+// Energy source name migrations — applied to saved entries on load so old
+// data still maps to the current dropdown values. Map: oldName → newName.
+const ENERGY_SOURCE_RENAMES = {
+  'CA In':     'Compressed Air In',
+  'CA Out':    'Compressed Air Out',
+  'CA In/Out': 'Compressed Air In/Out',
+};
+
+function migrateSavedEnergySources(entries) {
+  let changedEntries = 0;
+  let changedSources = 0;
+  for (const entry of entries || []) {
+    let entryChanged = false;
+    for (const src of entry.sources || []) {
+      if (ENERGY_SOURCE_RENAMES[src.energySource]) {
+        src.energySource = ENERGY_SOURCE_RENAMES[src.energySource];
+        changedSources++;
+        entryChanged = true;
+      }
+    }
+    if (entryChanged) changedEntries++;
+  }
+  return { changedEntries, changedSources };
+}
+
+// Clear the noPhoto flag on existing saved sources whose energy source is now
+// user-toggleable (SOURCE_KINDS_WITH_PHOTO_TOGGLE — currently Kinetic). Older
+// saves baked in noPhoto:true on every Kinetic source via SOURCE_DEFAULTS and
+// the auto-source templates. Now we want those sources to default to "photo
+// slot visible" so the user actually sees and can use the slot. The toggle
+// button on the source card still lets them hide it again if they want.
+function migrateToggleablePhotoFlags(entriesAndSources) {
+  let cleared = 0;
+  for (const sources of entriesAndSources) {
+    for (const src of sources || []) {
+      if (isPhotoToggleable(src.energySource) && src.noPhoto) {
+        src.noPhoto = false;
+        cleared++;
+      }
+    }
+  }
+  return cleared;
 }
 
 async function loadAll() {
@@ -5325,6 +6376,22 @@ async function loadAll() {
         }).catch(() => {});
       }
     } catch(e) {}
+  }
+
+  // Rename any legacy CA In / CA Out energy sources to "Compressed Air ..."
+  // so saved entries still match dropdown values after the source-list change.
+  const migration = migrateSavedEnergySources(savedEquipment);
+  if (migration.changedSources > 0) {
+    console.log(`Renamed ${migration.changedSources} CA → Compressed Air sources across ${migration.changedEntries} entries`);
+    saveMetadata('saved_equipment', savedEquipment).catch(() => {});
+  }
+
+  // Clear noPhoto:true on any Kinetic source in saved entries — the photo
+  // slot is now controlled per source via the toggle button.
+  const cleared = migrateToggleablePhotoFlags((savedEquipment || []).map(e => e.sources));
+  if (cleared > 0) {
+    console.log(`Cleared noPhoto on ${cleared} toggleable saved sources (Kinetic)`);
+    saveMetadata('saved_equipment', savedEquipment).catch(() => {});
   }
 
   // Load current work-in-progress from IndexedDB
@@ -5358,6 +6425,10 @@ async function loadAll() {
       document.getElementById('equipTypeCustom').value = state.equipTypeCustom;
     }
     document.getElementById('equipName').value = state.equipName || '';
+    document.getElementById('equipLotoId').value = state.lotoId || '';
+    // App reloaded mid-edit — treat the restored name as the user's own,
+    // so a subsequent equipment-type change doesn't auto-clobber it.
+    lastAutoFilledEquipName = null;
     document.getElementById('equipRoom').value = state.equipRoom || '';
     setBuilding(state.equipBuilding || '');
     document.getElementById('equipTiedTo').value = state.tiedTo || '';
@@ -5384,6 +6455,17 @@ async function loadAll() {
     }
 
     sources = state.sources || [];
+    // Apply the same CA → Compressed Air rename to the work-in-progress state
+    // so a session that was open when the app updated doesn't show a blank
+    // source dropdown for the renamed entries.
+    for (const src of sources) {
+      if (ENERGY_SOURCE_RENAMES[src.energySource]) {
+        src.energySource = ENERGY_SOURCE_RENAMES[src.energySource];
+      }
+    }
+    // Clear noPhoto on toggleable sources in the in-progress entry too —
+    // matches the savedEquipment migration above.
+    migrateToggleablePhotoFlags([sources]);
     photos = state.photos || {};
     miscPhotos = state.miscPhotos || [];
 
@@ -5441,6 +6523,189 @@ function showToast(msg, isWarning = false) {
   t.textContent = msg;
   t.className = 'toast show' + (isWarning ? ' toast-warning' : '');
   setTimeout(() => t.className = 'toast', 2000);
+}
+
+// ============================================================================
+// FILE SAVE / SHARE — unified helper
+// ----------------------------------------------------------------------------
+// On a desktop / mobile browser:  triggers a normal browser download via
+//   <a download> (the classic pattern).
+// Inside the Capacitor iOS WebView:  <a download> is silently ignored. We
+//   instead write the blob to the app's Cache directory and present the
+//   native iOS share sheet so the user can pick "Save to Files", AirDrop,
+//   email, etc.  This is the only iOS-compatible way to get a file off
+//   the device; anything that calls a.click() with a blob URL is a no-op
+//   on iOS and the file is discarded.
+// ============================================================================
+async function saveOrShare(blob, filename, _mimeType) {
+  const native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+
+  if (!native) {
+    // Web fallback: classic browser download
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    return { saved: true, native: false };
+  }
+
+  // Native iOS path
+  const FS = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
+  const SH = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share;
+  if (!FS || !SH) {
+    showToast('Share unavailable — file not saved.', true);
+    return { saved: false, native: true, error: 'plugins-missing' };
+  }
+
+  // Blob → base64 via FileReader (works for binary + text blobs alike)
+  const base64 = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = () => reject(r.error || new Error('FileReader failed'));
+    r.onloadend = () => {
+      const s = String(r.result || '');
+      const idx = s.indexOf(',');
+      resolve(idx >= 0 ? s.slice(idx + 1) : s);
+    };
+    r.readAsDataURL(blob);
+  });
+
+  // Write to Cache (iOS auto-cleans this) and open share sheet
+  let fileUri;
+  try {
+    const writeResult = await FS.writeFile({
+      path: filename,
+      data: base64,
+      directory: 'CACHE',
+      recursive: true,
+    });
+    fileUri = writeResult && writeResult.uri;
+  } catch (err) {
+    showToast('Could not write file: ' + (err && err.message ? err.message : err), true);
+    return { saved: false, native: true, error: err };
+  }
+
+  try {
+    await SH.share({
+      title: filename,
+      url: fileUri,
+      dialogTitle: 'Save or share ' + filename,
+    });
+  } catch (err) {
+    // User cancelled the share sheet — file is still on disk at fileUri,
+    // just not exported anywhere yet. Treat as a no-op.
+    const msg = String((err && err.message) || err || '').toLowerCase();
+    if (msg.includes('cancel') || msg.includes('user did not share')) {
+      return { saved: true, native: true, cancelled: true, uri: fileUri };
+    }
+    showToast('Share failed: ' + (err && err.message ? err.message : err), true);
+    return { saved: false, native: true, error: err, uri: fileUri };
+  }
+
+  return { saved: true, native: true, uri: fileUri };
+}
+
+// ============================================================================
+// OCR — Camera capture → Apple Vision text recognition → field
+// ----------------------------------------------------------------------------
+// Tapping a .scan-btn calls scanTextToField(inputId). Opens the native iOS
+// camera via @capacitor/camera (rear, no save to gallery), gets a base64
+// JPEG back, hands it to our custom TextRecognition plugin (AppDelegate.swift)
+// which runs VNRecognizeTextRequest, then sets the input value and dispatches
+// an `input` event so any oninput="..." handlers on the target field fire
+// (auto-save, source state updates, etc.). User can edit after.
+//
+// Hidden on the web build via the body.web-platform class. The scan button
+// itself stays in the DOM so renderSources() doesn't have to branch.
+// ============================================================================
+// Resolve a Capacitor plugin proxy. In bundled apps, `import { Plugin } from
+// '@capacitor/plugin-name'` triggers a registerPlugin('Name') call at module
+// load that populates Capacitor.Plugins.Name. Our HTML is inline (no module
+// imports), so we have to call registerPlugin ourselves. Idempotent — safe
+// to call repeatedly. Falls back to Capacitor.Plugins.X if registerPlugin
+// isn't on the global (older runtimes).
+function getCapPlugin(name) {
+  const C = window.Capacitor;
+  if (!C) return null;
+  if (typeof C.registerPlugin === 'function') {
+    return C.registerPlugin(name);
+  }
+  return C.Plugins && C.Plugins[name];
+}
+
+async function scanTextToField(inputId) {
+  const native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  if (!native) {
+    showToast('Scan only works in the iOS app.', true);
+    return;
+  }
+  const Camera = getCapPlugin('Camera');
+  const TextRecognition = getCapPlugin('TextRecognition');
+  if (!Camera) {
+    console.error('Camera plugin not available. window.Capacitor:', window.Capacitor);
+    showToast('Camera plugin not loaded — try reinstalling the build.', true);
+    return;
+  }
+  if (!TextRecognition) {
+    console.error('TextRecognition plugin not available. window.Capacitor:', window.Capacitor);
+    showToast('OCR plugin not loaded — try reinstalling the build.', true);
+    return;
+  }
+
+  let photo;
+  try {
+    photo = await Camera.getPhoto({
+      quality: 80,
+      resultType: 'base64',
+      source: 'CAMERA',
+      saveToGallery: false,
+      correctOrientation: true,
+      direction: 'REAR',
+      allowEditing: false,
+    });
+  } catch (err) {
+    const msg = String((err && err.message) || err || '').toLowerCase();
+    if (msg.includes('cancel') || msg.includes('user did not') || msg.includes('denied')) return;
+    console.error('Camera error:', err);
+    showToast('Camera failed: ' + (err && err.message ? err.message : err), true);
+    return;
+  }
+
+  const base64 = photo && (photo.base64String || photo.base64Data);
+  if (!base64) {
+    showToast('No image captured.', true);
+    return;
+  }
+
+  let result;
+  try {
+    result = await TextRecognition.recognizeText({ base64Image: base64 });
+  } catch (err) {
+    console.error('OCR error:', err);
+    showToast('OCR failed: ' + (err && err.message ? err.message : err), true);
+    return;
+  }
+
+  const rawText = (result && result.text) || '';
+  // Most labels are 1–3 lines; collapse line breaks into spaces so the field
+  // ends up with a single clean string the user can edit.
+  const text = rawText.replace(/\s+/g, ' ').trim();
+
+  const input = document.getElementById(inputId);
+  if (!input) return;
+
+  if (!text) {
+    showToast('No text detected — try again with more light or a closer angle.', true);
+    return;
+  }
+
+  input.value = text;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  const preview = text.length > 40 ? text.slice(0, 40) + '…' : text;
+  showToast(`Scanned: "${preview}"`);
 }
 
 // ============================================================================

@@ -1,5 +1,36 @@
+# Node
 node_modules/
 package-lock.json
+
+# Capacitor / iOS build artifacts
+www/
+ios/App/Pods/
+ios/App/build/
+ios/DerivedData/
+*.xcuserstate
+
+# macOS
 .DS_Store
+
+# IDE
 .vscode/
 .idea/
+
+# fastlane
+ios/App/fastlane/report.xml
+ios/App/fastlane/Preview.html
+ios/App/fastlane/screenshots/
+ios/App/fastlane/test_output/
+ios/App/fastlane/README.md
+ios/App/.bundle/
+ios/App/vendor/bundle/
+ios/App/Gemfile.lock
+build/
+
+# Office lock files
+~$*.docx
+~$*.xlsx
+~$*.pptx
+
+# Personal/scratch docs kept alongside the repo but not tracked
+LOTO_Improvement_Recommendations.docx
