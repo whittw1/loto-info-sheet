@@ -1,6 +1,6 @@
 # LOTO Field Collector — Architecture Reference
 
-**Date:** 2026-07-13 (rev 6 — ZIP restructured into `info_sheets/`+`photos/`, `manifest.json`, `FieldExport_…` filename)
+**Date:** 2026-07-13 (rev 8 — §10/§11/§12 updated: the loto-web ingester `POST /api/import/from-field-collector` is now built + deployed; mapping table corrected; spot-check line numbers refreshed. rev 7 = data-entry UX pass in §5.5.)
 **Repo:** [github.com/whittw1/loto-info-sheet](https://github.com/whittw1/loto-info-sheet)
 **Prior standalone doc:** `LOTO_Integration_Architecture.md` in `~/Desktop/Claude Apps/LOTO Information Sheet App/` (April 2026, pre-iOS work — kept for reference, superseded by this file).
 
@@ -228,6 +228,79 @@ Templates define a set of auto-populated sources for a specific equipment contex
 - **`CHW_ENERGY_SOURCES`** — energy source prefixes that get the `- CHW` suffix (`CHW` only)
 - **`HOT_VERIFICATION_EQUIP`** — equipment types that always offer Hot variants (Domestic Water Heater)
 - **`SOURCE_EXTRA_VERIFICATIONS[prefix]`** — additional verifications unioned in for specific source prefixes (Fuel Oil + Natural Gas both add `Controls`)
+
+### 5.5  Saved-panel UX + Copy Source + autosave indicator
+
+Three transient UX features live on top of the persisted data model. None of
+them are exported or serialised — they exist purely to make the on-device
+workflow faster.
+
+#### Saved-equipment filter + search
+
+State (module-level `let` variables near the top of the script):
+
+- `savedFilter` — `'all' | 'today' | 'yesterday'`. Default `'all'`. Reset on
+  every page load (in-memory only; no persistence).
+- `savedSearchTerm` — free-text substring, lowercased. Empty = no filter.
+
+Predicates:
+
+- `isSavedOnLocalDay(entry, refDate)` — shared helper; matches on
+  local-time Y/M/D. Base for both `isSavedToday()` and `isSavedYesterday()`.
+- `matchesSavedSearch(entry)` — case-insensitive substring match against
+  `equipName + equipRoom + template + equipType + equipBuilding`.
+
+`renderSavedPanel()` combines the two filters multiplicatively and builds
+`(entry, originalIndex)` pairs so Duplicate / Edit / Delete buttons still
+address the right `savedEquipment[i]` regardless of what's visible. The
+`Show:` bar (`#savedFilterBar`) is only rendered when the saved panel is
+open AND there's at least one entry — no point offering filters on an empty
+list. The `#savedFilterSummary` line always shows `N today · N yesterday ·
+N total`, plus `N match` when a search is active.
+
+#### Copy Source (per-source-card action)
+
+Two-step modal launched by the **Copy** button next to Link / Dup on an
+expanded source card:
+
+1. `showCopySourceDialog(targetSourceIndex)` — lists every saved entry
+   (newest first). Overlay ID: `#copySourceOverlay`. The current source
+   card index is stashed on `overlay.dataset.targetIndex` so back / cancel
+   can round-trip.
+2. `pickCopySourceEntry(entryIndex)` — re-renders the same overlay with
+   that entry's sources shown as buttons.
+3. `applyCopySource(entryIndex, sourceIndex)` — carries over these fields:
+
+   ```
+   energySource, deviceType, quantity, location, verification,
+   duplicate, detail, _customEnergy, _customDevice, _customLoc
+   ```
+
+   Explicitly **not** carried over: `deviceId` (usually unique per device),
+   `photos`, `linkedTo`, `noPhoto` (user's toggle choice on this source),
+   `auto`, `collapsed` (UI state). The pasted source is flagged
+   `auto=false` and `collapsed=false` so it's non-hidden and shows as
+   user-configured.
+
+#### Autosave indicator (header)
+
+`<span id="autosaveStatus">` sits next to the `v7.0` version tag in the
+header. `setAutosaveStatus(kind)` transitions between three states:
+
+| Kind | Text | Colour |
+|---|---|---|
+| `'saving'` | `💾 Saving…` | `--text-dim` |
+| `'saved'`  | `✓ Saved at H:MM AM/PM` (local time) | `var(--success, #4ab86a)` |
+| `'error'`  | `⚠ Storage issue` | `var(--danger, #d34141)` |
+
+`autoSaveCurrent()` sets `'saving'` on entry, `'saved'` on
+`saveMetadata('current_wip', …).then(…)`, and `'error'` when both the IDB
+write and the localStorage fallback fail. The failure branch also still
+fires the existing `showToast('Storage issue - export soon', true)` for a
+louder signal.
+
+The indicator initially reads `💾 Autosave ready` — it changes to a real
+timestamp on the first successful save after page load.
 
 ---
 
@@ -491,7 +564,21 @@ The workflow lives in `.github/workflows/ios-release.yml`. Uses `fastlane pilot 
 
 The field collector has no server-side API. All interop happens via files.
 
-### Recommended interop path
+> ✅ **STATUS (2026-07-13): the ingester is built and live in production.**
+> `POST /api/import/from-field-collector` exists in loto-web
+> (`app/routers/import_data.py` → `import_field_collector_bundle`) and is
+> deployed. It reads `entries.json` from a FieldExport ZIP, resolves the
+> hospital from `hospitalCode` → `Hospital.key` (or a `hospital_id` form
+> override; 400 if unresolved), keys `Equipment` by `loto_id`, maps sources
+> 1:1, and binds photos to sources via each source's `photo_ref` (the H-number
+> stem). A `replace_existing=true` flag overwrites an existing equipment's
+> sources/photos; the default skips already-present `loto_id`s (metadata
+> backfill only). The rest of this section is the design rationale behind that
+> endpoint. **Caveat:** only `Marion` and `Kansas City` `Hospital` rows are
+> seeded — the three Atlanta keys the picker offers must be created on the
+> loto-web side before those facilities can import (else 400).
+
+### Interop path (as implemented)
 
 **Upload the ZIP export to a `POST` endpoint on the receiving system.** The ZIP contains:
 
@@ -509,25 +596,30 @@ Best single ingestion strategy:
 
 Field collector's shape lines up cleanly with `loto-web/models.py`. Roughly:
 
-| Field collector | loto-web |
-|---|---|
-| `hospitalCode` (when non-empty) | `Hospital.key` — selects the facility to import into |
-| `lotoId` (when non-empty) | `Equipment.loto_id` — the dedup key |
-| `equipName` | `Equipment.name` |
-| `equipType` | `Equipment.equipment_type` |
-| `equipBuilding` | `Equipment.building` |
-| `equipRoom` | `Equipment.room` |
-| `template` | `Equipment.template` (assuming column exists / needs adding) |
-| `notes` | `Equipment.notes` (add if missing) |
-| `sources[].energySource` | `EnergySource.source_type` |
-| `sources[].deviceType` | `EnergySource.device` |
-| `sources[].quantity` | `EnergySource.device_qty` |
-| `sources[].location` | `EnergySource.location` |
-| `sources[].verification` | `EnergySource.verification` |
-| `sources[].duplicate` | `EnergySource.dup_photo` |
-| `sources[].detail` | (no direct target — surface as note/tag) |
-| Source's ordering in the array | `EnergySource.sort_order` |
-| Photo bytes (from ZIP) | `Photo` — new UUID + file storage |
+The mappings the deployed ingester actually applies:
+
+| Field collector | loto-web | Notes |
+|---|---|---|
+| `hospitalCode` (or envelope) | (resolves to) `Hospital.id` | looked up by `Hospital.key`; `hospital_id` form param overrides |
+| `lotoId`, else `field-<16 hex of id>` | `Equipment.loto_id` | dedup key; `field-` form fits the `String(30)` column and is stable across re-uploads |
+| `equipName` | `Equipment.name` | |
+| `template`, else name-based detect | `Equipment.equipment_type` | there is **no** `template` column — the field `template` (e.g. "AHU - Steam") *is* the loto-web type key; falls back to `detect_equipment_type(name, sources)` |
+| `equipBuilding` | `Equipment.building` | |
+| `equipRoom` | `Equipment.room` | |
+| `notes` | `Equipment.notes` | column exists |
+| `tiedToName` / `tiedTo` | `Equipment.tied_to_equipment` | |
+| `photoFiles.main` stem | `Equipment.main_photo_ref` | H-number stem |
+| `sources[].energySource` | `EnergySource.source_type` | |
+| `sources[].deviceType` | `EnergySource.device` | |
+| `sources[].quantity` | `EnergySource.device_qty` | |
+| `sources[].location` | `EnergySource.location` | |
+| `sources[].verification` | `EnergySource.verification` | |
+| `sources[].duplicate` (`"Yes"`) | `EnergySource.dup_photo` (`"Y"`) | |
+| `sources[].detail` | `EnergySource.photo_detail` | field-side equivalent of the office XLSX detail cell |
+| `sources[].photoFile` stem | `EnergySource.photo_ref` | drives photo→source binding |
+| source ordering | `EnergySource.sort_order` | 1-based |
+| Photo files (from ZIP) | `Photo` | UUID filename on disk + `Photo` row; source photos linked by `photo_ref` stem, others equipment-level |
+| `equipType` | *(not stored directly)* | the human category; `template` carries the type key |
 
 As of rev 4 the field app **does** carry a facility: `hospitalCode` (a
 loto-web `Hospital.key`) is set via the Settings picker and stamped on
@@ -550,7 +642,7 @@ ingest paths:
 - **Field crew captures the same AHU-1 with `lotoId = "BATH-AHU-001"`** → same `loto_id` matches → row is updated in place, not duplicated.
 - **Field crew leaves `lotoId` blank** → the ingester should fall back to the entry UUID as `loto_id` (creating a distinct row). Admin can merge later via the loto-web UI.
 
-Recommendation for the ingester: if `entry.lotoId` is non-empty use it as `Equipment.loto_id`; otherwise use `"field-" + entry.id` so the row is still uniquely keyed but recognisable as origin=field-app. As of rev 3, `entry.id` is a stable `crypto.randomUUID()` (§5, improvement plan §2.1) that is preserved across edits, so `"field-" + entry.id` is now a durable dedup key — re-uploading an edited entry updates the same row instead of creating a duplicate. Each source likewise carries a stable `sourceId` for source-level reconciliation.
+What the ingester does: if `entry.lotoId` is non-empty it becomes `Equipment.loto_id` (truncated to the 30-char column); otherwise `field-<16 hex of entry.id>` — a form that fits `String(30)`, is recognisable as origin=field-app, and is stable because `entry.id` is a stable `crypto.randomUUID()` (§5) preserved across edits. So re-uploading an edited entry updates the same row instead of duplicating. (`entry.id`'s full UUID is 36 chars, so the ingester derives a 16-hex slice rather than using it whole.) Each source also carries a stable `sourceId`, available for future source-level reconciliation. Existing `loto_id`s are skipped by default (metadata backfill only) unless the caller passes `replace_existing=true`.
 
 ### Auth options for automating the upload
 
@@ -581,24 +673,35 @@ Approximate line numbers (may drift as edits accumulate):
 | `equipTypeChanged()` | ~1215 |
 | `handleEquipTypeChange()` (auto-fill Equipment ID/Name) | ~3450 |
 | `renderSources()` (source cards, photo slot toggle) | ~3540 |
-| `renderSavedPanel()` (saved list + filter bar) | ~4735 |
-| `saveAndNew()` — canonical entry shape | ~4625 |
-| `runCombinedExport()` — ZIP export | ~4900 |
-| `saveBackup()` — JSON backup | ~5140 |
-| `saveOrShare()` — unified file save helper | ~5490 |
-| `scanTextToField()` — camera + OCR helper | ~5580 |
-| `init()` — startup body-class + dropdown population | ~1110 |
+| `showCopySourceDialog` / `pickCopySourceEntry` / `applyCopySource` — Copy Source per-card action (§5.5) | ~4151 / ~4185 / ~4219 |
+| `saveAndNew()` — canonical entry shape | ~4918 |
+| `isSavedToday` / `isSavedYesterday` / `setSavedFilter` / `setSavedSearch` / `matchesSavedSearch` — saved-panel filter + search predicates (§5.5) | ~5038 – ~5054 |
+| `renderSavedPanel()` (saved list + filter bar + search — §5.5) | ~5081 |
+| `runCombinedExport()` — ZIP export (PASS 2B builds `entries.json`; `manifest.json` + `FieldExport_…` filename near the end) | ~5602 |
+| `saveBackup()` — JSON backup (v2 envelope) | ~6060 |
+| `normaliseEntry()` — backup import (spread-preserves identity fields) | ~6162 |
+| `setAutosaveStatus()` / `autoSaveCurrent()` — autosave indicator + save (§5.5) | ~6238 / ~6259 |
+| `saveOrShare()` — unified file save helper | ~6540 |
+| `scanTextToField()` — camera + OCR helper | ~6639 |
+| `init()` — startup: `ensureDeviceId()`, `updateFacilityBadge()`, dropdowns | ~1400 |
+| `genUuid()` / `ensureDeviceId()` / `ensureSourceId()` — stable UUID + device id (§1b/1c) | ~1320 |
+| `HOSPITALS` roster + `getHospitalCode()` / `setHospitalCode()` / `entryHospitalCode()` (§2) | ~1367 |
+| `updateFacilityBadge()` — header facility chip | ~738 |
+| Settings modal (`showSettings` / `savePhotoSettings` — photo + facility) | ~700 |
 
 ---
 
-## 12. Suggested next steps for anyone building the ingestion side
+## 12. Ingestion side — status
 
-1. **Read this document + `LOTO_Web_App_Architecture.md`** side by side.
-2. **Test with a real backup** — export a day of entries as JSON from the field app, look at the shape, then map fields.
-3. **Prototype the ZIP unpacker first** (photos + CSV/JSON is where most edge cases live).
-4. **Reuse the SharePoint import path in `loto-web`** as a reference for auth + validation patterns — don't reinvent.
-5. **Add the new endpoint (`POST /api/import/from-field-collector`) to `loto-web/app/routers/import_data.py`** — it's the natural home.
-6. **On the field-app side**, add a "Send to Procedure Generator" option to `saveOrShare` that hits the endpoint (or opens a share-sheet target pointed at it).
+The 5-step field-app integration plan is complete and the loto-web ingester is
+live. What's done vs. outstanding:
+
+1. ✅ **ZIP unpacker + endpoint** — `POST /api/import/from-field-collector` in `loto-web/app/routers/import_data.py`, deployed 2026-07-13. Reuses loto-web's existing photo-binding path (`_import_photo_for_equipment` / `_build_ref_map`) rather than reinventing.
+2. ✅ **`entries.json` + `manifest.json`** are the structured surfaces the ingester reads (Steps 3 + 5).
+3. ✅ **Dedup key** — `loto_id` = `lotoId` or `field-<16 hex>` (Steps 1a/1c).
+4. ✅ **Facility** — `hospitalCode` → `Hospital.key` (Step 2).
+5. ⏳ **Create the 3 Atlanta `Hospital` rows** in loto-web (keys must match the `HOSPITALS` roster) — until then Atlanta imports 400. `Marion` + `Kansas City` already work.
+6. ⏳ **Field-app "Send to loto-web" UX** — currently a manual share-sheet / browser upload of the ZIP to the endpoint (§10 auth option 1). A one-tap `saveOrShare` target is a future nicety, not required for the loop to function.
 
 ---
 
