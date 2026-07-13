@@ -403,6 +403,7 @@ if ('serviceWorker' in navigator) {
   <div style="display:flex;align-items:center;">
     <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
+    <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
   </div>
   <div class="header-actions">
     <button class="btn btn-outline btn-sm" onclick="showSavedList()">&#128203; List</button>
@@ -425,7 +426,8 @@ if ('serviceWorker' in navigator) {
       <button id="savedFilterAll" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('all')">All</button>
       <button id="savedFilterToday" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('today')">Today</button>
       <button id="savedFilterYesterday" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('yesterday')">Yesterday</button>
-      <span id="savedFilterSummary" style="font-size:11px;color:var(--text-dim);margin-left:auto;"></span>
+      <input id="savedSearchInput" type="search" placeholder="Search name / room / template…" oninput="setSavedSearch(this.value)" style="flex:1 1 180px;min-width:140px;padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);">
+      <span id="savedFilterSummary" style="font-size:11px;color:var(--text-dim);"></span>
     </div>
     <div class="saved-panel-body collapsed" id="savedPanelBody"></div>
   </div>
@@ -1213,6 +1215,9 @@ let savedPanelOpen = false;
 // savedAt is on the current local day. UI toggle lives in the saved-panel
 // header; render in renderSavedPanel.
 let savedFilter = 'all';
+// Free-text search term applied on top of savedFilter. Matches equipName,
+// equipRoom, template (case-insensitive substring). Empty string = no filter.
+let savedSearchTerm = '';
 // Last value the equipment-type change handler wrote into the Equipment ID/Name
 // field. If the current name still equals this, switching equipment types
 // replaces the name (the user hadn't customised it). A user-edited name won't
@@ -3711,6 +3716,7 @@ function renderSources() {
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:${isFirstExp?'#555':'var(--text-dim)'};padding:6px 10px;" onclick="moveSource(${i},-1)" ${isFirstExp?'disabled':''}>&#9650;</button>
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:${isLastExp?'#555':'var(--text-dim)'};padding:6px 10px;" onclick="moveSource(${i},1)" ${isLastExp?'disabled':''}>&#9660;</button>
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="showLinkDialog(${i})">${src.linkedTo ? '🔗 Linked' : 'Link'}</button>
+            <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="showCopySourceDialog(${i})" title="Copy source config from a saved entry">Copy</button>
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="duplicateSource(${i})">Dup</button>
             <button class="btn btn-danger btn-sm" onclick="removeSource(${i})">Remove</button>
             <button class="btn btn-outline btn-sm" onclick="collapseSource(${i})">Done</button>
@@ -3955,6 +3961,117 @@ function removeSource(index) {
     sources.splice(index, 1);
     renderSources();
   }
+}
+
+// ============================================================================
+// COPY SOURCE FROM ANOTHER SAVED ENTRY — two-step modal:
+//   1) pick an entry from savedEquipment
+//   2) pick one of that entry's sources
+// Applies the selected source's config fields (energy source, device, location,
+// verification, quantity, duplicate, detail, custom-flag markers) onto the
+// currently-open source card. Does NOT copy: deviceId (typically unique per
+// device), photos, linkedTo, or the auto/collapsed UI flags.
+// ============================================================================
+function showCopySourceDialog(targetSourceIndex) {
+  closeCopySourceDialog();
+  if (!Array.isArray(savedEquipment) || savedEquipment.length === 0) {
+    showToast('No saved entries to copy from yet.', true);
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'copySourceOverlay';
+  overlay.dataset.targetIndex = String(targetSourceIndex);
+  // Reverse so the newest saved entries appear first — they're usually the
+  // ones you want to copy from.
+  const entries = savedEquipment.map((e, i) => ({ e, i })).slice().reverse();
+  const rows = entries.map(({ e, i }) => {
+    const bldg = e.equipBuilding || '—';
+    const room = e.equipRoom || '';
+    const srcCount = (e.sources || []).length;
+    return `<button class="btn" style="text-align:left;padding:10px 12px;background:var(--card);border:1px solid var(--border);color:var(--text);display:block;width:100%;margin-bottom:6px;" onclick="pickCopySourceEntry(${i})">
+      <div style="font-weight:600;">${e.equipName || '(unnamed)'}</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${e.equipType || ''} &middot; ${bldg}${room ? ' / ' + room : ''} &middot; ${srcCount} source${srcCount !== 1 ? 's' : ''}</div>
+    </button>`;
+  }).join('');
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:420px;max-height:85vh;display:flex;flex-direction:column;">
+      <h3 style="margin:0 0 6px 0;color:var(--accent);">Copy Source</h3>
+      <p style="margin:0 0 12px 0;color:var(--text-dim);font-size:13px;">Step 1 of 2 — pick the equipment to copy from:</p>
+      <div style="overflow-y:auto;flex:1 1 auto;padding-right:4px;">${rows}</div>
+      <button class="btn" onclick="closeCopySourceDialog()" style="margin-top:10px;padding:8px;background:transparent;color:var(--text-dim);">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+}
+
+function pickCopySourceEntry(entryIndex) {
+  const overlay = document.getElementById('copySourceOverlay');
+  if (!overlay) return;
+  const targetIndex = parseInt(overlay.dataset.targetIndex || '-1', 10);
+  const entry = savedEquipment[entryIndex];
+  if (!entry) { closeCopySourceDialog(); return; }
+  const srcs = entry.sources || [];
+  if (srcs.length === 0) {
+    showToast(`"${entry.equipName}" has no sources to copy.`, true);
+    closeCopySourceDialog();
+    return;
+  }
+  const rows = srcs.map((s, si) => {
+    const dev = s.deviceType || '—';
+    const ver = s.verification || '—';
+    const loc = s.location || '';
+    return `<button class="btn" style="text-align:left;padding:10px 12px;background:var(--card);border:1px solid var(--border);color:var(--text);display:block;width:100%;margin-bottom:6px;" onclick="applyCopySource(${entryIndex},${si})">
+      <div style="font-weight:600;">${si + 1}. ${s.energySource || '(no source)'}</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${dev}${loc ? ' &middot; ' + loc : ''} &middot; ${ver}${s.detail ? ' <span style="color:var(--accent);">(' + s.detail + ')</span>' : ''}</div>
+    </button>`;
+  }).join('');
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:420px;max-height:85vh;display:flex;flex-direction:column;">
+      <h3 style="margin:0 0 6px 0;color:var(--accent);">Copy Source</h3>
+      <p style="margin:0 0 12px 0;color:var(--text-dim);font-size:13px;">Step 2 of 2 — pick which source of <strong>${entry.equipName || '(unnamed)'}</strong> to copy into source #${targetIndex + 1}:</p>
+      <div style="overflow-y:auto;flex:1 1 auto;padding-right:4px;">${rows}</div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn" onclick="showCopySourceDialog(${targetIndex})" style="flex:1;padding:8px;background:transparent;color:var(--text-dim);">&larr; Back</button>
+        <button class="btn" onclick="closeCopySourceDialog()" style="flex:1;padding:8px;background:transparent;color:var(--text-dim);">Cancel</button>
+      </div>
+    </div>
+  `;
+}
+
+function applyCopySource(entryIndex, sourceIndex) {
+  const overlay = document.getElementById('copySourceOverlay');
+  const targetIndex = overlay ? parseInt(overlay.dataset.targetIndex || '-1', 10) : -1;
+  const entry = savedEquipment[entryIndex];
+  const src   = entry && entry.sources ? entry.sources[sourceIndex] : null;
+  const dest  = sources[targetIndex];
+  if (!src || !dest) { closeCopySourceDialog(); return; }
+  // Fields carried over — cover both regular and _customEnergy/_customDevice
+  // /_customLoc markers so custom-typed values still show as "custom".
+  const carry = [
+    'energySource','deviceType','quantity','location','verification',
+    'duplicate','detail','_customEnergy','_customDevice','_customLoc',
+  ];
+  for (const k of carry) {
+    if (src[k] !== undefined) dest[k] = src[k];
+  }
+  // The source is now user-configured (not auto) and expanded so the copy
+  // is visible to the user immediately.
+  dest.auto = false;
+  dest.collapsed = false;
+  // Explicitly do NOT copy: deviceId (typically unique per device), photos,
+  // linkedTo (linking is per-source, per-entry), noPhoto (user's choice on
+  // this new source).
+  closeCopySourceDialog();
+  renderSources();
+  autoSaveCurrent();
+  showToast(`Copied source #${sourceIndex + 1} from "${entry.equipName || '(unnamed)'}"`);
+}
+
+function closeCopySourceDialog() {
+  const overlay = document.getElementById('copySourceOverlay');
+  if (overlay) overlay.remove();
 }
 
 function duplicateSource(index) {
@@ -4744,6 +4861,21 @@ function setSavedFilter(value) {
   savedFilter = SAVED_FILTERS.has(value) ? value : 'all';
   renderSavedPanel();
 }
+function setSavedSearch(value) {
+  savedSearchTerm = (value || '').trim().toLowerCase();
+  renderSavedPanel();
+}
+function matchesSavedSearch(entry) {
+  if (!savedSearchTerm) return true;
+  const haystack = [
+    entry.equipName || '',
+    entry.equipRoom || '',
+    entry.template  || '',
+    entry.equipType || '',
+    entry.equipBuilding || '',
+  ].join(' ').toLowerCase();
+  return haystack.includes(savedSearchTerm);
+}
 
 function updateSavedFilterButtonStyles() {
   const buttons = {
@@ -4786,18 +4918,27 @@ function renderSavedPanel() {
     : () => true;
   const visible = savedEquipment
     .map((entry, i) => ({ entry, i }))
-    .filter(({ entry }) => matchesFilter(entry));
+    .filter(({ entry }) => matchesFilter(entry) && matchesSavedSearch(entry));
 
   const summary = document.getElementById('savedFilterSummary');
   if (summary) {
     const todayCount     = savedEquipment.filter(isSavedToday).length;
     const yesterdayCount = savedEquipment.filter(isSavedYesterday).length;
-    summary.textContent = `${todayCount} today · ${yesterdayCount} yesterday · ${savedEquipment.length} total`;
+    const parts = [
+      `${todayCount} today`,
+      `${yesterdayCount} yesterday`,
+      `${savedEquipment.length} total`,
+    ];
+    if (savedSearchTerm) parts.push(`${visible.length} match`);
+    summary.textContent = parts.join(' · ');
   }
 
   if (visible.length === 0) {
-    const label = savedFilter === 'today' ? 'Today' : savedFilter === 'yesterday' ? 'Yesterday' : '';
-    body.innerHTML = `<div class="saved-empty">No entries match "${label}" — switch back to All to see the others.</div>`;
+    const parts = [];
+    if (savedFilter !== 'all') parts.push(`"${savedFilter === 'today' ? 'Today' : 'Yesterday'}"`);
+    if (savedSearchTerm) parts.push(`search "${savedSearchTerm}"`);
+    const summary = parts.length ? parts.join(' + ') : 'the current filters';
+    body.innerHTML = `<div class="saved-empty">No entries match ${summary}. Clear filters to see the others.</div>`;
     return;
   }
 
@@ -5808,7 +5949,29 @@ function checkStorage() {
   }
 }
 
+function setAutosaveStatus(kind) {
+  const el = document.getElementById('autosaveStatus');
+  if (!el) return;
+  // 'saving' | 'saved' | 'error'
+  if (kind === 'saving') {
+    el.innerHTML = '&#128190; Saving…';
+    el.style.color = 'var(--text-dim)';
+  } else if (kind === 'saved') {
+    const t = new Date();
+    const hh = t.getHours(), mm = t.getMinutes();
+    const ampm = hh >= 12 ? 'PM' : 'AM';
+    const h12 = ((hh + 11) % 12) + 1;
+    const stamp = `${h12}:${mm < 10 ? '0' + mm : mm} ${ampm}`;
+    el.innerHTML = `&#10003; Saved at ${stamp}`;
+    el.style.color = 'var(--success, #4ab86a)';
+  } else if (kind === 'error') {
+    el.innerHTML = '&#9888; Storage issue';
+    el.style.color = 'var(--danger, #d34141)';
+  }
+}
+
 function autoSaveCurrent() {
+  setAutosaveStatus('saving');
   try {
     const state = {
       equipType: document.getElementById('equipType').value,
@@ -5827,15 +5990,19 @@ function autoSaveCurrent() {
     };
     saveMetadata('current_wip', state).then(() => {
       checkStorage();
+      setAutosaveStatus('saved');
     }).catch(() => {
       // Fallback to localStorage if IDB fails
       try {
         localStorage.setItem('loto_current', JSON.stringify(state));
+        setAutosaveStatus('saved');
       } catch(e2) {
+        setAutosaveStatus('error');
         showToast('Storage issue - export soon', true);
       }
     });
   } catch(e) {
+    setAutosaveStatus('error');
     showToast('Storage issue - export soon', true);
   }
 }
