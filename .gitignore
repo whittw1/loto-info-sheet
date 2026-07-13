@@ -26,3 +26,11 @@ ios/App/.bundle/
 ios/App/vendor/bundle/
 ios/App/Gemfile.lock
 build/
+
+# Office lock files
+~$*.docx
+~$*.xlsx
+~$*.pptx
+
+# Personal/scratch docs kept alongside the repo but not tracked
+LOTO_Improvement_Recommendations.docx
