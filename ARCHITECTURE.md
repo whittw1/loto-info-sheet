@@ -1,6 +1,6 @@
 # LOTO Field Collector — Architecture Reference
 
-**Date:** 2026-07-13 (rev 5 — `entries.json` in the export ZIP; structured ingest surface)
+**Date:** 2026-07-13 (rev 6 — ZIP restructured into `info_sheets/`+`photos/`, `manifest.json`, `FieldExport_…` filename)
 **Repo:** [github.com/whittw1/loto-info-sheet](https://github.com/whittw1/loto-info-sheet)
 **Prior standalone doc:** `LOTO_Integration_Architecture.md` in `~/Desktop/Claude Apps/LOTO Information Sheet App/` (April 2026, pre-iOS work — kept for reference, superseded by this file).
 
@@ -276,24 +276,54 @@ Both write back to IndexedDB immediately if they changed anything.
 
 ### ZIP export (`Export` button → `runCombinedExport`)
 
-Output filename: `LOTO_Export_YYYY-MM-DD[_filterdate].zip`
+Output filename (rev 6): **`FieldExport_{code}_{MMDDYY}_{deviceShort}.zip`**
+- `{code}` — the facility `hospitalCode`, sanitised to filename-safe chars (`Atlanta - Fort McPherson` → `Atlanta_Fort_McPherson`); `NoFacility` when unset.
+- `{MMDDYY}` — export date (`getDateStamp()`).
+- `{deviceShort}` — first 8 hex of `loto_device_id`, so same-day exports from two iPads don't collide. The full `deviceId`, the per-export `exportId`, and the date filter live in `manifest.json`.
 
-Contents:
+Structure (rev 6):
 
-| Filename pattern | Description |
-|---|---|
-| `entries.json` | **Structured entry array — the preferred ingest surface** (see below). Added rev 5. |
-| `LOTO_FieldData_YYYY-MM-DD.csv` | Full CSV of every entry × source pair (see columns below) |
-| `Information_Sheet_YYYY-MM-DD.xlsx` | Styled Excel workbook (via ExcelJS) — one sheet per entry with photo filename references |
-| `photos/{MMDD}_{NNNNN}.jpg` | Equipment (main/dataplate/EE) and per-source photos, named by a running "H-number" sequence (`{datePrefix}_{5-digit seq}`) assigned in slot order. `.png` when the source image is PNG. |
-| `photos/{safeName}_Misc{N}.jpg` | Additional non-slot ("misc") photos for an entry |
-| `diagrams/{safeName}_diagram.png` | Annotated overhead sketch (only if the entry has sketch data) |
+```
+FieldExport_{code}_{MMDDYY}_{deviceShort}.zip
+├── manifest.json                          # bundle index — read this first
+├── entries.json                           # structured entry array — preferred ingest surface
+├── info_sheets/
+│   ├── LOTO_FieldData_{MMDDYY}.csv         # every entry × source pair (columns below)
+│   └── Information_Sheet_{MMDDYY}.xlsx     # styled ExcelJS workbook (human form)
+├── photos/
+│   ├── {MMDD}_{NNNNN}.jpg                  # equip (main/dataplate/EE) + per-source, H-numbered in slot order (.png if source is PNG)
+│   └── {safeName}_Misc{N}.jpg             # additional non-slot ("misc") photos
+└── diagrams/
+    └── {safeName}_diagram.png             # annotated overhead sketch (only if the entry has sketch data)
+```
 
 `{safeName}` = `{building}_{room}_{equipName}` with non-alphanumeric characters (except `_` and `-`) replaced by `_`. The H-number → slot mapping is recorded in `entries.json` (`photoFiles` / per-source `photoFile`), the CSV (photo-filename columns), and the XLSX — so a consumer never has to guess which file is which.
 
+### `manifest.json` — bundle index (rev 6)
+
+A lightweight index an ingester reads first to discover the bundle's shape before touching the data:
+
+```json
+{
+  "schema": "loto-field-export", "version": 1,
+  "exportId": "…",                     // fresh per-export UUID — import idempotency key
+  "exported": "2026-07-13T18:02:11.400Z",
+  "deviceId": "b3f1c2a4-…",            // full per-device UUID (loto_device_id)
+  "hospitalCode": "Marion", "hospitalName": "Marion VA Medical Center",
+  "dateFilter": "all",                 // the export dialog's date filter
+  "counts": { "entries": 12, "photos": 47, "diagrams": 3 },
+  "files": {
+    "entries": "entries.json",
+    "csv":  "info_sheets/LOTO_FieldData_071326.csv",
+    "xlsx": "info_sheets/Information_Sheet_071326.xlsx",
+    "photosDir": "photos/", "diagramsDir": "diagrams/"
+  }
+}
+```
+
 ### `entries.json` — structured ingest surface (rev 5)
 
-The cleanest way to ingest a field export: read `entries.json` instead of parsing the CSV. Same envelope as the JSON backup (`version: 2`, `exported`, top-level `hospitalCode`) plus a top-level `deviceId` (the exporting device's `loto_device_id`, for provenance). Each entry is a full `SavedEntry` **with photo binary/thumbnail data stripped**, enriched with the ZIP-relative paths of the files actually written:
+The cleanest way to ingest a field export: read `entries.json` instead of parsing the CSV. Same envelope as the JSON backup (`version: 2`, `exported`, top-level `hospitalCode`) plus a top-level `deviceId` (the exporting device's `loto_device_id`, for provenance) and `exportId` (the same per-export UUID as `manifest.json`, for correlation). Each entry is a full `SavedEntry` **with photo binary/thumbnail data stripped**, enriched with the ZIP-relative paths of the files actually written:
 
 ```json
 {
@@ -422,7 +452,7 @@ Required by Apple even though the app only uses `<input type="file" capture="env
 
 ### Service worker cache
 
-`sw.js` uses network-first for HTML/JSON, cache-first for static assets. **`CACHE_NAME` must be bumped every time cached files change** — otherwise the WebView serves stale HTML on next launch. Currently `loto-collector-v7.42`.
+`sw.js` uses network-first for HTML/JSON, cache-first for static assets. **`CACHE_NAME` must be bumped every time cached files change** — otherwise the WebView serves stale HTML on next launch. Currently `loto-collector-v7.43`.
 
 ---
 
@@ -473,7 +503,7 @@ Best single ingestion strategy:
 
 1. Field user completes their day, taps **Export** → gets ZIP in Files (iOS) or downloads folder (web)
 2. From the iOS share sheet OR the web browser, user posts the ZIP to a new endpoint on the receiving system (e.g. `POST /api/import/from-field-collector` in `loto-web`)
-3. Receiving system unpacks the ZIP, reads **`entries.json`** (the structured surface added in rev 5 — prefer it over parsing `LOTO_FieldData_*.csv`), resolves the `photoFiles` / per-source `photoFile` paths against the `photos/` + `diagrams/` folders, and maps to its own schema
+3. Receiving system unpacks the ZIP, reads **`manifest.json`** first (bundle shape, facility/device, `exportId` for idempotency), then **`entries.json`** (the structured surface — prefer it over parsing `info_sheets/LOTO_FieldData_*.csv`), resolves the `photoFiles` / per-source `photoFile` paths against the `photos/` + `diagrams/` folders, and maps to its own schema. `EnergySource.photo_ref` / `Equipment.main_photo_ref` are derived from those photo-path stems, and `photo_detail` from each source's `detail` (this is the field-side equivalent of the office XLSX `photo_ref` cells — see the Step 4 note in the integration plan)
 
 ### Field mapping to loto-web `Equipment` + `EnergySource`
 

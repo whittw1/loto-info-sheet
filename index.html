@@ -5640,6 +5640,11 @@ async function runCombinedExport() {
   const datePrefix = getDatePrefix();
   const nextH = () => formatPhotoName(datePrefix, seqCounter++);
 
+  // Identity for this bundle: a fresh per-export id (import idempotency) and
+  // the stable per-device id (cross-device filename disambiguation, §1b).
+  const exportId = genUuid();
+  const exportDeviceId = ensureDeviceId();
+
   const zip = new JSZip();
   const photosFolder = zip.folder('photos');
   let photoCount = 0;
@@ -5846,9 +5851,10 @@ async function runCombinedExport() {
   });
   zip.file('entries.json', JSON.stringify({
     version: 2,
+    exportId: exportId,
     exported: new Date().toISOString(),
     hospitalCode: getHospitalCode(),
-    deviceId: ensureDeviceId(),
+    deviceId: exportDeviceId,
     entries: jsonEntries
   }, null, 2));
 
@@ -5988,18 +5994,44 @@ async function runCombinedExport() {
     // Generate xlsx bytes
     const xlsxBuffer = await ewb.xlsx.writeBuffer();
     const dateStamp = getDateStamp();
-    zip.file('Information_Sheet_' + dateStamp + '.xlsx', xlsxBuffer);
+    zip.file('info_sheets/Information_Sheet_' + dateStamp + '.xlsx', xlsxBuffer);
   }
 
-  // ---- Add CSV + download ZIP ----
+  // ---- Add CSV + manifest, then download ZIP ----
   const dateStamp = getDateStamp();
-  zip.file('LOTO_FieldData_' + dateStamp + '.csv', csv);
+  zip.file('info_sheets/LOTO_FieldData_' + dateStamp + '.csv', csv);
+
+  // Bundle index — a lightweight manifest an ingester reads first to discover
+  // the bundle's shape, facility/device, and where each part lives.
+  const diagramCount = diagramFiles.filter(Boolean).length;
+  zip.file('manifest.json', JSON.stringify({
+    schema: 'loto-field-export',
+    version: 1,
+    exportId: exportId,
+    exported: new Date().toISOString(),
+    deviceId: exportDeviceId,
+    hospitalCode: getHospitalCode(),
+    hospitalName: hospitalName(getHospitalCode()),
+    dateFilter: dateFilter,
+    counts: { entries: allEntries.length, photos: photoCount, diagrams: diagramCount },
+    files: {
+      entries: 'entries.json',
+      csv:  'info_sheets/LOTO_FieldData_' + dateStamp + '.csv',
+      xlsx: 'info_sheets/Information_Sheet_' + dateStamp + '.xlsx',
+      photosDir: 'photos/',
+      diagramsDir: 'diagrams/'
+    }
+  }, null, 2));
 
   try {
     const zipBlob = await zip.generateAsync({ type: 'blob' });
-    // If filtered to a specific date, include that in the filename
-    const filenameSuffix = (dateFilter !== 'all' && dateFilter !== 'undated') ? '_' + dateFilter : (dateFilter === 'undated' ? '_undated' : '');
-    const exportFilename = 'LOTO_Export_' + dateStamp + filenameSuffix + '.zip';
+    // FieldExport_{code}_{MMDDYY}_{deviceShort}.zip — facility + date + a short
+    // per-device id so same-day exports from two iPads don't collide. Date
+    // filter / full ids live in manifest.json. Facility falls back to
+    // "NoFacility" when unset; the code is sanitised to filename-safe chars.
+    const codeSan = (getHospitalCode() || 'NoFacility').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'NoFacility';
+    const deviceShort = (exportDeviceId || '').replace(/-/g, '').slice(0, 8) || 'device';
+    const exportFilename = 'FieldExport_' + codeSan + '_' + dateStamp + '_' + deviceShort + '.zip';
     const saveResult = await saveOrShare(zipBlob, exportFilename, 'application/zip');
     const firstName = formatPhotoName(datePrefix, startNum);
     const lastName = formatPhotoName(datePrefix, seqCounter - 1);
