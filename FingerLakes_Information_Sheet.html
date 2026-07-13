@@ -403,6 +403,7 @@ if ('serviceWorker' in navigator) {
   <div style="display:flex;align-items:center;">
     <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
+    <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
   </div>
   <div class="header-actions">
@@ -644,7 +645,17 @@ if ('serviceWorker' in navigator) {
 <!-- Photo Settings Modal -->
 <div class="dialog-overlay" id="settingsOverlay" style="display:none;">
   <div class="dialog" style="max-width:440px;">
-    <h3>&#9881; Photo Settings</h3>
+    <h3>&#9881; Settings</h3>
+    <div style="margin-bottom:16px;">
+      <label style="display:block;font-size:13px;color:var(--text-label);margin-bottom:6px;">&#127973; Facility / Hospital</label>
+      <select id="settingsHospital" onchange="onHospitalSelectChange()" style="width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
+        <option value="">&mdash; Not set &mdash;</option>
+        <option value="__custom__">Custom&hellip;</option>
+      </select>
+      <input type="text" id="settingsHospitalCustom" placeholder="Hospital key (must match loto-web exactly)" style="display:none;margin-top:8px;width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
+      <div style="font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.4;">Stamped on every saved entry and on every export so loto-web files the data under the right facility.</div>
+    </div>
+    <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
     <div style="margin-bottom:16px;">
       <label style="display:block;font-size:13px;color:var(--text-label);margin-bottom:6px;">Resolution Preset</label>
       <select id="photoPreset" onchange="applyPhotoPreset()" style="width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
@@ -701,8 +712,63 @@ function getPhotoSettings() {
   return { ...PHOTO_DEFAULTS };
 }
 
+// Build the hospital <select> once from the HOSPITALS roster (keeping the
+// "Not set" and "Custom…" bookend options that live in the HTML).
+function populateHospitalSelect() {
+  const sel = document.getElementById('settingsHospital');
+  if (!sel || sel.dataset.filled) return;
+  const customOpt = sel.querySelector('option[value="__custom__"]');
+  HOSPITALS.forEach(h => {
+    const o = document.createElement('option');
+    o.value = h.code;
+    o.textContent = h.name + '  [' + h.code + ']';
+    sel.insertBefore(o, customOpt);
+  });
+  sel.dataset.filled = '1';
+}
+
+function onHospitalSelectChange() {
+  const sel = document.getElementById('settingsHospital');
+  document.getElementById('settingsHospitalCustom').style.display =
+    sel.value === '__custom__' ? 'block' : 'none';
+}
+
+// Small header chip showing the active facility (or a warning when unset, so a
+// whole day doesn't get captured under the wrong / no facility).
+function updateFacilityBadge() {
+  const badge = document.getElementById('facilityBadge');
+  if (!badge) return;
+  const code = getHospitalCode();
+  if (code) {
+    badge.textContent = '🏥 ' + code;
+    badge.style.background = 'rgba(74,184,106,0.18)';
+    badge.style.color = 'var(--text)';
+    badge.title = 'Facility "' + hospitalName(code) + '" — stamped on every entry & export. Tap to change.';
+  } else {
+    badge.textContent = '⚠️ No facility';
+    badge.style.background = 'rgba(224,168,0,0.20)';
+    badge.style.color = 'var(--text)';
+    badge.title = 'No facility set — entries and exports won’t be tagged. Tap to set one.';
+  }
+  badge.style.display = 'inline';
+}
+
 function showSettings() {
   const s = getPhotoSettings();
+  // Facility picker
+  populateHospitalSelect();
+  const hc = getHospitalCode();
+  const hospSel = document.getElementById('settingsHospital');
+  const custom = document.getElementById('settingsHospitalCustom');
+  if (hc && !HOSPITALS.some(h => h.code === hc)) {
+    hospSel.value = '__custom__';
+    custom.style.display = 'block';
+    custom.value = hc;
+  } else {
+    hospSel.value = hc;
+    custom.style.display = 'none';
+    custom.value = '';
+  }
   document.getElementById('photoPreset').value = s.preset || '1920x1080';
   document.getElementById('photoMaxW').value = s.maxWidth;
   document.getElementById('photoMaxH').value = s.maxHeight;
@@ -770,8 +836,16 @@ function savePhotoSettings() {
     settings.maxHeight = 99999;
   }
   localStorage.setItem('loto_photo_settings', JSON.stringify(settings));
+
+  // Persist facility selection alongside the photo settings (one Save button).
+  const hospSel = document.getElementById('settingsHospital');
+  let hc = hospSel.value;
+  if (hc === '__custom__') hc = document.getElementById('settingsHospitalCustom').value.trim();
+  setHospitalCode(hc);
+  updateFacilityBadge();
+
   document.getElementById('settingsOverlay').style.display = 'none';
-  showToast('Photo settings saved');
+  showToast('Settings saved');
 }
 
 function resetPhotoSettings() {
@@ -1282,11 +1356,53 @@ function ensureSourceId(src) {
 }
 
 // ============================================================================
+// FACILITY / HOSPITAL
+// ============================================================================
+// The roster the Settings picker offers. Each `code` MUST match a loto-web
+// Hospital.key byte-for-byte — that's the join key the field-import path uses
+// to file equipment under the right facility. Extend this list as loto-web
+// adds hospitals (and make sure the matching Hospital row exists on that side,
+// or its imports won't match). The picker also offers a free-text "Custom…"
+// option for anything not yet listed.
+const HOSPITALS = [
+  { code: 'Marion',                  name: 'Marion VA Medical Center' },
+  { code: 'Kansas City',             name: 'Kansas City VA Medical Center' },
+  { code: 'Atlanta',                 name: 'Atlanta VA Medical Center' },
+  { code: 'Atlanta - Fort McPherson', name: 'Atlanta VAMC - Fort McPherson VA Clinic' },
+  { code: 'Atlanta - Trinka Davis',  name: 'Atlanta VAMC - Trinka Davis Veterans Village' },
+];
+
+// Currently-selected facility code (a loto-web Hospital.key or a custom string),
+// persisted so it survives reloads. '' means "not set".
+function getHospitalCode() {
+  try { return localStorage.getItem('loto_hospital_code') || ''; } catch (e) { return ''; }
+}
+function setHospitalCode(code) {
+  try {
+    if (code) localStorage.setItem('loto_hospital_code', code);
+    else localStorage.removeItem('loto_hospital_code');
+  } catch (e) { /* localStorage blocked — nothing persists, exports fall back to '' */ }
+}
+// Human-facing name for a code (falls back to the code itself for custom values).
+function hospitalName(code) {
+  const h = HOSPITALS.find(x => x.code === code);
+  return h ? h.name : (code || '');
+}
+// The code an entry should export under: its own stamp, else the current
+// setting (covers pre-feature entries and the unsaved current-form entry).
+function entryHospitalCode(entry) {
+  return (entry && entry.hospitalCode) || getHospitalCode() || '';
+}
+
+// ============================================================================
 // INIT
 // ============================================================================
 function init() {
   // Mint / load the per-device id before anything else touches storage.
   ensureDeviceId();
+
+  // Reflect the persisted facility in the header chip on startup.
+  updateFacilityBadge();
 
   // Tag body so CSS can show/hide native-only affordances (e.g. scan buttons)
   const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
@@ -4820,6 +4936,7 @@ function saveAndNew() {
     equipType: getEquipType(),
     equipName: equipName,
     lotoId: document.getElementById('equipLotoId').value.trim(),
+    hospitalCode: getHospitalCode(),   // facility this entry was captured under
     equipRoom: document.getElementById('equipRoom').value,
     equipBuilding: getBuilding(),
     template: getTemplate(),
@@ -5670,7 +5787,7 @@ async function runCombinedExport() {
   }
 
   // ---- PASS 2: build CSV ----
-  let csv = 'Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames\n';
+  let csv = 'Hospital Code,Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames\n';
 
   allEntries.forEach((entry, ei) => {
     const map = entryMaps[ei];
@@ -5679,6 +5796,7 @@ async function runCombinedExport() {
         ? `${src.linkedTo.equipName} / Source #${src.linkedTo.sourceIndex + 1} (${src.linkedTo.sourceLabel})`
         : '';
       csv += [
+        quote(entryHospitalCode(entry)),
         quote(entry.equipType), quote(entry.equipName),
         quote(entry.lotoId || ''),
         quote(entry.equipRoom), quote(entry.equipBuilding),
@@ -5726,6 +5844,17 @@ async function runCombinedExport() {
           cell.alignment = { vertical: 'middle', wrapText: true };
         }
       });
+    }
+
+    // Facility banner row (only if a facility is known for this export) — a
+    // single sheet-level header; the CSV/JSON carry the authoritative per-entry
+    // code. Prefer the current setting, else the first stamped entry.
+    const sheetHospitalCode = getHospitalCode() || (allEntries.find(e => e.hospitalCode) || {}).hospitalCode || '';
+    if (sheetHospitalCode) {
+      const facRow = ws.addRow(['Facility', hospitalName(sheetHospitalCode) + ' [' + sheetHospitalCode + ']']);
+      applyRow(facRow, { bold: true, size: 10, name: 'Calibri' }, topHeaderFill, allBorders);
+      ws.mergeCells(facRow.number, 2, facRow.number, 12); // span the name across the row
+      ws.addRow([]); // spacer before the column titles
     }
 
     // Title row (light blue-gray fill like original)
@@ -5866,6 +5995,7 @@ async function saveBackup() {
     allEntries.push({
       equipType:     getEquipType(),
       equipName:     currentName,
+      hospitalCode:  getHospitalCode(),
       equipRoom:     document.getElementById('equipRoom').value,
       equipBuilding: getBuilding(),
       template:      getTemplate(),
@@ -5885,7 +6015,7 @@ async function saveBackup() {
     return rest;
   });
 
-  const blob = new Blob([JSON.stringify({ version: 1, exported: new Date().toISOString(), entries: clean }, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ version: 2, exported: new Date().toISOString(), hospitalCode: getHospitalCode(), entries: clean }, null, 2)], { type: 'application/json' });
   const backupFilename = `LOTO_Backup_${getDateStamp()}.json`;
   const saveResult = await saveOrShare(blob, backupFilename, 'application/json');
   if (saveResult && saveResult.cancelled) {
@@ -5960,7 +6090,13 @@ function handleBackupFile(event) {
 
 // Ensure every imported entry has the fields the app expects
 function normaliseEntry(en) {
+  // Spread the original first so identity / integration fields (id, lotoId,
+  // hospitalCode, savedAt, sketch, miscPhotos, and per-source sourceId,
+  // deviceId, detail, linkedTo, …) survive a backup round-trip — then enforce
+  // defaults on the known fields. photos is reset last: the JSON backup carries
+  // no photo bytes, so there's nothing to restore.
   return {
+    ...en,
     equipType:     en.equipType     || '',
     equipName:     en.equipName     || 'Unnamed',
     equipRoom:     en.equipRoom     || '',
@@ -5970,6 +6106,7 @@ function normaliseEntry(en) {
     tiedToName:    en.tiedToName    || '',
     notes:         en.notes         || '',
     sources:       (en.sources || []).map(s => ({
+      ...s,
       energySource: s.energySource || '',
       deviceType:   s.deviceType   || '',
       quantity:     s.quantity      || 1,

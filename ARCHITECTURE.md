@@ -1,6 +1,6 @@
 # LOTO Field Collector — Architecture Reference
 
-**Date:** 2026-07-13 (rev 3 — stable UUIDs on entries + sources, per-device id)
+**Date:** 2026-07-13 (rev 4 — facility/hospital picker; `hospitalCode` on entries + exports)
 **Repo:** [github.com/whittw1/loto-info-sheet](https://github.com/whittw1/loto-info-sheet)
 **Prior standalone doc:** `LOTO_Integration_Architecture.md` in `~/Desktop/Claude Apps/LOTO Information Sheet App/` (April 2026, pre-iOS work — kept for reference, superseded by this file).
 
@@ -110,6 +110,16 @@ interface SavedEntry {
                                  // ingest. Blank string when the user
                                  // hasn't provided one; loto-web ingester
                                  // treats blank as "use UUID instead".
+  hospitalCode?: string;         // loto-web Hospital.key (e.g. "Marion",
+                                 // "Atlanta - Fort McPherson") the entry was
+                                 // captured under. Set from the Settings
+                                 // facility picker (localStorage
+                                 // `loto_hospital_code`) at save time. Blank
+                                 // string when no facility is selected;
+                                 // exports fall back to the current setting.
+                                 // Maps to loto-web Hospital.key so the
+                                 // ingester files equipment under the right
+                                 // facility (see §10).
   equipRoom: string;
   equipBuilding: string;         // e.g. "Building A" — see building presets below
   template: string;              // e.g. "AHU - Steam", "Water Heater - Electric"
@@ -245,6 +255,7 @@ Kept small because iOS Safari can be miserly with it. Holds:
 | `photoSeqNext` | Next photo-sequence starting number for filename generation |
 | `photo_full_<dbKey>` | Base64 fallback copy of a photo, in case IndexedDB write failed |
 | `loto_device_id` | Per-device UUID (v4), minted once on first launch by `ensureDeviceId()` in `init()`. Identifies the device across exports so the same day's data from two iPads doesn't collide; feeds the planned export-filename convention (§5 improvement plan). Never changes once set. |
+| `loto_hospital_code` | Selected facility code (a loto-web `Hospital.key` or a custom string). Set via the Settings facility picker (`getHospitalCode()` / `setHospitalCode()`); stamped onto every entry at save and onto every export. Absent/`''` means no facility selected. Roster of known codes is the `HOSPITALS` const in `index.html`; a header chip (`updateFacilityBadge()`) shows the active facility (or a ⚠️ warning when unset). |
 
 ### The "belt-and-suspenders" photo fallback
 
@@ -286,13 +297,18 @@ Equipment names in filenames are sanitized: non-alphanumeric characters (except 
 One row per (equipment, source) pair. The equipment metadata repeats across all its sources:
 
 ```
-Equipment Type, Equipment Name, LOTO ID, Room, Building, Template,
-Tied To, Tied To Equipment Name, Notes, Source #, Energy Source,
+Hospital Code, Equipment Type, Equipment Name, LOTO ID, Room, Building,
+Template, Tied To, Tied To Equipment Name, Notes, Source #, Energy Source,
 Device Type, Device ID, Quantity, Location, Duplicate, Verification,
 Photo Filename, Detail, Linked To, Main Photo Filename,
 DataPlate Photo Filename, EE Photo Filename, Diagram Filename,
 Misc Photo Filenames
 ```
+
+The `Hospital Code` column (first) carries the entry's `hospitalCode`,
+falling back to the current facility setting for entries saved before a
+facility was picked (`entryHospitalCode()`). Maps to loto-web
+`Hospital.key` — see §10.
 
 The `LOTO ID` column carries `SavedEntry.lotoId` (blank if the user
 didn't enter one). It's the intended dedup key on the loto-web
@@ -304,21 +320,28 @@ side — see §10 for how ingest should reconcile blank vs. populated.
 
 Professional formatted `.xlsx` mirroring the paper "LOTO Information Sheet" form used by field crews. Header rows for the equipment metadata, a 10-row source table (padded with blanks if fewer than 10 sources), photo filename references in the detail cell, page numbering, and linked-source markers. Styled per-cell via ExcelJS.
 
+When a facility is known for the export, a **`Facility` banner row** (`{hospitalName} [{code}]`) is prepended above the column-title row (sheet-level, human-facing; the CSV/JSON carry the authoritative per-entry `hospitalCode`).
+
 ### JSON backup (`Backup` button → `saveBackup`)
 
 The **primary integration surface**. Format:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "exported": "2026-06-17T14:23:45.123Z",
+  "hospitalCode": "Marion",
   "entries": [
-    { "id": "b3f1c2a4-5d6e-4f70-8a91-2c3d4e5f6a7b", "equipType": "Air Handler", "equipName": "AHU-1", ... }
+    { "id": "b3f1c2a4-5d6e-4f70-8a91-2c3d4e5f6a7b", "hospitalCode": "Marion", "equipType": "Air Handler", "equipName": "AHU-1", ... }
   ]
 }
 ```
 
 `entries[]` is the array of `SavedEntry` objects **stripped of photo binary data** — thumbnails and `dbKey` references are preserved, but the ArrayBuffer bytes are not. That's why the JSON stays small (a full-day-of-entries backup is typically < 1 MB).
+
+**`version` bumped to 2** (rev 4): the envelope gained a top-level `hospitalCode` (the facility setting at export time — a default for entries whose own `hospitalCode` is blank), and each entry now carries its own `hospitalCode`. Backward compatible — a v1 reader that ignores unknown keys still parses it.
+
+**Backup round-trip fidelity:** `normaliseEntry()` (the import path) spreads the original entry before applying field defaults, so identity/integration fields — `id`, `lotoId`, `hospitalCode`, `savedAt`, `sketch`, `miscPhotos`, and per-source `sourceId`, `deviceId`, `detail`, `linkedTo` — survive an export→import cycle. (Prior to rev 4 it was a whitelist rebuild that silently dropped all of these.)
 
 **For a downstream ingester** — the JSON gives you all the structural data (equipment, sources, sketches). The photo bytes live only in the ZIP export.
 
@@ -372,7 +395,7 @@ Required by Apple even though the app only uses `<input type="file" capture="env
 
 ### Service worker cache
 
-`sw.js` uses network-first for HTML/JSON, cache-first for static assets. **`CACHE_NAME` must be bumped every time cached files change** — otherwise the WebView serves stale HTML on next launch. Currently `loto-collector-v7.40`.
+`sw.js` uses network-first for HTML/JSON, cache-first for static assets. **`CACHE_NAME` must be bumped every time cached files change** — otherwise the WebView serves stale HTML on next launch. Currently `loto-collector-v7.41`.
 
 ---
 
@@ -431,6 +454,7 @@ Field collector's shape lines up cleanly with `loto-web/models.py`. Roughly:
 
 | Field collector | loto-web |
 |---|---|
+| `hospitalCode` (when non-empty) | `Hospital.key` — selects the facility to import into |
 | `lotoId` (when non-empty) | `Equipment.loto_id` — the dedup key |
 | `equipName` | `Equipment.name` |
 | `equipType` | `Equipment.equipment_type` |
@@ -448,7 +472,15 @@ Field collector's shape lines up cleanly with `loto-web/models.py`. Roughly:
 | Source's ordering in the array | `EnergySource.sort_order` |
 | Photo bytes (from ZIP) | `Photo` — new UUID + file storage |
 
-Missing on the field-collector side: `hospital_id` (the field app doesn't know about hospitals — the user picks the hospital at ingestion time on the loto-web side).
+As of rev 4 the field app **does** carry a facility: `hospitalCode` (a
+loto-web `Hospital.key`) is set via the Settings picker and stamped on
+every entry/export. The ingester should resolve it to `Hospital.id` (look
+up the `Hospital` row by `key`). It must exist on the loto-web side — the
+field app's `HOSPITALS` roster only lists codes; a matching `Hospital` row
+has to be created there with the identical `key` or the import won't match.
+When `hospitalCode` is blank, fall back to the JSON envelope's top-level
+`hospitalCode`, and failing that, prompt the user to pick a facility at
+ingestion time (the pre-rev-4 behavior).
 
 ### Dedup between the manual (office) and field-collector paths
 
