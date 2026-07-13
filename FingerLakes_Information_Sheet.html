@@ -452,6 +452,13 @@ if ('serviceWorker' in navigator) {
         </div>
       </div>
       <div class="form-group">
+        <label>LOTO ID <span style="font-size:11px;font-weight:400;color:var(--text-dim);">(optional — matches office inventory ID)</span></label>
+        <div class="scan-input-row">
+          <input type="text" id="equipLotoId" placeholder="e.g. BATH-AHU-001" oninput="autoSaveCurrent()">
+          <button type="button" class="scan-btn" onclick="scanTextToField('equipLotoId')" title="Scan label">&#128247;</button>
+        </div>
+      </div>
+      <div class="form-group">
         <label>Building</label>
         <select id="equipBuilding" onchange="handleBuildingChange()">
           <option value="">-- Select --</option>
@@ -4755,6 +4762,7 @@ function saveAndNew() {
     id: Date.now(),
     equipType: getEquipType(),
     equipName: equipName,
+    lotoId: document.getElementById('equipLotoId').value.trim(),
     equipRoom: document.getElementById('equipRoom').value,
     equipBuilding: getBuilding(),
     template: getTemplate(),
@@ -4811,6 +4819,7 @@ function clearForm(confirm_first = true) {
   document.getElementById('customEquipTypeGroup').style.display = 'none';
   filterTemplateDropdown('');
   document.getElementById('equipName').value = '';
+  document.getElementById('equipLotoId').value = '';
   // Form is fresh — auto-fill state has nothing to chase.
   lastAutoFilledEquipName = null;
   document.getElementById('equipRoom').value = '';
@@ -5025,6 +5034,7 @@ function editSaved(index) {
     filterTemplateDropdown(entry.equipType || '');
   }
   document.getElementById('equipName').value = entry.equipName || '';
+  document.getElementById('equipLotoId').value = entry.lotoId || '';
   // Loaded an existing entry — its name is the user's, not an auto-fill.
   // Switching equipment types from here should NOT clobber it.
   lastAutoFilledEquipName = null;
@@ -5146,6 +5156,7 @@ function executeDuplicate(index, withPhotos) {
     filterTemplateDropdown(entry.equipType || '');
   }
   document.getElementById('equipName').value = entry.equipName || '';
+  document.getElementById('equipLotoId').value = entry.lotoId || '';
   // Loaded an existing entry — its name is the user's, not an auto-fill.
   // Switching equipment types from here should NOT clobber it.
   lastAutoFilledEquipName = null;
@@ -5592,7 +5603,7 @@ async function runCombinedExport() {
   }
 
   // ---- PASS 2: build CSV ----
-  let csv = 'Equipment Type,Equipment Name,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames\n';
+  let csv = 'Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames\n';
 
   allEntries.forEach((entry, ei) => {
     const map = entryMaps[ei];
@@ -5602,6 +5613,7 @@ async function runCombinedExport() {
         : '';
       csv += [
         quote(entry.equipType), quote(entry.equipName),
+        quote(entry.lotoId || ''),
         quote(entry.equipRoom), quote(entry.equipBuilding),
         quote(entry.template || ''), quote(entry.tiedTo || ''),
         quote(entry.tiedToName || ''), quote(entry.notes || ''),
@@ -5977,6 +5989,7 @@ function autoSaveCurrent() {
       equipType: document.getElementById('equipType').value,
       equipTypeCustom: document.getElementById('equipTypeCustom').value.trim(),
       equipName: document.getElementById('equipName').value,
+      lotoId: document.getElementById('equipLotoId').value.trim(),
       equipRoom: document.getElementById('equipRoom').value,
       equipBuilding: getBuilding(),
       template: getTemplate(),
@@ -6138,6 +6151,7 @@ async function loadAll() {
       document.getElementById('equipTypeCustom').value = state.equipTypeCustom;
     }
     document.getElementById('equipName').value = state.equipName || '';
+    document.getElementById('equipLotoId').value = state.lotoId || '';
     // App reloaded mid-edit — treat the restored name as the user's own,
     // so a subsequent equipment-type change doesn't auto-clobber it.
     lastAutoFilledEquipName = null;

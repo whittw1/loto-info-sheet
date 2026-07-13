@@ -1,6 +1,6 @@
 # LOTO Field Collector — Architecture Reference
 
-**Date:** 2026-06-17
+**Date:** 2026-07-13 (rev 2 — added `lotoId` field to entries)
 **Repo:** [github.com/whittw1/loto-info-sheet](https://github.com/whittw1/loto-info-sheet)
 **Prior standalone doc:** `LOTO_Integration_Architecture.md` in `~/Desktop/Claude Apps/LOTO Information Sheet App/` (April 2026, pre-iOS work — kept for reference, superseded by this file).
 
@@ -92,9 +92,17 @@ The `savedEquipment[]` array is where everything lives. Each entry is a plain JS
 ```typescript
 // One equipment entry
 interface SavedEntry {
-  id: number;                    // Date.now() — unique within the session
+  id: number;                    // Date.now() — unique within the session (will
+                                 // migrate to crypto.randomUUID() in a follow-up
+                                 // step per the improvement plan §2.1)
   equipType: string;             // e.g. "Air Handler", "CHW Pump", "ATS"
   equipName: string;             // user-provided; auto-filled from equipType on selection
+  lotoId?: string;               // Optional office-inventory LOTO ID
+                                 // (e.g. "BATH-AHU-001") — maps to
+                                 // loto-web Equipment.loto_id for dedup on
+                                 // ingest. Blank string when the user
+                                 // hasn't provided one; loto-web ingester
+                                 // treats blank as "use UUID instead".
   equipRoom: string;
   equipBuilding: string;         // e.g. "Building A" — see building presets below
   template: string;              // e.g. "AHU - Steam", "Water Heater - Electric"
@@ -263,10 +271,17 @@ Equipment names in filenames are sanitized: non-alphanumeric characters (except 
 One row per (equipment, source) pair. The equipment metadata repeats across all its sources:
 
 ```
-Equipment Type, Equipment Name, Building, Room, Template, Tied To, Notes,
-Source #, Energy Source, Device Type, Device ID, Quantity, Location,
-Verification, Duplicate, Detail, Linked To
+Equipment Type, Equipment Name, LOTO ID, Room, Building, Template,
+Tied To, Tied To Equipment Name, Notes, Source #, Energy Source,
+Device Type, Device ID, Quantity, Location, Duplicate, Verification,
+Photo Filename, Detail, Linked To, Main Photo Filename,
+DataPlate Photo Filename, EE Photo Filename, Diagram Filename,
+Misc Photo Filenames
 ```
+
+The `LOTO ID` column carries `SavedEntry.lotoId` (blank if the user
+didn't enter one). It's the intended dedup key on the loto-web
+side — see §10 for how ingest should reconcile blank vs. populated.
 
 `Linked To` is populated when a source is linked to another equipment's source (see `LinkedSourceRef`).
 
@@ -401,6 +416,7 @@ Field collector's shape lines up cleanly with `loto-web/models.py`. Roughly:
 
 | Field collector | loto-web |
 |---|---|
+| `lotoId` (when non-empty) | `Equipment.loto_id` — the dedup key |
 | `equipName` | `Equipment.name` |
 | `equipType` | `Equipment.equipment_type` |
 | `equipBuilding` | `Equipment.building` |
@@ -418,6 +434,19 @@ Field collector's shape lines up cleanly with `loto-web/models.py`. Roughly:
 | Photo bytes (from ZIP) | `Photo` — new UUID + file storage |
 
 Missing on the field-collector side: `hospital_id` (the field app doesn't know about hospitals — the user picks the hospital at ingestion time on the loto-web side).
+
+### Dedup between the manual (office) and field-collector paths
+
+Because loto-web already keys `Equipment` rows by `loto_id` (see
+`import_data.py` line 786), populating the field-collector's new
+`lotoId` field is the single natural merge point between the two
+ingest paths:
+
+- **Office hand-fills XLSX with `loto_id = "BATH-AHU-001"`** → row created.
+- **Field crew captures the same AHU-1 with `lotoId = "BATH-AHU-001"`** → same `loto_id` matches → row is updated in place, not duplicated.
+- **Field crew leaves `lotoId` blank** → the ingester should fall back to the entry UUID as `loto_id` (creating a distinct row). Admin can merge later via the loto-web UI.
+
+Recommendation for the ingester: if `entry.lotoId` is non-empty use it as `Equipment.loto_id`; otherwise use `"field-" + entry.id` (or the UUID once §2.1 lands) so the row is still uniquely keyed but recognisable as origin=field-app.
 
 ### Auth options for automating the upload
 
