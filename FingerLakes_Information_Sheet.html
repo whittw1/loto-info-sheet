@@ -921,6 +921,15 @@ const DATA = {
   ],
   quantities: [1,2,3,4,5,6,7,8],
   duplicateOptions: ["No","Yes"],
+  // Per-source operating state. Emitted as sources[].valveState in the version:2
+  // entries.json (and CSV). "normal" = default (no special downstream handling).
+  // "normally_closed" = loto-web adds "Verify valve closed" (Section 2) +
+  // "Leave valve closed" (Section 4). "normally_open" is reserved for future use
+  // (schema accepts it; not offered in the UI yet).
+  valveStateOptions: [
+    { value: "normal",          label: "Normal" },
+    { value: "normally_closed", label: "Normally Closed" }
+  ],
   templates: [
     "** New Template **",
     "AHU - Steam","AHU - HHW","AHU - Steam, CHW, HHW",
@@ -3829,7 +3838,7 @@ function renderSources() {
         <div class="source-summary" onclick="expandSource(${i})">
           <span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
           <div class="source-summary-text">
-            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${src.linkedTo ? ' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>' : ''}
+            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${src.valveState==='normally_closed' ? ' <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">NC</span>' : ''}${src.linkedTo ? ' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>' : ''}
             ${src.deviceType ? ' &mdash; ' + src.deviceType : ''}${src.deviceId ? ' <span style="color:#7eb8da;">(' + src.deviceId + ')</span>' : ''}
             ${src.location ? ' &mdash; ' + src.location : ''}
             ${src.detail ? ' <span style="color:var(--accent);font-weight:600;font-family:monospace;">(' + src.detail + ')</span>' : ''}
@@ -3894,6 +3903,7 @@ function renderSources() {
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="showLinkDialog(${i})">${src.linkedTo ? '🔗 Linked' : 'Link'}</button>
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="showCopySourceDialog(${i})" title="Copy source config from a saved entry">Copy</button>
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="duplicateSource(${i})">Dup</button>
+            ${src.quantity >= 2 ? `<button class="btn btn-sm" style="background:var(--card);border:1px solid var(--accent);color:var(--accent);" onclick="splitSource(${i})" title="Pull one valve out as its own quantity-1 source (own photo + valve state)">Split 1</button>` : ''}
             <button class="btn btn-danger btn-sm" onclick="removeSource(${i})">Remove</button>
             <button class="btn btn-outline btn-sm" onclick="collapseSource(${i})">Done</button>
           </div>
@@ -3955,6 +3965,12 @@ function renderSources() {
                 <option value="">-- Select --</option>
                 ${getFilteredVerifications(src.deviceType, src.energySource).map(s => `<option value="${s}" ${src.verification===s?'selected':''}>${s}</option>`).join('')}
                 ${src.verification && !getFilteredVerifications(src.deviceType, src.energySource).includes(src.verification) ? `<option value="${src.verification}" selected>${src.verification}</option>` : ''}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Valve State</label>
+              <select onchange="updateSource(${i},'valveState',this.value)" id="src_valvestate_${i}">
+                ${DATA.valveStateOptions.map(o => `<option value="${o.value}" ${(src.valveState||'normal')===o.value?'selected':''}>${o.label}</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -4034,7 +4050,56 @@ function updateSource(index, field, value) {
     renderSources();
     return;
   }
+  if (field === 'quantity') {
+    // Re-render so the "Split 1" button appears/disappears (only shown when quantity >= 2)
+    renderSources();
+    return;
+  }
   autoSaveCurrent();
+}
+
+// Pull one physical valve out of a multi-quantity source into its own quantity-1
+// source so the tech can state and photograph it individually. This is the
+// reliable way to flag a single bypass / normally-closed valve when a source has
+// quantity > 1 — the split-off source gets its own photo marker and its
+// valveState defaults to "normally_closed" (the common reason to split).
+function splitSource(index) {
+  const src = sources[index];
+  const qty = parseInt(src.quantity, 10) || 1;
+  if (qty < 2) { showToast('Increase quantity to 2+ before splitting', true); return; }
+
+  // Original keeps the remaining valves
+  src.quantity = qty - 1;
+
+  // New quantity-1 source, copied from the original but as its own photographable valve
+  const newSrc = JSON.parse(JSON.stringify(src));
+  newSrc.quantity   = 1;
+  newSrc.valveState = 'normally_closed';
+  newSrc.duplicate  = 'No';
+  newSrc.noPhoto    = false;   // distinct physical valve → capture its own photo
+  newSrc.auto       = false;
+  newSrc.collapsed  = false;
+  delete newSrc.linkedTo;      // links belong to the original source only
+  delete newSrc.sourceId;      // mint a fresh UUID at save time (getSaveEntry ensureSourceId)
+  sources.splice(index + 1, 0, newSrc);
+
+  // Shift source photos up to make room, then leave the split-off source's slot empty
+  for (let i = sources.length - 1; i > index + 1; i--) {
+    if (photos[`source_${i-1}`]) {
+      photos[`source_${i}`] = photos[`source_${i-1}`];
+    } else {
+      delete photos[`source_${i}`];
+    }
+  }
+  delete photos[`source_${index + 1}`];  // fresh, empty photo marker for the split valve
+
+  renderSources();
+  autoSaveCurrent();
+  showToast('Split out 1 valve — set as Normally Closed. State & photograph it.');
+  setTimeout(() => {
+    const cards = document.querySelectorAll('.source-card');
+    if (cards[index + 1]) cards[index + 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 100);
 }
 
 // Equipment types where condensate sources auto-fill Gate Valve + Temp Only - Hot
@@ -4227,7 +4292,7 @@ function applyCopySource(entryIndex, sourceIndex) {
   // /_customLoc markers so custom-typed values still show as "custom".
   const carry = [
     'energySource','deviceType','quantity','location','verification',
-    'duplicate','detail','_customEnergy','_customDevice','_customLoc',
+    'duplicate','valveState','detail','_customEnergy','_customDevice','_customLoc',
   ];
   for (const k of carry) {
     if (src[k] !== undefined) dest[k] = src[k];
@@ -5792,7 +5857,7 @@ async function runCombinedExport() {
   }
 
   // ---- PASS 2: build CSV ----
-  let csv = 'Hospital Code,Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames\n';
+  let csv = 'Hospital Code,Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Valve State,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames\n';
 
   allEntries.forEach((entry, ei) => {
     const map = entryMaps[ei];
@@ -5809,6 +5874,7 @@ async function runCombinedExport() {
         quote(entry.tiedToName || ''), quote(entry.notes || ''),
         i + 1, quote(src.energySource), quote(src.deviceType), quote(src.deviceId || ''), src.quantity,
         quote(src.location), src.duplicate, quote(src.verification),
+        quote(src.valveState || 'normal'),
         quote(map.sourceHs[i] || ''), quote(src.detail || ''),
         quote(linkedStr),
         quote(map.mainH || ''),
@@ -5831,6 +5897,7 @@ async function runCombinedExport() {
     const { photos, miscPhotos, ...rest } = entry;
     const srcOut = (rest.sources || []).map((src, i) => ({
       ...src,
+      valveState: src.valveState || 'normal',   // always present for downstream (loto-web)
       photoFile: map.sourceHs[i] ? 'photos/' + map.sourceHs[i] : ''
     }));
     const miscOut = miscFileNames[ei]
@@ -6183,6 +6250,7 @@ function normaliseEntry(en) {
       location:     s.location      || '',
       duplicate:    s.duplicate     || 'No',
       verification: s.verification  || '',
+      valveState:   s.valveState    || 'normal',
       noPhoto:      s.noPhoto       || false,
       collapsed:    false,
     })),

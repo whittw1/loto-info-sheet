@@ -408,7 +408,7 @@ A lightweight index an ingester reads first to discover the bundle's shape befor
 }
 ```
 
-### `entries.json` — structured ingest surface (rev 5)
+### `entries.json` — structured ingest surface (rev 6)
 
 The cleanest way to ingest a field export: read `entries.json` instead of parsing the CSV. Same envelope as the JSON backup (`version: 2`, `exported`, top-level `hospitalCode`) plus a top-level `deviceId` (the exporting device's `loto_device_id`, for provenance) and `exportId` (the same per-export UUID as `manifest.json`, for correlation). Each entry is a full `SavedEntry` **with photo binary/thumbnail data stripped**, enriched with the ZIP-relative paths of the files actually written:
 
@@ -423,7 +423,7 @@ The cleanest way to ingest a field export: read `entries.json` instead of parsin
       "id": "…", "lotoId": "BATH-AHU-001", "hospitalCode": "Atlanta",
       "equipName": "AHU-1", "sources": [
         { "sourceId": "…", "energySource": "Electrical 208V", "deviceId": "D3",
-          "photoFile": "photos/0713_00003.jpg" }
+          "valveState": "normally_closed", "photoFile": "photos/0713_00003.jpg" }
       ],
       "photoFiles": {
         "main": "photos/0713_00001.jpg", "dataplate": "", "ee": "photos/0713_00002.jpg",
@@ -435,6 +435,25 @@ The cleanest way to ingest a field export: read `entries.json` instead of parsin
 ```
 
 Per-entry `hospitalCode` is resolved (falls back to the current setting when the entry itself has no stamp). The entry set matches the export's date filter and includes the unsaved current-form entry, exactly like the CSV/XLSX/photos in the same ZIP.
+
+**`sources[].valveState` (rev 6 — the loto-web contract).** Every source object
+carries `valveState`, emitted on **every** source (defaulted on export, so an
+ingester never has to handle a missing key):
+
+| Value | Meaning |
+| --- | --- |
+| `"normal"` (default) | No special downstream handling. |
+| `"normally_closed"` | loto-web maps to "Verify valve closed" (Section 2) and "Leave valve closed — do not open" (Section 4). |
+| `"normally_open"` | **Reserved** — accepted by the schema, not offered in the collector UI yet. |
+
+Absent/legacy sources are treated as `"normal"`. Captured structurally instead of
+in free-text `notes` so a specific valve can be tied to it downstream. In the
+collector: a per-source **Valve State** dropdown (with a red **NC** badge on the
+collapsed summary) plus a one-tap **Split 1** action — shown when `quantity >= 2`,
+it pulls one valve into its own `quantity: 1` source with its own photo marker,
+defaulting to `normally_closed`, so a single bypass valve is stated and
+photographed individually rather than inferred from notes text. The field also
+rides in the CSV (`Valve State` column) and survives JSON backup/import.
 
 ### CSV column layout (`LOTO_FieldData_*.csv`)
 
@@ -534,12 +553,12 @@ Required by Apple even though the app only uses `<input type="file" capture="env
 
 ### Versioning
 
-- `MARKETING_VERSION` — user-facing (currently `1.2`); bump for user-visible releases
+- `MARKETING_VERSION` — user-facing (currently `1.3`); bump for user-visible releases
 - `CURRENT_PROJECT_VERSION` — build number; **must be strictly increasing** for the same `MARKETING_VERSION` or Apple rejects the upload. Bumped by +1 on every commit that goes to TestFlight. Both Debug + Release entries in `project.pbxproj` must match.
 
 ### Service worker cache
 
-`sw.js` uses network-first for HTML/JSON, cache-first for static assets. **`CACHE_NAME` must be bumped every time cached files change** — otherwise the WebView serves stale HTML on next launch. Currently `loto-collector-v7.43`.
+`sw.js` uses network-first for HTML/JSON, cache-first for static assets. **`CACHE_NAME` must be bumped every time cached files change** — otherwise the WebView serves stale HTML on next launch. Currently `loto-collector-v7.44`.
 
 ---
 
