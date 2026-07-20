@@ -872,7 +872,7 @@ const DATA = {
     "Fire Pump","Fire Jockey Pump","Heat Exchanger",
     "Condensate Return Unit","Condensate Pump","Unit Heater",
     "Domestic Water Heater","Air Compressor","Air Dryer","Vacuum Pump","ATS",
-    "Generator","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
+    "Generator","Transformer","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
     "Chiller","Refrigerator","Boiler","Steam PRV Station","Humidifier",
     "** New Equipment Type **"
   ],
@@ -948,7 +948,7 @@ const DATA = {
     "Elevator - Traction","Elevator - Hydraulic",
     "ATS - Generic","Humidifier",
     "Standard Electrical","Heat Exchanger - Steam","Heat Exchanger - CHW/Glycol",
-    "Steam PRV Station","Boiler - Natural Gas"
+    "Steam PRV Station","Boiler - Natural Gas - HHW"
   ],
   tiedToOptions: ["Shut Down","Shut Down & LOTO"]
 };
@@ -1015,7 +1015,7 @@ const CHW_ENERGY_SOURCES = [
 // Equipment that always offers the "- Hot" verification variants regardless of
 // the source's own temperature. A boiler's domestic-water inlet feeds a hot
 // appliance, so "Temp Only - Hot" must stay selectable there (the
-// Boiler - Natural Gas template sets it by default).
+// Boiler - Natural Gas - HHW template sets it by default).
 const HOT_VERIFICATION_EQUIP = ['Domestic Water Heater', 'Boiler'];
 
 function getFilteredVerifications(deviceType, energySource) {
@@ -1761,7 +1761,10 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Elevator': ['Elevator - Traction','Elevator - Hydraulic'],
   'ATS': ['ATS - Generic'],
   'Heat Exchanger': ['Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol'],
-  'Boiler': ['Boiler - Natural Gas'],
+  'Boiler': ['Boiler - Natural Gas - HHW'],
+  // Transformer: generic electrical equipment — one Electrical source with a
+  // Meter verification, and the voltage prompt offers up to 4160V.
+  'Transformer': ['Standard Electrical'],
   'Steam PRV Station': ['Steam PRV Station'],
   'Humidifier': ['Humidifier'],
 };
@@ -1804,7 +1807,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Heat Exchanger - CHW/Glycol': 'heat_exchanger',
   'Exhaust Fan': 'exhaust_fan',
   'Condensing Unit': 'ac_unit', 'Air Compressor': 'air_compressor',
-  'Boiler': 'boiler', 'Boiler - Natural Gas': 'boiler', 'Air Dryer': 'general',
+  'Boiler': 'boiler', 'Boiler - Natural Gas - HHW': 'boiler', 'Air Dryer': 'general',
   'ATS - Generic': 'ats',
   'Water Heater - Steam': 'steam_water_heater', 'Water Heater - Gas': 'electric_water_heater',
   'Water Heater - Electric': 'general',
@@ -3423,7 +3426,7 @@ const EQUIPMENT_EXTRA_SOURCES = {
 // Templates whose electrical voltage is fixed by design — no voltage prompt.
 // Water Heater - Steam has a 120V control circuit only (no choice between
 // 208/240/etc.); same for Air Dryer (always a 120V plug) and Day Tank.
-const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas', 'Boiler - Natural Gas']);
+const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas', 'Boiler - Natural Gas - HHW']);
 
 // Per-template voltage option overrides. Falls back to all available
 // "Electrical NNN" entries in DATA.energySources if not listed here.
@@ -3679,7 +3682,7 @@ const TEMPLATE_AUTO_SOURCES = {
   // water inlet. Device left blank on the electrical and water sources so the
   // tech picks what's actually there. 120V is fixed (see
   // TEMPLATE_SKIPS_VOLTAGE_PROMPT) — no voltage prompt.
-  'Boiler - Natural Gas': [
+  'Boiler - Natural Gas - HHW': [
     { energySource: 'Electrical 120V', deviceType: '', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Natural Gas', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'DW In', deviceType: '', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
