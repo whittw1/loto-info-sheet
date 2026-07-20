@@ -864,7 +864,8 @@ function resetPhotoSettings() {
 const DATA = {
   equipmentTypes: [
     "Air Handler","Mini Split","Condensing Unit","Exhaust Fan","Heating HW Pump",
-    "CHW Pump","Domestic HW Pump","Domestic Water Pump","Feedwater Pump","Glycol Pump","Heat Exchanger",
+    "CHW Pump","Domestic HW Pump","Domestic Water Pump","Feedwater Pump","Glycol Pump",
+    "Fire Pump","Fire Jockey Pump","Heat Exchanger",
     "Condensate Return Unit","Condensate Pump","Unit Heater",
     "Domestic Water Heater","Air Compressor","Air Dryer","Vacuum Pump","ATS",
     "Generator","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
@@ -1736,6 +1737,8 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Dishwasher': ['Water Heater - Electric', 'Water Heater - Steam'],
   'Chemical Feed Pump': ['Standard Pump'],
   'Chemical Pump': ['Standard Pump'],
+  'Fire Pump': ['Standard Pump'],
+  'Fire Jockey Pump': ['Standard Pump'],
   'Condensate Pump': ['Heating Hot Water Pump'],
   'Condensate Return Unit': ['Condensate Return Unit','Condensate Return Unit - Steam'],
   'Unit Heater': ['Unit Heater - Steam','Unit Heater - HHW'],
@@ -5008,6 +5011,67 @@ function renderMiscPhotos() {
 // ============================================================================
 // SAVE & NEW - Core multi-equipment feature
 // ============================================================================
+// Fields checked before saving. Deliberately NOT flagged, because they're
+// optional by design: Notes, Tied To, Device ID, Detail, and Quantity /
+// Duplicate / Valve State (which always carry a value). Linked sources are
+// skipped entirely — their details come from the equipment they point at.
+function collectIncompleteFields() {
+  const missing = [];
+  const val = id => (document.getElementById(id) || {}).value || '';
+
+  if (!getEquipType())          missing.push('Main info — Equipment Type');
+  if (!getBuilding())           missing.push('Main info — Building');
+  if (!val('equipRoom').trim()) missing.push('Main info — Room');
+  if (!getTemplate())           missing.push('Main info — Template');
+  if (!val('equipLotoId').trim()) missing.push('Main info — LOTO ID');
+  // Only relevant once a "Tied To" option is chosen (the field is hidden otherwise)
+  if (val('equipTiedTo') && !val('equipTiedToName').trim()) {
+    missing.push('Main info — Equipment Name to Shut Down');
+  }
+
+  sources.forEach((s, i) => {
+    if (s.linkedTo) return;
+    const gaps = [];
+    if (!s.energySource) gaps.push('Energy Source');
+    if (!s.deviceType)   gaps.push('Device Type');
+    if (!s.location)     gaps.push('Location');
+    if (!s.verification) gaps.push('Verification');
+    if (gaps.length) {
+      const label = s.energySource ? `Source #${i + 1} (${s.energySource})` : `Source #${i + 1}`;
+      missing.push(`${label} — ${gaps.join(', ')}`);
+    }
+  });
+  return missing;
+}
+
+function showIncompleteWarning(missing) {
+  closeIncompleteWarning();
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'incompleteWarningOverlay';
+  const items = missing.map(m => `<li style="margin-bottom:5px;">${m}</li>`).join('');
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:440px;">
+      <h3 style="margin:0 0 6px 0;color:#d9a441;">&#9888; Incomplete entry</h3>
+      <p style="margin:0 0 10px 0;color:var(--text-dim);font-size:14px;">
+        ${missing.length} field${missing.length > 1 ? 's are' : ' is'} still blank:
+      </p>
+      <ul style="margin:0 0 16px 18px;padding:0;font-size:13px;max-height:250px;overflow-y:auto;">${items}</ul>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <button class="btn btn-primary" onclick="closeIncompleteWarning()" style="padding:12px;font-size:15px;">Go back and finish</button>
+        <button class="btn btn-warning" onclick="closeIncompleteWarning(); performSaveAndNew();" style="padding:12px;font-size:15px;">Save anyway</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+}
+
+function closeIncompleteWarning() {
+  const o = document.getElementById('incompleteWarningOverlay');
+  if (o) o.remove();
+}
+
 function saveAndNew() {
   const equipName = document.getElementById('equipName').value.trim();
   if (!equipName) {
@@ -5018,6 +5082,14 @@ function saveAndNew() {
     showToast('Add at least one energy source', true);
     return;
   }
+  // Warn (don't block) if anything expected is still blank
+  const missing = collectIncompleteFields();
+  if (missing.length) { showIncompleteWarning(missing); return; }
+  performSaveAndNew();
+}
+
+function performSaveAndNew() {
+  const equipName = document.getElementById('equipName').value.trim();
 
   // Ensure every source carries a stable UUID before it's cloned into the
   // saved entry. Assigned on the live objects so it round-trips through edits.
