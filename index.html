@@ -1551,9 +1551,6 @@ const EQUIPMENT_PROMPT_FOR_TEMPLATE = new Set([
   'Elevator',
   'Unit Heater',
   'Heat Exchanger',
-  // Boiler now has two templates (Standard Electrical / Boiler - Natural Gas),
-  // so prompt for the fuel type instead of silently auto-selecting.
-  'Boiler',
   // Dishwasher prompts for fuel type (Electric / Steam) and reuses the
   // matching Water Heater template (see EQUIPMENT_TEMPLATE_LABELS for the
   // friendlier button labels).
@@ -1764,7 +1761,7 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Elevator': ['Elevator - Traction','Elevator - Hydraulic'],
   'ATS': ['ATS - Generic'],
   'Heat Exchanger': ['Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol'],
-  'Boiler': ['Standard Electrical','Boiler - Natural Gas'],
+  'Boiler': ['Boiler - Natural Gas'],
   'Steam PRV Station': ['Steam PRV Station'],
   'Humidifier': ['Humidifier'],
 };
