@@ -509,6 +509,7 @@ if ('serviceWorker' in navigator) {
           </span>
         </div>
         <input type="file" accept="image/*" capture="environment" id="file_equip_main" onchange="handlePhoto(this, 'equip_main')">
+        <button type="button" class="btn btn-sm" onclick="browsePhoto('equip_main')" title="Pick an existing photo from the library" style="width:100%;margin-top:6px;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#128194; Browse</button>
       </div>
       <div class="photo-slot">
         <label>Data Plate</label>
@@ -519,6 +520,7 @@ if ('serviceWorker' in navigator) {
           </span>
         </div>
         <input type="file" accept="image/*" capture="environment" id="file_equip_dataplate" onchange="handlePhoto(this, 'equip_dataplate')">
+        <button type="button" class="btn btn-sm" onclick="browsePhoto('equip_dataplate')" title="Pick an existing photo from the library" style="width:100%;margin-top:6px;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#128194; Browse</button>
       </div>
       <div class="photo-slot">
         <label>EE Number</label>
@@ -529,6 +531,7 @@ if ('serviceWorker' in navigator) {
           </span>
         </div>
         <input type="file" accept="image/*" capture="environment" id="file_equip_ee" onchange="handlePhoto(this, 'equip_ee')">
+        <button type="button" class="btn btn-sm" onclick="browsePhoto('equip_ee')" title="Pick an existing photo from the library" style="width:100%;margin-top:6px;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#128194; Browse</button>
       </div>
     </div>
   </div>
@@ -544,6 +547,7 @@ if ('serviceWorker' in navigator) {
     <p style="font-size:12px;color:#aaa;margin:0 0 10px;">Capture additional photos not tied to a specific energy source (max 10)</p>
     <div id="miscPhotoGrid" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;"></div>
     <button class="add-source-btn" onclick="addMiscPhoto()" id="addMiscPhotoBtn">+ Add Misc Photo</button>
+    <button class="add-source-btn" onclick="browseMiscPhoto()" id="browseMiscPhotoBtn" style="margin-top:8px;">&#128194; Browse for Misc Photo</button>
     <input type="file" accept="image/*" capture="environment" id="file_misc_photo" style="display:none;" onchange="handleMiscPhoto(this)">
   </div>
 
@@ -4033,6 +4037,7 @@ function renderSources() {
                 }
               </div>
               <input type="file" accept="image/*" capture="environment" id="file_source_${i}" onchange="handlePhoto(this, 'source_${i}')">
+              <button type="button" class="btn btn-sm" onclick="browsePhoto('source_${i}')" title="Pick an existing photo from the library" style="width:100%;margin-top:6px;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#128194; Browse</button>
               ${photos['source_'+i] && photos['source_'+i].timestamp ?
                 `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;text-align:center;">
                   &#128247; ${new Date(photos['source_'+i].timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}
@@ -4580,6 +4585,39 @@ function takePhoto(slotId) {
   document.getElementById(`file_${slotId}`).click();
 }
 
+// ---- Photo library browsing -------------------------------------------------
+// The photo tiles tap straight through to the camera (their inputs carry
+// capture="environment"). These helpers build a capture-LESS input on the fly,
+// which makes iOS offer the photo library / recent shots instead. That covers
+// the case where a reference photo was taken earlier in a room and the matching
+// equipment is found later. The element is created per use so it also works for
+// dynamically rendered source slots, then removed once the file is handed off.
+function openLibraryPicker(handler) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.style.display = 'none';
+  input.onchange = function() {
+    // handlePhoto/handleMiscPhoto grab files[0] synchronously, so it's safe to
+    // drop the element right after.
+    try { handler(input); } finally { setTimeout(() => input.remove(), 0); }
+  };
+  document.body.appendChild(input);
+  input.click();
+}
+
+function browsePhoto(slotId) {
+  openLibraryPicker(input => handlePhoto(input, slotId));
+}
+
+function browseMiscPhoto() {
+  if (miscPhotos.length >= MAX_MISC_PHOTOS) {
+    showToast('Maximum ' + MAX_MISC_PHOTOS + ' misc photos reached', true);
+    return;
+  }
+  openLibraryPicker(input => handleMiscPhoto(input));
+}
+
 function showPhotoDialog(slotId) {
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
@@ -4592,6 +4630,7 @@ function showPhotoDialog(slotId) {
       </div>
       <div style="display:flex;flex-direction:column;gap:10px;">
         <button class="btn btn-primary" onclick="retakePhoto('${slotId}')" style="padding:12px;font-size:15px;">Retake Photo</button>
+        <button class="btn btn-outline" onclick="document.getElementById('photoDialogOverlay').remove(); browsePhoto('${slotId}');" style="padding:12px;font-size:15px;">&#128194; Choose from Library</button>
         <button class="btn" onclick="document.getElementById('photoDialogOverlay').remove()" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Close</button>
       </div>
     </div>
