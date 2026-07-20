@@ -3985,10 +3985,18 @@ function renderSources() {
               <label>Location</label>
               <select onchange="handleLocationChange(${i},this.value)" id="src_loc_${i}">
                 <option value="">-- Select --</option>
-                ${DATA.locations.filter(s=>s!=='** Custom Location **').map(s => `<option value="${s}" ${src.location===s&&!src._customLoc?'selected':''}>${s}</option>`).join('')}
+                ${DATA.locations.filter(s=>s!=='** Custom Location **').map(s => {
+                  const sel = !src._customLoc && (src.location===s || (s==='MCC' && mccIdOf(src.location)!==null));
+                  return `<option value="${s}" ${sel?'selected':''}>${s}</option>`;
+                }).join('')}
                 <option value="** Custom Location **" ${src._customLoc?'selected':''}>Custom...</option>
               </select>
             </div>
+            ${(!src._customLoc && mccIdOf(src.location)!==null) ? `<div class="form-group">
+              <label>MCC ID</label>
+              <input type="text" id="src_mccid_${i}" value="${mccIdOf(src.location)}" placeholder="e.g. 3, 3B"
+                oninput="updateMccId(${i},this.value)">
+            </div>` : ''}
             ${src._customLoc ? `<div class="form-group" id="customLocGroup_${i}">
               <label>Custom Location</label>
               <input type="text" id="src_loc_custom_${i}" value="${src.location||''}" placeholder="Enter custom location"
@@ -4087,6 +4095,8 @@ function updateSource(index, field, value) {
     return;
   }
   if (field === 'quantity') {
+    // The user has taken manual control of the count — never auto-reset it later.
+    delete sources[index]._autoQty2;
     // Re-render so the "Split 1" button appears/disappears (only shown when quantity >= 2)
     renderSources();
     return;
@@ -4167,9 +4177,17 @@ function handleEnergySourceChange(index, value) {
     }
     // Combined "In/Out" sources default to a device count of 2 (one device
     // on each side). Only bumps from the standard default of 1 — if the user
-    // has already set a custom quantity, leave it alone.
-    if (value && /In\/Out\b/.test(value) && (sources[index].quantity == null || sources[index].quantity === 1)) {
-      sources[index].quantity = 2;
+    // has already set a custom quantity, leave it alone. _autoQty2 records that
+    // WE set the 2, so switching to a non-In/Out source can undo it without
+    // clobbering a quantity the user chose deliberately.
+    if (value && /In\/Out\b/.test(value)) {
+      if (sources[index].quantity == null || sources[index].quantity === 1) {
+        sources[index].quantity = 2;
+        sources[index]._autoQty2 = true;
+      }
+    } else if (sources[index]._autoQty2) {
+      if (sources[index].quantity === 2) sources[index].quantity = 1;
+      delete sources[index]._autoQty2;
     }
     // Re-render to update device + verification dropdowns
     renderSources();
@@ -4202,6 +4220,16 @@ function updateSourceCustomField(index, field, value) {
   autoSaveCurrent();
 }
 
+// MCCs are usually numbered (MCC 3, MCC 3B) and the procedure wants the full
+// text. The ID lives inside `location` itself ("MCC 3") rather than in a side
+// field, so exports / CSV / entries.json need no special handling and a backup
+// round-trip can't lose it. Returns the ID ('' for a bare "MCC"), or null when
+// the location isn't an MCC at all.
+function mccIdOf(location) {
+  const m = /^MCC(?:\s+(.*))?$/.exec((location || '').trim());
+  return m ? (m[1] || '').trim() : null;
+}
+
 function handleLocationChange(index, value) {
   if (value === '** Custom Location **') {
     sources[index]._customLoc = true;
@@ -4209,13 +4237,25 @@ function handleLocationChange(index, value) {
     renderSources();
     const el = document.getElementById('src_loc_custom_' + index);
     if (el) el.focus();
+  } else if (value === 'MCC') {
+    // Re-selecting MCC keeps any ID already typed, so "MCC 3" isn't wiped
+    sources[index]._customLoc = false;
+    if (mccIdOf(sources[index].location) === null) sources[index].location = 'MCC';
+    renderSources();
+    const el = document.getElementById('src_mccid_' + index);
+    if (el) el.focus();
   } else {
     sources[index]._customLoc = false;
     sources[index].location = value;
-    const cg = document.getElementById('customLocGroup_' + index);
-    if (cg) cg.style.display = 'none';
+    renderSources();   // also drops the MCC ID field when leaving MCC
     autoSaveCurrent();
   }
+}
+
+// Compose "MCC" + the typed ID into the single location string.
+function updateMccId(index, value) {
+  sources[index].location = ('MCC ' + (value || '').trim()).trim();
+  autoSaveCurrent();
 }
 
 function updateSourceCustomLoc(index, value) {
