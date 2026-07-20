@@ -942,7 +942,8 @@ const DATA = {
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
     "Elevator - Traction","Elevator - Hydraulic",
     "ATS - Generic","Humidifier",
-    "Standard Electrical","Heat Exchanger - Steam","Heat Exchanger - CHW/Glycol"
+    "Standard Electrical","Heat Exchanger - Steam","Heat Exchanger - CHW/Glycol",
+    "Steam PRV Station"
   ],
   tiedToOptions: ["Shut Down","Shut Down & LOTO"]
 };
@@ -982,6 +983,9 @@ const DEVICE_VERIFICATION_MAP = {
   'Hydraulic':            ['_temponly','_gauge','_gaugeonly','_drain'],
   'Chain':                ['_temponly','_gauge','_gaugeonly','_drain'],
   'Cable':                ['Controls'],
+  // Bag (bagged control/switch) — control-verification options only.
+  'Bag':                  ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)',
+                           'Button (Start/Stop) - VFD','Button (Start/Stop) - Retractable','Button (Other)'],
 };
 
 // Energy sources that get "- Hot" suffix on gauge/drain verifications.
@@ -1150,6 +1154,8 @@ function togglePhotoSlot(index) {
 const ELECTRICAL_DEVICES = ['Disconnect','VFD','Switch','Switch w/Padlock','Breaker','Breaker w/Padlock','Plug','Fuse','Quick Disconnect'];
 const VALVE_DEVICES_WITH_CKT = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Butterfly Valve','Butterfly w/Padlock','Ckt Setter - Universal Valve','Chain','Cable'];
 const VALVE_DEVICES_NO_CKT = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Butterfly Valve','Butterfly w/Padlock','Chain','Cable'];
+// Propane: butterfly valves aren't used on propane service.
+const VALVE_DEVICES_NO_BUTTERFLY = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Chain','Cable'];
 
 const ENERGY_DEVICE_MAP = {
   'Electrical': ELECTRICAL_DEVICES,
@@ -1175,7 +1181,7 @@ const ENERGY_DEVICE_MAP = {
   'Fuel': VALVE_DEVICES_NO_CKT,
   'Diesel': VALVE_DEVICES_NO_CKT,
   'Natural Gas': VALVE_DEVICES_NO_CKT,
-  'Propane': VALVE_DEVICES_NO_CKT,
+  'Propane': VALVE_DEVICES_NO_BUTTERFLY,
   'Refrigerant': VALVE_DEVICES_NO_CKT,
   'Chemical': VALVE_DEVICES_NO_CKT,
   'Thermal': VALVE_DEVICES_NO_CKT,
@@ -1745,7 +1751,7 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'ATS': ['ATS - Generic'],
   'Heat Exchanger': ['Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol'],
   'Boiler': ['Standard Electrical'],
-  'Steam PRV Station': ['Heat Exchanger - Steam'],
+  'Steam PRV Station': ['Steam PRV Station'],
   'Humidifier': ['Humidifier'],
 };
 
@@ -1798,6 +1804,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Elevator - Traction': 'traction_elevator', 'Elevator - Hydraulic': 'hydraulic_elevator',
   'Vacuum Pump': 'medical_vacuum',
   'Standard Electrical': 'general', 'UPS': 'ups',
+  'Steam PRV Station': 'general',
   'Medical Air Compressor': 'medical_air_compressor',
 };
 
@@ -3436,6 +3443,9 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   // Condensing Unit (also used by Mini Split): drop 24V (control voltage, not a
   // disconnect) and 4160V (substation-scale) — neither is realistic here.
   'Condensing Unit':         ['120V', '208V', '240V', '480V'],
+  // Standard Electrical: generic electrical equipment — full realistic range
+  // including 4160V, but no 24V control voltage.
+  'Standard Electrical':     ['120V', '208V', '240V', '480V', '4160V'],
   // Glycol Pump: 120/208/480 — no 240V realistic for a glycol loop.
   'Glycol Pump':             ['120V', '208V', '480V'],
 };
@@ -3640,6 +3650,19 @@ const TEMPLATE_AUTO_SOURCES = {
   'Elevator - Hydraulic': [
     { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
     { energySource: 'Hydraulic', deviceType: 'Hydraulic', location: 'On Equipment', verification: 'GaugeOnly', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+  ],
+  // Steam PRV station: high-pressure steam in, medium-pressure out, plus the
+  // condensate drop. Verification left blank on the steam sources so the tech
+  // picks; condensate is always a hot temp check.
+  'Steam PRV Station': [
+    { energySource: 'HPS 100 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'MPS 20 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Standard Electrical: a single Electrical source; the voltage prompt then
+  // offers 120/208/240/480/4160V (see TEMPLATE_VOLTAGE_OVERRIDES).
+  'Standard Electrical': [
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: 'Meter', duplicate: 'No', detail: '', auto: true },
   ],
 };
 
