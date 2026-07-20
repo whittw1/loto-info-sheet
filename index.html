@@ -948,7 +948,7 @@ const DATA = {
     "Elevator - Traction","Elevator - Hydraulic",
     "ATS - Generic","Humidifier",
     "Standard Electrical","Heat Exchanger - Steam","Heat Exchanger - CHW/Glycol",
-    "Steam PRV Station"
+    "Steam PRV Station","Boiler - Natural Gas"
   ],
   tiedToOptions: ["Shut Down","Shut Down & LOTO"]
 };
@@ -1012,7 +1012,11 @@ const CHW_ENERGY_SOURCES = [
 
 // Equipment types that always offer the "- Hot" verification choices in addition
 // to whatever the energy source's temperature classification would normally show.
-const HOT_VERIFICATION_EQUIP = ['Domestic Water Heater'];
+// Equipment that always offers the "- Hot" verification variants regardless of
+// the source's own temperature. A boiler's domestic-water inlet feeds a hot
+// appliance, so "Temp Only - Hot" must stay selectable there (the
+// Boiler - Natural Gas template sets it by default).
+const HOT_VERIFICATION_EQUIP = ['Domestic Water Heater', 'Boiler'];
 
 function getFilteredVerifications(deviceType, energySource) {
   // Determine temperature variant based on energy source
@@ -1547,6 +1551,9 @@ const EQUIPMENT_PROMPT_FOR_TEMPLATE = new Set([
   'Elevator',
   'Unit Heater',
   'Heat Exchanger',
+  // Boiler now has two templates (Standard Electrical / Boiler - Natural Gas),
+  // so prompt for the fuel type instead of silently auto-selecting.
+  'Boiler',
   // Dishwasher prompts for fuel type (Electric / Steam) and reuses the
   // matching Water Heater template (see EQUIPMENT_TEMPLATE_LABELS for the
   // friendlier button labels).
@@ -1757,7 +1764,7 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Elevator': ['Elevator - Traction','Elevator - Hydraulic'],
   'ATS': ['ATS - Generic'],
   'Heat Exchanger': ['Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol'],
-  'Boiler': ['Standard Electrical'],
+  'Boiler': ['Standard Electrical','Boiler - Natural Gas'],
   'Steam PRV Station': ['Steam PRV Station'],
   'Humidifier': ['Humidifier'],
 };
@@ -1800,7 +1807,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Heat Exchanger - CHW/Glycol': 'heat_exchanger',
   'Exhaust Fan': 'exhaust_fan',
   'Condensing Unit': 'ac_unit', 'Air Compressor': 'air_compressor',
-  'Boiler': 'boiler', 'Air Dryer': 'general',
+  'Boiler': 'boiler', 'Boiler - Natural Gas': 'boiler', 'Air Dryer': 'general',
   'ATS - Generic': 'ats',
   'Water Heater - Steam': 'steam_water_heater', 'Water Heater - Gas': 'electric_water_heater',
   'Water Heater - Electric': 'general',
@@ -3419,7 +3426,7 @@ const EQUIPMENT_EXTRA_SOURCES = {
 // Templates whose electrical voltage is fixed by design — no voltage prompt.
 // Water Heater - Steam has a 120V control circuit only (no choice between
 // 208/240/etc.); same for Air Dryer (always a 120V plug) and Day Tank.
-const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas']);
+const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas', 'Boiler - Natural Gas']);
 
 // Per-template voltage option overrides. Falls back to all available
 // "Electrical NNN" entries in DATA.energySources if not listed here.
@@ -3670,6 +3677,15 @@ const TEMPLATE_AUTO_SOURCES = {
   // offers 120/208/240/480/4160V (see TEMPLATE_VOLTAGE_OVERRIDES).
   'Standard Electrical': [
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: 'Meter', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Gas-fired boiler: 120V control circuit, the gas train, and the domestic
+  // water inlet. Device left blank on the electrical and water sources so the
+  // tech picks what's actually there. 120V is fixed (see
+  // TEMPLATE_SKIPS_VOLTAGE_PROMPT) — no voltage prompt.
+  'Boiler - Natural Gas': [
+    { energySource: 'Electrical 120V', deviceType: '', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Natural Gas', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'DW In', deviceType: '', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
 };
 
