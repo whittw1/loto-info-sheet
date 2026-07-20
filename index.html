@@ -938,10 +938,10 @@ const DATA = {
     "Condensate Return Unit","Condensate Return Unit - Steam",
     "Exhaust Fan","Water Heater - Steam","Water Heater - Gas","Water Heater - Electric",
     "Unit Heater - Steam","Unit Heater - HHW",
-    "Air Compressor","Air Dryer","Vaccum Pump","Condensing Unit",
+    "Air Compressor","Air Dryer","Vacuum Pump","Condensing Unit",
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
     "Elevator - Traction","Elevator - Hydraulic",
-    "ATS - Generic","ASCO 7000","Non Byp","Kohler","Zenith","Humidifier",
+    "ATS - Generic","Humidifier",
     "Standard Electrical","Heat Exchanger - Steam","Heat Exchanger - CHW/Glycol"
   ],
   tiedToOptions: ["Shut Down","Shut Down & LOTO"]
@@ -1105,6 +1105,7 @@ function getFilteredVerifications(deviceType, energySource) {
 const SOURCE_EXTRA_VERIFICATIONS = {
   'Fuel Oil':    ['Controls'],
   'Natural Gas': ['Controls'],
+  'Propane':     ['Controls'],
 };
 
 // Per-equipment-type allowlist of (equipType, energySource) combos that should
@@ -1120,9 +1121,11 @@ const EQUIPMENT_ALLOW_PHOTO_FOR_SOURCE = {};
 //   - render reads only src.noPhoto — ignores SOURCE_DEFAULTS[*].noPhoto
 //   - source card shows a small toggle button to hide/show the slot
 //
-// Adding 'Hydraulic' or 'Gravity/Potential' here would extend the toggle
-// to those source kinds too; left out per spec.
-const SOURCE_KINDS_WITH_PHOTO_TOGGLE = new Set(['Kinetic']);
+// Adding 'Gravity/Potential' here would extend the toggle to that source kind
+// too; left out per spec. 'Hydraulic' was added 2026-07-19 so techs can
+// photograph the hydraulic source (migrateToggleablePhotoFlags clears the
+// baked-in noPhoto on existing saves so the slot becomes visible).
+const SOURCE_KINDS_WITH_PHOTO_TOGGLE = new Set(['Kinetic', 'Hydraulic']);
 
 function isPhotoToggleable(energySource) {
   return SOURCE_KINDS_WITH_PHOTO_TOGGLE.has(energySource);
@@ -1733,16 +1736,16 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Domestic Water Heater': ['Water Heater - Steam','Water Heater - Gas','Water Heater - Electric'],
   'Air Compressor': ['Air Compressor'],
   'Air Dryer': ['Air Dryer'],
-  'Vacuum Pump': ['Vaccum Pump'],
+  'Vacuum Pump': ['Vacuum Pump'],
   'Cooling Tower': ['Cooling Tower'],
   'Generator': ['Emergency Generator'],
   'Chiller': ['Chiller'],
   'Refrigerator': ['Refrigerator'],
   'Elevator': ['Elevator - Traction','Elevator - Hydraulic'],
-  'ATS': ['ATS - Generic','ASCO 7000','Non Byp','Kohler','Zenith'],
+  'ATS': ['ATS - Generic'],
   'Heat Exchanger': ['Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol'],
   'Boiler': ['Standard Electrical'],
-  'Steam PRV Station': ['Standard Electrical'],
+  'Steam PRV Station': ['Heat Exchanger - Steam'],
   'Humidifier': ['Humidifier'],
 };
 
@@ -1785,8 +1788,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Exhaust Fan': 'exhaust_fan',
   'Condensing Unit': 'ac_unit', 'Air Compressor': 'air_compressor',
   'Boiler': 'boiler', 'Air Dryer': 'general',
-  'ATS - Generic': 'ats', 'ASCO 7000': 'ats', 'Non Byp': 'ats',
-  'Kohler': 'ats', 'Zenith': 'ats',
+  'ATS - Generic': 'ats',
   'Water Heater - Steam': 'steam_water_heater', 'Water Heater - Gas': 'electric_water_heater',
   'Water Heater - Electric': 'general',
   'Unit Heater - Steam': 'steam_water_heater', 'Unit Heater - HHW': 'heat_exchanger',
@@ -1794,7 +1796,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Cooling Tower': 'cooling_tower',
   'Condensate Return Unit': 'condensate_return', 'Condensate Return Unit - Steam': 'condensate_return',
   'Elevator - Traction': 'traction_elevator', 'Elevator - Hydraulic': 'hydraulic_elevator',
-  'Vaccum Pump': 'medical_vacuum',
+  'Vacuum Pump': 'medical_vacuum',
   'Standard Electrical': 'general', 'UPS': 'ups',
   'Medical Air Compressor': 'medical_air_compressor',
 };
