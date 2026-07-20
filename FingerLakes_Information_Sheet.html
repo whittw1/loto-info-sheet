@@ -5051,9 +5051,10 @@ function renderMiscPhotos() {
 // SAVE & NEW - Core multi-equipment feature
 // ============================================================================
 // Fields checked before saving. Deliberately NOT flagged, because they're
-// optional by design: Notes, Tied To, Device ID, Detail, and Quantity /
-// Duplicate / Valve State (which always carry a value). Linked sources are
-// skipped entirely — their details come from the equipment they point at.
+// optional by design: LOTO ID (often not assigned in the field), Notes, Tied
+// To, Device ID, Detail, and Quantity / Duplicate / Valve State (which always
+// carry a value). Linked sources are skipped entirely — their details come
+// from the equipment they point at.
 function collectIncompleteFields() {
   const missing = [];
   const val = id => (document.getElementById(id) || {}).value || '';
@@ -5062,7 +5063,6 @@ function collectIncompleteFields() {
   if (!getBuilding())           missing.push('Main info — Building');
   if (!val('equipRoom').trim()) missing.push('Main info — Room');
   if (!getTemplate())           missing.push('Main info — Template');
-  if (!val('equipLotoId').trim()) missing.push('Main info — LOTO ID');
   // Only relevant once a "Tied To" option is chosen (the field is hidden otherwise)
   if (val('equipTiedTo') && !val('equipTiedToName').trim()) {
     missing.push('Main info — Equipment Name to Shut Down');
