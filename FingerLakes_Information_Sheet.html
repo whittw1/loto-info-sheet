@@ -948,7 +948,7 @@ const DATA = {
     "Elevator - Traction","Elevator - Hydraulic",
     "ATS - Generic","Humidifier",
     "Standard Electrical","Heat Exchanger - Steam","Heat Exchanger - CHW/Glycol",
-    "Steam PRV Station","Boiler - Natural Gas - HHW"
+    "Steam PRV Station","Boiler - Natural Gas - HHW","Boiler - Natural Gas - STM"
   ],
   tiedToOptions: ["Shut Down","Shut Down & LOTO"]
 };
@@ -1019,6 +1019,11 @@ const CHW_ENERGY_SOURCES = [
 const HOT_VERIFICATION_EQUIP = ['Domestic Water Heater', 'Boiler'];
 
 function getFilteredVerifications(deviceType, energySource) {
+  // A template-scoped override wins outright — the list is already resolved
+  // (no _placeholders), so no temperature/extra processing is applied.
+  const override = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, energySource);
+  if (override) return override;
+
   // Determine temperature variant based on energy source
   let tempSuffix = '';
   if (energySource) {
@@ -1220,7 +1225,51 @@ const ENERGY_KEYWORD_TEMP = [
   { keywords: ['chw','chilled','cold'], temp: 'chw' },
 ];
 
+// ---- Per-template source narrowing -----------------------------------------
+// Device / verification lists are normally global (ENERGY_DEVICE_MAP is keyed by
+// energy-source prefix, DEVICE_VERIFICATION_MAP by device). These tables narrow
+// them for specific sources while a specific TEMPLATE is selected, so e.g.
+// Feedwater keeps its full valve list on the Feedwater Pump template but is
+// restricted inside the steam-boiler template. Keyed template -> source prefix.
+const TEMPLATE_SOURCE_DEVICE_OVERRIDES = {
+  'Boiler - Natural Gas - HHW': {
+    'HHW Out':     ['Ball Valve','Gate Valve','Butterfly Valve','Gate Valve w/Cable','Chain'],
+  },
+  'Boiler - Natural Gas - STM': {
+    'Feedwater In': ['Ball Valve','Gate Valve','Gate Valve w/Cable','Chain'],
+    'HPS 100 PSI':  ['Ball Valve','Gate Valve','Gate Valve w/Cable','Chain'],
+  },
+};
+
+const TEMPLATE_SOURCE_VERIFICATION_OVERRIDES = {
+  'Boiler - Natural Gas - HHW': {
+    'HHW Out':      ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot'],
+  },
+  'Boiler - Natural Gas - STM': {
+    'Electrical':   ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)',
+                     'Button (Start/Stop) - VFD','Button (Start/Stop) - Retractable','Button (Other)'],
+    'Feedwater In': ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot'],
+    'HPS 100 PSI':  ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot'],
+  },
+};
+
+// Longest-prefix lookup inside the currently-selected template's override table.
+// Returns null when the template has no override for this source.
+function templateSourceOverride(table, energySource) {
+  if (!energySource) return null;
+  const tmpl = (typeof getTemplate === 'function') ? getTemplate() : '';
+  const map = table[tmpl];
+  if (!map) return null;
+  let best = null, bestLen = 0;
+  for (const [prefix, list] of Object.entries(map)) {
+    if (energySource.startsWith(prefix) && prefix.length > bestLen) { best = list; bestLen = prefix.length; }
+  }
+  return best;
+}
+
 function getFilteredDevices(energySource) {
+  const override = templateSourceOverride(TEMPLATE_SOURCE_DEVICE_OVERRIDES, energySource);
+  if (override) return override;
   if (!energySource) return DATA.deviceTypes; // no energy source selected → full list
   // Longest prefix match first
   let bestDevices = null;
@@ -1551,6 +1600,9 @@ const EQUIPMENT_PROMPT_FOR_TEMPLATE = new Set([
   'Elevator',
   'Unit Heater',
   'Heat Exchanger',
+  // Boiler has two templates again (HHW / STM), so ask which rather than
+  // silently auto-selecting.
+  'Boiler',
   // Dishwasher prompts for fuel type (Electric / Steam) and reuses the
   // matching Water Heater template (see EQUIPMENT_TEMPLATE_LABELS for the
   // friendlier button labels).
@@ -1761,7 +1813,7 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Elevator': ['Elevator - Traction','Elevator - Hydraulic'],
   'ATS': ['ATS - Generic'],
   'Heat Exchanger': ['Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol'],
-  'Boiler': ['Boiler - Natural Gas - HHW'],
+  'Boiler': ['Boiler - Natural Gas - HHW','Boiler - Natural Gas - STM'],
   // Transformer: generic electrical equipment — one Electrical source with a
   // Meter verification, and the voltage prompt offers up to 4160V.
   'Transformer': ['Standard Electrical'],
@@ -1807,7 +1859,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Heat Exchanger - CHW/Glycol': 'heat_exchanger',
   'Exhaust Fan': 'exhaust_fan',
   'Condensing Unit': 'ac_unit', 'Air Compressor': 'air_compressor',
-  'Boiler': 'boiler', 'Boiler - Natural Gas - HHW': 'boiler', 'Air Dryer': 'general',
+  'Boiler': 'boiler', 'Boiler - Natural Gas - HHW': 'boiler', 'Boiler - Natural Gas - STM': 'boiler', 'Air Dryer': 'general',
   'ATS - Generic': 'ats',
   'Water Heater - Steam': 'steam_water_heater', 'Water Heater - Gas': 'electric_water_heater',
   'Water Heater - Electric': 'general',
@@ -3460,6 +3512,8 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   // Standard Electrical: generic electrical equipment — full realistic range
   // including 4160V, but no 24V control voltage.
   'Standard Electrical':     ['120V', '208V', '240V', '480V', '4160V'],
+  // Steam boiler: control/burner circuit — 120/208/480V only.
+  'Boiler - Natural Gas - STM': ['120V', '208V', '480V'],
   // Glycol Pump: 120/208/480 — no 240V realistic for a glycol loop.
   'Glycol Pump':             ['120V', '208V', '480V'],
 };
@@ -3686,6 +3740,17 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Electrical 120V', deviceType: '', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Natural Gas', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'DW In', deviceType: '', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'HHW Out', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Steam boiler. Electrical voltage is prompted (120/208/480V — see
+  // TEMPLATE_VOLTAGE_OVERRIDES), so this template is deliberately NOT in
+  // TEMPLATE_SKIPS_VOLTAGE_PROMPT. Device/verification dropdowns for the
+  // feedwater and steam sources are narrowed by TEMPLATE_SOURCE_*_OVERRIDES.
+  'Boiler - Natural Gas - STM': [
+    { energySource: 'Electrical 120V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Natural Gas', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Feedwater In', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'HPS 100 PSI', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
 };
 
