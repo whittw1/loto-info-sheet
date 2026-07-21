@@ -1013,10 +1013,10 @@ const CHW_ENERGY_SOURCES = [
 // Equipment types that always offer the "- Hot" verification choices in addition
 // to whatever the energy source's temperature classification would normally show.
 // Equipment that always offers the "- Hot" verification variants regardless of
-// the source's own temperature. A boiler's domestic-water inlet feeds a hot
-// appliance, so "Temp Only - Hot" must stay selectable there (the
-// Boiler - Natural Gas - HHW template sets it by default).
-const HOT_VERIFICATION_EQUIP = ['Domestic Water Heater', 'Boiler'];
+// the source's own temperature. 'Boiler' was here for the old DW In inlet;
+// that source is now HHW In (hot on its own, and template-narrowed anyway), so
+// Boiler was removed to stop Natural Gas offering temperature verifications.
+const HOT_VERIFICATION_EQUIP = ['Domestic Water Heater'];
 
 function getFilteredVerifications(deviceType, energySource) {
   // A template-scoped override wins outright — the list is already resolved
@@ -1233,6 +1233,8 @@ const ENERGY_KEYWORD_TEMP = [
 // restricted inside the steam-boiler template. Keyed template -> source prefix.
 const TEMPLATE_SOURCE_DEVICE_OVERRIDES = {
   'Boiler - Natural Gas - HHW': {
+    'HHW In':      ['Ball Valve','Gate Valve','Butterfly Valve','Gate Valve w/Cable','Chain'],
+    'HHW In/Out':  ['Ball Valve','Gate Valve','Butterfly Valve','Gate Valve w/Cable','Chain'],
     'HHW Out':     ['Ball Valve','Gate Valve','Butterfly Valve','Gate Valve w/Cable','Chain'],
   },
   'Boiler - Natural Gas - STM': {
@@ -1244,6 +1246,7 @@ const TEMPLATE_SOURCE_DEVICE_OVERRIDES = {
 const TEMPLATE_SOURCE_VERIFICATION_OVERRIDES = {
   'Boiler - Natural Gas - HHW': {
     'HHW In':       ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot','Drain Only - Hot'],
+    'HHW In/Out':   ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot','Drain Only - Hot'],
     'HHW Out':      ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot','Drain Only - Hot'],
   },
   'Boiler - Natural Gas - STM': {
