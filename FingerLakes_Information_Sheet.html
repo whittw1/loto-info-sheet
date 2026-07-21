@@ -1243,13 +1243,14 @@ const TEMPLATE_SOURCE_DEVICE_OVERRIDES = {
 
 const TEMPLATE_SOURCE_VERIFICATION_OVERRIDES = {
   'Boiler - Natural Gas - HHW': {
-    'HHW Out':      ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot'],
+    'HHW In':       ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot','Drain Only - Hot'],
+    'HHW Out':      ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot','Drain Only - Hot'],
   },
   'Boiler - Natural Gas - STM': {
     'Electrical':   ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)',
                      'Button (Start/Stop) - VFD','Button (Start/Stop) - Retractable','Button (Other)'],
-    'Feedwater In': ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot'],
-    'HPS 100 PSI':  ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot'],
+    'Feedwater In': ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot','Drain Only - Hot'],
+    'HPS 100 PSI':  ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot','Drain Only - Hot'],
   },
 };
 
@@ -3739,7 +3740,7 @@ const TEMPLATE_AUTO_SOURCES = {
   'Boiler - Natural Gas - HHW': [
     { energySource: 'Electrical 120V', deviceType: '', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Natural Gas', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
-    { energySource: 'DW In', deviceType: '', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'HHW In', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'HHW Out', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   // Steam boiler. Electrical voltage is prompted (120/208/480V — see
