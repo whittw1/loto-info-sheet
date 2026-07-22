@@ -3633,11 +3633,13 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'VFD', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
-  // Geothermal AHU: same standard auto-population as the other AHU templates
-  // (Kinetic + Electrical VFD). The tech adds the geothermal coil source.
+  // Geothermal AHU: standard AHU auto-population (Kinetic + Electrical VFD)
+  // plus the geothermal coil. Quantity 2 on the In/Out source matches the
+  // app's manual In/Out behavior (one valve on each side).
   'AHU - Geothermal': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'VFD', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Geothermal Water In/Out', deviceType: 'Ball Valve', quantity: 2, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'AHU - Steam, CHW, HHW': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
