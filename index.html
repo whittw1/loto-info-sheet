@@ -891,14 +891,14 @@ const DATA = {
     "Gravity/Potential","Chemical In","Chemical Out",
     "Glycol HW In/Out","Glycol CHW In/Out",
     "Glycol ER Water In/Out","Glycol ER Water In","Glycol ER Water Out",
-    "Kinetic",
+    "Kinetic","Stored Electrical Energy",
     "Thermal","Refrigerant","Hydraulic"
   ],
   deviceTypes: [
     "Disconnect","VFD","Switch","Switch w/Padlock","Breaker","Breaker w/Padlock",
     "Gate Valve","Gate Valve w/Cable","Ball Valve","Butterfly Valve","Butterfly w/Padlock",
     "Ckt Setter - Universal Valve","Plug","Chain","Cable","Bag",
-    "Potential","Rotating","Hydraulic","Fuse","Quick Disconnect"
+    "Potential","Capacitor","Rotating","Hydraulic","Fuse","Quick Disconnect"
   ],
   locations: [
     "On Equipment","On Wall","Panel","MCC",
@@ -958,6 +958,11 @@ const SOURCE_DEFAULTS = {
   'Kinetic':            { device: 'Rotating',   location: 'On Equipment', verification: 'Rotating' },
   'Gravity/Potential':  { device: 'Potential',   location: 'On Equipment', verification: 'Block',     noPhoto: true },
   'Hydraulic':          { device: 'Hydraulic',   location: 'On Equipment', verification: 'GaugeOnly', noPhoto: true },
+  // Stored Electrical Energy (capacitor): loto-web generates the discharge
+  // method/verification and overrides Device to N/A; only `location` passes
+  // through, so default it to loto-web's canned value. Acknowledgement-only
+  // (no lockout device) -> noPhoto, photo-toggleable per source.
+  'Stored Electrical Energy': { device: 'Capacitor', location: 'At Capacitor Bank', noPhoto: true },
   // Steam: default to Gate Valve, verification stays open (filtered to valve options)
   'LPS 10 PSI':         { device: 'Gate Valve' },
   'MPS 20 PSI':         { device: 'Gate Valve' },
@@ -983,6 +988,7 @@ const DEVICE_VERIFICATION_MAP = {
   'Ckt Setter - Universal Valve': ['_temponly','_gauge','_gaugeonly','_drain'],
   'Rotating':             ['Rotating'],
   'Potential':            ['Block'],
+  'Capacitor':            ['Block'],
   'Hydraulic':            ['_temponly','_gauge','_gaugeonly','_drain'],
   'Chain':                ['_temponly','_gauge','_gaugeonly','_drain'],
   'Cable':                ['Controls'],
@@ -1141,7 +1147,7 @@ const EQUIPMENT_ALLOW_PHOTO_FOR_SOURCE = {};
 // too; left out per spec. 'Hydraulic' was added 2026-07-19 so techs can
 // photograph the hydraulic source (migrateToggleablePhotoFlags clears the
 // baked-in noPhoto on existing saves so the slot becomes visible).
-const SOURCE_KINDS_WITH_PHOTO_TOGGLE = new Set(['Kinetic', 'Hydraulic']);
+const SOURCE_KINDS_WITH_PHOTO_TOGGLE = new Set(['Kinetic', 'Hydraulic', 'Stored Electrical Energy']);
 
 function isPhotoToggleable(energySource) {
   return SOURCE_KINDS_WITH_PHOTO_TOGGLE.has(energySource);
@@ -1201,6 +1207,7 @@ const ENERGY_DEVICE_MAP = {
   'Kinetic': ['Rotating'],
   'Gravity': ['Potential'],
   'Hydraulic': ['Hydraulic'],
+  'Stored Electrical Energy': ['Capacitor'],
 };
 
 // Keyword fallback for custom energy sources that don't match prefix map
@@ -1706,6 +1713,10 @@ const VOLTAGE_PROMPT_CONFIG = {
       sources.push({
         energySource: energyName, deviceType: 'Disconnect', quantity: 1, location: 'On Equipment',
         duplicate: 'No', verification: 'Controls', detail: '', collapsed: true, auto: true
+      });
+      sources.push({
+        energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank',
+        verification: '', quantity: 1, duplicate: 'No', detail: '', collapsed: true, auto: true, noPhoto: true
       });
       showToast(`Added Electrical source${voltage ? ' (' + voltage + ')' : ''} for Chiller`);
     }
@@ -2542,14 +2553,14 @@ const ENERGY_LABEL_PREFIX = {
   'Pneumatic': 'P', 'Compressed': 'P', 'Vacuum Air': 'P', 'CA': 'P',
   'Fuel Oil': 'F', 'Fuel': 'F', 'Diesel': 'F',
   'Natural Gas': 'G', 'Propane': 'G', 'Gas': 'G',
-  'Hydraulic': 'H', 'Glycol': 'W', 'Kinetic': 'K', 'Gravity': 'GP',
+  'Hydraulic': 'H', 'Glycol': 'W', 'Kinetic': 'K', 'Gravity': 'GP', 'Stored Electrical Energy': 'ES',
   'Chemical': 'CH', 'Thermal': 'TH', 'Refrigerant': 'R',
 };
 
 const ENERGY_LABEL_COLORS = {
   'E': '#d94a4a', 'S': '#e07020', 'W': '#2a7fff', 'P': '#2ea843',
   'F': '#d9a84a', 'H': '#9b59b6', 'G': '#2ea843', 'K': '#888', 'GP': '#888',
-  'CH': '#c0392b', 'TH': '#e67e22', 'R': '#1abc9c'
+  'CH': '#c0392b', 'TH': '#e67e22', 'R': '#1abc9c', 'ES': '#c0392b'
 };
 
 // Sketch state
@@ -3640,6 +3651,7 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'VFD', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Geothermal Water In/Out', deviceType: 'Ball Valve', quantity: 2, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank', verification: '', quantity: 1, duplicate: 'No', detail: '', auto: true, noPhoto: true },
   ],
   'AHU - Steam, CHW, HHW': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
@@ -3657,6 +3669,7 @@ const TEMPLATE_AUTO_SOURCES = {
   'Condensing Unit': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank', verification: '', quantity: 1, duplicate: 'No', detail: '', auto: true, noPhoto: true },
   ],
   'Chilled Water Pump': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
@@ -3921,7 +3934,7 @@ function populateDropdown(selectEl, options, placeholder) {
 function getSourceColorClass(sourceType) {
   if (!sourceType) return 'source-default';
   const s = sourceType.toLowerCase();
-  if (s.startsWith('electrical')) return 'source-electrical';
+  if (s.startsWith('electrical') || s.startsWith('stored')) return 'source-electrical';
   if (s.includes('lps') || s.includes('mps') || s.includes('hps') || s.includes('condensate')) return 'source-steam';
   if (s.includes('hhw') || s.includes('chw') || s.includes('dhw') || s.includes('dw ') ||
       s.includes('condenser water') || s.includes('feedwater') || s.includes('glycol')) return 'source-water';
@@ -5204,10 +5217,14 @@ function collectIncompleteFields() {
   sources.forEach((s, i) => {
     if (s.linkedTo) return;
     const gaps = [];
+    // Acknowledgement-only sources (Stored Electrical Energy) have no lockout
+    // device and their verification is generated downstream by loto-web, so
+    // only Energy Source + Location are expected here.
+    const ackOnly = /^stored\b/i.test(s.energySource || '');
     if (!s.energySource) gaps.push('Energy Source');
-    if (!s.deviceType)   gaps.push('Device Type');
+    if (!s.deviceType && !ackOnly)   gaps.push('Device Type');
     if (!s.location)     gaps.push('Location');
-    if (!s.verification) gaps.push('Verification');
+    if (!s.verification && !ackOnly) gaps.push('Verification');
     if (gaps.length) {
       const label = s.energySource ? `Source #${i + 1} (${s.energySource})` : `Source #${i + 1}`;
       missing.push(`${label} — ${gaps.join(', ')}`);
