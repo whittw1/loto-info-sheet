@@ -624,8 +624,14 @@ if ('serviceWorker' in navigator) {
     </p>
     <div class="form-group">
       <label>Date Filter</label>
-      <select id="exportDateFilter" style="width:100%;">
+      <select id="exportDateFilter" style="width:100%;" onchange="updateExportDateSummary()">
         <option value="all">All dates (everything saved)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Facility Filter</label>
+      <select id="exportFacilityFilter" style="width:100%;" onchange="updateExportDateSummary()">
+        <option value="all">All facilities</option>
       </select>
       <div id="exportDateSummary" style="font-size:12px;color:var(--text-dim);margin-top:4px;"></div>
     </div>
@@ -5877,12 +5883,11 @@ function populateExportDateFilter() {
 }
 
 function updateExportDateSummary() {
-  const sel = document.getElementById('exportDateFilter');
   const el = document.getElementById('exportDateSummary');
-  if (!sel || !el) return;
+  if (!el) return;
   const currentName = document.getElementById('equipName').value.trim();
-  const hasCurrent = currentName && sources.length > 0;
-  const filtered = filterEntriesByExportDate(sel.value);
+  const hasCurrent = currentName && sources.length > 0 && currentEntryPassesExportFilters();
+  const filtered = getExportFilteredEntries();
   const totalIncluding = filtered.length + (hasCurrent ? 1 : 0);
   el.textContent = hasCurrent
     ? `${filtered.length} saved + 1 current (unsaved) = ${totalIncluding} total`
@@ -5895,6 +5900,56 @@ function filterEntriesByExportDate(filterValue) {
   return savedEquipment.filter(e => getEntryDate(e) === filterValue);
 }
 
+// Facility filter for the export dialog. Uses each entry's own stamped
+// hospitalCode (entryHospitalCode resolves the per-entry stamp, falling back
+// to the current setting for untagged entries), so a multi-facility day can be
+// exported one facility at a time.
+function filterEntriesByFacility(entries, facilityValue) {
+  if (facilityValue === 'all') return entries;
+  return entries.filter(e => entryHospitalCode(e) === facilityValue);
+}
+
+function getExportFilteredEntries() {
+  const dateSel = document.getElementById('exportDateFilter');
+  const facSel  = document.getElementById('exportFacilityFilter');
+  let entries = filterEntriesByExportDate(dateSel ? dateSel.value : 'all');
+  return filterEntriesByFacility(entries, facSel ? facSel.value : 'all');
+}
+
+function populateExportFacilityFilter() {
+  const sel = document.getElementById('exportFacilityFilter');
+  if (!sel) return;
+  const counts = {};
+  for (const entry of savedEquipment) {
+    const code = entryHospitalCode(entry);
+    counts[code] = (counts[code] || 0) + 1;
+  }
+  const codes = Object.keys(counts).sort();
+  const total = savedEquipment.length;
+  sel.innerHTML = `<option value="all">All facilities \u2014 ${total} entr${total === 1 ? 'y' : 'ies'}</option>`;
+  codes.forEach(code => {
+    const opt = document.createElement('option');
+    opt.value = code;
+    const name = code ? (hospitalName(code) || code) : '(no facility)';
+    opt.textContent = `${name} \u2014 ${counts[code]} entr${counts[code] === 1 ? 'y' : 'ies'}`;
+    sel.appendChild(opt);
+  });
+  sel.value = 'all';
+}
+
+// The current unsaved entry carries the current facility setting, so it's only
+// included when the export filters would admit it.
+function currentEntryPassesExportFilters() {
+  const dateSel = document.getElementById('exportDateFilter');
+  const facSel  = document.getElementById('exportFacilityFilter');
+  const dateFilter = dateSel ? dateSel.value : 'all';
+  const facFilter  = facSel ? facSel.value : 'all';
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const dateOK = (dateFilter === 'all' || dateFilter === todayIso);
+  const facOK  = (facFilter === 'all' || facFilter === getHospitalCode());
+  return dateOK && facOK;
+}
+
 function showExportDialog() {
   const allEntries = [...savedEquipment];
   const currentName = document.getElementById('equipName').value.trim();
@@ -5904,6 +5959,8 @@ function showExportDialog() {
   if (total === 0) { showToast('Nothing to export', true); return; }
 
   populateExportDateFilter();
+  populateExportFacilityFilter();
+  updateExportDateSummary();
   updateHPreview();
   document.getElementById('exportOverlay').style.display = 'flex';
   setTimeout(() => document.getElementById('photoSeqStart').focus(), 100);
@@ -5960,14 +6017,17 @@ async function runCombinedExport() {
     return;
   }
   const dateFilter = document.getElementById('exportDateFilter').value;
+  const facilityFilter = document.getElementById('exportFacilityFilter').value;
+  // When a specific facility is filtered, that's the export's facility for the
+  // top-level labels (envelope, manifest, XLSX banner, filename). Per-entry
+  // hospitalCode stays authoritative regardless.
+  const effectiveFacilityCode = (facilityFilter !== 'all') ? facilityFilter : getHospitalCode();
   closeExportDialog();
 
-  // Gather entries (filtered by date)
-  let allEntries = filterEntriesByExportDate(dateFilter);
+  // Gather entries (filtered by date + facility)
+  let allEntries = getExportFilteredEntries();
   const currentName = document.getElementById('equipName').value.trim();
-  // Include current unsaved entry only when filter is 'all' or today's date
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const includeCurrent = (dateFilter === 'all' || dateFilter === todayIso);
+  const includeCurrent = currentEntryPassesExportFilters();
   if (includeCurrent && currentName && sources.length > 0) {
     allEntries.push({
       equipType:     getEquipType(),
@@ -6209,7 +6269,7 @@ async function runCombinedExport() {
     version: 2,
     exportId: exportId,
     exported: new Date().toISOString(),
-    hospitalCode: getHospitalCode(),
+    hospitalCode: effectiveFacilityCode,
     deviceId: exportDeviceId,
     entries: jsonEntries
   }, null, 2));
@@ -6249,7 +6309,7 @@ async function runCombinedExport() {
     // Facility banner row (only if a facility is known for this export) — a
     // single sheet-level header; the CSV/JSON carry the authoritative per-entry
     // code. Prefer the current setting, else the first stamped entry.
-    const sheetHospitalCode = getHospitalCode() || (allEntries.find(e => e.hospitalCode) || {}).hospitalCode || '';
+    const sheetHospitalCode = effectiveFacilityCode || (allEntries.find(e => e.hospitalCode) || {}).hospitalCode || '';
     if (sheetHospitalCode) {
       const facRow = ws.addRow(['Facility', hospitalName(sheetHospitalCode) + ' [' + sheetHospitalCode + ']']);
       applyRow(facRow, { bold: true, size: 10, name: 'Calibri' }, topHeaderFill, allBorders);
@@ -6366,8 +6426,8 @@ async function runCombinedExport() {
     exportId: exportId,
     exported: new Date().toISOString(),
     deviceId: exportDeviceId,
-    hospitalCode: getHospitalCode(),
-    hospitalName: hospitalName(getHospitalCode()),
+    hospitalCode: effectiveFacilityCode,
+    hospitalName: hospitalName(effectiveFacilityCode),
     dateFilter: dateFilter,
     counts: { entries: allEntries.length, photos: photoCount, diagrams: diagramCount },
     files: {
@@ -6385,7 +6445,7 @@ async function runCombinedExport() {
     // per-device id so same-day exports from two iPads don't collide. Date
     // filter / full ids live in manifest.json. Facility falls back to
     // "NoFacility" when unset; the code is sanitised to filename-safe chars.
-    const codeSan = (getHospitalCode() || 'NoFacility').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'NoFacility';
+    const codeSan = (effectiveFacilityCode || 'NoFacility').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'NoFacility';
     const deviceShort = (exportDeviceId || '').replace(/-/g, '').slice(0, 8) || 'device';
     const exportFilename = 'FieldExport_' + codeSan + '_' + dateStamp + '_' + deviceShort + '.zip';
     const saveResult = await saveOrShare(zipBlob, exportFilename, 'application/zip');
