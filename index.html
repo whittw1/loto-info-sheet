@@ -624,7 +624,7 @@ if ('serviceWorker' in navigator) {
     </p>
     <div class="form-group">
       <label>Date Filter</label>
-      <select id="exportDateFilter" style="width:100%;" onchange="updateExportDateSummary()">
+      <select id="exportDateFilter" style="width:100%;" onchange="populateExportFacilityFilter(); updateExportDateSummary()">
         <option value="all">All dates (everything saved)</option>
       </select>
     </div>
@@ -5919,13 +5919,18 @@ function getExportFilteredEntries() {
 function populateExportFacilityFilter() {
   const sel = document.getElementById('exportFacilityFilter');
   if (!sel) return;
+  const prev = sel.value;  // preserve the chosen facility across a re-count
+  // Count within the current DATE filter so the facility counts reflect what
+  // would actually export, not all-time totals.
+  const dateSel = document.getElementById('exportDateFilter');
+  const scoped = filterEntriesByExportDate(dateSel ? dateSel.value : 'all');
   const counts = {};
-  for (const entry of savedEquipment) {
+  for (const entry of scoped) {
     const code = entryHospitalCode(entry);
     counts[code] = (counts[code] || 0) + 1;
   }
   const codes = Object.keys(counts).sort();
-  const total = savedEquipment.length;
+  const total = scoped.length;
   sel.innerHTML = `<option value="all">All facilities \u2014 ${total} entr${total === 1 ? 'y' : 'ies'}</option>`;
   codes.forEach(code => {
     const opt = document.createElement('option');
@@ -5934,7 +5939,7 @@ function populateExportFacilityFilter() {
     opt.textContent = `${name} \u2014 ${counts[code]} entr${counts[code] === 1 ? 'y' : 'ies'}`;
     sel.appendChild(opt);
   });
-  sel.value = 'all';
+  sel.value = codes.includes(prev) ? prev : 'all';
 }
 
 // The current unsaved entry carries the current facility setting, so it's only
