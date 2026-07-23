@@ -710,6 +710,13 @@ if ('serviceWorker' in navigator) {
 // PHOTO SETTINGS (persisted in localStorage)
 // ============================================================================
 const PHOTO_DEFAULTS = { maxWidth: 1920, maxHeight: 1080, quality: 0.80, preset: '1920x1080' };
+// Inline display thumbnails. Source-card tiles render at 140px and saved-list
+// thumbs at 50px, so 240px stays sharp on a Retina iPad (the old 80px @ 0.4 was
+// being upscaled ~2x and looked mushy). Full-resolution photos live in
+// IndexedDB and are loaded on demand by the photo viewer, so this only affects
+// inline previews. Existing photos keep their original thumbnails.
+const THUMB_WIDTH = 240;
+const THUMB_QUALITY = 0.72;
 
 function getPhotoSettings() {
   try {
@@ -4770,30 +4777,109 @@ function browseMiscPhoto() {
   openLibraryPicker(input => handleMiscPhoto(input));
 }
 
+// Load the FULL-RESOLUTION image for a stored photo: IndexedDB first, then the
+// base64 localStorage fallback. Returns a displayable URL (blob: or data:), or
+// null. Blob URLs are revoked when the viewer closes.
+function loadFullPhotoUrl(dbKey, fileType) {
+  if (!dbKey) return Promise.resolve(null);
+  const fallback = () => getPhotoFallback(dbKey) || null;
+  if (!idbAvailable) return Promise.resolve(fallback());
+  return getPhotoFromDB(dbKey).then(r => {
+    if (r && r.data) {
+      return URL.createObjectURL(new Blob([r.data], { type: r.type || fileType || 'image/jpeg' }));
+    }
+    return fallback();
+  }).catch(() => fallback());
+}
+
+function closePhotoDialog() {
+  const o = document.getElementById('photoDialogOverlay');
+  if (o) { if (o._cleanup) o._cleanup(); o.remove(); }
+}
+
+// Tap an existing photo to VIEW it full-size. Shows the thumbnail instantly,
+// then swaps in the full-resolution image from IndexedDB. Replacing the photo
+// is a deliberate button press, never a side effect of viewing.
 function showPhotoDialog(slotId) {
+  const p = photos[slotId] || {};
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.id = 'photoDialogOverlay';
-  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  let objUrl = null;
+  overlay._cleanup = () => { if (objUrl) { URL.revokeObjectURL(objUrl); objUrl = null; } };
+  overlay.onclick = (e) => { if (e.target === overlay) closePhotoDialog(); };
+  const ts = p.timestamp
+    ? new Date(p.timestamp).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
+    : '';
   overlay.innerHTML = `
-    <div class="dialog" style="max-width:360px;">
-      <div style="text-align:center;margin-bottom:12px;">
-        <img src="${photos[slotId].thumbnail}" style="max-width:100%;border-radius:8px;border:1px solid var(--border);">
+    <div class="dialog" style="max-width:min(94vw,720px);">
+      <div style="text-align:center;margin-bottom:10px;">
+        <img id="photoViewerImg" src="${p.thumbnail || ''}"
+          style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;border:1px solid var(--border);background:#000;">
+        <div id="photoViewerNote" style="font-size:11px;color:var(--text-dim);margin-top:6px;">Loading full resolution\u2026</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:10px;">
         <button class="btn btn-primary" onclick="retakePhoto('${slotId}')" style="padding:12px;font-size:15px;">Retake Photo</button>
-        <button class="btn btn-outline" onclick="document.getElementById('photoDialogOverlay').remove(); browsePhoto('${slotId}');" style="padding:12px;font-size:15px;">&#128194; Choose from Library</button>
-        <button class="btn" onclick="document.getElementById('photoDialogOverlay').remove()" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Close</button>
+        <button class="btn btn-outline" onclick="closePhotoDialog(); browsePhoto('${slotId}');" style="padding:12px;font-size:15px;">&#128194; Choose from Library</button>
+        <button class="btn" onclick="closePhotoDialog()" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Close</button>
       </div>
     </div>
   `;
   document.body.appendChild(overlay);
   overlay.style.display = 'flex';
+  loadFullPhotoUrl(p.dbKey, p.fileType).then(url => {
+    const img  = document.getElementById('photoViewerImg');
+    const note = document.getElementById('photoViewerNote');
+    if (!img) { if (url && url.indexOf('blob:') === 0) URL.revokeObjectURL(url); return; }
+    if (url) {
+      if (url.indexOf('blob:') === 0) objUrl = url;
+      img.src = url;
+      if (note) note.textContent = ts ? ('Full resolution \u00b7 ' + ts) : 'Full resolution';
+    } else if (note) {
+      note.textContent = 'Full-resolution image unavailable \u2014 showing thumbnail';
+    }
+  });
+}
+
+// View a misc photo full-size (view-only; misc photos are add/remove).
+function showMiscPhotoViewer(index) {
+  const p = miscPhotos[index];
+  if (!p) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'photoDialogOverlay';
+  let objUrl = null;
+  overlay._cleanup = () => { if (objUrl) { URL.revokeObjectURL(objUrl); objUrl = null; } };
+  overlay.onclick = (e) => { if (e.target === overlay) closePhotoDialog(); };
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:min(94vw,720px);">
+      <h3 style="margin:0 0 10px 0;">&#128247; Misc Photo ${index + 1}</h3>
+      <div style="text-align:center;margin-bottom:10px;">
+        <img id="photoViewerImg" src="${p.thumbnail || ''}"
+          style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;border:1px solid var(--border);background:#000;">
+        <div id="photoViewerNote" style="font-size:11px;color:var(--text-dim);margin-top:6px;">Loading full resolution\u2026</div>
+      </div>
+      <button class="btn" onclick="closePhotoDialog()" style="width:100%;padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Close</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+  loadFullPhotoUrl(p.dbKey, p.fileType).then(url => {
+    const img  = document.getElementById('photoViewerImg');
+    const note = document.getElementById('photoViewerNote');
+    if (!img) { if (url && url.indexOf('blob:') === 0) URL.revokeObjectURL(url); return; }
+    if (url) {
+      if (url.indexOf('blob:') === 0) objUrl = url;
+      img.src = url;
+      if (note) note.textContent = 'Full resolution';
+    } else if (note) {
+      note.textContent = 'Full-resolution image unavailable \u2014 showing thumbnail';
+    }
+  });
 }
 
 function retakePhoto(slotId) {
-  const overlay = document.getElementById('photoDialogOverlay');
-  if (overlay) overlay.remove();
+  closePhotoDialog();
   document.getElementById(`file_${slotId}`).click();
 }
 
@@ -5078,14 +5164,14 @@ function handlePhoto(input, slotId) {
         });
       }
 
-      // Create thumbnail for display (80px wide)
+      // Display thumbnail (THUMB_WIDTH) — never upscale beyond the source
       const thumbCanvas = document.createElement('canvas');
-      const thumbScale = 80 / w;
-      thumbCanvas.width = 80;
-      thumbCanvas.height = Math.round(h * thumbScale);
+      const tw = Math.min(THUMB_WIDTH, w);
+      thumbCanvas.width = tw;
+      thumbCanvas.height = Math.round(h * (tw / w));
       const tCtx = thumbCanvas.getContext('2d');
       tCtx.drawImage(resizeCanvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
-      const thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.4);
+      const thumbnail = thumbCanvas.toDataURL('image/jpeg', THUMB_QUALITY);
 
       photos[slotId] = {
         timestamp: timestamp,
@@ -5156,11 +5242,11 @@ function handleMiscPhoto(input) {
       }
 
       const thumbCanvas = document.createElement('canvas');
-      const thumbScale = 80 / w;
-      thumbCanvas.width = 80;
-      thumbCanvas.height = Math.round(h * thumbScale);
+      const tw = Math.min(THUMB_WIDTH, w);
+      thumbCanvas.width = tw;
+      thumbCanvas.height = Math.round(h * (tw / w));
       thumbCanvas.getContext('2d').drawImage(resizeCanvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
-      const thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.4);
+      const thumbnail = thumbCanvas.toDataURL('image/jpeg', THUMB_QUALITY);
 
       miscPhotos.push({
         dbKey: dbKey,
@@ -5191,7 +5277,7 @@ function renderMiscPhotos() {
   if (!grid) return;
   grid.innerHTML = miscPhotos.map((p, i) => `
     <div style="position:relative;width:80px;">
-      <img src="${p.thumbnail}" style="width:80px;border-radius:6px;border:2px solid #333;">
+      <img src="${p.thumbnail}" onclick="showMiscPhotoViewer(${i})" title="Tap to view full size" style="width:80px;border-radius:6px;border:2px solid #333;cursor:pointer;">
       <span style="position:absolute;top:2px;left:4px;background:rgba(0,0,0,0.7);color:#fff;font-size:9px;padding:1px 5px;border-radius:3px;">Misc ${i+1}</span>
       <button onclick="removeMiscPhoto(${i})" style="position:absolute;top:2px;right:2px;background:rgba(200,40,40,0.9);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;line-height:18px;padding:0;">&#10005;</button>
     </div>
