@@ -411,6 +411,7 @@ if ('serviceWorker' in navigator) {
     <button class="btn btn-outline btn-sm" onclick="showSettings()">&#9881; Settings</button>
     <button class="btn btn-outline btn-sm" onclick="importBackup()" title="Import JSON backup">&#128229; Import</button>
     <button class="btn btn-outline btn-sm" onclick="saveBackup()" title="Save JSON backup">&#128228; Backup</button>
+    <button class="btn btn-outline btn-sm" onclick="showExportLog()" title="Export &amp; backup history on this device">&#128203; Log</button>
     <button class="btn btn-accent btn-sm" onclick="showExportDialog()">&#128230; Export</button>
   </div>
 </div>
@@ -429,6 +430,7 @@ if ('serviceWorker' in navigator) {
       <button id="savedFilterYesterday" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('yesterday')">Yesterday</button>
       <input id="savedSearchInput" type="search" placeholder="Search name / room / template…" oninput="setSavedSearch(this.value)" style="flex:1 1 180px;min-width:140px;padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);">
       <span id="savedFilterSummary" style="font-size:11px;color:var(--text-dim);"></span>
+      <button class="btn btn-danger btn-sm" onclick="showBulkDeleteDialog()" style="padding:5px 10px;font-size:12px;margin-left:auto;" title="Delete multiple entries by date / facility">&#128465; Bulk Delete</button>
     </div>
     <div class="saved-panel-body collapsed" id="savedPanelBody"></div>
   </div>
@@ -645,6 +647,38 @@ if ('serviceWorker' in navigator) {
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button class="btn btn-outline btn-sm" onclick="closeExportDialog()">Cancel</button>
       <button class="btn btn-success btn-sm" onclick="runCombinedExport()">&#128230; Export ZIP + Info Sheet</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk Delete Modal -->
+<div class="dialog-overlay" id="bulkDeleteOverlay" style="display:none;" onclick="if(event.target===this)closeBulkDeleteDialog()">
+  <div class="dialog" style="max-width:420px;">
+    <h3 style="color:#e05a5a;">&#128465; Bulk Delete</h3>
+    <p style="color:var(--text-dim);font-size:13px;margin:0 0 14px;">
+      Permanently deletes saved equipment <strong>and their photos</strong> from this device. This cannot be undone.
+    </p>
+    <div class="form-group">
+      <label>Date Filter</label>
+      <select id="bulkDeleteDateFilter" style="width:100%;" onchange="populateBulkDeleteFacility(); updateBulkDeleteSummary()">
+        <option value="all">All dates</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Facility Filter</label>
+      <select id="bulkDeleteFacilityFilter" style="width:100%;" onchange="updateBulkDeleteSummary()">
+        <option value="all">All facilities</option>
+      </select>
+    </div>
+    <div id="bulkDeleteSummary" style="font-size:13px;font-weight:600;color:var(--text);margin:8px 0 4px;"></div>
+    <div id="bulkDeleteWarn" style="display:none;font-size:12px;color:#e0a44a;background:rgba(224,164,74,0.12);border:1px solid rgba(224,164,74,0.4);border-radius:6px;padding:8px 10px;margin-bottom:10px;line-height:1.4;"></div>
+    <button class="btn btn-outline btn-sm" onclick="saveBackup()" style="width:100%;margin-bottom:12px;">&#128228; Back up first</button>
+    <label style="display:block;font-size:12px;color:var(--text-label);margin-bottom:4px;">Type <strong>DELETE</strong> to confirm</label>
+    <input type="text" id="bulkDeleteConfirmInput" placeholder="DELETE" oninput="updateBulkDeleteSummary()" autocomplete="off"
+      style="width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:15px;letter-spacing:2px;text-align:center;text-transform:uppercase;margin-bottom:14px;">
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-outline btn-sm" onclick="closeBulkDeleteDialog()">Cancel</button>
+      <button id="bulkDeleteConfirmBtn" class="btn btn-danger btn-sm" onclick="confirmBulkDelete()" disabled style="opacity:0.5;">Delete</button>
     </div>
   </div>
 </div>
@@ -5652,15 +5686,179 @@ function showSavedList() {
   document.getElementById('savedPanel').scrollIntoView({ behavior: 'smooth' });
 }
 
+// ============================================================================
+// EXPORT / BACKUP LOG  (device-local history)
+// ============================================================================
+function getExportLog() {
+  try { return JSON.parse(localStorage.getItem('loto_export_log') || '[]'); } catch (e) { return []; }
+}
+function logDataEvent(evt) {
+  try {
+    const log = getExportLog();
+    log.unshift(Object.assign({ at: new Date().toISOString() }, evt));
+    localStorage.setItem('loto_export_log', JSON.stringify(log.slice(0, 50)));
+  } catch (e) {}
+}
+// Most recent time any data left the device (export or backup) — used to warn
+// before a bulk delete.
+function getLastDataEventAt() {
+  const log = getExportLog();
+  return log.length ? log[0].at : null;
+}
+
+function showExportLog() {
+  const log = getExportLog();
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'exportLogOverlay';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  const rows = log.length ? log.map(ev => {
+    const when = new Date(ev.at).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    if (ev.kind === 'backup') {
+      return `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="font-weight:600;">&#128228; Backup &middot; ${when}</div>
+        <div style="font-size:12px;color:var(--text-dim);">${ev.entries} entr${ev.entries===1?'y':'ies'}${ev.filename?' &middot; '+ev.filename:''}</div>
+      </div>`;
+    }
+    const fac = ev.facilityName || ev.facility || 'No facility';
+    const seq = (ev.seqFirst && ev.seqLast) ? (ev.seqFirst===ev.seqLast ? ev.seqFirst : ev.seqFirst+'\u2013'+ev.seqLast) : '';
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
+      <div style="font-weight:600;">&#128230; Export &middot; ${when}</div>
+      <div style="font-size:12px;color:var(--text-dim);">${fac} &middot; ${ev.entries} equipment &middot; ${ev.photos} photo${ev.photos===1?'':'s'}${seq?' &middot; '+seq:''}</div>
+      <div style="font-size:11px;color:var(--text-dim);">${ev.dateFilter && ev.dateFilter!=='all' ? 'date: '+ev.dateFilter+' &middot; ' : ''}${ev.filename||''}</div>
+    </div>`;
+  }).join('') : '<div style="padding:20px 0;text-align:center;color:var(--text-dim);">No exports or backups logged yet.</div>';
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:460px;max-height:80vh;display:flex;flex-direction:column;">
+      <h3>&#128203; Export &amp; Backup Log</h3>
+      <p style="color:var(--text-dim);font-size:12px;margin:0 0 8px;">History on this device (most recent first, last 50).</p>
+      <div style="overflow-y:auto;flex:1;margin-bottom:12px;">${rows}</div>
+      <button class="btn" onclick="document.getElementById('exportLogOverlay').remove()" style="padding:10px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Close</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+}
+
+// ============================================================================
+// PHOTO CLEANUP + DELETE  (single + bulk)
+// ============================================================================
+function collectEntryPhotoKeys(entry) {
+  const keys = [];
+  if (entry && entry.photos) for (const k of Object.keys(entry.photos)) {
+    const ph = entry.photos[k]; if (ph && ph.dbKey) keys.push(ph.dbKey);
+  }
+  if (entry && entry.miscPhotos) for (const mp of entry.miscPhotos) { if (mp && mp.dbKey) keys.push(mp.dbKey); }
+  return keys;
+}
+// Delete an entry's full-resolution photos from IndexedDB + the localStorage
+// fallback. Fire-and-forget; the entry is removed from the list immediately.
+function deleteEntryPhotos(entry) {
+  const keys = collectEntryPhotoKeys(entry);
+  return Promise.all(keys.map(k => deletePhotoFromDB(k))).catch(() => {});
+}
+
 function deleteSaved(index) {
-  const name = savedEquipment[index].equipName;
+  const entry = savedEquipment[index];
+  const name = entry.equipName;
   if (confirm(`Delete "${name}" from saved list?`)) {
+    deleteEntryPhotos(entry);          // clean up IDB/localStorage photos (were being orphaned)
     savedEquipment.splice(index, 1);
     saveAll();
     renderSavedPanel();
     updateHeaderBadge();
     showToast(`Deleted "${name}"`);
   }
+}
+
+// ---- Bulk delete ----------------------------------------------------------
+function showBulkDeleteDialog() {
+  if (savedEquipment.length === 0) { showToast('No saved equipment to delete', true); return; }
+  populateBulkDeleteFilters();
+  const input = document.getElementById('bulkDeleteConfirmInput');
+  if (input) input.value = '';
+  updateBulkDeleteSummary();
+  document.getElementById('bulkDeleteOverlay').style.display = 'flex';
+}
+function closeBulkDeleteDialog() {
+  const o = document.getElementById('bulkDeleteOverlay');
+  if (o) o.style.display = 'none';
+}
+function populateBulkDeleteFilters() {
+  const dsel = document.getElementById('bulkDeleteDateFilter');
+  if (dsel) {
+    const counts = {}; let undated = 0;
+    for (const e of savedEquipment) { const d = getEntryDate(e); if (d) counts[d] = (counts[d]||0)+1; else undated++; }
+    const dates = Object.keys(counts).sort().reverse();
+    const total = savedEquipment.length;
+    dsel.innerHTML = `<option value="all">All dates \u2014 ${total} entr${total===1?'y':'ies'}</option>`;
+    dates.forEach(d => { const o=document.createElement('option'); o.value=d; o.textContent=`${formatDateLabel(d)} \u2014 ${counts[d]} entr${counts[d]===1?'y':'ies'}`; dsel.appendChild(o); });
+    if (undated>0) { const o=document.createElement('option'); o.value='undated'; o.textContent=`Undated \u2014 ${undated} entr${undated===1?'y':'ies'}`; dsel.appendChild(o); }
+    dsel.value = 'all';
+  }
+  populateBulkDeleteFacility();
+}
+function populateBulkDeleteFacility() {
+  const sel = document.getElementById('bulkDeleteFacilityFilter');
+  if (!sel) return;
+  const prev = sel.value;
+  const dsel = document.getElementById('bulkDeleteDateFilter');
+  const scoped = filterEntriesByExportDate(dsel ? dsel.value : 'all');
+  const counts = {};
+  for (const e of scoped) { const c = entryHospitalCode(e); counts[c] = (counts[c]||0)+1; }
+  const codes = Object.keys(counts).sort();
+  const total = scoped.length;
+  sel.innerHTML = `<option value="all">All facilities \u2014 ${total} entr${total===1?'y':'ies'}</option>`;
+  codes.forEach(c => { const o=document.createElement('option'); o.value=c; const n=c?(hospitalName(c)||c):'(no facility)'; o.textContent=`${n} \u2014 ${counts[c]} entr${counts[c]===1?'y':'ies'}`; sel.appendChild(o); });
+  sel.value = codes.includes(prev) ? prev : 'all';
+}
+function getBulkDeleteTargets() {
+  const dsel = document.getElementById('bulkDeleteDateFilter');
+  const fsel = document.getElementById('bulkDeleteFacilityFilter');
+  let entries = filterEntriesByExportDate(dsel ? dsel.value : 'all');
+  return filterEntriesByFacility(entries, fsel ? fsel.value : 'all');
+}
+function updateBulkDeleteSummary() {
+  const targets = getBulkDeleteTargets();
+  const n = targets.length;
+  const el = document.getElementById('bulkDeleteSummary');
+  const warnEl = document.getElementById('bulkDeleteWarn');
+  const btn = document.getElementById('bulkDeleteConfirmBtn');
+  const input = document.getElementById('bulkDeleteConfirmInput');
+  if (el) el.textContent = `${n} entr${n===1?'y':'ies'} will be permanently deleted`;
+  const lastAt = getLastDataEventAt();
+  const unbacked = targets.filter(e => (!e.savedAt) ? !lastAt : (!lastAt || e.savedAt > lastAt)).length;
+  if (warnEl) {
+    if (unbacked > 0) {
+      const lastTxt = lastAt ? new Date(lastAt).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : null;
+      warnEl.style.display = 'block';
+      warnEl.innerHTML = '&#9888; ' + unbacked + ' of these may not have left this device' +
+        (lastTxt ? ' since your last export/backup (' + lastTxt + ')' : ' \u2014 nothing has been exported or backed up yet') + '. Back up first.';
+    } else {
+      warnEl.style.display = 'none';
+    }
+  }
+  if (btn) {
+    btn.textContent = `Delete ${n} entr${n===1?'y':'ies'}`;
+    const ok = n > 0 && input && input.value.trim().toUpperCase() === 'DELETE';
+    btn.disabled = !ok;
+    btn.style.opacity = ok ? '1' : '0.5';
+  }
+}
+function confirmBulkDelete() {
+  const input = document.getElementById('bulkDeleteConfirmInput');
+  if (!input || input.value.trim().toUpperCase() !== 'DELETE') { showToast('Type DELETE to confirm', true); return; }
+  const targets = getBulkDeleteTargets();
+  if (targets.length === 0) { closeBulkDeleteDialog(); return; }
+  const set = new Set(targets);
+  targets.forEach(e => deleteEntryPhotos(e));   // background photo cleanup
+  const removed = targets.length;
+  savedEquipment = savedEquipment.filter(e => !set.has(e));
+  saveAll();
+  closeBulkDeleteDialog();
+  renderSavedPanel();
+  updateHeaderBadge();
+  showToast(`Deleted ${removed} entr${removed===1?'y':'ies'}`);
 }
 
 function editSaved(index) {
@@ -6587,6 +6785,18 @@ async function runCombinedExport() {
       return;
     } else {
       showToast(`Exported ${allEntries.length} equipment, ${photoCount} photos (${firstName} – ${lastName}). Next start: ${seqCounter}`);
+      logDataEvent({
+        kind: 'export',
+        facility: effectiveFacilityCode,
+        facilityName: hospitalName(effectiveFacilityCode),
+        entries: allEntries.length,
+        photos: photoCount,
+        seqFirst: firstName,
+        seqLast: lastName,
+        dateFilter: dateFilter,
+        exportId: exportId,
+        filename: exportFilename
+      });
     }
     // Auto-update and persist the starting number for the next export
     document.getElementById('photoSeqStart').value = seqCounter;
@@ -6639,6 +6849,7 @@ async function saveBackup() {
     showToast('Backup error - file did not save', true);
   } else {
     showToast(`Backup saved — ${clean.length} entries`);
+    logDataEvent({ kind: 'backup', entries: clean.length, filename: backupFilename });
   }
 }
 
