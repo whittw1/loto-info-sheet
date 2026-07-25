@@ -664,6 +664,13 @@ if ('serviceWorker' in navigator) {
     </div>
     <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
     <div style="margin-bottom:16px;">
+      <label style="display:block;font-size:13px;color:var(--text-label);margin-bottom:6px;">&#128100; Collector Tag</label>
+      <input type="text" id="settingsCollectorTag" maxlength="10" placeholder="e.g. JW" oninput="onCollectorTagInput(this.value)"
+        style="width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;text-transform:uppercase;">
+      <div id="collectorTagHint" style="font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.4;"></div>
+    </div>
+    <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
+    <div style="margin-bottom:16px;">
       <label style="display:block;font-size:13px;color:var(--text-label);margin-bottom:6px;">Resolution Preset</label>
       <select id="photoPreset" onchange="applyPhotoPreset()" style="width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
         <option value="1920x1080">1920 x 1080 (Full HD) - Default</option>
@@ -769,6 +776,8 @@ function updateFacilityBadge() {
 
 function showSettings() {
   const s = getPhotoSettings();
+  try { document.getElementById('settingsCollectorTag').value = localStorage.getItem('loto_collector_tag') || ''; } catch (e) {}
+  updateCollectorTagHint();
   // Facility picker
   populateHospitalSelect();
   const hc = getHospitalCode();
@@ -1430,6 +1439,35 @@ function genUuid() {
 }
 
 // Mint the per-device id once, then reuse it for the life of the install.
+// Short per-collector tag baked into photo filenames (0723_JW_00001) so
+// multiple devices collecting the same day never produce the same filename —
+// which is loto-web's photo identity key (photo_ref). Falls back to a short
+// code derived from the per-device id, so filenames are unique even if the tag
+// is left blank. Sanitised to filename-safe characters.
+function getCollectorTag() {
+  let tag = '';
+  try { tag = (localStorage.getItem('loto_collector_tag') || '').trim(); } catch (e) {}
+  tag = tag.replace(/[^A-Za-z0-9]+/g, '').slice(0, 10);
+  if (tag) return tag.toUpperCase();  // match the field's uppercase display
+  const id = ensureDeviceId() || '';
+  return id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toLowerCase() || 'dev';
+}
+
+function onCollectorTagInput(value) {
+  const clean = (value || '').replace(/[^A-Za-z0-9]+/g, '').slice(0, 10);
+  try { localStorage.setItem('loto_collector_tag', clean); } catch (e) {}
+  updateCollectorTagHint();
+  updateHPreview();  // keep the export preview in sync if it's showing
+}
+
+function updateCollectorTagHint() {
+  const el = document.getElementById('collectorTagHint');
+  if (!el) return;
+  const dp = getDatePrefix();
+  el.innerHTML = 'Appears in photo filenames so multiple devices don\'t collide, e.g. <strong>' +
+    dp + '_' + getCollectorTag() + '_00001</strong>. Blank uses a device code. Use short initials (JW, MRK).';
+}
+
 function ensureDeviceId() {
   try {
     deviceId = localStorage.getItem('loto_device_id');
@@ -6069,7 +6107,7 @@ function getDatePrefix() {
 }
 
 function formatPhotoName(datePrefix, seqNum) {
-  return datePrefix + '_' + String(seqNum).padStart(5, '0');
+  return datePrefix + '_' + getCollectorTag() + '_' + String(seqNum).padStart(5, '0');
 }
 
 function updateHPreview() {
