@@ -997,7 +997,7 @@ const DATA = {
     "Condensate Return Unit","Condensate Return Unit - Steam",
     "Exhaust Fan","Water Heater - Steam","Water Heater - Gas","Water Heater - Electric",
     "Unit Heater - Steam","Unit Heater - HHW",
-    "Air Compressor","Air Dryer","Vacuum Pump","Condensing Unit","Mini Split",
+    "Air Compressor","Medical Air","Air Dryer","Vacuum Pump","Medical Vacuum","Condensing Unit","Mini Split",
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
     "Elevator - Traction","Elevator - Hydraulic",
     "ATS - Generic","Humidifier",
@@ -1702,6 +1702,9 @@ const EQUIPMENT_PROMPT_FOR_TEMPLATE = new Set([
   // matching Water Heater template (see EQUIPMENT_TEMPLATE_LABELS for the
   // friendlier button labels).
   'Dishwasher',
+  // Air Compressor / Vacuum Pump now offer a regular and a Medical variant.
+  'Air Compressor',
+  'Vacuum Pump',
 ]);
 
 // Optional per-equipment-type display-label overrides for the template-pick
@@ -1902,9 +1905,9 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Condensate Return Unit': ['Condensate Return Unit','Condensate Return Unit - Steam'],
   'Unit Heater': ['Unit Heater - Steam','Unit Heater - HHW'],
   'Domestic Water Heater': ['Water Heater - Steam','Water Heater - Gas','Water Heater - Electric'],
-  'Air Compressor': ['Air Compressor'],
+  'Air Compressor': ['Air Compressor','Medical Air'],
   'Air Dryer': ['Air Dryer'],
-  'Vacuum Pump': ['Vacuum Pump'],
+  'Vacuum Pump': ['Vacuum Pump','Medical Vacuum'],
   'Cooling Tower': ['Cooling Tower'],
   'Generator': ['Emergency Generator'],
   'Chiller': ['Chiller'],
@@ -1957,7 +1960,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Heat Exchanger - Steam': 'heat_exchanger',
   'Heat Exchanger - CHW/Glycol': 'heat_exchanger',
   'Exhaust Fan': 'exhaust_fan',
-  'Condensing Unit': 'ac_unit', 'Mini Split': 'ac_unit', 'Air Compressor': 'air_compressor',
+  'Condensing Unit': 'ac_unit', 'Mini Split': 'ac_unit', 'Air Compressor': 'air_compressor', 'Medical Air': 'air_compressor',
   'Boiler': 'boiler', 'Boiler - Natural Gas - HHW': 'boiler', 'Boiler - Natural Gas - STM': 'boiler', 'Air Dryer': 'general',
   'ATS - Generic': 'ats',
   'Water Heater - Steam': 'steam_water_heater', 'Water Heater - Gas': 'electric_water_heater',
@@ -1967,7 +1970,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Cooling Tower': 'cooling_tower',
   'Condensate Return Unit': 'condensate_return', 'Condensate Return Unit - Steam': 'condensate_return',
   'Elevator - Traction': 'traction_elevator', 'Elevator - Hydraulic': 'hydraulic_elevator',
-  'Vacuum Pump': 'medical_vacuum',
+  'Vacuum Pump': 'medical_vacuum', 'Medical Vacuum': 'medical_vacuum',
   'Standard Electrical': 'general', 'UPS': 'ups',
   'Steam PRV Station': 'general',
   'Medical Air Compressor': 'medical_air_compressor',
@@ -3579,8 +3582,12 @@ const EQUIPMENT_EXTRA_SOURCES = {
 // 208/240/etc.); same for Air Dryer (always a 120V plug) and Day Tank.
 const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas', 'Boiler - Natural Gas - HHW', 'Mini Split']);
 // After the voltage prompt, these templates ask "how many electrical sources?"
-// (dual supply/return-fan AHUs have two). See promptForElectricalCount.
-const TEMPLATE_ASK_ELECTRICAL_COUNT = new Set(['AHU - Steam', 'AHU - HHW', 'AHU - Geothermal', 'AHU - Steam, CHW, HHW']);
+// Value = the max offered (AHUs = 2 for dual fans; medical air/vacuum skids run
+// up to 4 units). See promptForElectricalCount.
+const TEMPLATE_ASK_ELECTRICAL_COUNT = {
+  'AHU - Steam': 2, 'AHU - HHW': 2, 'AHU - Geothermal': 2, 'AHU - Steam, CHW, HHW': 2,
+  'Medical Air': 4, 'Medical Vacuum': 4,
+};
 
 // Per-template voltage option overrides. Falls back to all available
 // "Electrical NNN" entries in DATA.energySources if not listed here.
@@ -3607,6 +3614,8 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Unit Heater - HHW':       ['120V', '208V', '240V', '480V'],
   // Air Compressor: cap at 480V (no 4160V).
   'Air Compressor':          ['120V', '208V', '240V', '480V'],
+  'Medical Air':             ['120V', '208V', '240V', '480V'],
+  'Medical Vacuum':          ['120V', '208V', '240V', '480V'],
   // Condensate Return Unit (the electric variant): standard pump-scale voltages.
   'Condensate Return Unit':  ['120V', '208V', '240V', '480V'],
   // Condensing Unit: drop 24V (control voltage, not a disconnect) and 4160V
@@ -3687,22 +3696,23 @@ function closeTemplateVoltagePrompt() {
 
 // ---- Electrical-source count prompt (AHUs) --------------------------------
 function maybePromptElectricalCount() {
-  if (TEMPLATE_ASK_ELECTRICAL_COUNT.has(getTemplate())) promptForElectricalCount(getTemplate());
+  const max = TEMPLATE_ASK_ELECTRICAL_COUNT[getTemplate()];
+  if (max) promptForElectricalCount(getTemplate(), max);
 }
-function promptForElectricalCount(template) {
+function promptForElectricalCount(template, max) {
   closeElectricalCountPrompt();
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.id = 'electricalCountOverlay';
   overlay.onclick = (e) => { if (e.target === overlay) closeElectricalCountPrompt(); };  // dismiss = keep 1
+  let buttons = '';
+  for (let i = 1; i <= max; i++) buttons += `<button class="btn btn-primary" onclick="applyElectricalCountChoice(${i})" style="flex:1;padding:16px;font-size:20px;">${i}</button>`;
+  const hint = max > 2 ? 'e.g. duplex / triplex / quadruplex units' : 'e.g. dual supply / return fans';
   overlay.innerHTML = `
-    <div class="dialog" style="max-width:340px;">
+    <div class="dialog" style="max-width:${max > 2 ? 420 : 340}px;">
       <h3 style="margin:0 0 6px 0;color:var(--accent);">Electrical Sources</h3>
-      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">How many electrical sources for <strong>${template}</strong>? (e.g. dual supply / return fans)</p>
-      <div style="display:flex;gap:10px;">
-        <button class="btn btn-primary" onclick="applyElectricalCountChoice(1)" style="flex:1;padding:16px;font-size:20px;">1</button>
-        <button class="btn btn-primary" onclick="applyElectricalCountChoice(2)" style="flex:1;padding:16px;font-size:20px;">2</button>
-      </div>
+      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">How many electrical sources for <strong>${template}</strong>? (${hint})</p>
+      <div style="display:flex;gap:10px;">${buttons}</div>
     </div>
   `;
   document.body.appendChild(overlay);
@@ -3812,6 +3822,20 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Compressed Air Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Medical Air: same as Air Compressor, but the voltage prompt is followed by a
+  // "how many units? 1-4" prompt (duplex/triplex/quadruplex skids). The count
+  // duplicates the Electrical disconnect only; Kinetic + Compressed Air Out stay single.
+  'Medical Air': [
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Compressed Air Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Medical Vacuum: base unit (pump motor + disconnect). Voltage prompt +
+  // "how many units? 1-4". Tech adds the vacuum-line source as needed.
+  'Medical Vacuum': [
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensing Unit': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
