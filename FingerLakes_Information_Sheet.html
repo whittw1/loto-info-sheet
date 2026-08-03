@@ -3578,6 +3578,9 @@ const EQUIPMENT_EXTRA_SOURCES = {
 // Water Heater - Steam has a 120V control circuit only (no choice between
 // 208/240/etc.); same for Air Dryer (always a 120V plug) and Day Tank.
 const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas', 'Boiler - Natural Gas - HHW', 'Mini Split']);
+// After the voltage prompt, these templates ask "how many electrical sources?"
+// (dual supply/return-fan AHUs have two). See promptForElectricalCount.
+const TEMPLATE_ASK_ELECTRICAL_COUNT = new Set(['AHU - Steam', 'AHU - HHW', 'AHU - Geothermal', 'AHU - Steam, CHW, HHW']);
 
 // Per-template voltage option overrides. Falls back to all available
 // "Electrical NNN" entries in DATA.energySources if not listed here.
@@ -3645,7 +3648,7 @@ function promptForTemplateVoltage(template) {
       <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">Pick the voltage for <strong>${template}</strong>:</p>
       <div style="display:flex;flex-direction:column;gap:10px;">
         ${buttons}
-        <button class="btn" onclick="closeTemplateVoltagePrompt()" style="padding:10px;font-size:13px;background:transparent;color:var(--text-dim);">Keep Default</button>
+        <button class="btn" onclick="keepDefaultVoltage()" style="padding:10px;font-size:13px;background:transparent;color:var(--text-dim);">Keep Default</button>
       </div>
     </div>
   `;
@@ -3669,11 +3672,69 @@ function applyTemplateVoltageChoice(voltage) {
   if (updated) {
     showToast(`Set ${updated} Electrical source${updated > 1 ? 's' : ''} to ${voltage}`);
   }
+  maybePromptElectricalCount();
+}
+
+function keepDefaultVoltage() {
+  closeTemplateVoltagePrompt();
+  maybePromptElectricalCount();
 }
 
 function closeTemplateVoltagePrompt() {
   const overlay = document.getElementById('templateVoltageOverlay');
   if (overlay) overlay.remove();
+}
+
+// ---- Electrical-source count prompt (AHUs) --------------------------------
+function maybePromptElectricalCount() {
+  if (TEMPLATE_ASK_ELECTRICAL_COUNT.has(getTemplate())) promptForElectricalCount(getTemplate());
+}
+function promptForElectricalCount(template) {
+  closeElectricalCountPrompt();
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'electricalCountOverlay';
+  overlay.onclick = (e) => { if (e.target === overlay) closeElectricalCountPrompt(); };  // dismiss = keep 1
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:340px;">
+      <h3 style="margin:0 0 6px 0;color:var(--accent);">Electrical Sources</h3>
+      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">How many electrical sources for <strong>${template}</strong>? (e.g. dual supply / return fans)</p>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-primary" onclick="applyElectricalCountChoice(1)" style="flex:1;padding:16px;font-size:20px;">1</button>
+        <button class="btn btn-primary" onclick="applyElectricalCountChoice(2)" style="flex:1;padding:16px;font-size:20px;">2</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+}
+function closeElectricalCountPrompt() {
+  const o = document.getElementById('electricalCountOverlay');
+  if (o) o.remove();
+}
+// Ensure exactly n AUTO electrical sources (duplicates the existing one). Runs at
+// fresh-template setup, before any photos, so no photo re-indexing is needed.
+function applyElectricalCountChoice(n) {
+  closeElectricalCountPrompt();
+  const isAutoElec = s => s.auto && /^Electrical(?:\s|$)/.test(s.energySource || '');
+  const current = sources.filter(isAutoElec).length;
+  if (current === 0) return;
+  if (n > current) {
+    const base = sources.find(isAutoElec);
+    let lastIdx = -1;
+    sources.forEach((s, i) => { if (isAutoElec(s)) lastIdx = i; });
+    const adds = [];
+    for (let k = 0; k < (n - current); k++) adds.push(Object.assign(JSON.parse(JSON.stringify(base)), { collapsed: true }));
+    sources.splice(lastIdx + 1, 0, ...adds);
+  } else if (n < current) {
+    let toRemove = current - n;
+    for (let i = sources.length - 1; i >= 0 && toRemove > 0; i--) {
+      if (isAutoElec(sources[i])) { sources.splice(i, 1); toRemove--; }
+    }
+  }
+  renderSources();
+  autoSaveCurrent();
+  showToast(`${n} electrical source${n > 1 ? 's' : ''}`);
 }
 
 // Template-triggered auto-sources (mirrors EQUIPMENT_AUTO_SOURCES)
