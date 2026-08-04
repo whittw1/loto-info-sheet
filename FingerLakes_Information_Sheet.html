@@ -405,6 +405,7 @@ if ('serviceWorker' in navigator) {
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
+    <span id="integrityBadge" onclick="runIntegrityCheck(true)" style="display:none;font-size:11px;font-weight:600;margin-left:10px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Photo storage health. Tap to re-check and list any missing photos."></span>
   </div>
   <div class="header-actions">
     <button class="btn btn-outline btn-sm" onclick="showSavedList()">&#128203; List</button>
@@ -1614,11 +1615,15 @@ function init() {
     updateHeaderBadge();
     checkStorage();
     updateSketchSectionDefault();
+    // Move any pre-existing IndexedDB photos into durable filesystem storage,
+    // then show the photo-integrity badge.
+    migratePhotosToFS().then(() => runIntegrityCheck(false));
   }).catch(() => {
     renderSavedPanel();
     renderSources();
     updateHeaderBadge();
     updateSketchSectionDefault();
+    runIntegrityCheck(false);
   });
 }
 
@@ -5033,14 +5038,12 @@ function reusePhotoInto(slotId, idx) {
 // null. Blob URLs are revoked when the viewer closes.
 function loadFullPhotoUrl(dbKey, fileType) {
   if (!dbKey) return Promise.resolve(null);
-  const fallback = () => getPhotoFallback(dbKey) || null;
-  if (!idbAvailable) return Promise.resolve(fallback());
-  return getPhotoFromDB(dbKey).then(r => {
-    if (r && r.data) {
-      return URL.createObjectURL(new Blob([r.data], { type: r.type || fileType || 'image/jpeg' }));
+  return loadPhotoBytes(dbKey, fileType).then(r => {
+    if (r && r.bytes) {
+      return URL.createObjectURL(new Blob([r.bytes], { type: r.type || fileType || 'image/jpeg' }));
     }
-    return fallback();
-  }).catch(() => fallback());
+    return null;
+  }).catch(() => null);
 }
 
 function closePhotoDialog() {
@@ -5319,10 +5322,9 @@ function getPhotoFallback(key) {
   }
 }
 
-// Convert data URL to Uint8Array for ZIP export
-function dataUrlToUint8Array(dataUrl) {
-  const base64 = dataUrl.split(',')[1];
-  const binary = atob(base64);
+// Convert a raw base64 string (no data: prefix) to a Uint8Array.
+function base64ToUint8Array(base64) {
+  const binary = atob(base64 || '');
   const len = binary.length;
   const bytes = new Uint8Array(len);
   for (let i = 0; i < len; i++) {
@@ -5331,8 +5333,25 @@ function dataUrlToUint8Array(dataUrl) {
   return bytes;
 }
 
+// Convert a data URL (data:image/jpeg;base64,....) to a Uint8Array for ZIP export.
+function dataUrlToUint8Array(dataUrl) {
+  return base64ToUint8Array(String(dataUrl).split(',')[1]);
+}
+
+// Encode bytes → base64 in chunks. String.fromCharCode.apply(null, wholeArray)
+// blows the call stack for anything over ~100KB, and photos are ~300KB.
+function uint8ToBase64(bytes) {
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
 function deletePhotoFromDB(key) {
   try { localStorage.removeItem('photo_full_' + key); } catch(e) {}
+  fsDeletePhoto(key); // remove the durable filesystem copy too (fire-and-forget)
   return openPhotoDB().then(db => new Promise((resolve) => {
     try {
       const tx = db.transaction('photos', 'readwrite');
@@ -5352,10 +5371,186 @@ function getAllPhotoKeys() {
   })).catch(() => []);
 }
 
-// Generate a unique photo key for IndexedDB
+// Generate a photo key. Historically this was just `${name}__${slot}`, which
+// COLLIDES whenever two pieces of equipment share a name (or are left blank →
+// "equipment"): the second capture silently overwrote the first in storage.
+// New captures append a short unique token so every photo gets its own key and
+// nothing can clobber a prior photo. The full key is stored on the photo object
+// and is the single source of truth for reads/writes/deletes.
 function photoDBKey(equipName, slotId) {
   const safeName = (equipName || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
   return `${safeName}__${slotId}`;
+}
+function uniquePhotoKey(equipName, slotId) {
+  const token = genUuid().replace(/-/g, '').slice(0, 10);
+  return `${photoDBKey(equipName, slotId)}__${token}`;
+}
+
+// ============================================================================
+// DURABLE PHOTO STORAGE
+// ----------------------------------------------------------------------------
+// Full-resolution photos used to live only in IndexedDB (+ a localStorage
+// base64 fallback). Inside the iOS WebView, iOS can silently EVICT that storage
+// under pressure — which is exactly how a day's photos went missing. On the
+// native app we now write each full-res JPEG to a real file in the app's DATA
+// container (Capacitor Filesystem). Those files are part of the app sandbox and
+// are NOT subject to WebKit eviction; iOS only removes them if the app itself is
+// deleted. IndexedDB + localStorage remain as fallbacks (and are still the store
+// on the plain web build, where Filesystem isn't native).
+// ============================================================================
+function fsPlugin() {
+  const native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  if (!native) return null;
+  return (window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) || null;
+}
+// Real photo keys are already filename-safe ([A-Za-z0-9_-]); this light sanitize
+// only guards against any exotic legacy key during migration.
+function photoFsRelPath(dbKey) {
+  return 'loto_photos/' + String(dbKey).replace(/[^A-Za-z0-9_.-]/g, '_') + '.jpg';
+}
+async function fsWritePhoto(dbKey, base64) {
+  const FS = fsPlugin(); if (!FS) return false;
+  try {
+    await FS.writeFile({ path: photoFsRelPath(dbKey), data: base64, directory: 'DATA', recursive: true });
+    return true;
+  } catch (e) { console.error('FS write fail ' + dbKey, e); return false; }
+}
+async function fsReadPhoto(dbKey) {
+  const FS = fsPlugin(); if (!FS) return null;
+  try {
+    const r = await FS.readFile({ path: photoFsRelPath(dbKey), directory: 'DATA' });
+    if (r && r.data) return { bytes: base64ToUint8Array(r.data), type: 'image/jpeg' };
+  } catch (e) { /* not found */ }
+  return null;
+}
+async function fsPhotoExists(dbKey) {
+  const FS = fsPlugin(); if (!FS) return false;
+  try {
+    const st = await FS.stat({ path: photoFsRelPath(dbKey), directory: 'DATA' });
+    return !!st && (st.size == null || st.size > 0);
+  } catch (e) { return false; }
+}
+async function fsDeletePhoto(dbKey) {
+  const FS = fsPlugin(); if (!FS) return;
+  try { await FS.deleteFile({ path: photoFsRelPath(dbKey), directory: 'DATA' }); } catch (e) {}
+}
+
+// Persist a resized photo's bytes durably. Native → filesystem (verified by a
+// stat read-back). Web / FS-failure → IndexedDB + localStorage fallback.
+// Returns { ok, where } so the caller can warn the user the instant a save fails
+// instead of discovering it at export time.
+async function storePhotoBytes(dbKey, resizedDataUrl) {
+  const base64 = String(resizedDataUrl).split(',')[1] || '';
+  if (fsPlugin()) {
+    const wrote = await fsWritePhoto(dbKey, base64);
+    if (wrote && await fsPhotoExists(dbKey)) return { ok: true, where: 'fs' };
+    // FS unavailable/failed → fall through to the web stores.
+  }
+  if (idbAvailable) {
+    try {
+      await savePhotoToDB(dbKey, base64ToUint8Array(base64).buffer, 'image/jpeg');
+      savePhotoFallback(dbKey, resizedDataUrl);
+      return { ok: true, where: 'idb' };
+    } catch (e) { idbAvailable = false; }
+  }
+  const okFb = savePhotoFallback(dbKey, resizedDataUrl);
+  return { ok: okFb, where: okFb ? 'fallback' : 'none' };
+}
+
+// Load a photo's bytes from wherever it lives: filesystem → IndexedDB →
+// localStorage. Returns { bytes:Uint8Array, type } or null.
+async function loadPhotoBytes(dbKey, mimeType) {
+  if (!dbKey) return null;
+  const fs = await fsReadPhoto(dbKey);
+  if (fs) return fs;
+  if (idbAvailable) {
+    try {
+      const r = await getPhotoFromDB(dbKey);
+      if (r && r.data) return { bytes: new Uint8Array(r.data), type: r.type || mimeType || 'image/jpeg' };
+    } catch (e) {}
+  }
+  const dataUrl = getPhotoFallback(dbKey);
+  if (dataUrl) {
+    const type = dataUrl.split(';')[0].split(':')[1] || mimeType || 'image/jpeg';
+    return { bytes: dataUrlToUint8Array(dataUrl), type };
+  }
+  return null;
+}
+
+// Cheap presence check (no byte copy) used by the integrity scan.
+async function photoBytesExist(dbKey) {
+  if (!dbKey) return false;
+  if (await fsPhotoExists(dbKey)) return true;
+  if (idbAvailable) {
+    try { const r = await getPhotoFromDB(dbKey); if (r && r.data) return true; } catch (e) {}
+  }
+  try { if (localStorage.getItem('photo_full_' + dbKey)) return true; } catch (e) {}
+  return false;
+}
+
+// Set of photo keys present on the durable FILESYSTEM only (one dir listing).
+// Filenames are the raw key + ".jpg", so membership is exact.
+async function fsPresentKeySet() {
+  const set = new Set();
+  const FS = fsPlugin();
+  if (!FS) return set;
+  try {
+    const r = await FS.readdir({ path: 'loto_photos', directory: 'DATA' });
+    const files = (r && r.files) || [];
+    files.forEach(f => {
+      const name = (typeof f === 'string') ? f : (f && f.name);
+      if (name) set.add(String(name).replace(/\.jpg$/i, ''));
+    });
+  } catch (e) { /* dir may not exist yet */ }
+  return set;
+}
+
+// Build the set of photo keys that currently have bytes SOMEWHERE, cheaply:
+// filesystem listing + IDB key list + localStorage scan, instead of a per-photo
+// probe. Used by the integrity scan.
+async function presentPhotoKeySet() {
+  const set = await fsPresentKeySet();
+  if (idbAvailable) { try { (await getAllPhotoKeys()).forEach(k => set.add(k)); } catch (e) {} }
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf('photo_full_') === 0) set.add(k.slice('photo_full_'.length));
+    }
+  } catch (e) {}
+  return set;
+}
+
+// One-time migration: copy any full-res photos still living only in IndexedDB
+// into the durable filesystem store, so photos captured before this build are
+// protected too. Additive — IDB copies are left in place (read path prefers FS),
+// so a migration hiccup can never lose anything.
+let _photoMigrationDone = false;
+async function migratePhotosToFS() {
+  if (_photoMigrationDone) return;
+  const FS = fsPlugin();
+  if (!FS || !idbAvailable) { _photoMigrationDone = true; return; }
+  let idbKeys = [];
+  try { idbKeys = await getAllPhotoKeys(); } catch (e) { return; }
+  if (!idbKeys.length) { _photoMigrationDone = true; return; }
+  let fsPresent;
+  try { fsPresent = await fsPresentKeySet(); } catch (e) { fsPresent = new Set(); }
+  const todo = idbKeys.filter(k => !fsPresent.has(k));
+  if (!todo.length) { _photoMigrationDone = true; return; }
+  let moved = 0;
+  for (const key of todo) {
+    try {
+      const r = await getPhotoFromDB(key);
+      if (r && r.data) {
+        const base64 = uint8ToBase64(new Uint8Array(r.data));
+        if (await fsWritePhoto(key, base64)) moved++;
+      }
+    } catch (e) { /* skip this one; leave IDB copy */ }
+  }
+  _photoMigrationDone = true;
+  if (moved) {
+    console.log('Photo migration: moved ' + moved + ' of ' + todo.length + ' IDB photos to filesystem');
+    showToast('Secured ' + moved + ' photo' + (moved === 1 ? '' : 's') + ' to durable storage');
+  }
 }
 
 function handlePhoto(input, slotId) {
@@ -5364,7 +5559,7 @@ function handlePhoto(input, slotId) {
 
   const timestamp = new Date().toISOString();
   const equipName = document.getElementById('equipName').value.trim() || 'equipment';
-  const dbKey = photoDBKey(equipName, slotId);
+  const dbKey = uniquePhotoKey(equipName, slotId);
   const settings = getPhotoSettings();
 
   // Read file as DataURL, then resize via canvas, then store
@@ -5372,7 +5567,7 @@ function handlePhoto(input, slotId) {
   reader.onload = function(e) {
     const originalDataUrl = e.target.result;
     const img = new Image();
-    img.onload = function() {
+    img.onload = async function() {
       // --- Resize to configured max dimensions ---
       let w = img.width;
       let h = img.height;
@@ -5401,21 +5596,7 @@ function handlePhoto(input, slotId) {
       console.log('Photo resized: ' + img.width + 'x' + img.height + ' -> ' + w + 'x' + h +
         ' | ' + originalKB + 'KB -> ~' + resizedKB + 'KB | quality=' + settings.quality);
 
-      // Save resized photo to fallback (localStorage)
-      savePhotoFallback(dbKey, resizedDataUrl);
-
-      // Convert resized data URL to ArrayBuffer for IndexedDB
-      if (idbAvailable) {
-        const arrBuf = dataUrlToUint8Array(resizedDataUrl).buffer;
-        savePhotoToDB(dbKey, arrBuf, 'image/jpeg').then(() => {
-          console.log('Resized photo saved to IDB: ' + dbKey);
-        }).catch(err => {
-          console.error('IDB save failed, relying on fallback: ' + dbKey, err);
-          idbAvailable = false;
-        });
-      }
-
-      // Display thumbnail (THUMB_WIDTH) — never upscale beyond the source
+      // Build the thumbnail (THUMB_WIDTH) — never upscale beyond the source
       const thumbCanvas = document.createElement('canvas');
       const tw = Math.min(THUMB_WIDTH, w);
       thumbCanvas.width = tw;
@@ -5434,15 +5615,104 @@ function handlePhoto(input, slotId) {
 
       const container = document.getElementById('photo_' + slotId);
       container.classList.add('has-photo');
-      container.innerHTML = '<img src="' + thumbnail + '">' +
-        '<span class="retake-badge">Tap to retake</span>' +
-        '<span style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);color:#4ab86a;font-size:10px;padding:2px 6px;border-radius:3px;font-weight:600;">\u2713 Saved</span>';
-      showToast('Photo saved (' + w + 'x' + h + ', ~' + resizedKB + 'KB)');
+      setPhotoSlotState(container, thumbnail, 'saving');
+
+      // Persist durably and CONFIRM it stuck. A failed save is surfaced loudly
+      // (red badge + toast) so nothing goes missing silently.
+      const res = await storePhotoBytes(dbKey, resizedDataUrl);
+      if (res.ok) {
+        photos[slotId].unsaved = false;
+        setPhotoSlotState(container, thumbnail, 'saved');
+        showToast('Photo saved (' + w + 'x' + h + ', ~' + resizedKB + 'KB)');
+      } else {
+        photos[slotId].unsaved = true;
+        setPhotoSlotState(container, thumbnail, 'failed');
+        showToast('\u26a0 Photo did NOT save \u2014 storage problem. Export & clear now.', true);
+      }
       autoSaveCurrent();
+      updateIntegrityBadge();
     };
     img.src = originalDataUrl;
   };
   reader.readAsDataURL(file);
+}
+
+// Render a source photo slot's overlay badge: saving / saved / failed.
+function setPhotoSlotState(container, thumbnail, state) {
+  if (!container) return;
+  let badge;
+  if (state === 'saving') {
+    badge = '<span style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);color:#e0a44a;font-size:10px;padding:2px 6px;border-radius:3px;font-weight:600;">\u2026 Saving</span>';
+  } else if (state === 'failed') {
+    badge = '<span style="position:absolute;top:4px;left:4px;background:rgba(200,40,40,0.92);color:#fff;font-size:10px;padding:2px 6px;border-radius:3px;font-weight:700;">\u26a0 NOT SAVED</span>';
+  } else {
+    badge = '<span style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.7);color:#4ab86a;font-size:10px;padding:2px 6px;border-radius:3px;font-weight:600;">\u2713 Saved</span>';
+  }
+  container.innerHTML = '<img src="' + thumbnail + '">' +
+    '<span class="retake-badge">Tap to retake</span>' + badge;
+}
+
+// ============================================================================
+// PHOTO INTEGRITY  —  see, at a glance, that every photo's bytes still exist
+// ============================================================================
+// Every photo key referenced by saved entries + the in-progress form.
+function allReferencedPhotoKeys() {
+  const keys = [];
+  savedEquipment.forEach(e => collectEntryPhotoKeys(e).forEach(k => keys.push(k)));
+  for (const k of Object.keys(photos)) if (photos[k] && photos[k].dbKey) keys.push(photos[k].dbKey);
+  for (const mp of miscPhotos) if (mp && mp.dbKey) keys.push(mp.dbKey);
+  return keys;
+}
+
+let _integrity = { total: 0, missing: 0 };
+function paintIntegrityBadge(total, missing, checking) {
+  const b = document.getElementById('integrityBadge');
+  if (!b) return;
+  b.style.display = 'inline';
+  if (checking) {
+    b.style.background = 'rgba(224,164,74,0.18)'; b.style.color = 'var(--text)';
+    b.textContent = '⏳ Checking photos…'; return;
+  }
+  if (total === 0) { b.style.display = 'none'; return; }
+  if (missing > 0) {
+    b.style.background = 'rgba(200,40,40,0.92)'; b.style.color = '#fff';
+    b.textContent = '⚠ ' + missing + ' of ' + total + ' photos MISSING';
+  } else {
+    b.style.background = 'rgba(74,184,106,0.18)'; b.style.color = 'var(--text)';
+    b.textContent = '✓ ' + total + ' photo' + (total === 1 ? '' : 's') + ' safe';
+  }
+}
+
+// Scan every referenced photo against the set of keys that actually have bytes.
+// verbose=true (badge tap) also names the affected equipment in an alert.
+async function runIntegrityCheck(verbose) {
+  const uniq = Array.from(new Set(allReferencedPhotoKeys()));
+  paintIntegrityBadge(uniq.length, 0, true);
+  let present;
+  try { present = await presentPhotoKeySet(); } catch (e) { present = new Set(); }
+  const missingKeys = uniq.filter(k => !present.has(k));
+  _integrity = { total: uniq.length, missing: missingKeys.length };
+  paintIntegrityBadge(uniq.length, missingKeys.length);
+  if (verbose) {
+    if (!uniq.length) { showToast('No photos to check yet.'); return _integrity; }
+    if (!missingKeys.length) { alert('✅ All ' + uniq.length + ' photos are safe in device storage.'); return _integrity; }
+    const missSet = new Set(missingKeys);
+    const affected = [];
+    savedEquipment.forEach(e => { if (collectEntryPhotoKeys(e).some(k => missSet.has(k))) affected.push(e.equipName || '(unnamed)'); });
+    const names = affected.slice(0, 20).join(', ') + (affected.length > 20 ? ', …' : '');
+    alert('⚠️ ' + missingKeys.length + ' of ' + uniq.length + ' photos are MISSING from device storage.\n\n' +
+          'Affected equipment (' + affected.length + '): ' + names + '\n\n' +
+          'Recover them from an earlier export that still has them.');
+  }
+  return _integrity;
+}
+
+// Debounced badge refresh after a capture/delete (the scan is cheap — one
+// directory listing — but rapid captures shouldn't each trigger one).
+let _integrityTimer = null;
+function updateIntegrityBadge() {
+  if (_integrityTimer) clearTimeout(_integrityTimer);
+  _integrityTimer = setTimeout(() => { _integrityTimer = null; runIntegrityCheck(false); }, 500);
 }
 
 // ============================================================================
@@ -5466,13 +5736,13 @@ function handleMiscPhoto(input) {
   const equipName = document.getElementById('equipName').value.trim() || 'equipment';
   const idx = miscPhotos.length;
   const slotId = 'misc_' + idx;
-  const dbKey = photoDBKey(equipName, slotId);
+  const dbKey = uniquePhotoKey(equipName, slotId);
   const settings = getPhotoSettings();
 
   const reader = new FileReader();
   reader.onload = function(e) {
     const img = new Image();
-    img.onload = function() {
+    img.onload = async function() {
       let w = img.width, h = img.height;
       const maxW = settings.maxWidth, maxH = settings.maxHeight;
       if (w > maxW || h > maxH) {
@@ -5486,12 +5756,6 @@ function handleMiscPhoto(input) {
       const resizedDataUrl = resizeCanvas.toDataURL('image/jpeg', settings.quality);
       const resizedKB = Math.round(resizedDataUrl.length * 0.75 / 1024);
 
-      savePhotoFallback(dbKey, resizedDataUrl);
-      if (idbAvailable) {
-        const arrBuf = dataUrlToUint8Array(resizedDataUrl).buffer;
-        savePhotoToDB(dbKey, arrBuf, 'image/jpeg').catch(() => { idbAvailable = false; });
-      }
-
       const thumbCanvas = document.createElement('canvas');
       const tw = Math.min(THUMB_WIDTH, w);
       thumbCanvas.width = tw;
@@ -5499,15 +5763,22 @@ function handleMiscPhoto(input) {
       thumbCanvas.getContext('2d').drawImage(resizeCanvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
       const thumbnail = thumbCanvas.toDataURL('image/jpeg', THUMB_QUALITY);
 
+      const res = await storePhotoBytes(dbKey, resizedDataUrl);
       miscPhotos.push({
         dbKey: dbKey,
         thumbnail: thumbnail,
         fileType: 'image/jpeg',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        unsaved: !res.ok
       });
       renderMiscPhotos();
-      showToast('Misc photo ' + miscPhotos.length + ' saved (' + w + 'x' + h + ', ~' + resizedKB + 'KB)');
+      if (res.ok) {
+        showToast('Misc photo ' + miscPhotos.length + ' saved (' + w + 'x' + h + ', ~' + resizedKB + 'KB)');
+      } else {
+        showToast('⚠ Misc photo did NOT save — storage problem. Export & clear now.', true);
+      }
       autoSaveCurrent();
+      updateIntegrityBadge();
     };
     img.src = e.target.result;
   };
@@ -5903,7 +6174,7 @@ function showExportLog() {
     const seq = (ev.seqFirst && ev.seqLast) ? (ev.seqFirst===ev.seqLast ? ev.seqFirst : ev.seqFirst+'\u2013'+ev.seqLast) : '';
     return `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
       <div style="font-weight:600;">&#128230; Export &middot; ${when}</div>
-      <div style="font-size:12px;color:var(--text-dim);">${fac} &middot; ${ev.entries} equipment &middot; ${ev.photos} photo${ev.photos===1?'':'s'}${seq?' &middot; '+seq:''}</div>
+      <div style="font-size:12px;color:var(--text-dim);">${fac} &middot; ${ev.entries} equipment &middot; ${ev.photos} photo${ev.photos===1?'':'s'}${ev.missingPhotos?' <span style="color:#e0553a;font-weight:600;">&middot; ⚠ '+ev.missingPhotos+' missing</span>':''}${seq?' &middot; '+seq:''}</div>
       <div style="font-size:11px;color:var(--text-dim);">${ev.dateFilter && ev.dateFilter!=='all' ? 'date: '+ev.dateFilter+' &middot; ' : ''}${ev.filename||''}</div>
     </div>`;
   }).join('') : '<div style="padding:20px 0;text-align:center;color:var(--text-dim);">No exports or backups logged yet.</div>';
@@ -6596,23 +6867,16 @@ async function runCombinedExport() {
   const photosFolder = zip.folder('photos');
   let photoCount = 0;
   let misses = 0;
+  const missedKeys = [];
 
-  // Helper: get photo bytes from IDB or fallback
+  // Helper: get photo bytes from wherever they live (filesystem → IDB →
+  // localStorage). A miss is RECORDED (not silently skipped) so the export can
+  // refuse to hand off a short zip.
   async function getPhotoData(dbKey, mimeType) {
-    if (idbAvailable && dbKey) {
-      try {
-        const r = await getPhotoFromDB(dbKey);
-        if (r && r.data) return { bytes: new Uint8Array(r.data), type: r.type || mimeType };
-      } catch(e) {}
-    }
-    if (dbKey) {
-      const dataUrl = getPhotoFallback(dbKey);
-      if (dataUrl) {
-        const type = dataUrl.split(';')[0].split(':')[1] || mimeType;
-        return { bytes: dataUrlToUint8Array(dataUrl), type };
-      }
-    }
+    const r = await loadPhotoBytes(dbKey, mimeType);
+    if (r) return r;
     misses++;
+    if (dbKey) missedKeys.push(dbKey);
     return null;
   }
 
@@ -6951,7 +7215,7 @@ async function runCombinedExport() {
     hospitalCode: effectiveFacilityCode,
     hospitalName: hospitalName(effectiveFacilityCode),
     dateFilter: dateFilter,
-    counts: { entries: allEntries.length, photos: photoCount, diagrams: diagramCount },
+    counts: { entries: allEntries.length, photos: photoCount, diagrams: diagramCount, missingPhotos: misses },
     files: {
       entries: 'entries.json',
       csv:  'info_sheets/LOTO_FieldData_' + dateStamp + '.csv',
@@ -6960,6 +7224,28 @@ async function runCombinedExport() {
       diagramsDir: 'diagrams/'
     }
   }, null, 2));
+
+  // ---- INTEGRITY GUARD ----
+  // Never silently hand off a short export. If any referenced photo's bytes
+  // could not be found, stop and make the user acknowledge exactly what's
+  // missing (and which equipment) before anything leaves the device.
+  if (misses > 0) {
+    const missSet = new Set(missedKeys);
+    const affected = [];
+    allEntries.forEach(e => {
+      if (collectEntryPhotoKeys(e).some(k => missSet.has(k))) {
+        affected.push(e.equipName || '(unnamed)');
+      }
+    });
+    const names = affected.slice(0, 12).join(', ') + (affected.length > 12 ? ', …' : '');
+    const proceed = confirm(
+      '⚠️ ' + misses + ' photo(s) could NOT be found and will be MISSING from this export.\n\n' +
+      'Affected equipment (' + affected.length + '): ' + names + '\n\n' +
+      'This means those full-resolution photos are not in device storage. Do NOT rely on this export for them.\n\n' +
+      'OK = export anyway (incomplete)\nCancel = stop, keep everything on the device'
+    );
+    if (!proceed) { showToast('Export cancelled — ' + misses + ' photos missing', true); return; }
+  }
 
   try {
     const zipBlob = await zip.generateAsync({ type: 'blob' });
@@ -6979,13 +7265,14 @@ async function runCombinedExport() {
       showToast('Export error - file did not save', true);
       return;
     } else {
-      showToast(`Exported ${allEntries.length} equipment, ${photoCount} photos (${firstName} – ${lastName}). Next start: ${seqCounter}`);
+      showToast(`Exported ${allEntries.length} equipment, ${photoCount} photos${misses ? ' (⚠️ ' + misses + ' missing)' : ''} (${firstName} – ${lastName}). Next start: ${seqCounter}`);
       logDataEvent({
         kind: 'export',
         facility: effectiveFacilityCode,
         facilityName: hospitalName(effectiveFacilityCode),
         entries: allEntries.length,
         photos: photoCount,
+        missingPhotos: misses,
         seqFirst: firstName,
         seqLast: lastName,
         dateFilter: dateFilter,
