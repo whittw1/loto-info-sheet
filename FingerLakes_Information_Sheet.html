@@ -3580,7 +3580,7 @@ const EQUIPMENT_EXTRA_SOURCES = {
 // Templates whose electrical voltage is fixed by design — no voltage prompt.
 // Water Heater - Steam has a 120V control circuit only (no choice between
 // 208/240/etc.); same for Air Dryer (always a 120V plug) and Day Tank.
-const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas', 'Boiler - Natural Gas - HHW', 'Mini Split']);
+const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas', 'Boiler - Natural Gas - HHW', 'Mini Split', 'Elevator - Traction', 'Elevator - Hydraulic']);
 // After the voltage prompt, these templates ask "how many electrical sources?"
 // Value = the max offered (AHUs = 2 for dual fans; medical air/vacuum skids run
 // up to 4 units). See promptForElectricalCount.
@@ -3895,6 +3895,8 @@ const TEMPLATE_AUTO_SOURCES = {
   ],
   // Elevator templates
   'Elevator - Traction': [
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', location: '', verification: 'Controls', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Electrical 120V', deviceType: 'Disconnect', location: '', verification: 'Controls', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
@@ -3919,6 +3921,8 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'HHW Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   'Elevator - Hydraulic': [
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', location: '', verification: 'Controls', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Electrical 120V', deviceType: 'Disconnect', location: '', verification: 'Controls', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
     { energySource: 'Hydraulic', deviceType: 'Hydraulic', location: 'On Equipment', verification: 'GaugeOnly', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
   ],
@@ -4270,17 +4274,17 @@ function renderSources() {
               <select onchange="handleLocationChange(${i},this.value)" id="src_loc_${i}">
                 <option value="">-- Select --</option>
                 ${DATA.locations.filter(s=>s!=='** Custom Location **').map(s => {
-                  const sel = !src._customLoc && (src.location===s || (s==='MCC' && mccIdOf(src.location)!==null));
+                  const sel = !src._customLoc && (src.location===s || (LOCATION_ID_PREFIXES.includes(s) && (locationIdInfo(src.location)||{}).prefix===s));
                   return `<option value="${s}" ${sel?'selected':''}>${s}</option>`;
                 }).join('')}
                 <option value="** Custom Location **" ${src._customLoc?'selected':''}>Custom...</option>
               </select>
             </div>
-            ${(!src._customLoc && mccIdOf(src.location)!==null) ? `<div class="form-group">
-              <label>MCC ID</label>
-              <input type="text" id="src_mccid_${i}" value="${mccIdOf(src.location)}" placeholder="e.g. 3, 3B"
-                oninput="updateMccId(${i},this.value)">
-            </div>` : ''}
+            ${(() => { const li = !src._customLoc ? locationIdInfo(src.location) : null; return li ? `<div class="form-group">
+              <label>${li.prefix} ID</label>
+              <input type="text" id="src_locid_${i}" value="${li.id}" placeholder="${li.prefix==='MCC'?'e.g. 3, 3B':'e.g. A, LP-1'}"
+                oninput="updateLocationId(${i},this.value)">
+            </div>` : ''; })()}
             ${src._customLoc ? `<div class="form-group" id="customLocGroup_${i}">
               <label>Custom Location</label>
               <input type="text" id="src_loc_custom_${i}" value="${src.location||''}" placeholder="Enter custom location"
@@ -4504,14 +4508,20 @@ function updateSourceCustomField(index, field, value) {
   autoSaveCurrent();
 }
 
-// MCCs are usually numbered (MCC 3, MCC 3B) and the procedure wants the full
-// text. The ID lives inside `location` itself ("MCC 3") rather than in a side
-// field, so exports / CSV / entries.json need no special handling and a backup
-// round-trip can't lose it. Returns the ID ('' for a bare "MCC"), or null when
-// the location isn't an MCC at all.
-function mccIdOf(location) {
-  const m = /^MCC(?:\s+(.*))?$/.exec((location || '').trim());
-  return m ? (m[1] || '').trim() : null;
+// Some locations are usually numbered/named (MCC 3, Panel A) and the procedure
+// wants the full text. The ID lives inside `location` itself ("MCC 3", "Panel A")
+// so exports / CSV / entries.json need no special handling and a backup round-trip
+// can't lose it. Add a prefix here to give it an inline ID field.
+const LOCATION_ID_PREFIXES = ['MCC', 'Panel'];
+// Returns { prefix, id } when the location is one of the ID-prefix locations
+// (id is '' for a bare "MCC"/"Panel"), or null otherwise.
+function locationIdInfo(location) {
+  const loc = (location || '').trim();
+  for (const pfx of LOCATION_ID_PREFIXES) {
+    const m = new RegExp('^' + pfx + '(?:\\s+(.*))?$').exec(loc);
+    if (m) return { prefix: pfx, id: (m[1] || '').trim() };
+  }
+  return null;
 }
 
 function handleLocationChange(index, value) {
@@ -4521,12 +4531,13 @@ function handleLocationChange(index, value) {
     renderSources();
     const el = document.getElementById('src_loc_custom_' + index);
     if (el) el.focus();
-  } else if (value === 'MCC') {
-    // Re-selecting MCC keeps any ID already typed, so "MCC 3" isn't wiped
+  } else if (LOCATION_ID_PREFIXES.includes(value)) {
+    // Re-selecting the same prefix keeps any ID typed ("MCC 3"); switching prefix resets it
     sources[index]._customLoc = false;
-    if (mccIdOf(sources[index].location) === null) sources[index].location = 'MCC';
+    const li = locationIdInfo(sources[index].location);
+    if (!li || li.prefix !== value) sources[index].location = value;
     renderSources();
-    const el = document.getElementById('src_mccid_' + index);
+    const el = document.getElementById('src_locid_' + index);
     if (el) el.focus();
   } else {
     sources[index]._customLoc = false;
@@ -4537,8 +4548,10 @@ function handleLocationChange(index, value) {
 }
 
 // Compose "MCC" + the typed ID into the single location string.
-function updateMccId(index, value) {
-  sources[index].location = ('MCC ' + (value || '').trim()).trim();
+function updateLocationId(index, value) {
+  const li = locationIdInfo(sources[index].location);
+  const pfx = li ? li.prefix : 'MCC';
+  sources[index].location = (pfx + ' ' + (value || '').trim()).trim();
   autoSaveCurrent();
 }
 
