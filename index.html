@@ -997,7 +997,7 @@ const DATA = {
     "Day Tank",
     "Condensate Return Unit","Condensate Return Unit - Steam",
     "Exhaust Fan","Water Heater - Steam","Water Heater - Gas","Water Heater - Electric",
-    "Unit Heater - Steam","Unit Heater - HHW",
+    "Unit Heater - Steam","Unit Heater - HHW","Unit Heater - Natural Gas",
     "Air Compressor","Medical Air","Air Dryer","Vacuum Pump","Medical Vacuum","Condensing Unit","Mini Split",
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
     "Elevator - Traction","Elevator - Hydraulic",
@@ -1908,7 +1908,7 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Fire Jockey Pump': ['Standard Pump'],
   'Condensate Pump': ['Heating Hot Water Pump'],
   'Condensate Return Unit': ['Condensate Return Unit','Condensate Return Unit - Steam'],
-  'Unit Heater': ['Unit Heater - Steam','Unit Heater - HHW'],
+  'Unit Heater': ['Unit Heater - Steam','Unit Heater - HHW','Unit Heater - Natural Gas'],
   'Domestic Water Heater': ['Water Heater - Steam','Water Heater - Gas','Water Heater - Electric'],
   'Air Compressor': ['Air Compressor','Medical Air'],
   'Air Dryer': ['Air Dryer'],
@@ -1971,6 +1971,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Water Heater - Steam': 'steam_water_heater', 'Water Heater - Gas': 'electric_water_heater',
   'Water Heater - Electric': 'general',
   'Unit Heater - Steam': 'steam_water_heater', 'Unit Heater - HHW': 'heat_exchanger',
+  'Unit Heater - Natural Gas': 'general',
   'Humidifier': 'general',
   'Cooling Tower': 'cooling_tower',
   'Condensate Return Unit': 'condensate_return', 'Condensate Return Unit - Steam': 'condensate_return',
@@ -3585,7 +3586,7 @@ const EQUIPMENT_EXTRA_SOURCES = {
 // Templates whose electrical voltage is fixed by design — no voltage prompt.
 // Water Heater - Steam has a 120V control circuit only (no choice between
 // 208/240/etc.); same for Air Dryer (always a 120V plug) and Day Tank.
-const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas', 'Boiler - Natural Gas - HHW', 'Mini Split', 'Elevator - Traction', 'Elevator - Hydraulic']);
+const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas', 'Unit Heater - Natural Gas', 'Boiler - Natural Gas - HHW', 'Mini Split', 'Elevator - Traction', 'Elevator - Hydraulic']);
 // After the voltage prompt, these templates ask "how many electrical sources?"
 // Value = the max offered (AHUs = 2 for dual fans; medical air/vacuum skids run
 // up to 4 units). See promptForElectricalCount.
@@ -3924,6 +3925,11 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'HHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
     { energySource: 'HHW Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+  ],
+  'Unit Heater - Natural Gas': [
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Natural Gas', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   'Elevator - Hydraulic': [
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', location: '', verification: 'Controls', duplicate: 'No', quantity: 1, auto: true },
