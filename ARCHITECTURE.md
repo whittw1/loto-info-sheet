@@ -302,6 +302,13 @@ drain × gauge combos; `Controls` is 48% of ~850 electrical, blanks were 11%).
   their temperature suffix re-derived on render so changing the energy
   source can't leave a stale suffix. Template-scoped verification
   overrides and non-blank values are never touched.
+- **Template-scoped overrides** (`TEMPLATE_SOURCE_VERIFICATION_OVERRIDES`,
+  e.g. the Boiler HHW curated list): when the override list is PURE
+  drain/gauge/temp variants (`overrideAllowsSimple`) the checkboxes apply
+  there too, with the suffix taken from the override list itself
+  (`simpleVerifSuffix`); mixed/electrical overrides keep the classic
+  select and blank-default to `Controls` only if the list offers it.
+  Header shows `v7.0 · b79` so the running bundle is identifiable.
 - Functions: `simpleVerifEnabled/setSimpleVerif`, `isValveVerifDevice`,
   `synthesizeWaterVerification`, `parseWaterVerification`,
   `updateSimpleVerif`, `showClassicVerif`, `applySimpleVerifDefaults`;

@@ -417,7 +417,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b79</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1268,12 +1268,33 @@ function parseWaterVerification(v) {
   }
   return { drain: false, gauge: false, recognized: false, blank: false };
 }
+// A template-scoped verification override still gets the checkbox UI when
+// its curated list is PURE drain/gauge/temp variants (e.g. the Boiler HHW
+// override is exactly the four "- Hot" combos). Mixed/electrical overrides
+// keep the classic select.
+function overrideAllowsSimple(list) {
+  return !!(list && list.length && list.every(v => {
+    const p = parseWaterVerification(v);
+    return p.recognized && !p.blank;
+  }));
+}
+// Temperature suffix for a source, honoring a template override's own
+// suffix when one exists (a curated all-"- Hot" list wins over keyword
+// classification so synthesized strings land inside the curated set).
+function simpleVerifSuffix(src) {
+  const ov = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource);
+  if (overrideAllowsSimple(ov)) {
+    if (ov.every(v => / - Hot$/.test(v))) return 'hot';
+    if (ov.every(v => / - CHW$/.test(v))) return 'chw';
+  }
+  return getTempSuffixFor(src.energySource || '');
+}
 function updateSimpleVerif(index, which, checked) {
   const src = sources[index];
   const cur = parseWaterVerification(src.verification);
   const drain = which === 'drain' ? checked : cur.drain;
   const gauge = which === 'gauge' ? checked : cur.gauge;
-  src.verification = synthesizeWaterVerification(drain, gauge, getTempSuffixFor(src.energySource || ''));
+  src.verification = synthesizeWaterVerification(drain, gauge, simpleVerifSuffix(src));
   renderSources();
   autoSaveCurrent();
 }
@@ -1296,18 +1317,25 @@ function applySimpleVerifDefaults() {
   const equipIsAHU = /ahu|air handler/i.test(getEquipType() || '');
   for (const src of sources) {
     if (!src.deviceType) continue;
-    if (templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource)) continue;
+    const ov = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource);
+    if (ov && !overrideAllowsSimple(ov)) {
+      // Mixed/electrical curated list — only fill a blank with Controls
+      // when the override itself offers it.
+      if (!src.verification && ov.includes('Controls')) { src.verification = 'Controls'; changed = true; }
+      continue;
+    }
     const list = DEVICE_VERIFICATION_MAP[src.deviceType];
-    if (!list) continue;
-    if (list.some(v => v.startsWith('_'))) {
+    const isValve = ov ? true : !!(list && list.some(v => v.startsWith('_')));
+    if (!ov && !list) continue;
+    if (isValve) {
       const p = parseWaterVerification(src.verification);
       const es = src.energySource || '';
       if (p.blank) {
         const drainDefault = equipIsAHU && (es.startsWith('CHW') || es.startsWith('HHW'));
-        src.verification = synthesizeWaterVerification(drainDefault, false, getTempSuffixFor(es));
+        src.verification = synthesizeWaterVerification(drainDefault, false, simpleVerifSuffix(src));
         changed = true;
       } else if (p.recognized && !/^G\/Tmp\/Drain/.test(src.verification)) {
-        const resynth = synthesizeWaterVerification(p.drain, p.gauge, getTempSuffixFor(es));
+        const resynth = synthesizeWaterVerification(p.drain, p.gauge, simpleVerifSuffix(src));
         if (resynth !== src.verification) { src.verification = resynth; changed = true; }
       }
     } else if (!src.verification) {
@@ -4480,13 +4508,13 @@ function renderSources() {
                 oninput="updateSourceCustomLoc(${i},this.value)">
             </div>` : `<div id="customLocGroup_${i}" style="display:none;"></div>`}
             ${(() => {
+              const ov = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource);
               const useSimple = simpleVerifEnabled() && !src._classicVerif
-                && isValveVerifDevice(src.deviceType)
-                && !templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource)
+                && (ov ? overrideAllowsSimple(ov) : isValveVerifDevice(src.deviceType))
                 && parseWaterVerification(src.verification).recognized;
               if (useSimple) {
                 const p = parseWaterVerification(src.verification);
-                const derived = src.verification || synthesizeWaterVerification(false, false, getTempSuffixFor(src.energySource || ''));
+                const derived = src.verification || synthesizeWaterVerification(false, false, simpleVerifSuffix(src));
                 const boxStyle = 'display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:14px;cursor:pointer;';
                 return `<div class="form-group">
                   <label>Verification</label>
