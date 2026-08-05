@@ -261,6 +261,18 @@ Templates define a set of auto-populated sources for a specific equipment contex
 - **`SAVED_FILTERS`** — allowlist of `savedFilter` values (`'all' | 'today' | 'yesterday'`); guards `setSavedFilter()` against unknown inputs.
 - **`HOSPITALS`** — the roster of facility codes shown in the Settings picker. Each row: `{key, label}`. The `key` is what lands on every entry's `hospitalCode` field and every export's manifest — must match a corresponding loto-web `Hospital.key` for the ingester to route correctly.
 
+### 5.4b  Overhead Sketch visibility (build 78)
+
+The sketch section is **hidden by default at every facility**. A Settings
+checkbox ("Show Overhead Sketch section for this facility") opts a facility in
+— stored per `hospitalCode` in localStorage `loto_sketch_prefs`
+(`{code: 'show'|'hide'}`, absent = hide). `applySketchVisibility()` is the
+single gate, called from `updateSketchSectionDefault`, `loadSketchDiagram`
+(template selection still loads the diagram + sources but no longer reveals
+the section), and Settings save. Safety valve: an entry that already carries
+sketch strokes/labels always shows the section, and sketch data still exports
+unchanged.
+
 ### 5.5  Saved-panel UX + Copy Source + autosave indicator + export badges
 
 #### Export-status badge + delete guards (build 77)
