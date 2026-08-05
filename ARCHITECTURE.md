@@ -1,6 +1,6 @@
 # LOTO Field Collector — Architecture Reference
 
-**Date:** 2026-07-13 (rev 9 — §5 registry inventory expanded. Named the equipment-side registries the doc had glossed over (`EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT`, `EQUIPMENT_PROMPT_FOR_TEMPLATE`, `EQUIPMENT_DIAGRAM_OVERRIDE`, `CONDENSATE_AUTO_EQUIP`, `CUSTOM_EQUIP_KEYWORD_TEMPLATE`) plus a new "Other registries (misc but load-bearing)" bullet block covering `SOURCE_DEFAULTS`, `ENERGY_DEVICE_MAP`, `ENERGY_KEYWORD_TEMP`, `ENERGY_LABEL_PREFIX/COLORS`, `PHOTO_DEFAULTS`, `SKETCH_DIAGRAMS`, `SAVED_FILTERS`, `HOSPITALS`. Prior revs: rev 8 = ingester live; rev 7 = data-entry UX pass; rev 6 = ZIP restructure.)
+**Date:** 2026-08-05 (rev 10 — builds 74–77: durable photo storage + integrity. §6 rewritten: full-res photos now write to the **native filesystem** (Capacitor Filesystem, `DATA/loto_photos/`) with IndexedDB/localStorage as fallbacks, after iOS storage eviction silently lost 74 photos on 2026-08-04; capture-time save verification, export integrity guard, header integrity badge, collision-proof photo keys. §7: local-day date semantics + filtered-day export stamps; reuse-a-photo share model with export dedup; per-entry `exportedAt`/`exportId` stamps. §5.5: export-status badges + delete guards with "Export these first" escape hatch. New template: Unit Heater - Natural Gas. Prior: rev 9 — §5 registry inventory expanded. Named the equipment-side registries the doc had glossed over (`EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT`, `EQUIPMENT_PROMPT_FOR_TEMPLATE`, `EQUIPMENT_DIAGRAM_OVERRIDE`, `CONDENSATE_AUTO_EQUIP`, `CUSTOM_EQUIP_KEYWORD_TEMPLATE`) plus a new "Other registries (misc but load-bearing)" bullet block covering `SOURCE_DEFAULTS`, `ENERGY_DEVICE_MAP`, `ENERGY_KEYWORD_TEMP`, `ENERGY_LABEL_PREFIX/COLORS`, `PHOTO_DEFAULTS`, `SKETCH_DIAGRAMS`, `SAVED_FILTERS`, `HOSPITALS`. Prior revs: rev 8 = ingester live; rev 7 = data-entry UX pass; rev 6 = ZIP restructure.)
 **Repo:** [github.com/whittw1/loto-info-sheet](https://github.com/whittw1/loto-info-sheet)
 **Prior standalone doc:** `LOTO_Integration_Architecture.md` in `~/Desktop/Claude Apps/LOTO Information Sheet App/` (April 2026, pre-iOS work — kept for reference, superseded by this file).
 
@@ -10,7 +10,7 @@
 
 A **single-page HTML+JS Progressive Web App** used on iPads / mobile devices in the field to capture LOTO (Lockout/Tagout) equipment data — energy sources, verification methods, isolation devices, photos, and annotated overhead diagrams — one equipment entry at a time.
 
-It has **no backend, no database, and no user accounts**. Everything runs client-side in the browser (or in a Capacitor WebView on iOS). Data lives in `localStorage` + `IndexedDB` on the device until the user exports it.
+It has **no backend, no database, and no user accounts**. Everything runs client-side in the browser (or in a Capacitor WebView on iOS). Entry data lives in `IndexedDB` + `localStorage`; full-resolution photos live on the **native filesystem** on iOS (with IndexedDB/localStorage as fallbacks — see §6) until the user exports.
 
 The exported ZIP / JSON is the interop surface: downstream systems (see [`loto-web`](../loto-web) — the procedure generator) ingest via those files.
 
@@ -33,7 +33,7 @@ Both HTML files must be updated in lockstep — `FingerLakes_Information_Sheet.h
 
 ```
 loto-info-sheet/                              (the GitHub repo)
-├── index.html                                (5,900+ lines — the whole app)
+├── index.html                                (8,000+ lines — the whole app)
 ├── FingerLakes_Information_Sheet.html        (byte-identical mirror of index.html)
 ├── sw.js                                     (service worker — network-first cache)
 ├── manifest.json                             (PWA manifest, main)
@@ -73,8 +73,9 @@ loto-info-sheet/                              (the GitHub repo)
 | Layer | Choice | Rationale |
 |---|---|---|
 | **Frontend framework** | None — vanilla HTML / CSS / JS in one file | Single-file simplicity, no build step, easy to reason about, no bundler drama |
-| **Storage (primary)** | `IndexedDB` (`loto_photos_v3`) via a small custom wrapper | Full-res photo blobs (ArrayBuffers) — much larger than localStorage's ~5 MB |
-| **Storage (metadata + fallback)** | `localStorage` (JSON-stringified) | Entry list, form state, photo thumbnails, base64 photo fallback |
+| **Storage (photos, native)** | Capacitor Filesystem — `DATA/loto_photos/<dbKey>.jpg` | **Primary full-res photo store on iOS since build 75.** App-container files are NOT subject to WebKit storage eviction (which silently destroyed a day's photos in IndexedDB on 2026-08-04) |
+| **Storage (photos, web / fallback)** | `IndexedDB` (`loto_photos_v3`) via a small custom wrapper | Primary on the plain web build; fallback on iOS. localStorage base64 is the last resort only when IDB is unavailable |
+| **Storage (metadata)** | `IndexedDB` `metadata` store + `localStorage` (JSON-stringified) | Entry list (`saved_equipment`), form state, photo thumbnails |
 | **Offline** | Service worker (`sw.js`) with network-first strategy + explicit `CACHE_NAME` version bump on every deploy | Bumped every change so users don't get stuck on stale HTML |
 | **ZIP generation** | JSZip 3.10.1 (loaded from cdnjs) | Client-side ZIP creation for exports |
 | **XLSX generation** | ExcelJS 4.4.0 (loaded from cdnjs) | Per-cell styling (SheetJS community can't do this) |
@@ -133,6 +134,13 @@ interface SavedEntry {
   photos: PhotosBySlot;          // see photos section
   miscPhotos: MiscPhoto[];       // additional non-slot photos
   sketch: SketchData | null;     // annotated overhead diagram (optional)
+  exportedAt?: string;           // ISO datetime of the last completed export that
+                                 // included this entry (build 77). Absent = no
+                                 // export record on this device. Drives the
+                                 // saved-panel export badge + delete guards.
+                                 // Survives backup round-trips (normaliseEntry).
+  exportId?: string;             // exportId of that export (same UUID as
+                                 // manifest.json) — correlates entry ↔ bundle.
 }
 
 // One energy source within an equipment entry
@@ -172,12 +180,22 @@ interface LinkedSourceRef {
 }
 
 interface PhotosBySlot {
-  equip_main?:      { dbKey: string; thumbnail: string; timestamp: string; fileType?: string };
-  equip_dataplate?: { dbKey: string; thumbnail: string; timestamp: string; fileType?: string };
-  equip_ee?:        { dbKey: string; thumbnail: string; timestamp: string; fileType?: string };
-  ["source_" + N]?: { dbKey: string; thumbnail: string; timestamp: string; fileType?: string };
-  // dbKey → look up the full-res ArrayBuffer in IndexedDB (loto_photos_v3)
-  // thumbnail → data-URL sized preview (embedded in localStorage / backup JSON)
+  equip_main?:      PhotoRef;
+  equip_dataplate?: PhotoRef;
+  equip_ee?:        PhotoRef;
+  ["source_" + N]?: PhotoRef;
+}
+interface PhotoRef {
+  dbKey: string;                 // storage key — resolve via loadPhotoBytes():
+                                 // filesystem → IndexedDB → localStorage (§6)
+  thumbnail: string;             // data-URL preview (embedded in backup JSON)
+  timestamp: string;
+  fileType?: string;
+  shared?: boolean;              // true when attached via Reuse-a-Photo (build 74)
+                                 // — same dbKey as another slot; exported ONCE,
+                                 // all refs get the same filename (share model)
+  unsaved?: boolean;             // true when the capture-time save FAILED (build
+                                 // 75) — slot shows a red "NOT SAVED" badge
 }
 
 interface MiscPhoto {
@@ -220,7 +238,7 @@ Templates define a set of auto-populated sources for a specific equipment contex
 - **`TEMPLATE_AUTO_SOURCES[name]`** — the sources the template pushes
 - **`TEMPLATE_DIAGRAM_MAP[name]`** — the SVG diagram key the sketch uses
 - **`TEMPLATE_VOLTAGE_OVERRIDES[name]`** — restrict the voltage prompt (e.g. Cooling Tower → `[120V, 208V, 480V]` only)
-- **`TEMPLATE_SKIPS_VOLTAGE_PROMPT`** — templates whose voltage is fixed by design (Air Dryer, Day Tank, Water Heater - Steam, Water Heater - Gas — suppresses the prompt)
+- **`TEMPLATE_SKIPS_VOLTAGE_PROMPT`** — templates whose voltage is fixed by design (Air Dryer, Day Tank, Water Heater - Steam/Gas, Mini Split, both Elevators, Unit Heater - Natural Gas — suppresses the prompt)
 - **`EQUIPMENT_TEMPLATE_LABELS[type]`** — friendlier label overrides for the template-picker modal (e.g. Dishwasher shows "Electric / Steam" instead of "Water Heater - Electric / Water Heater - Steam")
 
 ### Verifications
@@ -243,7 +261,34 @@ Templates define a set of auto-populated sources for a specific equipment contex
 - **`SAVED_FILTERS`** — allowlist of `savedFilter` values (`'all' | 'today' | 'yesterday'`); guards `setSavedFilter()` against unknown inputs.
 - **`HOSPITALS`** — the roster of facility codes shown in the Settings picker. Each row: `{key, label}`. The `key` is what lands on every entry's `hospitalCode` field and every export's manifest — must match a corresponding loto-web `Hospital.key` for the ingester to route correctly.
 
-### 5.5  Saved-panel UX + Copy Source + autosave indicator
+### 5.5  Saved-panel UX + Copy Source + autosave indicator + export badges
+
+#### Export-status badge + delete guards (build 77)
+
+Every saved-panel row shows a per-entry export badge: green **"✓ exported"**
+(tooltip = timestamp) when `entry.exportedAt` is set, amber **"⚠ not
+exported"** otherwise. Stamping happens in `runCombinedExport`'s full-success
+path only (same branch as the export log write): every entry included in the
+completed export gets `exportedAt` + `exportId`, then `saveAll()`. The export
+filter functions return **live references** into `savedEquipment`, so stamping
+is by reference (the unsaved current-form entry's temp object gets stamped
+harmlessly — it's discarded).
+
+Deletion is guarded by the stamps:
+
+- **Single delete** (`deleteSaved`) — the confirm shows "Exported Aug 5,
+  2:14 PM." or "⚠️ NO export record — this entry may never have left the
+  device!".
+- **Bulk delete** (`updateBulkDeleteSummary`) — counts exactly how many
+  targets lack `exportedAt` ("N of these entries have NO export record —
+  deleting would lose them permanently") and offers an **"📦 Export these
+  first"** button (`exportBeforeBulkDelete`) that closes the dialog and opens
+  the Export dialog **preset to the same date + facility filters**. This
+  replaced the old last-export-time heuristic (`savedAt > lastExportAt`),
+  which couldn't tell whether a *specific* entry had ever been exported.
+
+Entries saved before build 77 show amber until they ride along in one more
+export — an **All-dates export stamps everything** currently on the device.
 
 Three transient UX features live on top of the persisted data model. None of
 them are exported or serialised — they exist purely to make the on-device
@@ -320,16 +365,58 @@ timestamp on the first successful save after page load.
 
 ## 6. Storage — how data lives on the device
 
-### IndexedDB — `loto_photos_v3`
+> **Why this section changed (build 75, 2026-08-04):** iOS silently evicted
+> WebKit storage under pressure and 74 full-res photos vanished between two
+> same-day exports — with no warning, because the export silently skipped
+> photos it couldn't read. Build 75 made photo storage durable and made every
+> failure loud. The three pillars: **native filesystem primary storage**,
+> **capture-time save verification**, and an **export integrity guard**.
+
+### Native filesystem — `DATA/loto_photos/` (primary on iOS, build 75+)
+
+On the native app, every resized full-res JPEG is written to a real file in
+the app's data container via Capacitor Filesystem:
+
+- **Path:** `loto_photos/<dbKey>.jpg`, `directory: 'DATA'` — part of the app
+  sandbox; **not subject to WebKit storage eviction**. iOS only removes it if
+  the app itself is deleted.
+- **Write path:** `storePhotoBytes(dbKey, dataUrl)` — tries filesystem first
+  (and verifies via `stat` read-back), falls back to IndexedDB, then to
+  localStorage **only if IndexedDB is unavailable/failed** (never alongside a
+  working IDB — the ~5 MB quota is precious).
+- **Read path:** `loadPhotoBytes(dbKey)` — filesystem → IndexedDB →
+  localStorage. Every consumer (export, full-res viewer) goes through it.
+- **Delete path:** `deletePhotoFromDB(key)` removes all three copies.
+- **Migration:** `migratePhotosToFS()` runs on every launch — copies any
+  IDB-only photos into the filesystem (additive; IDB copies left in place), then
+  toasts "Secured N photos to durable storage".
+- **Capture verification:** `handlePhoto` / `handleMiscPhoto` `await` the store
+  and read it back. Success → green "✓ Saved" badge; failure → red
+  **"⚠ NOT SAVED"** badge + toast and `photo.unsaved = true`. Nothing fails
+  silently anymore.
+- **Integrity badge:** header chip (`#integrityBadge`) shows
+  **"✓ N photos safe"** or red **"⚠ X of N MISSING"**; tap = `runIntegrityCheck(true)`
+  which rescans (`presentPhotoKeySet()` = one FS readdir + IDB key list +
+  localStorage scan vs `allReferencedPhotoKeys()`) and names affected equipment.
+
+On the plain web build `fsPlugin()` returns null and IndexedDB remains primary
+— same code, no branching at call sites.
+
+### IndexedDB — `loto_photos_v3` (web primary / native fallback)
 
 Two object stores:
 
 | Store | Key | Value | Used for |
 |---|---|---|---|
-| `photos` | `dbKey` (string) | `{ data: ArrayBuffer, fileType: string, timestamp: string }` | Full-res photo bytes — the actual JPEG files |
+| `photos` | `dbKey` (string) | `{ data: ArrayBuffer, type: string, size: number }` | Full-res photo bytes |
 | `metadata` | key string | any JSON | `saved_equipment` (the main list), other app state |
 
-Photo `dbKey` format: `photo_${equipNameSanitized}_${slotId}_${Date.now()}` (see `photoDBKey()` at index.html line ~4000).
+Photo `dbKey` format (build 75+): **`${safeName}__${slotId}__<10-hex token>`**
+via `uniquePhotoKey()` — unique per capture, so two equipment with the same
+(or blank) name can no longer overwrite each other's photos. Legacy keys
+(`${safeName}__${slotId}`, no token) remain readable; the stored `dbKey` on the
+photo object is the single source of truth. Reuse-a-Photo (§7) deliberately
+shares one dbKey across slots.
 
 ### localStorage
 
@@ -342,11 +429,17 @@ Kept small because iOS Safari can be miserly with it. Holds:
 | `photoSeqNext` | Next photo-sequence starting number for filename generation |
 | `photo_full_<dbKey>` | Base64 fallback copy of a photo, in case IndexedDB write failed |
 | `loto_device_id` | Per-device UUID (v4), minted once on first launch by `ensureDeviceId()` in `init()`. Identifies the device across exports so the same day's data from two iPads doesn't collide; feeds the planned export-filename convention (§5 improvement plan). Never changes once set. |
+| `loto_export_log` | Last 50 export/backup events (`logDataEvent()`): kind, facility, entry/photo counts, `missingPhotos` (build 75+), seq range, date filter, exportId, filename. Rendered by the header **Log** button. |
 | `loto_hospital_code` | Selected facility code (a loto-web `Hospital.key` or a custom string). Set via the Settings facility picker (`getHospitalCode()` / `setHospitalCode()`); stamped onto every entry at save and onto every export. Absent/`''` means no facility selected. Roster of known codes is the `HOSPITALS` const in `index.html`; a header chip (`updateFacilityBadge()`) shows the active facility (or a ⚠️ warning when unset). |
 
-### The "belt-and-suspenders" photo fallback
+### The photo fallback chain (rewritten build 75)
 
-When photo capture happens: try to save to IndexedDB. If that fails (iOS Safari edge cases), also stash a base64 copy in `photo_full_<dbKey>` in localStorage. On export, if IndexedDB doesn't have the photo, look up the localStorage fallback and use that instead. Post-export cleanup removes the fallback copies.
+`storePhotoBytes` writes to exactly one tier, in order of durability:
+filesystem (native, verified) → IndexedDB → localStorage `photo_full_<dbKey>`
+(last resort only, when IDB is unavailable or the write failed). Reads via
+`loadPhotoBytes` walk the same chain, so a photo is found wherever it lives.
+A failed save at every tier surfaces the red **NOT SAVED** badge — the old
+behavior of silently continuing is gone.
 
 ### Migrations on load
 
@@ -355,7 +448,10 @@ When photo capture happens: try to save to IndexedDB. If that fails (iOS Safari 
 1. **`ENERGY_SOURCE_RENAMES`** (`CA In` → `Compressed Air In`, etc.) — updates saved entries in place so old data still matches current dropdown values
 2. **`migrateToggleablePhotoFlags`** — clears `noPhoto: true` on Kinetic sources from older saves so the toggle button controls them cleanly
 
-Both write back to IndexedDB immediately if they changed anything.
+Both write back to IndexedDB immediately if they changed anything. Separately,
+`init()` runs **`migratePhotosToFS()`** (native only) after `loadAll()` — the
+one-time-per-photo IDB → filesystem copy described above — then paints the
+integrity badge.
 
 ---
 
@@ -365,8 +461,41 @@ Both write back to IndexedDB immediately if they changed anything.
 
 Output filename (rev 6): **`FieldExport_{code}_{MMDDYY}_{deviceShort}.zip`**
 - `{code}` — the facility `hospitalCode`, sanitised to filename-safe chars (`Atlanta - Fort McPherson` → `Atlanta_Fort_McPherson`); `NoFacility` when unset.
-- `{MMDDYY}` — export date (`getDateStamp()`).
+- `{MMDDYY}` — **the data's day, not the export moment** (build 74): when a
+  specific date is filtered, `exportDateFrom(dateFilter)` stamps the ZIP name,
+  photo prefix, and sheet names with the *filtered* day — exporting Aug 3's
+  data on Aug 4 yields `0803_*` photos in a `..._080326_...` zip. Unfiltered
+  exports use today.
 - `{deviceShort}` — first 8 hex of `loto_device_id`, so same-day exports from two iPads don't collide. The full `deviceId`, the per-export `exportId`, and the date filter live in `manifest.json`.
+
+**Date semantics are LOCAL (build 74).** All date grouping — the export
+filter, the saved-panel Today/Yesterday, photo prefixes — uses the device's
+local calendar day via `localDateStr()` / `getEntryDate()`. Previously the
+filter grouped by UTC (`savedAt.slice(0,10)`) while filenames used local time,
+so entries saved after ~8 PM ET were filed under the wrong day and a "today"
+export could carry yesterday's data.
+
+**Shared photos are written once (build 74 — the reuse/share model).** A
+source photo slot's **↻ Reuse** button attaches an already-taken photo (today's
+photos, newest first) to another source; the slot gets `shared: true` and the
+same `dbKey`. At export, `assignPhotoFile()` dedupes by dbKey: the bytes are
+written to the ZIP **once**, and every referencing slot's `photoFile` carries
+the **same filename** — loto-web binds identical stems as one physical photo.
+Reference-aware deletion (`deleteEntryPhotos(entry, keepReferencedBy)`) keeps
+a shared photo alive while any surviving entry (or the current form) still
+uses it.
+
+**Integrity guard (build 75).** The export loads every referenced photo via
+`loadPhotoBytes`; a photo that can't be found anywhere is **recorded, not
+silently skipped** (the pre-75 behavior that let a 306-photo day quietly ship
+as 232). If any are missing, the export **blocks** with a confirm that counts
+the misses and names the affected equipment — Cancel aborts; OK exports
+incomplete and records `missingPhotos` in `manifest.json.counts`, the success
+toast, and the export log.
+
+**Export stamps (build 77).** On full success every included entry is stamped
+`exportedAt` + `exportId` (see §5.5) — the saved list's export badges and the
+delete guards read these.
 
 Structure (rev 6):
 
@@ -398,7 +527,7 @@ A lightweight index an ingester reads first to discover the bundle's shape befor
   "deviceId": "b3f1c2a4-…",            // full per-device UUID (loto_device_id)
   "hospitalCode": "Marion", "hospitalName": "Marion VA Medical Center",
   "dateFilter": "all",                 // the export dialog's date filter
-  "counts": { "entries": 12, "photos": 47, "diagrams": 3 },
+  "counts": { "entries": 12, "photos": 47, "diagrams": 3, "missingPhotos": 0 },  // missingPhotos: build 75+ — photos referenced but unreadable at export time (user acknowledged)
   "files": {
     "entries": "entries.json",
     "csv":  "info_sheets/LOTO_FieldData_071326.csv",
@@ -504,7 +633,7 @@ The **primary integration surface**. Format:
 
 **`version` bumped to 2** (rev 4): the envelope gained a top-level `hospitalCode` (the facility setting at export time — a default for entries whose own `hospitalCode` is blank), and each entry now carries its own `hospitalCode`. Backward compatible — a v1 reader that ignores unknown keys still parses it.
 
-**Backup round-trip fidelity:** `normaliseEntry()` (the import path) spreads the original entry before applying field defaults, so identity/integration fields — `id`, `lotoId`, `hospitalCode`, `savedAt`, `sketch`, `miscPhotos`, and per-source `sourceId`, `deviceId`, `detail`, `linkedTo` — survive an export→import cycle. (Prior to rev 4 it was a whitelist rebuild that silently dropped all of these.)
+**Backup round-trip fidelity:** `normaliseEntry()` (the import path) spreads the original entry before applying field defaults, so identity/integration fields — `id`, `lotoId`, `hospitalCode`, `savedAt`, `exportedAt`/`exportId` (build 77), `sketch`, `miscPhotos`, and per-source `sourceId`, `deviceId`, `detail`, `linkedTo` — survive an export→import cycle. (Prior to rev 4 it was a whitelist rebuild that silently dropped all of these.)
 
 **For a downstream ingester** — the JSON gives you all the structural data (equipment, sources, sketches). The photo bytes live only in the ZIP export.
 
@@ -554,11 +683,11 @@ Required by Apple even though the app only uses `<input type="file" capture="env
 ### Versioning
 
 - `MARKETING_VERSION` — user-facing (currently `1.3`); bump for user-visible releases
-- `CURRENT_PROJECT_VERSION` — build number; **must be strictly increasing** for the same `MARKETING_VERSION` or Apple rejects the upload. Bumped by +1 on every commit that goes to TestFlight. Both Debug + Release entries in `project.pbxproj` must match.
+- `CURRENT_PROJECT_VERSION` — build number (currently **77**); **must be strictly increasing** for the same `MARKETING_VERSION` or Apple rejects the upload. Bumped by +1 on every commit that goes to TestFlight. Both Debug + Release entries in `project.pbxproj` must match.
 
 ### Service worker cache
 
-`sw.js` uses network-first for HTML/JSON, cache-first for static assets. **`CACHE_NAME` must be bumped every time cached files change** — otherwise the WebView serves stale HTML on next launch. Currently `loto-collector-v7.44`.
+`sw.js` uses network-first for HTML/JSON, cache-first for static assets. **`CACHE_NAME` must be bumped every time cached files change** — otherwise the WebView serves stale HTML on next launch. Currently `loto-collector-v7.71` (kept in lockstep with builds: build 77 ↔ v7.71).
 
 ---
 
@@ -714,7 +843,14 @@ Approximate line numbers (may drift as edits accumulate):
 | `saveBackup()` — JSON backup (v2 envelope) | ~6060 |
 | `normaliseEntry()` — backup import (spread-preserves identity fields) | ~6162 |
 | `setAutosaveStatus()` / `autoSaveCurrent()` — autosave indicator + save (§5.5) | ~6238 / ~6259 |
-| `saveOrShare()` — unified file save helper | ~6540 |
+| `saveOrShare()` — unified file save helper | ~7600 |
+| **Durable photo storage (§6, build 75):** `uniquePhotoKey` / `fsWritePhoto`+FS helpers / `storePhotoBytes` / `loadPhotoBytes` / `photoBytesExist` / `presentPhotoKeySet` / `migratePhotosToFS` | ~5390 / ~5417 / ~5448 / ~5469 / ~5488 / ~5518 / ~5535 |
+| Capture badge + integrity (§6): `setPhotoSlotState` / `runIntegrityCheck` / `updateIntegrityBadge` | ~5648 / ~5695 / ~5720 |
+| Reuse-a-Photo (§7): `collectTodaysPhotos` / `showReusePhotoPicker` / `reusePhotoInto` | ~4985 / ~5005 / ~5032 |
+| Export photo dedup (`dbKeyToFile` / `assignPhotoFile`) + integrity guard, inside `runCombinedExport` | ~6929 |
+| Local-day date helpers (§7, build 74): `localDateStr` / `exportDateFrom` | ~6653 / ~6661 |
+| Reference-aware photo deletion: `deleteEntryPhotos` | ~6218 |
+| Delete guards (§5.5, build 77): `deleteSaved` / `updateBulkDeleteSummary` / `exportBeforeBulkDelete` | ~6230 / ~6293 / ~6325 |
 | `scanTextToField()` — camera + OCR helper | ~6639 |
 | `init()` — startup: `ensureDeviceId()`, `updateFacilityBadge()`, dropdowns | ~1400 |
 | `genUuid()` / `ensureDeviceId()` / `ensureSourceId()` — stable UUID + device id (§1b/1c) | ~1320 |
