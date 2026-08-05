@@ -6114,6 +6114,9 @@ function renderSavedPanel() {
           ${entry.equipType || 'No type'} "&#183; ${entry.template || 'No template'}
           "&#183; ${entry.sources.length} source${entry.sources.length !== 1 ? 's' : ''}
           "&#183; ${photoCount} &#128247;
+          "&#183; ${entry.exportedAt
+            ? '<span style="color:#4ab86a;font-weight:600;" title="Exported ' + new Date(entry.exportedAt).toLocaleString() + '">&#10003; exported</span>'
+            : '<span style="color:#e0a44a;font-weight:700;">&#9888; not exported</span>'}
           "&#183; ${entry.equipBuilding || '?'} ${entry.equipRoom || ''}
           "&#183; ${entry.timestamp}
         </div>
@@ -6227,7 +6230,10 @@ function deleteEntryPhotos(entry, keepReferencedBy) {
 function deleteSaved(index) {
   const entry = savedEquipment[index];
   const name = entry.equipName;
-  if (confirm(`Delete "${name}" from saved list?`)) {
+  const expNote = entry.exportedAt
+    ? `\n\nExported ${new Date(entry.exportedAt).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}.`
+    : '\n\n\u26a0\ufe0f NO export record \u2014 this entry may never have left the device!';
+  if (confirm(`Delete "${name}" from saved list?${expNote}`)) {
     deleteEntryPhotos(entry, savedEquipment.filter((_, idx) => idx !== index));
     savedEquipment.splice(index, 1);
     saveAll();
@@ -6292,14 +6298,16 @@ function updateBulkDeleteSummary() {
   const btn = document.getElementById('bulkDeleteConfirmBtn');
   const input = document.getElementById('bulkDeleteConfirmInput');
   if (el) el.textContent = `${n} entr${n===1?'y':'ies'} will be permanently deleted`;
-  const lastAt = getLastDataEventAt();
-  const unbacked = targets.filter(e => (!e.savedAt) ? !lastAt : (!lastAt || e.savedAt > lastAt)).length;
+  // Exact per-entry check: exportedAt is stamped on every entry included in a
+  // completed export (since v7.71). Entries exported before that show as
+  // unstamped until they ride along in one more export.
+  const neverExported = targets.filter(e => !e.exportedAt).length;
   if (warnEl) {
-    if (unbacked > 0) {
-      const lastTxt = lastAt ? new Date(lastAt).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : null;
+    if (neverExported > 0) {
       warnEl.style.display = 'block';
-      warnEl.innerHTML = '&#9888; ' + unbacked + ' of these may not have left this device' +
-        (lastTxt ? ' since your last export/backup (' + lastTxt + ')' : ' \u2014 nothing has been exported or backed up yet') + '. Back up first.';
+      warnEl.innerHTML = '&#9888; <b>' + neverExported + '</b> of these entries ' + (neverExported===1?'has':'have') +
+        ' NO export record on this device \u2014 deleting would lose ' + (neverExported===1?'it':'them') + ' permanently.' +
+        '<button class="btn btn-outline btn-sm" onclick="exportBeforeBulkDelete()" style="display:block;margin-top:8px;">&#128230; Export these first</button>';
     } else {
       warnEl.style.display = 'none';
     }
@@ -6311,6 +6319,28 @@ function updateBulkDeleteSummary() {
     btn.style.opacity = ok ? '1' : '0.5';
   }
 }
+// Escape hatch from the bulk-delete warning: open the Export dialog preset to
+// the same date + facility filters, so one tap exports exactly that slice.
+// Entries get stamped \u2713 on completion; reopening bulk delete then shows clean.
+function exportBeforeBulkDelete() {
+  const d = (document.getElementById('bulkDeleteDateFilter') || {}).value || 'all';
+  const f = (document.getElementById('bulkDeleteFacilityFilter') || {}).value || 'all';
+  closeBulkDeleteDialog();
+  showExportDialog();
+  const dsel = document.getElementById('exportDateFilter');
+  if (dsel && [...dsel.options].some(o => o.value === d)) {
+    dsel.value = d;
+    populateExportFacilityFilter();
+    updateExportDateSummary();
+  }
+  const fsel = document.getElementById('exportFacilityFilter');
+  if (fsel && [...fsel.options].some(o => o.value === f)) {
+    fsel.value = f;
+    updateExportDateSummary();
+  }
+  showToast('Review and tap Export \u2014 entries are stamped once exported');
+}
+
 function confirmBulkDelete() {
   const input = document.getElementById('bulkDeleteConfirmInput');
   if (!input || input.value.trim().toUpperCase() !== 'DELETE') { showToast('Type DELETE to confirm', true); return; }
@@ -7286,6 +7316,13 @@ async function runCombinedExport() {
         exportId: exportId,
         filename: exportFilename
       });
+      // Stamp each exported entry so deletion decisions are self-evident.
+      // allEntries holds live references to savedEquipment items; the current
+      // unsaved entry's temp object gets stamped too, harmlessly (discarded).
+      const stampAt = new Date().toISOString();
+      allEntries.forEach(en => { en.exportedAt = stampAt; en.exportId = exportId; });
+      saveAll();
+      renderSavedPanel();
     }
     // Auto-update and persist the starting number for the next export
     document.getElementById('photoSeqStart').value = seqCounter;
