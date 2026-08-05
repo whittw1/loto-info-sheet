@@ -696,6 +696,11 @@ if ('serviceWorker' in navigator) {
       </select>
       <input type="text" id="settingsHospitalCustom" placeholder="Hospital key (must match loto-web exactly)" style="display:none;margin-top:8px;width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
       <div style="font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.4;">Stamped on every saved entry and on every export so loto-web files the data under the right facility.</div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="settingsSketchShow" style="width:18px;height:18px;">
+        Show Overhead Sketch section for this facility
+      </label>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">Off by default. Entries that already have sketch drawings still show the section.</div>
     </div>
     <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
     <div style="margin-bottom:16px;">
@@ -787,6 +792,9 @@ function onHospitalSelectChange() {
   const sel = document.getElementById('settingsHospital');
   document.getElementById('settingsHospitalCustom').style.display =
     sel.value === '__custom__' ? 'block' : 'none';
+  // Reflect the picked facility's sketch pref (custom entries resolve on Save)
+  const sketchChk = document.getElementById('settingsSketchShow');
+  if (sketchChk && sel.value !== '__custom__') sketchChk.checked = sketchEnabledForFacility(sel.value);
 }
 
 // Small header chip showing the active facility (or a warning when unset, so a
@@ -827,6 +835,8 @@ function showSettings() {
     custom.style.display = 'none';
     custom.value = '';
   }
+  const sketchChk = document.getElementById('settingsSketchShow');
+  if (sketchChk) sketchChk.checked = sketchEnabledForFacility(hc);
   document.getElementById('photoPreset').value = s.preset || '1920x1080';
   document.getElementById('photoMaxW').value = s.maxWidth;
   document.getElementById('photoMaxH').value = s.maxHeight;
@@ -901,6 +911,9 @@ function savePhotoSettings() {
   if (hc === '__custom__') hc = document.getElementById('settingsHospitalCustom').value.trim();
   setHospitalCode(hc);
   updateFacilityBadge();
+  const sketchChk = document.getElementById('settingsSketchShow');
+  if (sketchChk) setSketchPrefForFacility(hc, sketchChk.checked);
+  applySketchVisibility();
 
   document.getElementById('settingsOverlay').style.display = 'none';
   showToast('Settings saved');
@@ -1554,6 +1567,38 @@ function setHospitalCode(code) {
     if (code) localStorage.setItem('loto_hospital_code', code);
     else localStorage.removeItem('loto_hospital_code');
   } catch (e) { /* localStorage blocked — nothing persists, exports fall back to '' */ }
+}
+
+// ---- Per-facility Overhead Sketch preference (build 78) ----
+// Default is HIDDEN everywhere; a facility opts in via the Settings checkbox.
+// Keyed by hospitalCode ('' = no facility set). An entry that already carries
+// sketch content (strokes/labels) always shows the section — data never hides.
+function getSketchPrefs() {
+  try { return JSON.parse(localStorage.getItem('loto_sketch_prefs') || '{}'); } catch (e) { return {}; }
+}
+function sketchEnabledForFacility(code) {
+  const key = (code !== undefined ? code : getHospitalCode()) || '';
+  return getSketchPrefs()[key] === 'show';
+}
+function setSketchPrefForFacility(code, show) {
+  const prefs = getSketchPrefs();
+  prefs[code || ''] = show ? 'show' : 'hide';
+  try { localStorage.setItem('loto_sketch_prefs', JSON.stringify(prefs)); } catch (e) {}
+}
+function applySketchVisibility() {
+  const section = document.getElementById('sketchSection');
+  if (!section) return;
+  const hasContent = (typeof sketchLabels !== 'undefined' && sketchLabels && sketchLabels.length > 0) ||
+                     (typeof sketchStrokes !== 'undefined' && sketchStrokes && sketchStrokes.length > 0);
+  const show = sketchEnabledForFacility() || hasContent;
+  const wasHidden = section.style.display === 'none';
+  section.style.display = show ? '' : 'none';
+  // Canvas sized while hidden has zero width — resize on reveal.
+  if (show && wasHidden) {
+    requestAnimationFrame(() => {
+      try { resizeSketchCanvas(); renderSketchLabels(); } catch (e) {}
+    });
+  }
 }
 // Human-facing name for a code (falls back to the code itself for custom values).
 function hospitalName(code) {
@@ -3127,6 +3172,7 @@ function loadSketchDiagram(templateName) {
   toolbar.style.display = 'flex';
   // Auto-expand the sketch section now that a diagram is available
   setSketchSectionExpanded(true);
+  applySketchVisibility(); // per-facility pref may keep the whole section hidden
 
   // Remove old labels
   container.querySelectorAll('.sketch-label-marker').forEach(el => el.remove());
@@ -3228,6 +3274,7 @@ function toggleSketchSection() {
 
 // Auto-expand if there's existing sketch data; otherwise collapse
 function updateSketchSectionDefault() {
+  applySketchVisibility();
   const hasData = (sketchLabels && sketchLabels.length > 0) || (sketchStrokes && sketchStrokes.length > 0) || sketchDiagramKey;
   setSketchSectionExpanded(!!hasData);
 }
