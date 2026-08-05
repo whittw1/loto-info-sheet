@@ -5449,10 +5449,11 @@ async function storePhotoBytes(dbKey, resizedDataUrl) {
   if (idbAvailable) {
     try {
       await savePhotoToDB(dbKey, base64ToUint8Array(base64).buffer, 'image/jpeg');
-      savePhotoFallback(dbKey, resizedDataUrl);
       return { ok: true, where: 'idb' };
     } catch (e) { idbAvailable = false; }
   }
+  // Last resort only (IDB unavailable/failed): localStorage is tiny + evictable,
+  // so we never write it alongside a working IDB.
   const okFb = savePhotoFallback(dbKey, resizedDataUrl);
   return { ok: okFb, where: okFb ? 'fallback' : 'none' };
 }
