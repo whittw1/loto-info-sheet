@@ -701,6 +701,10 @@ Runtime detection is via `Capacitor.isNativePlatform()`.
 
 - **Capacitor 8.3** with Swift Package Manager (no CocoaPods)
 - WebView roots at `ios/App/App/public/` — synced from `www/` by `npx cap sync ios`
+- **SHIP STEP (easy to miss):** the editable source is the REPO-ROOT `index.html`/`sw.js`;
+  `www/` is a gitignored build copy. Before every archive run
+  `cp index.html sw.js www/ && npx cap sync ios` — build 79's first archive
+  shipped stale v7.72 assets because this step was skipped.
 - Bundle ID `com.hgsengineering.lotofieldcollector`; display name "LOTO Collector"
 
 ### Custom Vision-framework OCR plugin
