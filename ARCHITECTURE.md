@@ -1,6 +1,6 @@
 # LOTO Field Collector — Architecture Reference
 
-**Date:** 2026-08-05 (rev 10 — builds 74–77: durable photo storage + integrity. §6 rewritten: full-res photos now write to the **native filesystem** (Capacitor Filesystem, `DATA/loto_photos/`) with IndexedDB/localStorage as fallbacks, after iOS storage eviction silently lost 74 photos on 2026-08-04; capture-time save verification, export integrity guard, header integrity badge, collision-proof photo keys. §7: local-day date semantics + filtered-day export stamps; reuse-a-photo share model with export dedup; per-entry `exportedAt`/`exportId` stamps. §5.5: export-status badges + delete guards with "Export these first" escape hatch. New template: Unit Heater - Natural Gas. Prior: rev 9 — §5 registry inventory expanded. Named the equipment-side registries the doc had glossed over (`EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT`, `EQUIPMENT_PROMPT_FOR_TEMPLATE`, `EQUIPMENT_DIAGRAM_OVERRIDE`, `CONDENSATE_AUTO_EQUIP`, `CUSTOM_EQUIP_KEYWORD_TEMPLATE`) plus a new "Other registries (misc but load-bearing)" bullet block covering `SOURCE_DEFAULTS`, `ENERGY_DEVICE_MAP`, `ENERGY_KEYWORD_TEMP`, `ENERGY_LABEL_PREFIX/COLORS`, `PHOTO_DEFAULTS`, `SKETCH_DIAGRAMS`, `SAVED_FILTERS`, `HOSPITALS`. Prior revs: rev 8 = ingester live; rev 7 = data-entry UX pass; rev 6 = ZIP restructure.)
+**Date:** 2026-08-05 (rev 11 — build 79: simplified verification — water sources get Drain/Gauge checkboxes synthesizing the same canonical strings, electrical defaults to Controls, Settings toggle reverts to classic pickers (§5.4c). Prior: rev 10 — builds 74–77: durable photo storage + integrity. §6 rewritten: full-res photos now write to the **native filesystem** (Capacitor Filesystem, `DATA/loto_photos/`) with IndexedDB/localStorage as fallbacks, after iOS storage eviction silently lost 74 photos on 2026-08-04; capture-time save verification, export integrity guard, header integrity badge, collision-proof photo keys. §7: local-day date semantics + filtered-day export stamps; reuse-a-photo share model with export dedup; per-entry `exportedAt`/`exportId` stamps. §5.5: export-status badges + delete guards with "Export these first" escape hatch. New template: Unit Heater - Natural Gas. Prior: rev 9 — §5 registry inventory expanded. Named the equipment-side registries the doc had glossed over (`EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT`, `EQUIPMENT_PROMPT_FOR_TEMPLATE`, `EQUIPMENT_DIAGRAM_OVERRIDE`, `CONDENSATE_AUTO_EQUIP`, `CUSTOM_EQUIP_KEYWORD_TEMPLATE`) plus a new "Other registries (misc but load-bearing)" bullet block covering `SOURCE_DEFAULTS`, `ENERGY_DEVICE_MAP`, `ENERGY_KEYWORD_TEMP`, `ENERGY_LABEL_PREFIX/COLORS`, `PHOTO_DEFAULTS`, `SKETCH_DIAGRAMS`, `SAVED_FILTERS`, `HOSPITALS`. Prior revs: rev 8 = ingester live; rev 7 = data-entry UX pass; rev 6 = ZIP restructure.)
 **Repo:** [github.com/whittw1/loto-info-sheet](https://github.com/whittw1/loto-info-sheet)
 **Prior standalone doc:** `LOTO_Integration_Architecture.md` in `~/Desktop/Claude Apps/LOTO Information Sheet App/` (April 2026, pre-iOS work — kept for reference, superseded by this file).
 
@@ -272,6 +272,41 @@ single gate, called from `updateSketchSectionDefault`, `loadSketchDiagram`
 the section), and Settings save. Safety valve: an entry that already carries
 sketch strokes/labels always shows the section, and sketch data still exports
 unchanged.
+
+### 5.4c  Simplified verification (build 79)
+
+Replaces the verification pickers with lower-friction inputs while emitting
+the **same canonical strings** — exports/CSV/entries.json and loto-web are
+completely unchanged, so the Settings toggle ("Simplified verification",
+localStorage `loto_simple_verification`, default ON) can revert to the
+classic pickers at any time with no data migration. Backed by a prod-DB
+usage analysis (2026-07-30: 94% of ~930 water verifications are exactly the
+drain × gauge combos; `Controls` is 48% of ~850 electrical, blanks were 11%).
+
+- **Water/valve sources** (device whose `DEVICE_VERIFICATION_MAP` list has
+  `_placeholders`): two checkboxes — **Drain present** / **Gauge present** —
+  synthesize `Temp Only|GaugeOnly|Drain Only|Gauge/Drain` + the `- Hot`/
+  `- CHW` suffix from `getTempSuffixFor()` (shared with the classic filter,
+  so both modes always agree). A "Saves as: …" hint shows the stored string;
+  **More options…** (`_classicVerif` per-source flag) swaps back to the
+  classic select. Values the parser doesn't recognize (`Zero Flow`, custom
+  text, legacy oddities) auto-fall back to the classic select — never
+  clobbered. Legacy `G/Tmp/Drain` spellings parse as drain+gauge but are
+  left as-is unless a checkbox is tapped.
+- **Defaults** (`applySimpleVerifDefaults()`, run at the top of every
+  `renderSources()`, idempotent, simplified-mode only): blank water
+  verifications get the synthesized default — Drain pre-checked for
+  CHW/HHW sources when `getEquipType()` is AHU-family (coil drains are
+  near-universal there); blank electrical verifications get `Controls`
+  when the device-filtered list offers it. Recognized water strings get
+  their temperature suffix re-derived on render so changing the energy
+  source can't leave a stale suffix. Template-scoped verification
+  overrides and non-blank values are never touched.
+- Functions: `simpleVerifEnabled/setSimpleVerif`, `isValveVerifDevice`,
+  `synthesizeWaterVerification`, `parseWaterVerification`,
+  `updateSimpleVerif`, `showClassicVerif`, `applySimpleVerifDefaults`;
+  CSS `.simple-verif-check` (the global `.form-group input` rule strips
+  native checkbox rendering, so the checked state is painted manually).
 
 ### 5.5  Saved-panel UX + Copy Source + autosave indicator + export badges
 

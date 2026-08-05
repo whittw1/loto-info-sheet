@@ -233,6 +233,22 @@ if ('serviceWorker' in navigator) {
     background-position: right 14px center;
     padding-right: 36px;
   }
+  /* Simplified-verification checkboxes (build 79): .form-group input strips
+     native checkbox appearance, so paint our own box + checkmark. */
+  .form-group input.simple-verif-check {
+    -webkit-appearance: none; appearance: none;
+    width: 24px; height: 24px; min-width: 24px; padding: 0; margin: 0;
+    border: 1.5px solid var(--border); border-radius: 6px;
+    background: var(--input-bg); position: relative; flex: 0 0 auto;
+  }
+  .form-group input.simple-verif-check:checked {
+    background: var(--accent); border-color: var(--accent);
+  }
+  .form-group input.simple-verif-check:checked::after {
+    content: ''; position: absolute; left: 8px; top: 3px;
+    width: 5px; height: 11px; border: solid #fff;
+    border-width: 0 2.5px 2.5px 0; transform: rotate(45deg);
+  }
   .form-group select:focus, .form-group input:focus {
     outline: none; border-color: var(--accent);
   }
@@ -704,6 +720,14 @@ if ('serviceWorker' in navigator) {
     </div>
     <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
     <div style="margin-bottom:16px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="settingsSimpleVerif" style="width:18px;height:18px;" onchange="setSimpleVerif(this.checked)">
+        Simplified verification (checkboxes + smart defaults)
+      </label>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">Water valves get Drain / Gauge checkboxes; electrical defaults to Controls. Same saved values either way &mdash; turn off to restore the classic pickers.</div>
+    </div>
+    <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
+    <div style="margin-bottom:16px;">
       <label style="display:block;font-size:13px;color:var(--text-label);margin-bottom:6px;">&#128100; Collector Tag</label>
       <input type="text" id="settingsCollectorTag" maxlength="10" placeholder="e.g. JW" oninput="onCollectorTagInput(this.value)"
         style="width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;text-transform:uppercase;">
@@ -820,6 +844,8 @@ function updateFacilityBadge() {
 function showSettings() {
   const s = getPhotoSettings();
   try { document.getElementById('settingsCollectorTag').value = localStorage.getItem('loto_collector_tag') || ''; } catch (e) {}
+  const svChk = document.getElementById('settingsSimpleVerif');
+  if (svChk) svChk.checked = simpleVerifEnabled();
   updateCollectorTagHint();
   // Facility picker
   populateHospitalSelect();
@@ -1092,13 +1118,10 @@ const CHW_ENERGY_SOURCES = [
 // Boiler was removed to stop Natural Gas offering temperature verifications.
 const HOT_VERIFICATION_EQUIP = ['Domestic Water Heater'];
 
-function getFilteredVerifications(deviceType, energySource) {
-  // A template-scoped override wins outright — the list is already resolved
-  // (no _placeholders), so no temperature/extra processing is applied.
-  const override = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, energySource);
-  if (override) return override;
-
-  // Determine temperature variant based on energy source
+// Temperature classification for an energy source ('hot' | 'chw' | '').
+// Shared by the classic filtered picker AND the simplified checkbox
+// synthesis (build 79) so both always agree on the "- Hot"/"- CHW" suffix.
+function getTempSuffixFor(energySource) {
   let tempSuffix = '';
   if (energySource) {
     for (const hot of HOT_ENERGY_SOURCES) {
@@ -1117,6 +1140,17 @@ function getFilteredVerifications(deviceType, energySource) {
       }
     }
   }
+  return tempSuffix;
+}
+
+function getFilteredVerifications(deviceType, energySource) {
+  // A template-scoped override wins outright — the list is already resolved
+  // (no _placeholders), so no temperature/extra processing is applied.
+  const override = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, energySource);
+  if (override) return override;
+
+  // Determine temperature variant based on energy source
+  const tempSuffix = getTempSuffixFor(energySource);
 
   // Determine the working verification list
   let workingList = DEVICE_VERIFICATION_MAP[deviceType];
@@ -1188,6 +1222,102 @@ function getFilteredVerifications(deviceType, energySource) {
 
   return result;
 }
+
+// ---- Simplified verification (build 79) --------------------------------
+// Water-family sources: two checkboxes (Drain present / Gauge present)
+// SYNTHESIZE the same canonical verification strings the classic picker
+// offers — exports and loto-web see identical data either way, so the
+// Settings toggle can revert to the classic pickers at any time with no
+// data migration. Backed by prod usage analysis (2026-07-30): 94% of all
+// recorded water verifications are exactly these drain x gauge combos.
+function simpleVerifEnabled() {
+  try { return localStorage.getItem('loto_simple_verification') !== '0'; } catch (e) { return true; }
+}
+function setSimpleVerif(on) {
+  try { localStorage.setItem('loto_simple_verification', on ? '1' : '0'); } catch (e) {}
+  renderSources();
+  showToast(on ? 'Simplified verification on' : 'Classic verification pickers restored');
+}
+function isValveVerifDevice(deviceType) {
+  const list = DEVICE_VERIFICATION_MAP[deviceType];
+  return !!(list && list.some(v => v.startsWith('_')));
+}
+function synthesizeWaterVerification(drain, gauge, tempSuffix) {
+  const sfx = tempSuffix === 'hot' ? ' - Hot' : tempSuffix === 'chw' ? ' - CHW' : '';
+  if (drain && gauge) return 'Gauge/Drain' + sfx;
+  if (gauge) return 'GaugeOnly' + sfx;
+  if (drain) return 'Drain Only' + sfx;
+  return 'Temp Only' + sfx;
+}
+// Parse a stored verification back into checkbox state. `recognized:false`
+// (Zero Flow, custom text, electrical values, ...) makes the UI fall back
+// to the classic select for that source so nothing is ever clobbered.
+function parseWaterVerification(v) {
+  const s = (v || '').trim();
+  if (!s) return { drain: false, gauge: false, recognized: true, blank: true };
+  const base = s.replace(/\s*-\s*(Hot|CHW)$/i, '');
+  const map = {
+    'Temp Only':   { drain: false, gauge: false },
+    'GaugeOnly':   { drain: false, gauge: true  },
+    'Drain Only':  { drain: true,  gauge: false },
+    'Gauge/Drain': { drain: true,  gauge: true  },
+    'G/Tmp/Drain': { drain: true,  gauge: true  }
+  };
+  if (Object.prototype.hasOwnProperty.call(map, base)) {
+    return Object.assign({ recognized: true, blank: false }, map[base]);
+  }
+  return { drain: false, gauge: false, recognized: false, blank: false };
+}
+function updateSimpleVerif(index, which, checked) {
+  const src = sources[index];
+  const cur = parseWaterVerification(src.verification);
+  const drain = which === 'drain' ? checked : cur.drain;
+  const gauge = which === 'gauge' ? checked : cur.gauge;
+  src.verification = synthesizeWaterVerification(drain, gauge, getTempSuffixFor(src.energySource || ''));
+  renderSources();
+  autoSaveCurrent();
+}
+function showClassicVerif(index) {
+  sources[index]._classicVerif = true;
+  renderSources();
+}
+// Render-time normalize pass (simplified mode only, idempotent):
+//  - blank water verifications get the synthesized default (Temp Only
+//    variant; Drain pre-checked for CHW/HHW on AHU-family equipment —
+//    those coils nearly always have drains per wilkins 2026-07-30);
+//  - blank electrical verifications default to 'Controls' (48% of all
+//    recorded electrical verifications; kills the 11% blank rate);
+//  - recognized water strings get their temperature suffix re-derived so
+//    a source-type change can't leave a stale/missing suffix (legacy
+//    'G/Tmp/Drain' spellings are left untouched).
+function applySimpleVerifDefaults() {
+  if (!simpleVerifEnabled()) return;
+  let changed = false;
+  const equipIsAHU = /ahu|air handler/i.test(getEquipType() || '');
+  for (const src of sources) {
+    if (!src.deviceType) continue;
+    if (templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource)) continue;
+    const list = DEVICE_VERIFICATION_MAP[src.deviceType];
+    if (!list) continue;
+    if (list.some(v => v.startsWith('_'))) {
+      const p = parseWaterVerification(src.verification);
+      const es = src.energySource || '';
+      if (p.blank) {
+        const drainDefault = equipIsAHU && (es.startsWith('CHW') || es.startsWith('HHW'));
+        src.verification = synthesizeWaterVerification(drainDefault, false, getTempSuffixFor(es));
+        changed = true;
+      } else if (p.recognized && !/^G\/Tmp\/Drain/.test(src.verification)) {
+        const resynth = synthesizeWaterVerification(p.drain, p.gauge, getTempSuffixFor(es));
+        if (resynth !== src.verification) { src.verification = resynth; changed = true; }
+      }
+    } else if (!src.verification) {
+      const resolved = getFilteredVerifications(src.deviceType, src.energySource);
+      if (resolved.includes('Controls')) { src.verification = 'Controls'; changed = true; }
+    }
+  }
+  if (changed) autoSaveCurrent();
+}
+// ---- end simplified verification ---------------------------------------
 
 // Energy-source-specific verifications to add on top of the device-derived
 // list. Keyed by source-name prefix (matched via startsWith). Use sparingly —
@@ -4201,6 +4331,7 @@ function addSource() {
 }
 
 function renderSources() {
+  applySimpleVerifDefaults();
   const container = document.getElementById('sourcesContainer');
   container.innerHTML = '';
 
@@ -4348,14 +4479,40 @@ function renderSources() {
               <input type="text" id="src_loc_custom_${i}" value="${src.location||''}" placeholder="Enter custom location"
                 oninput="updateSourceCustomLoc(${i},this.value)">
             </div>` : `<div id="customLocGroup_${i}" style="display:none;"></div>`}
-            <div class="form-group">
+            ${(() => {
+              const useSimple = simpleVerifEnabled() && !src._classicVerif
+                && isValveVerifDevice(src.deviceType)
+                && !templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource)
+                && parseWaterVerification(src.verification).recognized;
+              if (useSimple) {
+                const p = parseWaterVerification(src.verification);
+                const derived = src.verification || synthesizeWaterVerification(false, false, getTempSuffixFor(src.energySource || ''));
+                const boxStyle = 'display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:14px;cursor:pointer;';
+                return `<div class="form-group">
+                  <label>Verification</label>
+                  <label style="${boxStyle}">
+                    <input type="checkbox" class="simple-verif-check" ${p.drain ? 'checked' : ''} onchange="updateSimpleVerif(${i},'drain',this.checked)">
+                    Drain present
+                  </label>
+                  <label style="${boxStyle}">
+                    <input type="checkbox" class="simple-verif-check" ${p.gauge ? 'checked' : ''} onchange="updateSimpleVerif(${i},'gauge',this.checked)">
+                    Gauge present
+                  </label>
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                    <span style="font-size:11px;color:var(--text-dim);">Saves as: ${derived}</span>
+                    <button type="button" onclick="showClassicVerif(${i})" style="background:none;border:none;color:var(--text-dim);font-size:11px;text-decoration:underline;padding:4px;">More options&hellip;</button>
+                  </div>
+                </div>`;
+              }
+              return `<div class="form-group">
               <label>Verification</label>
               <select onchange="updateSource(${i},'verification',this.value)" id="src_ver_${i}">
                 <option value="">-- Select --</option>
                 ${getFilteredVerifications(src.deviceType, src.energySource).map(s => `<option value="${s}" ${src.verification===s?'selected':''}>${s}</option>`).join('')}
                 ${src.verification && !getFilteredVerifications(src.deviceType, src.energySource).includes(src.verification) ? `<option value="${src.verification}" selected>${src.verification}</option>` : ''}
               </select>
-            </div>
+            </div>`;
+            })()}
             <div class="form-group">
               <label>Valve State</label>
               <select onchange="updateSource(${i},'valveState',this.value)" id="src_valvestate_${i}">
