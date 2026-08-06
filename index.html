@@ -3804,6 +3804,17 @@ const EQUIPMENT_EXTRA_SOURCES = {
   'Domestic Water Pump': [
     { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly', duplicate: 'No', detail: '' },
   ],
+  // Fire pumps: suction + discharge water lines as SEPARATE sources (each
+  // gets its own valve/photo/ID — per wilkins 2026-08-01, not a combined
+  // In/Out row). Kinetic + Electrical come from the Standard Pump template.
+  'Fire Pump': [
+    { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '' },
+    { energySource: 'DW Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '' },
+  ],
+  'Fire Jockey Pump': [
+    { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '' },
+    { energySource: 'DW Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '' },
+  ],
 };
 
 // Templates whose electrical voltage is fixed by design — no voltage prompt.
