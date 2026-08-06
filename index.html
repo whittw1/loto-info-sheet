@@ -417,7 +417,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b80</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b81</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1242,6 +1242,19 @@ function isValveVerifDevice(deviceType) {
   const list = DEVICE_VERIFICATION_MAP[deviceType];
   return !!(list && list.some(v => v.startsWith('_')));
 }
+// Water-family SOURCE test — the checkbox gate keys off the energy source,
+// not the device (build 81): techs pick the source first and often reach
+// Verification before Device, and a valve device on a NON-water source
+// (Natural Gas ball valve) must NOT get drain/gauge checkboxes. Hot/chw
+// classification covers steam/HHW/DHW/condensate/feedwater/CHW; the
+// explicit prefixes cover the suffix-less cold/ambient water families.
+const WATER_VERIF_COLD_PREFIXES = ['DW', 'Domestic Water', 'CW', 'Condenser Water', 'Glycol', 'Energy Recovery', 'Fire Water'];
+function isWaterFamilySource(energySource) {
+  const es = (energySource || '').trim();
+  if (!es) return false;
+  if (getTempSuffixFor(es)) return true;
+  return WATER_VERIF_COLD_PREFIXES.some(p => es.startsWith(p));
+}
 function synthesizeWaterVerification(drain, gauge, tempSuffix) {
   const sfx = tempSuffix === 'hot' ? ' - Hot' : tempSuffix === 'chw' ? ' - CHW' : '';
   if (drain && gauge) return 'Gauge/Drain' + sfx;
@@ -1316,7 +1329,6 @@ function applySimpleVerifDefaults() {
   let changed = false;
   const equipIsAHU = /ahu|air handler/i.test(getEquipType() || '');
   for (const src of sources) {
-    if (!src.deviceType) continue;
     const ov = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource);
     if (ov && !overrideAllowsSimple(ov)) {
       // Mixed/electrical curated list — only fill a blank with Controls
@@ -1324,9 +1336,15 @@ function applySimpleVerifDefaults() {
       if (!src.verification && ov.includes('Controls')) { src.verification = 'Controls'; changed = true; }
       continue;
     }
+    // Water-family sources qualify with NO device picked yet (source-first
+    // workflow); a chosen device must still be valve-family. Non-water
+    // sources need a device with a non-placeholder list (electrical etc.).
+    const isValve = ov ? true
+      : (isWaterFamilySource(src.energySource)
+         && (!src.deviceType || isValveVerifDevice(src.deviceType)));
+    if (!isValve && !src.deviceType) continue;
     const list = DEVICE_VERIFICATION_MAP[src.deviceType];
-    const isValve = ov ? true : !!(list && list.some(v => v.startsWith('_')));
-    if (!ov && !list) continue;
+    if (!ov && !isValve && !list) continue;
     if (isValve) {
       const p = parseWaterVerification(src.verification);
       const es = src.energySource || '';
@@ -4517,7 +4535,9 @@ function renderSources() {
             ${(() => {
               const ov = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource);
               const useSimple = simpleVerifEnabled() && !src._classicVerif
-                && (ov ? overrideAllowsSimple(ov) : isValveVerifDevice(src.deviceType))
+                && (ov ? overrideAllowsSimple(ov)
+                       : isWaterFamilySource(src.energySource)
+                         && (!src.deviceType || isValveVerifDevice(src.deviceType)))
                 && parseWaterVerification(src.verification).recognized;
               if (useSimple) {
                 const p = parseWaterVerification(src.verification);
