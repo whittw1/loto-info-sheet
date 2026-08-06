@@ -3,7 +3,7 @@
   "short_name": "FL VA LOTO",
   "start_url": "./index.html",
   "display": "browser",
-  "background_color": "#1a1f2e",
-  "theme_color": "#1a1f2e",
+  "background_color": "#eef1f6",
+  "theme_color": "#eef1f6",
   "description": "LOTO field data collection tool"
 }

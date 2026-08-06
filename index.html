@@ -37,7 +37,28 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 <style>
+  /* Light theme is the DEFAULT (build 82, per wilkins 2026-08-01).
+     Dark is a manual Settings toggle only — no time-of-day / system
+     switching. body.theme-dark restores the original dark palette. */
   :root {
+    --bg: #eef1f6;
+    --card: #ffffff;
+    --card-alt: #f4f6fa;
+    --border: #c5cedd;
+    --accent: #2e6cb5;
+    --accent-hover: #245a9c;
+    --danger: #c74436;
+    --danger-hover: #b13a2e;
+    --success: #2e9152;
+    --success-hover: #257a44;
+    --warning: #b07d1e;
+    --text: #1d2433;
+    --text-dim: #5f6a80;
+    --text-label: #47536e;
+    --input-bg: #ffffff;
+    --photo-bg: #e2e7f0;
+  }
+  body.theme-dark {
     --bg: #1a1f2e;
     --card: #232a3b;
     --card-alt: #2a3248;
@@ -414,10 +435,11 @@ if ('serviceWorker' in navigator) {
 </style>
 </head>
 <body>
+<script>try { if (localStorage.getItem('loto_theme') === 'dark') document.body.classList.add('theme-dark'); } catch (e) {}</script>
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b81</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b82</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -725,6 +747,11 @@ if ('serviceWorker' in navigator) {
         Simplified verification (checkboxes + smart defaults)
       </label>
       <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">Water valves get Drain / Gauge checkboxes; electrical defaults to Controls. Same saved values either way &mdash; turn off to restore the classic pickers.</div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="settingsDarkTheme" style="width:18px;height:18px;" onchange="setDarkTheme(this.checked)">
+        Dark theme
+      </label>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">Light is the default. This is a manual switch only &mdash; the app never changes theme on its own.</div>
     </div>
     <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
     <div style="margin-bottom:16px;">
@@ -846,6 +873,8 @@ function showSettings() {
   try { document.getElementById('settingsCollectorTag').value = localStorage.getItem('loto_collector_tag') || ''; } catch (e) {}
   const svChk = document.getElementById('settingsSimpleVerif');
   if (svChk) svChk.checked = simpleVerifEnabled();
+  const dtChk = document.getElementById('settingsDarkTheme');
+  if (dtChk) dtChk.checked = document.body.classList.contains('theme-dark');
   updateCollectorTagHint();
   // Facility picker
   populateHospitalSelect();
@@ -1237,6 +1266,12 @@ function setSimpleVerif(on) {
   try { localStorage.setItem('loto_simple_verification', on ? '1' : '0'); } catch (e) {}
   renderSources();
   showToast(on ? 'Simplified verification on' : 'Classic verification pickers restored');
+}
+// ---- Theme (build 82): light is the default; dark is a manual toggle ----
+function setDarkTheme(on) {
+  try { localStorage.setItem('loto_theme', on ? 'dark' : 'light'); } catch (e) {}
+  document.body.classList.toggle('theme-dark', !!on);
+  showToast(on ? 'Dark theme on' : 'Light theme on');
 }
 function isValveVerifDevice(deviceType) {
   const list = DEVICE_VERIFICATION_MAP[deviceType];
