@@ -34,3 +34,6 @@ build/
 
 # Personal/scratch docs kept alongside the repo but not tracked
 LOTO_Improvement_Recommendations.docx
+
+# Facility-identifying scan output stays local — repo is public
+tests/production-scan/
