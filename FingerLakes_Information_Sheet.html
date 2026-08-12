@@ -439,7 +439,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b83</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b84</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -6138,7 +6138,16 @@ async function runPhotoKeyMigration() {
   saveAll();
   if (wipTouched) autoSaveCurrent();
   try { await saveMetadata('photo_migration_report', report); } catch (e) {}
-  try { localStorage.setItem(PHOTO_KEY_MIGRATION_FLAG, report.finishedAt); } catch (e) {}
+  // Only mark the migration done if the stores were actually readable while it
+  // ran. If IndexedDB was down, legacy photos living only there classified as
+  // "missing" — leaving the flag unset lets the scan retry on the next launch
+  // instead of permanently stranding them under legacy keys.
+  const storesWereReadable = idbAvailable || report.missing.length === 0;
+  if (storesWereReadable) {
+    try { localStorage.setItem(PHOTO_KEY_MIGRATION_FLAG, report.finishedAt); } catch (e) {}
+  } else {
+    console.warn('Photo key migration: IDB unavailable and ' + report.missing.length + ' refs unresolved — will retry next launch');
+  }
 
   const nSus = report.suspects.length, nOrp = report.orphans.length, nRek = report.rekeyed.length, nMis = report.missing.length;
   if (nSus || nOrp || nRek || nMis) {

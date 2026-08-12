@@ -3,7 +3,7 @@
   "short_name": "FL VA LOTO",
   "start_url": "./FingerLakes_Information_Sheet.html",
   "display": "standalone",
-  "background_color": "#1a1f2e",
-  "theme_color": "#1a1f2e",
+  "background_color": "#eef1f6",
+  "theme_color": "#eef1f6",
   "description": "Finger Lakes VA LOTO field data collection tool"
 }
