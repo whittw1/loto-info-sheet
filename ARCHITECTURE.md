@@ -426,6 +426,57 @@ timestamp on the first successful save after page load.
 > failure loud. The three pillars: **native filesystem primary storage**,
 > **capture-time save verification**, and an **export integrity guard**.
 
+### Photo keys — UUID ownership (build 83, 2026-08-12) — **do not weaken**
+
+> **Why:** photo keys used to derive from the equipment **name** (`${name}__${slot}`,
+> later + a random token). The crew's real workflow (type auto-fills name → shoot →
+> rename) made same-named/same-typed units silently overwrite and cross-link each
+> other's photos across rooms, buildings, and facilities — ~910 corrupted photo
+> slots on the iPad and ~204 on the phone across five VA facilities. The rules
+> below make that structurally impossible. **No part of a photo key may ever come
+> from equipName, equipType, template, building, room, hospitalCode, or a timestamp.**
+
+- **Key format:** `photo::<entry-uuid>::<slot-token>::<capture-rev>` minted by
+  `photoStoreKey(entryId, slotToken)`; parsed by `parsePhotoKey`. Slot tokens:
+  `main` / `dataplate` / `ee` / `<sourceId uuid>` / `misc-<8hex>`. The in-progress
+  form owns a stable `currentEntryId` (minted at first capture, saved into the
+  autosave state, becomes `entry.id` on save).
+- **Immutability:** a retake writes a **new** record (fresh capture-rev), then
+  updates the single owning reference, then deletes the superseded own-entry
+  record. Deleting an entry deletes only keys whose UUID prefix is its own id
+  (`deleteEntryPhotos`).
+- **Reuse / duplicate = copy + provenance:** "Reuse Photo" and entry duplication
+  COPY bytes to a key owned by the target entry and record
+  `{dupOf: {entryId, dbKey}}` on the reference. No shared mutable pointers.
+  Export writes provenance-linked identical bytes as one file (SHARE contract).
+- **Hashes:** every saved photo gets `sha256` stamped on its reference; a
+  persistent hash index warns at capture time if the same bytes already belong
+  to a different entry (red banner) — `recordPhotoHash`.
+- **Export enforcement:** `resolveExportPhoto` ships bytes only through keys the
+  entry's UUID owns — legacy/foreign keys are excluded + confirmed with the user
+  (`unsafeRefs`). Before the ZIP is finalized, a **duplicate gate** hard-aborts
+  if byte-identical files are claimed by different entries with no recorded
+  `dupOf`. `manifest.json` carries `photos: [{filename, sha256, entries:[{entryId,
+  slot, sourceId?, dupOf?}]}]` plus `counts.unsafeRefs`.
+- **Migration & quarantine:** `runPhotoKeyMigration()` (one-time,
+  `loto_key_migration_v8` flag) re-keys single-referent legacy photos to their
+  owner, copies+flags `legacySuspect` when one blob was claimed by several
+  entries (red "PHOTO SUSPECT" badge; surfaced, never silently reassigned),
+  quarantines orphans (kept, listed, exportable). Settings → **Photo Audit**
+  (on-demand hash audit) and **Photo Store Report** (migration report +
+  quarantine export).
+- **FS filenames are reversible encodings** of keys (`p.<id>.<slot>.<rev>.jpg`,
+  `photoKeyFromFsName`) so `fsPresentKeySet()` can reconstruct exact keys.
+- **Entry retention:** `saveAll` maintains `loto_entry_count` + a
+  thumbnail-stripped `loto_saved_snapshot` in localStorage; `loadAll` restores
+  the snapshot if the primary store comes up empty and shows a red banner if
+  fewer entries load than expected. Backup-import merges dedupe by entry **id**
+  (never by name), and the Backup dialog states in red that photo bytes are not
+  included.
+- **Tests:** `tests/photo-regression.js` (browser-injected suite, 8 tests incl.
+  a 500-entry scale test) and `tests/production_store_scan.py` (read-only
+  quarantine classifier against the 8/5 all-dates export bundles).
+
 ### Native filesystem — `DATA/loto_photos/` (primary on iOS, build 75+)
 
 On the native app, every resized full-res JPEG is written to a real file in

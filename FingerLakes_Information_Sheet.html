@@ -37,7 +37,28 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 <style>
+  /* Light theme is the DEFAULT (build 82, per wilkins 2026-08-01).
+     Dark is a manual Settings toggle only — no time-of-day / system
+     switching. body.theme-dark restores the original dark palette. */
   :root {
+    --bg: #eef1f6;
+    --card: #ffffff;
+    --card-alt: #f4f6fa;
+    --border: #c5cedd;
+    --accent: #2e6cb5;
+    --accent-hover: #245a9c;
+    --danger: #c74436;
+    --danger-hover: #b13a2e;
+    --success: #2e9152;
+    --success-hover: #257a44;
+    --warning: #b07d1e;
+    --text: #1d2433;
+    --text-dim: #5f6a80;
+    --text-label: #47536e;
+    --input-bg: #ffffff;
+    --photo-bg: #e2e7f0;
+  }
+  body.theme-dark {
     --bg: #1a1f2e;
     --card: #232a3b;
     --card-alt: #2a3248;
@@ -233,6 +254,22 @@ if ('serviceWorker' in navigator) {
     background-position: right 14px center;
     padding-right: 36px;
   }
+  /* Simplified-verification checkboxes (build 79): .form-group input strips
+     native checkbox appearance, so paint our own box + checkmark. */
+  .form-group input.simple-verif-check {
+    -webkit-appearance: none; appearance: none;
+    width: 24px; height: 24px; min-width: 24px; padding: 0; margin: 0;
+    border: 1.5px solid var(--border); border-radius: 6px;
+    background: var(--input-bg); position: relative; flex: 0 0 auto;
+  }
+  .form-group input.simple-verif-check:checked {
+    background: var(--accent); border-color: var(--accent);
+  }
+  .form-group input.simple-verif-check:checked::after {
+    content: ''; position: absolute; left: 8px; top: 3px;
+    width: 5px; height: 11px; border: solid #fff;
+    border-width: 0 2.5px 2.5px 0; transform: rotate(45deg);
+  }
   .form-group select:focus, .form-group input:focus {
     outline: none; border-color: var(--accent);
   }
@@ -398,10 +435,11 @@ if ('serviceWorker' in navigator) {
 </style>
 </head>
 <body>
+<script>try { if (localStorage.getItem('loto_theme') === 'dark') document.body.classList.add('theme-dark'); } catch (e) {}</script>
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b83</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -411,7 +449,7 @@ if ('serviceWorker' in navigator) {
     <button class="btn btn-outline btn-sm" onclick="showSavedList()">&#128203; List</button>
     <button class="btn btn-outline btn-sm" onclick="showSettings()">&#9881; Settings</button>
     <button class="btn btn-outline btn-sm" onclick="importBackup()" title="Import JSON backup">&#128229; Import</button>
-    <button class="btn btn-outline btn-sm" onclick="saveBackup()" title="Save JSON backup">&#128228; Backup</button>
+    <button class="btn btn-outline btn-sm" onclick="showBackupDialog()" title="Save JSON backup (photos NOT included — use Export for photos)">&#128228; Backup</button>
     <button class="btn btn-outline btn-sm" onclick="showExportLog()" title="Export &amp; backup history on this device">&#128203; Log</button>
     <button class="btn btn-accent btn-sm" onclick="showExportDialog()">&#128230; Export</button>
   </div>
@@ -673,7 +711,7 @@ if ('serviceWorker' in navigator) {
     </div>
     <div id="bulkDeleteSummary" style="font-size:13px;font-weight:600;color:var(--text);margin:8px 0 4px;"></div>
     <div id="bulkDeleteWarn" style="display:none;font-size:12px;color:#e0a44a;background:rgba(224,164,74,0.12);border:1px solid rgba(224,164,74,0.4);border-radius:6px;padding:8px 10px;margin-bottom:10px;line-height:1.4;"></div>
-    <button class="btn btn-outline btn-sm" onclick="saveBackup()" style="width:100%;margin-bottom:12px;">&#128228; Back up first</button>
+    <button class="btn btn-outline btn-sm" onclick="showBackupDialog()" style="width:100%;margin-bottom:12px;">&#128228; Back up first (photos NOT included &mdash; Export for photos)</button>
     <label style="display:block;font-size:12px;color:var(--text-label);margin-bottom:4px;">Type <strong>DELETE</strong> to confirm</label>
     <input type="text" id="bulkDeleteConfirmInput" placeholder="DELETE" oninput="updateBulkDeleteSummary()" autocomplete="off"
       style="width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:15px;letter-spacing:2px;text-align:center;text-transform:uppercase;margin-bottom:14px;">
@@ -701,6 +739,19 @@ if ('serviceWorker' in navigator) {
         Show Overhead Sketch section for this facility
       </label>
       <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">Off by default. Entries that already have sketch drawings still show the section.</div>
+    </div>
+    <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
+    <div style="margin-bottom:16px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="settingsSimpleVerif" style="width:18px;height:18px;" onchange="setSimpleVerif(this.checked)">
+        Simplified verification (checkboxes + smart defaults)
+      </label>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">Water valves get Drain / Gauge checkboxes; electrical defaults to Controls. Same saved values either way &mdash; turn off to restore the classic pickers.</div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="settingsDarkTheme" style="width:18px;height:18px;" onchange="setDarkTheme(this.checked)">
+        Dark theme
+      </label>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">Light is the default. This is a manual switch only &mdash; the app never changes theme on its own.</div>
     </div>
     <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
     <div style="margin-bottom:16px;">
@@ -742,6 +793,13 @@ if ('serviceWorker' in navigator) {
     <div style="background:var(--input-bg);border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:12px;color:var(--text-dim);line-height:1.5;">
       <strong style="color:var(--text);">Estimated file size:</strong> <span id="estFileSize">~200-400 KB per photo</span><br>
       At 250 photos/day: <span id="estDaySize">~50-100 MB total</span>
+    </div>
+    <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
+    <div style="margin-bottom:16px;">
+      <label style="display:block;font-size:13px;color:var(--text-label);margin-bottom:6px;">&#128247; Photo Integrity</label>
+      <button class="btn btn-outline btn-sm" onclick="runPhotoAudit()" style="width:100%;margin-bottom:8px;">&#128269; Photo Audit &mdash; verify no cross-linked photos</button>
+      <button class="btn btn-outline btn-sm" onclick="showPhotoStoreReport()" style="width:100%;">&#128451; Photo Store Report (migration &amp; quarantine)</button>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.4;">Run the Audit before leaving site: it hashes every photo and proves no two pieces of equipment share an image unless it was an intentional recorded reuse.</div>
     </div>
     <div class="dialog-actions">
       <button class="btn btn-outline btn-sm" onclick="resetPhotoSettings()">Reset Defaults</button>
@@ -820,6 +878,10 @@ function updateFacilityBadge() {
 function showSettings() {
   const s = getPhotoSettings();
   try { document.getElementById('settingsCollectorTag').value = localStorage.getItem('loto_collector_tag') || ''; } catch (e) {}
+  const svChk = document.getElementById('settingsSimpleVerif');
+  if (svChk) svChk.checked = simpleVerifEnabled();
+  const dtChk = document.getElementById('settingsDarkTheme');
+  if (dtChk) dtChk.checked = document.body.classList.contains('theme-dark');
   updateCollectorTagHint();
   // Facility picker
   populateHospitalSelect();
@@ -1092,13 +1154,10 @@ const CHW_ENERGY_SOURCES = [
 // Boiler was removed to stop Natural Gas offering temperature verifications.
 const HOT_VERIFICATION_EQUIP = ['Domestic Water Heater'];
 
-function getFilteredVerifications(deviceType, energySource) {
-  // A template-scoped override wins outright — the list is already resolved
-  // (no _placeholders), so no temperature/extra processing is applied.
-  const override = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, energySource);
-  if (override) return override;
-
-  // Determine temperature variant based on energy source
+// Temperature classification for an energy source ('hot' | 'chw' | '').
+// Shared by the classic filtered picker AND the simplified checkbox
+// synthesis (build 79) so both always agree on the "- Hot"/"- CHW" suffix.
+function getTempSuffixFor(energySource) {
   let tempSuffix = '';
   if (energySource) {
     for (const hot of HOT_ENERGY_SOURCES) {
@@ -1117,6 +1176,17 @@ function getFilteredVerifications(deviceType, energySource) {
       }
     }
   }
+  return tempSuffix;
+}
+
+function getFilteredVerifications(deviceType, energySource) {
+  // A template-scoped override wins outright — the list is already resolved
+  // (no _placeholders), so no temperature/extra processing is applied.
+  const override = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, energySource);
+  if (override) return override;
+
+  // Determine temperature variant based on energy source
+  const tempSuffix = getTempSuffixFor(energySource);
 
   // Determine the working verification list
   let workingList = DEVICE_VERIFICATION_MAP[deviceType];
@@ -1188,6 +1258,154 @@ function getFilteredVerifications(deviceType, energySource) {
 
   return result;
 }
+
+// ---- Simplified verification (build 79) --------------------------------
+// Water-family sources: two checkboxes (Drain present / Gauge present)
+// SYNTHESIZE the same canonical verification strings the classic picker
+// offers — exports and loto-web see identical data either way, so the
+// Settings toggle can revert to the classic pickers at any time with no
+// data migration. Backed by prod usage analysis (2026-07-30): 94% of all
+// recorded water verifications are exactly these drain x gauge combos.
+function simpleVerifEnabled() {
+  try { return localStorage.getItem('loto_simple_verification') !== '0'; } catch (e) { return true; }
+}
+function setSimpleVerif(on) {
+  try { localStorage.setItem('loto_simple_verification', on ? '1' : '0'); } catch (e) {}
+  renderSources();
+  showToast(on ? 'Simplified verification on' : 'Classic verification pickers restored');
+}
+// ---- Theme (build 82): light is the default; dark is a manual toggle ----
+function setDarkTheme(on) {
+  try { localStorage.setItem('loto_theme', on ? 'dark' : 'light'); } catch (e) {}
+  document.body.classList.toggle('theme-dark', !!on);
+  showToast(on ? 'Dark theme on' : 'Light theme on');
+}
+function isValveVerifDevice(deviceType) {
+  const list = DEVICE_VERIFICATION_MAP[deviceType];
+  return !!(list && list.some(v => v.startsWith('_')));
+}
+// Water-family SOURCE test — the checkbox gate keys off the energy source,
+// not the device (build 81): techs pick the source first and often reach
+// Verification before Device, and a valve device on a NON-water source
+// (Natural Gas ball valve) must NOT get drain/gauge checkboxes. Hot/chw
+// classification covers steam/HHW/DHW/condensate/feedwater/CHW; the
+// explicit prefixes cover the suffix-less cold/ambient water families.
+const WATER_VERIF_COLD_PREFIXES = ['DW', 'Domestic Water', 'CW', 'Condenser Water', 'Glycol', 'Energy Recovery', 'Fire Water'];
+function isWaterFamilySource(energySource) {
+  const es = (energySource || '').trim();
+  if (!es) return false;
+  if (getTempSuffixFor(es)) return true;
+  return WATER_VERIF_COLD_PREFIXES.some(p => es.startsWith(p));
+}
+function synthesizeWaterVerification(drain, gauge, tempSuffix) {
+  const sfx = tempSuffix === 'hot' ? ' - Hot' : tempSuffix === 'chw' ? ' - CHW' : '';
+  if (drain && gauge) return 'Gauge/Drain' + sfx;
+  if (gauge) return 'GaugeOnly' + sfx;
+  if (drain) return 'Drain Only' + sfx;
+  return 'Temp Only' + sfx;
+}
+// Parse a stored verification back into checkbox state. `recognized:false`
+// (Zero Flow, custom text, electrical values, ...) makes the UI fall back
+// to the classic select for that source so nothing is ever clobbered.
+function parseWaterVerification(v) {
+  const s = (v || '').trim();
+  if (!s) return { drain: false, gauge: false, recognized: true, blank: true };
+  const base = s.replace(/\s*-\s*(Hot|CHW)$/i, '');
+  const map = {
+    'Temp Only':   { drain: false, gauge: false },
+    'GaugeOnly':   { drain: false, gauge: true  },
+    'Drain Only':  { drain: true,  gauge: false },
+    'Gauge/Drain': { drain: true,  gauge: true  },
+    'G/Tmp/Drain': { drain: true,  gauge: true  }
+  };
+  if (Object.prototype.hasOwnProperty.call(map, base)) {
+    return Object.assign({ recognized: true, blank: false }, map[base]);
+  }
+  return { drain: false, gauge: false, recognized: false, blank: false };
+}
+// A template-scoped verification override still gets the checkbox UI when
+// its curated list is PURE drain/gauge/temp variants (e.g. the Boiler HHW
+// override is exactly the four "- Hot" combos). Mixed/electrical overrides
+// keep the classic select.
+function overrideAllowsSimple(list) {
+  return !!(list && list.length && list.every(v => {
+    const p = parseWaterVerification(v);
+    return p.recognized && !p.blank;
+  }));
+}
+// Temperature suffix for a source, honoring a template override's own
+// suffix when one exists (a curated all-"- Hot" list wins over keyword
+// classification so synthesized strings land inside the curated set).
+function simpleVerifSuffix(src) {
+  const ov = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource);
+  if (overrideAllowsSimple(ov)) {
+    if (ov.every(v => / - Hot$/.test(v))) return 'hot';
+    if (ov.every(v => / - CHW$/.test(v))) return 'chw';
+  }
+  return getTempSuffixFor(src.energySource || '');
+}
+function updateSimpleVerif(index, which, checked) {
+  const src = sources[index];
+  const cur = parseWaterVerification(src.verification);
+  const drain = which === 'drain' ? checked : cur.drain;
+  const gauge = which === 'gauge' ? checked : cur.gauge;
+  src.verification = synthesizeWaterVerification(drain, gauge, simpleVerifSuffix(src));
+  renderSources();
+  autoSaveCurrent();
+}
+function showClassicVerif(index) {
+  sources[index]._classicVerif = true;
+  renderSources();
+}
+// Render-time normalize pass (simplified mode only, idempotent):
+//  - blank water verifications get the synthesized default (Temp Only
+//    variant; Drain pre-checked for CHW/HHW on AHU-family equipment —
+//    those coils nearly always have drains per wilkins 2026-07-30);
+//  - blank electrical verifications default to 'Controls' (48% of all
+//    recorded electrical verifications; kills the 11% blank rate);
+//  - recognized water strings get their temperature suffix re-derived so
+//    a source-type change can't leave a stale/missing suffix (legacy
+//    'G/Tmp/Drain' spellings are left untouched).
+function applySimpleVerifDefaults() {
+  if (!simpleVerifEnabled()) return;
+  let changed = false;
+  const equipIsAHU = /ahu|air handler/i.test(getEquipType() || '');
+  for (const src of sources) {
+    const ov = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource);
+    if (ov && !overrideAllowsSimple(ov)) {
+      // Mixed/electrical curated list — only fill a blank with Controls
+      // when the override itself offers it.
+      if (!src.verification && ov.includes('Controls')) { src.verification = 'Controls'; changed = true; }
+      continue;
+    }
+    // Water-family sources qualify with NO device picked yet (source-first
+    // workflow); a chosen device must still be valve-family. Non-water
+    // sources need a device with a non-placeholder list (electrical etc.).
+    const isValve = ov ? true
+      : (isWaterFamilySource(src.energySource)
+         && (!src.deviceType || isValveVerifDevice(src.deviceType)));
+    if (!isValve && !src.deviceType) continue;
+    const list = DEVICE_VERIFICATION_MAP[src.deviceType];
+    if (!ov && !isValve && !list) continue;
+    if (isValve) {
+      const p = parseWaterVerification(src.verification);
+      const es = src.energySource || '';
+      if (p.blank) {
+        const drainDefault = equipIsAHU && (es.startsWith('CHW') || es.startsWith('HHW'));
+        src.verification = synthesizeWaterVerification(drainDefault, false, simpleVerifSuffix(src));
+        changed = true;
+      } else if (p.recognized && !/^G\/Tmp\/Drain/.test(src.verification)) {
+        const resynth = synthesizeWaterVerification(p.drain, p.gauge, simpleVerifSuffix(src));
+        if (resynth !== src.verification) { src.verification = resynth; changed = true; }
+      }
+    } else if (!src.verification) {
+      const resolved = getFilteredVerifications(src.deviceType, src.energySource);
+      if (resolved.includes('Controls')) { src.verification = 'Controls'; changed = true; }
+    }
+  }
+  if (changed) autoSaveCurrent();
+}
+// ---- end simplified verification ---------------------------------------
 
 // Energy-source-specific verifications to add on top of the device-derived
 // list. Keyed by source-name prefix (matched via startsWith). Use sparingly —
@@ -1444,6 +1662,16 @@ const EQUIPMENT_AUTO_SOURCES = {
 // ============================================================================
 let sources = [];          // Current equipment's energy sources
 let photos = {};           // Current equipment's photos (keyed by slot id)
+// The in-progress entry's stable UUID. Minted the moment the form needs an
+// identity (first photo capture or save), preserved across autosave/reload,
+// reset on clear. Photo store keys derive from THIS — never from any
+// user-editable string — so photos are bound to the entry, not its name.
+let currentEntryId = null;
+function ensureCurrentEntryId() {
+  if (editingEntry && editingEntry.id) currentEntryId = editingEntry.id;
+  if (!currentEntryId) currentEntryId = genUuid();
+  return currentEntryId;
+}
 let miscPhotos = [];       // Current equipment's misc photos [{dbKey, thumbnail, fileType, timestamp}]
 let savedEquipment = [];   // Accumulated saved equipment entries
 let editingEntry = null;   // Reference to the saved entry currently being edited (or null)
@@ -1661,8 +1889,11 @@ function init() {
     checkStorage();
     updateSketchSectionDefault();
     // Move any pre-existing IndexedDB photos into durable filesystem storage,
-    // then show the photo-integrity badge.
-    migratePhotosToFS().then(() => runIntegrityCheck(false));
+    // then re-key legacy photos to UUID ownership (one-time, additive), then
+    // show the photo-integrity badge.
+    migratePhotosToFS()
+      .then(() => runPhotoKeyMigration().catch(e => console.error('photo key migration failed', e)))
+      .then(() => runIntegrityCheck(false));
   }).catch(() => {
     renderSavedPanel();
     renderSources();
@@ -3628,6 +3859,17 @@ const EQUIPMENT_EXTRA_SOURCES = {
   'Domestic Water Pump': [
     { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly', duplicate: 'No', detail: '' },
   ],
+  // Fire pumps: suction + discharge water lines as SEPARATE sources (each
+  // gets its own valve/photo/ID — per wilkins 2026-08-01, not a combined
+  // In/Out row). Kinetic + Electrical come from the Standard Pump template.
+  'Fire Pump': [
+    { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '' },
+    { energySource: 'DW Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '' },
+  ],
+  'Fire Jockey Pump': [
+    { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '' },
+    { energySource: 'DW Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '' },
+  ],
 };
 
 // Templates whose electrical voltage is fixed by design — no voltage prompt.
@@ -4064,7 +4306,14 @@ function handleEquipTypeChange() {
     const nameInput = document.getElementById('equipName');
     if (nameInput) {
       const currentName = nameInput.value.trim();
-      const stillAutoFilled = currentName === lastAutoFilledEquipName;
+      // "Still auto-filled" must survive WebView restores (iOS backgrounding
+      // reloads the app and nulls lastAutoFilledEquipName, which froze the
+      // name — build 79 field report). Auto-fill only ever writes equipment-
+      // type strings, so a name that exactly equals ANY type option carries
+      // no custom info and is safe to replace.
+      const typeOptions = Array.from(document.getElementById('equipType').options).map(o => o.value);
+      const stillAutoFilled = currentName === lastAutoFilledEquipName
+        || typeOptions.includes(currentName);
       if (!currentName || stillAutoFilled) {
         nameInput.value = resolvedType;
         nameInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -4201,6 +4450,7 @@ function addSource() {
 }
 
 function renderSources() {
+  applySimpleVerifDefaults();
   const container = document.getElementById('sourcesContainer');
   container.innerHTML = '';
 
@@ -4348,14 +4598,42 @@ function renderSources() {
               <input type="text" id="src_loc_custom_${i}" value="${src.location||''}" placeholder="Enter custom location"
                 oninput="updateSourceCustomLoc(${i},this.value)">
             </div>` : `<div id="customLocGroup_${i}" style="display:none;"></div>`}
-            <div class="form-group">
+            ${(() => {
+              const ov = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource);
+              const useSimple = simpleVerifEnabled() && !src._classicVerif
+                && (ov ? overrideAllowsSimple(ov)
+                       : isWaterFamilySource(src.energySource)
+                         && (!src.deviceType || isValveVerifDevice(src.deviceType)))
+                && parseWaterVerification(src.verification).recognized;
+              if (useSimple) {
+                const p = parseWaterVerification(src.verification);
+                const derived = src.verification || synthesizeWaterVerification(false, false, simpleVerifSuffix(src));
+                const boxStyle = 'display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:14px;cursor:pointer;';
+                return `<div class="form-group">
+                  <label>Verification</label>
+                  <label style="${boxStyle}">
+                    <input type="checkbox" class="simple-verif-check" ${p.drain ? 'checked' : ''} onchange="updateSimpleVerif(${i},'drain',this.checked)">
+                    Drain present
+                  </label>
+                  <label style="${boxStyle}">
+                    <input type="checkbox" class="simple-verif-check" ${p.gauge ? 'checked' : ''} onchange="updateSimpleVerif(${i},'gauge',this.checked)">
+                    Gauge present
+                  </label>
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                    <span style="font-size:11px;color:var(--text-dim);">Saves as: ${derived}</span>
+                    <button type="button" onclick="showClassicVerif(${i})" style="background:none;border:none;color:var(--text-dim);font-size:11px;text-decoration:underline;padding:4px;">More options&hellip;</button>
+                  </div>
+                </div>`;
+              }
+              return `<div class="form-group">
               <label>Verification</label>
               <select onchange="updateSource(${i},'verification',this.value)" id="src_ver_${i}">
                 <option value="">-- Select --</option>
                 ${getFilteredVerifications(src.deviceType, src.energySource).map(s => `<option value="${s}" ${src.verification===s?'selected':''}>${s}</option>`).join('')}
                 ${src.verification && !getFilteredVerifications(src.deviceType, src.energySource).includes(src.verification) ? `<option value="${src.verification}" selected>${src.verification}</option>` : ''}
               </select>
-            </div>
+            </div>`;
+            })()}
             <div class="form-group">
               <label>Valve State</label>
               <select onchange="updateSource(${i},'valveState',this.value)" id="src_valvestate_${i}">
@@ -5031,19 +5309,19 @@ function photoSlotLabel(key) {
 }
 function collectTodaysPhotos() {
   const out = [], seen = new Set();
-  const add = (ph, label) => {
+  const add = (ph, label, ownerEntryId) => {
     if (!ph || !ph.dbKey || !ph.thumbnail || seen.has(ph.dbKey)) return;
     seen.add(ph.dbKey);
-    out.push({ dbKey: ph.dbKey, thumbnail: ph.thumbnail, timestamp: ph.timestamp, fileType: ph.fileType, label });
+    out.push({ dbKey: ph.dbKey, thumbnail: ph.thumbnail, timestamp: ph.timestamp, fileType: ph.fileType, label, ownerEntryId: ownerEntryId || null, sha256: ph.sha256 || null });
   };
   const curName = (document.getElementById('equipName').value || '').trim() || 'Current';
-  for (const k of Object.keys(photos)) add(photos[k], curName + ' \u00b7 ' + photoSlotLabel(k));
-  miscPhotos.forEach((mp, mi) => add(mp, curName + ' \u00b7 Misc ' + (mi + 1)));
+  for (const k of Object.keys(photos)) add(photos[k], curName + ' \u00b7 ' + photoSlotLabel(k), currentEntryId);
+  miscPhotos.forEach((mp, mi) => add(mp, curName + ' \u00b7 Misc ' + (mi + 1), currentEntryId));
   for (const e of savedEquipment) {
     if (!isSavedToday(e)) continue;
     const ep = e.photos || {};
-    for (const k of Object.keys(ep)) add(ep[k], (e.equipName || '?') + ' \u00b7 ' + photoSlotLabel(k));
-    (e.miscPhotos || []).forEach((mp, mi) => add(mp, (e.equipName || '?') + ' \u00b7 Misc ' + (mi + 1)));
+    for (const k of Object.keys(ep)) add(ep[k], (e.equipName || '?') + ' \u00b7 ' + photoSlotLabel(k), e.id);
+    (e.miscPhotos || []).forEach((mp, mi) => add(mp, (e.equipName || '?') + ' \u00b7 Misc ' + (mi + 1), e.id));
   }
   out.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
   return out;
@@ -5076,14 +5354,38 @@ function closeReusePicker() {
   const o = document.getElementById('reusePickerOverlay');
   if (o) o.remove();
 }
-function reusePhotoInto(slotId, idx) {
+// Intentional photo reuse ("Dup Photo"). The bytes are COPIED to a key owned
+// by THIS entry and the share is recorded as {dupOf} provenance on the photo
+// reference — never a shared mutable pointer. Export writes provenance-linked
+// identical bytes as one file (the SHARE contract loto-web binds on), and the
+// duplicate gate lets them through because the dup is recorded.
+async function reusePhotoInto(slotId, idx) {
   const p = _reuseCandidates[idx];
   if (!p) return;
-  photos[slotId] = { dbKey: p.dbKey, thumbnail: p.thumbnail, timestamp: p.timestamp, fileType: p.fileType, shared: true };
   closeReusePicker();
+  const src = await loadPhotoBytes(p.dbKey, p.fileType);
+  if (!src || !src.bytes) {
+    showToast('⚠ Cannot reuse — the original photo\'s bytes were not found', true);
+    return;
+  }
+  const newKey = photoStoreKey(ensureCurrentEntryId(), slotTokenForCapture(slotId));
+  const dataUrl = 'data:' + (src.type || 'image/jpeg') + ';base64,' + uint8ToBase64(src.bytes);
+  const res = await storePhotoBytes(newKey, dataUrl);
+  if (!res.ok) {
+    showToast('⚠ Reuse failed — photo copy did NOT save', true);
+    return;
+  }
+  const hash = p.sha256 || (await sha256HexOfBytes(src.bytes));
+  photos[slotId] = {
+    dbKey: newKey, thumbnail: p.thumbnail, timestamp: p.timestamp,
+    fileType: p.fileType, shared: true, sha256: hash,
+    dupOf: { entryId: p.ownerEntryId || null, dbKey: p.dbKey, label: p.label || '' }
+  };
+  if (hash) { try { await recordPhotoHash(hash, currentEntryId, newKey, true); } catch (e) {} }
   renderSources();
   autoSaveCurrent();
-  showToast('Photo reused (shared)');
+  updateIntegrityBadge();
+  showToast('Photo reused — recorded as an intentional duplicate');
 }
 
 // Load the FULL-RESOLUTION image for a stored photo: IndexedDB first, then the
@@ -5424,19 +5726,56 @@ function getAllPhotoKeys() {
   })).catch(() => []);
 }
 
-// Generate a photo key. Historically this was just `${name}__${slot}`, which
-// COLLIDES whenever two pieces of equipment share a name (or are left blank →
-// "equipment"): the second capture silently overwrote the first in storage.
-// New captures append a short unique token so every photo gets its own key and
-// nothing can clobber a prior photo. The full key is stored on the photo object
-// and is the single source of truth for reads/writes/deletes.
-function photoDBKey(equipName, slotId) {
-  const safeName = (equipName || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
-  return `${safeName}__${slotId}`;
+// ============================================================================
+// PHOTO KEY CORE — every photo key is owned by exactly one entry UUID.
+// ----------------------------------------------------------------------------
+// History, so nobody ever re-introduces this: keys used to be derived from the
+// equipment NAME (`${name}__${slot}`, later + a random token). The field crew's
+// workflow (type auto-fills the name → shoot → rename) meant same-named and
+// same-typed units silently overwrote / cross-linked each other's photos across
+// rooms, buildings and even facilities. Five facilities' photo sets were
+// corrupted before this was caught. NO PART of a photo key may ever come from
+// equipName, equipType, template, building, room, hospitalCode, a timestamp, or
+// any other user-editable string.
+//
+// Key format:  photo::<entry-uuid>::<slot-token>::<capture-rev>
+//   slot-token: 'main' | 'dataplate' | 'ee' | <sourceId uuid> | 'misc-<8hex>'
+//   capture-rev: 8 random hex, minted per capture. A retake therefore writes a
+//   brand-new record (photos are immutable once saved) and then updates the
+//   single owning reference; the superseded record — same entry, same slot —
+//   is removed only after the new one is verified on disk.
+// ============================================================================
+const PHOTO_KEY_RE = /^photo::([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})::(.+?)(?:::([0-9a-f]{8}))?$/;
+function photoStoreKey(entryId, slotToken) {
+  const rev = genUuid().replace(/-/g, '').slice(0, 8);
+  return 'photo::' + entryId + '::' + slotToken + '::' + rev;
 }
-function uniquePhotoKey(equipName, slotId) {
-  const token = genUuid().replace(/-/g, '').slice(0, 10);
-  return `${photoDBKey(equipName, slotId)}__${token}`;
+// → { entryId, slotToken, rev } for UUID-owned keys, null for legacy keys.
+function parsePhotoKey(key) {
+  const m = PHOTO_KEY_RE.exec(String(key || ''));
+  return m ? { entryId: m[1], slotToken: m[2], rev: m[3] || '' } : null;
+}
+function photoKeyOwnedBy(key, entryId) {
+  const p = parsePhotoKey(key);
+  return !!(p && entryId && p.entryId === entryId);
+}
+// UI slot id → the stable slot token stored in the key. Source slots use the
+// source's own UUID (minted here if the source doesn't have one yet), so the
+// binding survives renames and reorders.
+function slotTokenForCapture(slotId) {
+  if (slotId === 'equip_main') return 'main';
+  if (slotId === 'equip_dataplate') return 'dataplate';
+  if (slotId === 'equip_ee') return 'ee';
+  const m = /^source_(\d+)$/.exec(slotId);
+  if (m) {
+    const src = sources[parseInt(m[1], 10)];
+    if (src) { ensureSourceId(src); return src.sourceId; }
+    return 'source-' + m[1];
+  }
+  return slotId.replace(/[^A-Za-z0-9_-]/g, '_');
+}
+function mintMiscSlotToken() {
+  return 'misc-' + genUuid().replace(/-/g, '').slice(0, 8);
 }
 
 // ============================================================================
@@ -5456,10 +5795,24 @@ function fsPlugin() {
   if (!native) return null;
   return (window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) || null;
 }
-// Real photo keys are already filename-safe ([A-Za-z0-9_-]); this light sanitize
-// only guards against any exotic legacy key during migration.
+// Filename encoding must be REVERSIBLE: fsPresentKeySet reconstructs keys from
+// directory listings, so a lossy sanitize would make every stored photo look
+// missing. UUID-owned keys (photo::<id>::<slot>::<rev> — every component is
+// dot-free) encode as p.<id>.<slot>.<rev>.jpg; legacy keys were minted
+// filename-safe already and keep the old identity mapping.
 function photoFsRelPath(dbKey) {
+  const p = parsePhotoKey(dbKey);
+  if (p) return 'loto_photos/p.' + p.entryId + '.' + p.slotToken + '.' + (p.rev || '0') + '.jpg';
   return 'loto_photos/' + String(dbKey).replace(/[^A-Za-z0-9_.-]/g, '_') + '.jpg';
+}
+// Reverse of photoFsRelPath's basename encoding.
+function photoKeyFromFsName(fileName) {
+  const base = String(fileName).replace(/\.jpg$/i, '');
+  if (base.indexOf('p.') === 0) {
+    const parts = base.slice(2).split('.');
+    if (parts.length === 3) return 'photo::' + parts[0] + '::' + parts[1] + '::' + parts[2];
+  }
+  return base;
 }
 async function fsWritePhoto(dbKey, base64) {
   const FS = fsPlugin(); if (!FS) return false;
@@ -5542,6 +5895,66 @@ async function photoBytesExist(dbKey) {
   return false;
 }
 
+// ============================================================================
+// PHOTO HASHING + CAPTURE-TIME CROSS-ENTRY WARNING
+// ----------------------------------------------------------------------------
+// Every saved photo gets a sha256 stamped on its reference. A persistent
+// hash→owners index lets the app warn AT CAPTURE TIME if the just-saved bytes
+// are identical to a photo owned by a DIFFERENT entry (unless it's an explicit
+// recorded dup) — the moment a cross-link would be born, not months later.
+// ============================================================================
+async function sha256HexOfBytes(bytes) {
+  try {
+    const d = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(d)).map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) { return null; } // no crypto.subtle → hashing features degrade gracefully
+}
+function sha256HexOfDataUrl(dataUrl) {
+  return sha256HexOfBytes(dataUrlToUint8Array(dataUrl));
+}
+async function getPhotoHashIndex() {
+  try { return (await getMetadata('photo_hash_index')) || {}; } catch (e) { return {}; }
+}
+async function recordPhotoHash(hash, entryId, dbKey, isDup) {
+  if (!hash) return { collision: null };
+  let index = await getPhotoHashIndex();
+  const owners = index[hash] || [];
+  const collision = owners.find(o => o && o.entryId && o.entryId !== entryId) || null;
+  if (!owners.some(o => o && o.dbKey === dbKey)) {
+    owners.push({ entryId: entryId, dbKey: dbKey, at: new Date().toISOString() });
+    index[hash] = owners;
+    try { await saveMetadata('photo_hash_index', index); } catch (e) {}
+  }
+  return { collision: (isDup ? null : collision) };
+}
+function entryNameForId(entryId) {
+  const e = savedEquipment.find(x => x.id === entryId);
+  return e ? (e.equipName || '(unnamed)') : null;
+}
+// Visible warning banner on the entry form (rule 6). Not a toast — it stays
+// until the entry is cleared/saved so the tech can't miss it.
+function showPhotoHashWarning(slotId, collision) {
+  let banner = document.getElementById('hashWarnBanner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'hashWarnBanner';
+    banner.style.cssText = 'margin:8px 0;padding:10px 12px;border-radius:8px;background:rgba(200,40,40,0.12);border:1px solid rgba(200,40,40,0.55);color:#c82828;font-size:12px;font-weight:600;line-height:1.4;';
+    const section = document.querySelector('.equipment-section');
+    if (section) section.insertBefore(banner, section.firstChild);
+    else document.body.insertBefore(banner, document.body.firstChild);
+  }
+  const otherName = entryNameForId(collision && collision.entryId);
+  banner.style.display = 'block';
+  banner.innerHTML = '&#9888; This photo is byte-identical to a photo on another entry' +
+    (otherName ? ' ("' + otherName + '")' : '') +
+    '. If that was intentional, delete it and use <b>Reuse Photo</b> instead so the share is recorded.' +
+    ' <button class="btn btn-outline btn-sm" style="margin-left:8px;" onclick="this.parentElement.style.display=\'none\'">Dismiss</button>';
+}
+function clearPhotoHashWarning() {
+  const banner = document.getElementById('hashWarnBanner');
+  if (banner) banner.style.display = 'none';
+}
+
 // Set of photo keys present on the durable FILESYSTEM only (one dir listing).
 // Filenames are the raw key + ".jpg", so membership is exact.
 async function fsPresentKeySet() {
@@ -5553,7 +5966,7 @@ async function fsPresentKeySet() {
     const files = (r && r.files) || [];
     files.forEach(f => {
       const name = (typeof f === 'string') ? f : (f && f.name);
-      if (name) set.add(String(name).replace(/\.jpg$/i, ''));
+      if (name) set.add(photoKeyFromFsName(name));
     });
   } catch (e) { /* dir may not exist yet */ }
   return set;
@@ -5607,13 +6020,300 @@ async function migratePhotosToFS() {
   }
 }
 
+// ============================================================================
+// PHOTO KEY MIGRATION + QUARANTINE  (rule 7 — one-time, additive, loud)
+// ----------------------------------------------------------------------------
+// On first launch after the UUID-key fix, every photo record still living
+// under a legacy name-derived key is dealt with explicitly:
+//   • referenced by exactly ONE entry  → bytes are COPIED to a key owned by
+//     that entry's UUID and the reference updated (recorded in the report).
+//   • referenced by MULTIPLE entries   → that is a corrupted association. Each
+//     entry gets its own copy but is FLAGGED legacySuspect (red badge, export
+//     flag) — the bytes can only be the right photo for one of them, and only
+//     a human can say which. Never silently reassigned.
+//   • referenced by NOTHING            → quarantined: kept in place, listed in
+//     the report screen, exportable. Never deleted.
+// Originals are always left in place (additive). Nothing destructive.
+// ============================================================================
+const PHOTO_KEY_MIGRATION_FLAG = 'loto_key_migration_v8';
+
+function slotTokenForSavedSlot(entry, slot) {
+  if (slot === 'equip_main') return 'main';
+  if (slot === 'equip_dataplate') return 'dataplate';
+  if (slot === 'equip_ee') return 'ee';
+  const m = /^source_(\d+)$/.exec(slot);
+  if (m) {
+    const src = (entry.sources || [])[parseInt(m[1], 10)];
+    if (src) { ensureSourceId(src); return src.sourceId; }
+    return 'source-' + m[1];
+  }
+  return String(slot).replace(/[^A-Za-z0-9_-]/g, '_');
+}
+
+async function runPhotoKeyMigration() {
+  try { if (localStorage.getItem(PHOTO_KEY_MIGRATION_FLAG)) return null; } catch (e) {}
+  const report = {
+    startedAt: new Date().toISOString(), finishedAt: null,
+    rekeyed: [], suspects: [], orphans: [], missing: []
+  };
+
+  // Every photo reference in saved entries + the in-progress form.
+  const refMap = {};   // dbKey → [{ entry, slot, ref, isMisc }]
+  const addRef = (entry, slot, ref, isMisc) => {
+    if (!ref || !ref.dbKey) return;
+    (refMap[ref.dbKey] = refMap[ref.dbKey] || []).push({ entry, slot, ref, isMisc });
+  };
+  for (const e of savedEquipment) {
+    if (!e.id) e.id = genUuid();   // pre-UUID entries get identity before re-keying
+    for (const slot of Object.keys(e.photos || {})) addRef(e, slot, e.photos[slot], false);
+    (e.miscPhotos || []).forEach((mp, mi) => addRef(e, 'misc_' + mi, mp, true));
+  }
+  let wipTouched = false;
+  const hasWipPhotos = Object.keys(photos).some(k => photos[k] && photos[k].dbKey) || miscPhotos.some(mp => mp && mp.dbKey);
+  const wipEntry = hasWipPhotos ? { id: ensureCurrentEntryId(), equipName: '(current form)', equipBuilding: '', equipRoom: '', sources: sources } : null;
+  if (wipEntry) {
+    for (const slot of Object.keys(photos)) addRef(wipEntry, slot, photos[slot], false);
+    miscPhotos.forEach((mp, mi) => addRef(wipEntry, 'misc_' + mi, mp, true));
+  }
+
+  let present;
+  try { present = await presentPhotoKeySet(); } catch (e) { present = new Set(); }
+
+  for (const key of Object.keys(refMap)) {
+    const refs = refMap[key];
+    const owners = [...new Set(refs.map(r => r.entry.id))];
+    const parsed = parsePhotoKey(key);
+    if (parsed && owners.length === 1 && parsed.entryId === owners[0]) continue;   // already safe
+
+    const describe = r => ({ id: r.entry.id, name: r.entry.equipName || '(unnamed)', building: r.entry.equipBuilding || '', room: r.entry.equipRoom || '', slot: r.slot });
+    if (!present.has(key)) {
+      report.missing.push({ key, entries: refs.map(describe) });
+      continue;   // bytes are gone — export/integrity surfaces it; never invent data
+    }
+    const src = await loadPhotoBytes(key, 'image/jpeg');
+    if (!src || !src.bytes) { report.missing.push({ key, entries: refs.map(describe) }); continue; }
+    const hash = await sha256HexOfBytes(src.bytes);
+    const dataUrl = 'data:' + (src.type || 'image/jpeg') + ';base64,' + uint8ToBase64(src.bytes);
+    const corrupted = owners.length > 1;   // one blob claimed by several entries
+
+    for (const r of refs) {
+      const token = r.isMisc ? mintMiscSlotToken() : slotTokenForSavedSlot(r.entry, r.slot);
+      const newKey = photoStoreKey(r.entry.id, token);
+      const res = await storePhotoBytes(newKey, dataUrl);
+      if (!res.ok) { report.missing.push({ key, entries: [describe(r)], error: 'copy failed — original left untouched' }); continue; }
+      r.ref.migratedFrom = key;
+      r.ref.dbKey = newKey;
+      if (hash) r.ref.sha256 = hash;
+      if (corrupted || (parsed && parsed.entryId !== r.entry.id)) r.ref.legacySuspect = true;
+      if (hash) { try { await recordPhotoHash(hash, r.entry.id, newKey, true); } catch (e) {} }
+      if (r.entry === wipEntry) wipTouched = true;
+    }
+    if (corrupted) report.suspects.push({ oldKey: key, sha256: hash || '', entries: refs.map(describe) });
+    else report.rekeyed.push({ oldKey: key, newKey: refs[0].ref.dbKey, entry: describe(refs[0]) });
+  }
+
+  // Quarantine: stored records that nothing references. Originals of migrated
+  // photos are listed separately (they're intentional retained backups).
+  const referencedNow = new Set();
+  const migratedFrom = new Set();
+  const noteRef = (ref) => {
+    if (!ref || !ref.dbKey) return;
+    referencedNow.add(ref.dbKey);
+    if (ref.migratedFrom) migratedFrom.add(ref.migratedFrom);
+  };
+  for (const e of savedEquipment) {
+    for (const slot of Object.keys(e.photos || {})) noteRef(e.photos[slot]);
+    (e.miscPhotos || []).forEach(noteRef);
+  }
+  Object.keys(photos).forEach(k => noteRef(photos[k]));
+  miscPhotos.forEach(noteRef);
+  let presentAfter;
+  try { presentAfter = await presentPhotoKeySet(); } catch (e) { presentAfter = new Set(); }
+  for (const key of presentAfter) {
+    if (referencedNow.has(key) || migratedFrom.has(key)) continue;
+    report.orphans.push({ key });
+  }
+
+  report.finishedAt = new Date().toISOString();
+  saveAll();
+  if (wipTouched) autoSaveCurrent();
+  try { await saveMetadata('photo_migration_report', report); } catch (e) {}
+  try { localStorage.setItem(PHOTO_KEY_MIGRATION_FLAG, report.finishedAt); } catch (e) {}
+
+  const nSus = report.suspects.length, nOrp = report.orphans.length, nRek = report.rekeyed.length, nMis = report.missing.length;
+  if (nSus || nOrp || nRek || nMis) {
+    console.log('Photo key migration:', nRek + ' re-keyed, ' + nSus + ' suspect-shared, ' + nOrp + ' quarantined orphans, ' + nMis + ' missing');
+    renderSavedPanel();   // suspect badges
+    showToast('Photo store secured: ' + nRek + ' re-keyed' +
+      (nSus ? ', ⚠ ' + nSus + ' flagged SUSPECT' : '') +
+      (nOrp ? ', ' + nOrp + ' orphaned records preserved' : '') +
+      ' — see Settings → Photo Store Report', nSus > 0);
+  }
+  return report;
+}
+
+// ---------------------------------------------------------------------------
+// Photo Store Report screen — migration results + quarantine, exportable.
+// ---------------------------------------------------------------------------
+async function showPhotoStoreReport() {
+  const report = (await getMetadata('photo_migration_report').catch(() => null)) || null;
+  const old = document.getElementById('photoReportOverlay');
+  if (old) old.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'photoReportOverlay';
+  overlay.style.display = 'flex';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  let body;
+  if (!report) {
+    body = '<p style="color:var(--text-dim);font-size:13px;">No migration report yet — it is produced automatically on the first launch after the photo-store fix.</p>';
+  } else {
+    const sec = (title, rows) => rows.length
+      ? '<div style="margin:10px 0 4px;font-weight:700;font-size:13px;">' + title + ' (' + rows.length + ')</div>' + rows.slice(0, 200).map(r => '<div style="font-size:11px;color:var(--text-dim);padding:2px 0;border-bottom:1px solid var(--border);word-break:break-all;">' + r + '</div>').join('') + (rows.length > 200 ? '<div style="font-size:11px;">…and ' + (rows.length - 200) + ' more</div>' : '')
+      : '';
+    body =
+      '<p style="font-size:12px;color:var(--text-dim);margin:0 0 8px;">Migration ran ' + new Date(report.finishedAt || report.startedAt).toLocaleString() + '. Originals were kept — nothing was deleted.</p>' +
+      sec('&#9888; SUSPECT — one photo was claimed by multiple equipment (verify which unit it really shows; the others need a reshoot)',
+        report.suspects.map(s => s.entries.map(e => e.name + ' [' + e.slot + '] (' + [e.building, e.room].filter(Boolean).join(' ') + ')').join('  +  '))) +
+      sec('Re-keyed (association preserved, now UUID-owned)',
+        report.rekeyed.map(r => r.entry.name + ' [' + r.entry.slot + ']')) +
+      sec('Quarantined orphans (photos no entry references — possibly from deleted or lost entries; export below)',
+        report.orphans.map(o => o.key)) +
+      sec('Missing bytes (referenced but nowhere in storage)',
+        report.missing.map(m => (m.entries || []).map(e => e.name + ' [' + e.slot + ']').join(', ')));
+    if (!body.replace(/<p[^>]*>.*?<\/p>/, '')) body += '<p style="color:#4ab86a;font-weight:600;">Store was fully clean — every photo already UUID-owned.</p>';
+  }
+  overlay.innerHTML =
+    '<div class="dialog" style="max-width:min(94vw,600px);max-height:84vh;display:flex;flex-direction:column;">' +
+    '<h3>&#128451; Photo Store Report</h3>' +
+    '<div style="overflow-y:auto;flex:1;margin-bottom:12px;">' + body + '</div>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
+    '<button class="btn btn-outline btn-sm" onclick="exportQuarantineZip()">&#128230; Export quarantined photos</button>' +
+    '<button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="document.getElementById(\'photoReportOverlay\').remove()">Close</button>' +
+    '</div></div>';
+  document.body.appendChild(overlay);
+}
+
+// ZIP every stored photo no entry references (the quarantine), named by its
+// raw key, with a metadata file — so "lost" photos can leave the device.
+async function exportQuarantineZip() {
+  showToast('Building quarantine export…');
+  const referenced = new Set();
+  for (const e of savedEquipment) collectEntryPhotoKeys(e).forEach(k => referenced.add(k));
+  Object.keys(photos).forEach(k => { if (photos[k] && photos[k].dbKey) referenced.add(photos[k].dbKey); });
+  miscPhotos.forEach(mp => { if (mp && mp.dbKey) referenced.add(mp.dbKey); });
+  let present;
+  try { present = await presentPhotoKeySet(); } catch (e) { present = new Set(); }
+  const orphanKeys = [...present].filter(k => !referenced.has(k));
+  if (!orphanKeys.length) { showToast('No quarantined photos — every stored photo is referenced.'); return; }
+  const zip = new JSZip();
+  const folder = zip.folder('quarantine');
+  const meta = [];
+  let n = 0;
+  for (const key of orphanKeys) {
+    const pd = await loadPhotoBytes(key, 'image/jpeg');
+    if (!pd || !pd.bytes) { meta.push({ key, error: 'bytes unreadable' }); continue; }
+    const fname = String(key).replace(/[^A-Za-z0-9_.-]/g, '_') + '.jpg';
+    folder.file(fname, pd.bytes);
+    meta.push({ key, filename: 'quarantine/' + fname, sha256: await sha256HexOfBytes(pd.bytes) });
+    n++;
+  }
+  zip.file('quarantine.json', JSON.stringify({ exported: new Date().toISOString(), deviceId: ensureDeviceId(), count: n, records: meta }, null, 2));
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const fname = 'PhotoQuarantine_' + getDateStamp() + '_' + (ensureDeviceId() || '').replace(/-/g, '').slice(0, 8) + '.zip';
+  const r = await saveOrShare(blob, fname, 'application/zip');
+  if (r && r.saved === false) showToast('Quarantine export did not save', true);
+  else showToast('Quarantine exported — ' + n + ' photo' + (n === 1 ? '' : 's'));
+}
+
+// ---------------------------------------------------------------------------
+// PHOTO AUDIT (acceptance d) — on-demand hash audit so the field team can
+// verify a clean day BEFORE leaving site: total photos, distinct hashes, and
+// any byte-identical photos claimed by different entries.
+// ---------------------------------------------------------------------------
+async function runPhotoAudit() {
+  showToast('Auditing photos — hashing every stored image…');
+  const refIndex = {};   // dbKey → [{entryId, name, slot, dupOf}]
+  const note = (entryId, name, slot, ref) => {
+    if (!ref || !ref.dbKey) return;
+    (refIndex[ref.dbKey] = refIndex[ref.dbKey] || []).push({ entryId, name, slot, dupOf: ref.dupOf || null });
+  };
+  for (const e of savedEquipment) {
+    for (const slot of Object.keys(e.photos || {})) note(e.id, e.equipName || '(unnamed)', slot, e.photos[slot]);
+    (e.miscPhotos || []).forEach((mp, mi) => note(e.id, e.equipName || '(unnamed)', 'misc_' + mi, mp));
+  }
+  const curName = (document.getElementById('equipName').value || '').trim() || '(current form)';
+  for (const slot of Object.keys(photos)) note(currentEntryId, curName, slot, photos[slot]);
+  miscPhotos.forEach((mp, mi) => note(currentEntryId, curName, 'misc_' + mi, mp));
+
+  const keys = Object.keys(refIndex);
+  const hashOwners = {};   // sha256 → [{entryId, name, slot, dupOf}]
+  let hashed = 0, unreadable = 0;
+  for (const key of keys) {
+    const pd = await loadPhotoBytes(key, 'image/jpeg');
+    if (!pd || !pd.bytes) { unreadable++; continue; }
+    const h = await sha256HexOfBytes(pd.bytes);
+    if (!h) continue;
+    hashed++;
+    (hashOwners[h] = hashOwners[h] || []).push(...refIndex[key]);
+  }
+  const collisions = [];
+  for (const [h, owners] of Object.entries(hashOwners)) {
+    const ids = [...new Set(owners.map(o => o.entryId))];
+    if (ids.length < 2) continue;
+    const unrecorded = [...new Set(owners.filter(o => !o.dupOf).map(o => o.entryId))];
+    collisions.push({ sha256: h, owners, recordedDup: unrecorded.length <= 1 });
+  }
+  const bad = collisions.filter(c => !c.recordedDup);
+
+  const old = document.getElementById('photoAuditOverlay');
+  if (old) old.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'photoAuditOverlay';
+  overlay.style.display = 'flex';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  const stat = (label, val, color) => '<div style="flex:1;min-width:110px;background:var(--input-bg);border-radius:8px;padding:10px;text-align:center;"><div style="font-size:20px;font-weight:700;' + (color ? 'color:' + color + ';' : '') + '">' + val + '</div><div style="font-size:11px;color:var(--text-dim);">' + label + '</div></div>';
+  const collisionRows = bad.map(c =>
+    '<div style="font-size:11px;padding:6px 0;border-bottom:1px solid var(--border);"><b style="color:#c82828;">&#9888; ' +
+    c.owners.map(o => o.name + ' [' + o.slot + ']').join('  vs  ') + '</b><br><span style="color:var(--text-dim);">' + c.sha256.slice(0, 16) + '…</span></div>'
+  ).join('');
+  const dupRows = collisions.filter(c => c.recordedDup).map(c =>
+    '<div style="font-size:11px;padding:4px 0;color:var(--text-dim);border-bottom:1px solid var(--border);">&#8635; recorded dup: ' +
+    c.owners.map(o => o.name + ' [' + o.slot + ']').join(' + ') + '</div>'
+  ).join('');
+  overlay.innerHTML =
+    '<div class="dialog" style="max-width:min(94vw,560px);max-height:84vh;display:flex;flex-direction:column;">' +
+    '<h3>&#128269; Photo Audit</h3>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">' +
+    stat('referenced photos', keys.length) +
+    stat('hashed', hashed) +
+    stat('distinct images', Object.keys(hashOwners).length) +
+    stat('unreadable', unreadable, unreadable ? '#c82828' : null) +
+    stat('cross-entry collisions', bad.length, bad.length ? '#c82828' : '#4ab86a') +
+    '</div>' +
+    '<div style="overflow-y:auto;flex:1;margin-bottom:12px;">' +
+    (bad.length
+      ? '<div style="font-weight:700;font-size:13px;color:#c82828;margin-bottom:4px;">These photos are claimed by MULTIPLE entries with no recorded dup — fix before leaving site:</div>' + collisionRows
+      : '<div style="color:#4ab86a;font-weight:700;font-size:14px;">&#10003; CLEAN — no unintended cross-entry duplicates.</div>') +
+    (dupRows ? '<div style="margin-top:10px;font-size:12px;font-weight:600;">Intentional recorded duplicates:</div>' + dupRows : '') +
+    '</div>' +
+    '<button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="document.getElementById(\'photoAuditOverlay\').remove()">Close</button>' +
+    '</div>';
+  document.body.appendChild(overlay);
+}
+
 function handlePhoto(input, slotId) {
   const file = input.files[0];
   if (!file) return;
 
   const timestamp = new Date().toISOString();
-  const equipName = document.getElementById('equipName').value.trim() || 'equipment';
-  const dbKey = uniquePhotoKey(equipName, slotId);
+  // Key = owning entry UUID + slot token + capture rev. Never the name.
+  const dbKey = photoStoreKey(ensureCurrentEntryId(), slotTokenForCapture(slotId));
+  // Retake: the new capture is a NEW record; remember the record it supersedes
+  // so it can be removed AFTER the new one is verified saved (own-entry only).
+  const supersededKey = (photos[slotId] && photos[slotId].dbKey && !photos[slotId].dupOf &&
+    photoKeyOwnedBy(photos[slotId].dbKey, currentEntryId)) ? photos[slotId].dbKey : null;
   const settings = getPhotoSettings();
 
   // Read file as DataURL, then resize via canvas, then store
@@ -5678,6 +6378,22 @@ function handlePhoto(input, slotId) {
         photos[slotId].unsaved = false;
         setPhotoSlotState(container, thumbnail, 'saved');
         showToast('Photo saved (' + w + 'x' + h + ', ~' + resizedKB + 'KB)');
+        // Stamp the content hash and warn if these exact bytes already belong
+        // to a DIFFERENT entry (rule 6 \u2014 cross-link warning at capture time).
+        try {
+          const hash = await sha256HexOfDataUrl(resizedDataUrl);
+          if (hash && photos[slotId] && photos[slotId].dbKey === dbKey) {
+            photos[slotId].sha256 = hash;
+            const { collision } = await recordPhotoHash(hash, currentEntryId, dbKey, false);
+            if (collision) {
+              photos[slotId].hashWarning = true;
+              showPhotoHashWarning(slotId, collision);
+            }
+            autoSaveCurrent();
+          }
+        } catch (e) { console.warn('photo hash record failed', e); }
+        // New record verified on disk \u2014 now retire the one this retake replaced.
+        if (supersededKey && supersededKey !== dbKey) deletePhotoFromDB(supersededKey);
       } else {
         photos[slotId].unsaved = true;
         setPhotoSlotState(container, thumbnail, 'failed');
@@ -5787,10 +6503,9 @@ function handleMiscPhoto(input) {
   if (!file) return;
   if (miscPhotos.length >= MAX_MISC_PHOTOS) return;
 
-  const equipName = document.getElementById('equipName').value.trim() || 'equipment';
-  const idx = miscPhotos.length;
-  const slotId = 'misc_' + idx;
-  const dbKey = uniquePhotoKey(equipName, slotId);
+  // Misc photos get a stable per-photo token (NOT the array index, which
+  // shifts on deletion) under the owning entry's UUID.
+  const dbKey = photoStoreKey(ensureCurrentEntryId(), mintMiscSlotToken());
   const settings = getPhotoSettings();
 
   const reader = new FileReader();
@@ -5818,13 +6533,24 @@ function handleMiscPhoto(input) {
       const thumbnail = thumbCanvas.toDataURL('image/jpeg', THUMB_QUALITY);
 
       const res = await storePhotoBytes(dbKey, resizedDataUrl);
-      miscPhotos.push({
+      const miscRec = {
         dbKey: dbKey,
         thumbnail: thumbnail,
         fileType: 'image/jpeg',
         timestamp: new Date().toISOString(),
         unsaved: !res.ok
-      });
+      };
+      miscPhotos.push(miscRec);
+      if (res.ok) {
+        try {
+          const hash = await sha256HexOfDataUrl(resizedDataUrl);
+          if (hash) {
+            miscRec.sha256 = hash;
+            const { collision } = await recordPhotoHash(hash, currentEntryId, dbKey, false);
+            if (collision) { miscRec.hashWarning = true; showPhotoHashWarning('misc', collision); }
+          }
+        } catch (e) { console.warn('misc photo hash record failed', e); }
+      }
       renderMiscPhotos();
       if (res.ok) {
         showToast('Misc photo ' + miscPhotos.length + ' saved (' + w + 'x' + h + ', ~' + resizedKB + 'KB)');
@@ -5842,9 +6568,15 @@ function handleMiscPhoto(input) {
 
 function removeMiscPhoto(idx) {
   if (!confirm('Remove misc photo ' + (idx + 1) + '?')) return;
+  const removed = miscPhotos[idx];
   miscPhotos.splice(idx, 1);
+  // Explicit user deletion of this entry's own record — own-UUID keys only.
+  if (removed && removed.dbKey && photoKeyOwnedBy(removed.dbKey, currentEntryId)) {
+    deletePhotoFromDB(removed.dbKey);
+  }
   renderMiscPhotos();
   autoSaveCurrent();
+  updateIntegrityBadge();
 }
 
 function renderMiscPhotos() {
@@ -5952,9 +6684,11 @@ function performSaveAndNew() {
   // saved entry. Assigned on the live objects so it round-trips through edits.
   sources.forEach(ensureSourceId);
 
-  // Package current equipment into saved list
+  // Package current equipment into saved list. The id is the SAME UUID the
+  // form's photos were keyed under (minted at first capture), so every photo
+  // key already parses to this entry.
   const entry = {
-    id: genUuid(),
+    id: ensureCurrentEntryId(),
     equipType: getEquipType(),
     equipName: equipName,
     lotoId: document.getElementById('equipLotoId').value.trim(),
@@ -6010,6 +6744,8 @@ function clearForm(confirm_first = true) {
     if (!confirm(msg)) return;
   }
   editingEntry = null;
+  currentEntryId = null;   // next capture/save mints a fresh entry UUID
+  clearPhotoHashWarning();
   sources = [];
   photos = {};
   miscPhotos = [];
@@ -6153,10 +6889,12 @@ function renderSavedPanel() {
   body.innerHTML = visible.map(({ entry, i }) => {
     const photoCount = entry.photos ? Object.keys(entry.photos).filter(k => entry.photos[k] && entry.photos[k].timestamp).length : 0;
     const isEditing = editingEntry === entry;
+    const photoSuspect = Object.values(entry.photos || {}).some(p => p && p.legacySuspect) ||
+      (entry.miscPhotos || []).some(p => p && p.legacySuspect);
     return `
     <div class="saved-item" style="${isEditing ? 'border:2px solid var(--accent);background:rgba(74,144,217,0.08);' : ''}">
       <div class="saved-item-info">
-        <div class="saved-item-name">${entry.equipName}${isEditing ? ' <span style="background:var(--accent);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">EDITING</span>' : ''}</div>
+        <div class="saved-item-name">${entry.equipName}${isEditing ? ' <span style="background:var(--accent);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">EDITING</span>' : ''}${photoSuspect ? ' <span style="background:rgba(200,40,40,0.92);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="This entry\'s photo was shared with other equipment in the old photo store — verify it shows THIS unit (Settings → Photo Store Report).">&#9888; PHOTO SUSPECT</span>' : ''}</div>
         <div class="saved-item-detail">
           ${entry.equipType || 'No type'} "&#183; ${entry.template || 'No template'}
           "&#183; ${entry.sources.length} source${entry.sources.length !== 1 ? 's' : ''}
@@ -6270,7 +7008,13 @@ function deleteEntryPhotos(entry, keepReferencedBy) {
     for (const mp of miscPhotos) if (mp && mp.dbKey === dbKey) return true;
     return false;
   };
-  const keys = collectEntryPhotoKeys(entry).filter(k => !stillUsed(k));
+  // OWNERSHIP RULE: deleting an entry may only remove keys whose UUID prefix
+  // is that entry's own id. Legacy name-derived keys and keys owned by any
+  // other entry are never deleted here — the quarantine/migration screens own
+  // those. The reference check stays as belt-and-suspenders for old shared refs.
+  const keys = collectEntryPhotoKeys(entry)
+    .filter(k => photoKeyOwnedBy(k, entry.id))
+    .filter(k => !stillUsed(k));
   return Promise.all(keys.map(k => deletePhotoFromDB(k))).catch(() => {});
 }
 
@@ -6423,6 +7167,10 @@ function editSaved(index) {
 
   // Load saved entry into form
   const entry = savedEquipment[index];
+  // Editing works under the ORIGINAL entry's UUID so new/retaken photos key to
+  // it. Legacy entries that predate UUIDs get one minted here.
+  if (!entry.id) entry.id = genUuid();
+  currentEntryId = entry.id;
   
   // Restore equipment type "" check if it's a custom value
   if (entry.equipType && !DATA.equipmentTypes.includes(entry.equipType)) {
@@ -6542,13 +7290,16 @@ function showDuplicateDialog(index) {
   document.body.appendChild(overlay);
 }
 
-function executeDuplicate(index, withPhotos) {
-  document.getElementById('duplicateDialog').remove();
+async function executeDuplicate(index, withPhotos) {
+  const dupDialog = document.getElementById('duplicateDialog');
+  if (dupDialog) dupDialog.remove();
   const entry = savedEquipment[index];
 
   // A duplicate is always a new entry — clear any lingering edit target so the
-  // save appends (and mints a fresh entry UUID) instead of overwriting.
+  // save appends instead of overwriting, and mint the duplicate's own UUID NOW
+  // so its photo copies are keyed to it from the first byte.
   editingEntry = null;
+  currentEntryId = genUuid();
 
   // Restore equipment type — check if it's a custom value
   if (entry.equipType && !DATA.equipmentTypes.includes(entry.equipType)) {
@@ -6605,35 +7356,37 @@ function executeDuplicate(index, withPhotos) {
   photos = {};
   miscPhotos = [];
 
+  let dupCopied = 0, dupFailed = 0;
   if (withPhotos) {
-    // Duplicate photos — copy thumbnails and queue IDB copy of full-res
-    const dupName = (entry.equipName || 'unknown') + '_dup_' + Date.now();
+    // Deep-copy every photo's BYTES to keys owned by the duplicate's UUID —
+    // read via loadPhotoBytes (filesystem → IDB → localStorage, so native FS
+    // photos copy too), write verified, and record dupOf provenance. No
+    // fire-and-forget: the user is told exactly how many copies succeeded.
+    const copyPhoto = async (photo, slotToken) => {
+      const src = photo.dbKey ? await loadPhotoBytes(photo.dbKey, photo.fileType) : null;
+      const newKey = photoStoreKey(currentEntryId, slotToken);
+      const base = { ...photo, dbKey: newKey, dupOf: { entryId: entry.id || null, dbKey: photo.dbKey || null, label: entry.equipName || '' } };
+      delete base.hashWarning;
+      if (!src || !src.bytes) { dupFailed++; base.unsaved = true; return base; }
+      const dataUrl = 'data:' + (src.type || 'image/jpeg') + ';base64,' + uint8ToBase64(src.bytes);
+      const res = await storePhotoBytes(newKey, dataUrl);
+      if (!res.ok) { dupFailed++; base.unsaved = true; return base; }
+      dupCopied++;
+      base.unsaved = false;
+      if (!base.sha256) base.sha256 = await sha256HexOfBytes(src.bytes);
+      if (base.sha256) { try { await recordPhotoHash(base.sha256, currentEntryId, newKey, true); } catch (e) {} }
+      return base;
+    };
 
     if (entry.photos) {
       for (const [slot, photo] of Object.entries(entry.photos)) {
         if (!photo || !photo.thumbnail) continue;
-        const newDbKey = photoDBKey(dupName, slot);
-        photos[slot] = { ...photo, dbKey: newDbKey };
-        if (photo.dbKey && idbAvailable) {
-          getPhotoFromDB(photo.dbKey).then(data => {
-            if (data && data.data) savePhotoToDB(newDbKey, data.data, data.type || 'image/jpeg');
-          }).catch(() => {});
-        }
+        photos[slot] = await copyPhoto(photo, slotTokenForCapture(slot));
       }
     }
-
-    if (entry.miscPhotos && entry.miscPhotos.length > 0) {
-      for (let mi = 0; mi < entry.miscPhotos.length; mi++) {
-        const mp = entry.miscPhotos[mi];
-        if (!mp || !mp.thumbnail) continue;
-        const newDbKey = photoDBKey(dupName, 'misc_' + mi);
-        miscPhotos.push({ ...mp, dbKey: newDbKey });
-        if (mp.dbKey && idbAvailable) {
-          getPhotoFromDB(mp.dbKey).then(data => {
-            if (data && data.data) savePhotoToDB(newDbKey, data.data, data.type || 'image/jpeg');
-          }).catch(() => {});
-        }
-      }
+    for (const mp of (entry.miscPhotos || [])) {
+      if (!mp || !mp.thumbnail) continue;
+      miscPhotos.push(await copyPhoto(mp, mintMiscSlotToken()));
     }
   }
 
@@ -6669,8 +7422,10 @@ function executeDuplicate(index, withPhotos) {
   // Scroll to form
   document.querySelector('.equipment-section').scrollIntoView({ behavior: 'smooth' });
   const photoCount = Object.keys(photos).filter(k => photos[k] && photos[k].thumbnail).length + miscPhotos.length;
-  if (withPhotos) {
-    showToast(`Duplicated "${entry.equipName}" with ${photoCount} photo${photoCount !== 1 ? 's' : ''} — update name`);
+  if (withPhotos && dupFailed > 0) {
+    showToast(`⚠ Duplicated "${entry.equipName}" but ${dupFailed} of ${dupFailed + dupCopied} photo cop${dupFailed === 1 ? 'y' : 'ies'} FAILED — retake those slots`, true);
+  } else if (withPhotos) {
+    showToast(`Duplicated "${entry.equipName}" with ${photoCount} photo${photoCount !== 1 ? 's' : ''} (copies) — update name`);
   } else {
     showToast(`Duplicated "${entry.equipName}" (info only) — update name`);
   }
@@ -6917,7 +7672,9 @@ async function runCombinedExport() {
   const currentName = document.getElementById('equipName').value.trim();
   const includeCurrent = currentEntryPassesExportFilters();
   if (includeCurrent && currentName && sources.length > 0) {
+    sources.forEach(ensureSourceId);
     allEntries.push({
+      id:            ensureCurrentEntryId(),   // photos are keyed under this
       equipType:     getEquipType(),
       equipName:     currentName,
       equipRoom:     document.getElementById('equipRoom').value,
@@ -6968,52 +7725,65 @@ async function runCombinedExport() {
   // For each entry, assign H-numbers in slot order: main → dataplate → EE → source1..N
   // Only slots that actually have a photo get a number.
   // We store the mapping so the Info Sheet can reference it.
+  //
+  // RULE 4: photo bytes ship ONLY through keys owned by the entry's own UUID.
+  // A legacy (name-derived) or foreign-owned key is NEVER silently exported —
+  // it's excluded and reported, because shipping whatever bytes sit at a
+  // colliding key is exactly how five facilities' photos were corrupted.
 
   const entryMaps = []; // one per entry: { mainH, dpH, eeH, sourceHs: [] }
 
-  // Dedup shared photos: a dbKey reused across sources is written once and gets
-  // the same filename everywhere (the SHARE model — loto-web binds them).
-  const dbKeyToFile = {};
-  const assignPhotoFile = (dbKey, pd) => {
-    if (dbKey && dbKeyToFile[dbKey]) return dbKeyToFile[dbKey];
-    const h = nextH();
+  const unsafeRefs = [];     // { entryId, entryName, slot, dbKey, reason }
+  const exportRecords = [];  // manifest: { filename, sha256, entries: [{entryId, slot, sourceId?, dupOf?}] }
+  const hashToRecord = {};   // sha256 → record. Provenance-linked identical bytes ship as ONE file (the SHARE model loto-web binds on).
+
+  async function resolveExportPhoto(entry, slotLabel, ref, sourceId) {
+    if (!ref || !ref.dbKey) return null;
+    const parsed = parsePhotoKey(ref.dbKey);
+    if (!parsed) {
+      unsafeRefs.push({ entryId: entry.id || '', entryName: entry.equipName || '(unnamed)', slot: slotLabel, dbKey: ref.dbKey, reason: 'legacy pre-UUID key' });
+      return null;
+    }
+    if (!entry.id || parsed.entryId !== entry.id) {
+      unsafeRefs.push({ entryId: entry.id || '', entryName: entry.equipName || '(unnamed)', slot: slotLabel, dbKey: ref.dbKey, reason: 'key owned by a different entry' });
+      return null;
+    }
+    const pd = await getPhotoData(ref.dbKey, ref.fileType || 'image/jpeg');
+    if (!pd) return null;   // recorded in misses / missedKeys
+    const hash = await sha256HexOfBytes(pd.bytes);
+    const entryRef = { entryId: entry.id, slot: slotLabel };
+    if (sourceId) entryRef.sourceId = sourceId;
+    if (ref.dupOf) entryRef.dupOf = ref.dupOf;
+    if (ref.legacySuspect) entryRef.legacySuspect = true;
+    if (hash && hashToRecord[hash]) {
+      const rec = hashToRecord[hash];
+      rec.entries.push(entryRef);
+      return rec.filename;
+    }
     const ext = pd.type.includes('png') ? '.png' : '.jpg';
-    photosFolder.file(h + ext, pd.bytes);
+    const filename = nextH() + ext;
+    photosFolder.file(filename, pd.bytes);
     photoCount++;
-    if (dbKey) dbKeyToFile[dbKey] = h + ext;
-    return h + ext;
-  };
+    const rec = { filename: filename, sha256: hash || '', entries: [entryRef] };
+    exportRecords.push(rec);
+    if (hash) hashToRecord[hash] = rec;
+    return filename;
+  }
 
   for (const entry of allEntries) {
     const map = { mainH: null, dpH: null, eeH: null, sourceHs: [] };
     const ep = entry.photos || {};
 
-    // Main photo
-    if (ep.equip_main && ep.equip_main.dbKey) {
-      const pd = await getPhotoData(ep.equip_main.dbKey, ep.equip_main.fileType || 'image/jpeg');
-      if (pd) map.mainH = assignPhotoFile(ep.equip_main.dbKey, pd);
-    }
+    map.mainH = await resolveExportPhoto(entry, 'main', ep.equip_main);
+    map.dpH   = await resolveExportPhoto(entry, 'dataplate', ep.equip_dataplate);
+    map.eeH   = await resolveExportPhoto(entry, 'ee', ep.equip_ee);
 
-    // Data plate photo
-    if (ep.equip_dataplate && ep.equip_dataplate.dbKey) {
-      const pd = await getPhotoData(ep.equip_dataplate.dbKey, ep.equip_dataplate.fileType || 'image/jpeg');
-      if (pd) map.dpH = assignPhotoFile(ep.equip_dataplate.dbKey, pd);
-    }
-
-    // EE number photo
-    if (ep.equip_ee && ep.equip_ee.dbKey) {
-      const pd = await getPhotoData(ep.equip_ee.dbKey, ep.equip_ee.fileType || 'image/jpeg');
-      if (pd) map.eeH = assignPhotoFile(ep.equip_ee.dbKey, pd);
-    }
-
-    // Source photos
     for (let i = 0; i < entry.sources.length; i++) {
       const src = entry.sources[i];
       const photoKey = 'source_' + i;
       let srcH = null;
       if (!src.noPhoto && ep[photoKey] && ep[photoKey].dbKey) {
-        const pd = await getPhotoData(ep[photoKey].dbKey, ep[photoKey].fileType || 'image/jpeg');
-        if (pd) srcH = assignPhotoFile(ep[photoKey].dbKey, pd);
+        srcH = await resolveExportPhoto(entry, 'source-' + (i + 1), ep[photoKey], src.sourceId);
       }
       map.sourceHs.push(srcH);
     }
@@ -7060,16 +7830,36 @@ async function runCombinedExport() {
       const safeName = [entry.equipBuilding, entry.equipRoom, entry.equipName || 'equipment'].filter(Boolean).join('_').replace(/[^a-zA-Z0-9_-]/g, '_');
       for (let mi = 0; mi < entryMiscPhotos.length; mi++) {
         const mp = entryMiscPhotos[mi];
-        if (mp.dbKey) {
-          const pd = await getPhotoData(mp.dbKey, mp.fileType || 'image/jpeg');
-          if (pd) {
-            const ext = pd.type.includes('png') ? '.png' : '.jpg';
-            const fname = safeName + '_Misc' + (mi + 1) + ext;
-            photosFolder.file(fname, pd.bytes);
-            names.push(fname);
-            photoCount++;
-          }
+        if (!mp.dbKey) continue;
+        const slotLabel = 'misc-' + (mi + 1);
+        const parsed = parsePhotoKey(mp.dbKey);
+        if (!parsed) {
+          unsafeRefs.push({ entryId: entry.id || '', entryName: entry.equipName || '(unnamed)', slot: slotLabel, dbKey: mp.dbKey, reason: 'legacy pre-UUID key' });
+          continue;
         }
+        if (!entry.id || parsed.entryId !== entry.id) {
+          unsafeRefs.push({ entryId: entry.id || '', entryName: entry.equipName || '(unnamed)', slot: slotLabel, dbKey: mp.dbKey, reason: 'key owned by a different entry' });
+          continue;
+        }
+        const pd = await getPhotoData(mp.dbKey, mp.fileType || 'image/jpeg');
+        if (!pd) continue;
+        const hash = await sha256HexOfBytes(pd.bytes);
+        const entryRef = { entryId: entry.id, slot: slotLabel };
+        if (mp.dupOf) entryRef.dupOf = mp.dupOf;
+        if (mp.legacySuspect) entryRef.legacySuspect = true;
+        if (hash && hashToRecord[hash]) {
+          hashToRecord[hash].entries.push(entryRef);
+          names.push(hashToRecord[hash].filename);
+          continue;
+        }
+        const ext = pd.type.includes('png') ? '.png' : '.jpg';
+        const fname = safeName + '_Misc' + (mi + 1) + ext;
+        photosFolder.file(fname, pd.bytes);
+        names.push(fname);
+        photoCount++;
+        const rec = { filename: fname, sha256: hash || '', entries: [entryRef] };
+        exportRecords.push(rec);
+        if (hash) hashToRecord[hash] = rec;
       }
     }
     miscFileNames.push(names.join(', '));
@@ -7122,9 +7912,14 @@ async function runCombinedExport() {
     const miscOut = miscFileNames[ei]
       ? miscFileNames[ei].split(', ').filter(Boolean).map(n => 'photos/' + n)
       : [];
+    const entryUnsafe = unsafeRefs.filter(u => u.entryId && entry.id && u.entryId === entry.id);
+    const entrySuspect = Object.values(entry.photos || {}).some(p => p && p.legacySuspect) ||
+      (entry.miscPhotos || []).some(p => p && p.legacySuspect);
     return {
       ...rest,
       hospitalCode: entryHospitalCode(entry),   // resolved (falls back to setting)
+      photoSuspect: entrySuspect || entryUnsafe.length > 0,
+      unsafeSlots: entryUnsafe.map(u => u.slot),
       sources: srcOut,
       photoFiles: {
         main:      map.mainH ? 'photos/' + map.mainH : '',
@@ -7299,7 +8094,15 @@ async function runCombinedExport() {
     hospitalCode: effectiveFacilityCode,
     hospitalName: hospitalName(effectiveFacilityCode),
     dateFilter: dateFilter,
-    counts: { entries: allEntries.length, photos: photoCount, diagrams: diagramCount, missingPhotos: misses },
+    counts: {
+      entries: allEntries.length, photos: photoCount, diagrams: diagramCount,
+      missingPhotos: misses, unsafeRefs: unsafeRefs.length,
+      dupLinkedFiles: exportRecords.filter(r => r.entries.length > 1).length
+    },
+    // Per-file audit trail (rule 4): every exported photo file with its sha256
+    // and every {entryId, slot/sourceId} that references it (+ dup provenance).
+    photos: exportRecords,
+    unsafe: unsafeRefs,
     files: {
       entries: 'entries.json',
       csv:  'info_sheets/LOTO_FieldData_' + dateStamp + '.csv',
@@ -7329,6 +8132,48 @@ async function runCombinedExport() {
       'OK = export anyway (incomplete)\nCancel = stop, keep everything on the device'
     );
     if (!proceed) { showToast('Export cancelled — ' + misses + ' photos missing', true); return; }
+  }
+
+  // ---- UNSAFE-REFERENCE GUARD (rule 4) ----
+  // Legacy / foreign-owned photo keys were EXCLUDED above rather than shipped.
+  // Make the user acknowledge exactly what was left out before anything leaves.
+  if (unsafeRefs.length > 0) {
+    const uNames = [...new Set(unsafeRefs.map(u => u.entryName))];
+    const proceed = confirm(
+      '⚠️ ' + unsafeRefs.length + ' photo reference(s) on ' + uNames.length + ' equipment are NOT safely linked ' +
+      '(legacy or cross-linked keys from the old photo store). They were EXCLUDED from this export instead of risking the wrong photos.\n\n' +
+      'Affected: ' + uNames.slice(0, 12).join(', ') + (uNames.length > 12 ? ', …' : '') + '\n\n' +
+      'Review them via Settings → Photo Store Report.\n\n' +
+      'OK = export WITHOUT those photos\nCancel = stop'
+    );
+    if (!proceed) { showToast('Export cancelled — ' + unsafeRefs.length + ' unsafe photo refs', true); return; }
+  }
+
+  // ---- DUPLICATE GATE (rule 5) — hard stop, no override ----
+  // If two byte-identical files are claimed by different entries and the link
+  // is not a recorded Dup-Photo, the export must never ship. This is the last
+  // line of defense against cross-linked photos reaching a facility package.
+  const dupCollisions = [];
+  for (const rec of exportRecords) {
+    const ids = [...new Set(rec.entries.map(e => e.entryId))];
+    if (ids.length < 2) continue;
+    const unrecordedIds = [...new Set(rec.entries.filter(e => !e.dupOf).map(e => e.entryId))];
+    if (unrecordedIds.length > 1) dupCollisions.push(rec);
+  }
+  if (dupCollisions.length > 0) {
+    const lines = dupCollisions.slice(0, 10).map(rec =>
+      rec.filename + ' — ' + rec.entries.map(e => {
+        const en = allEntries.find(a => a.id === e.entryId);
+        return (en ? (en.equipName || '(unnamed)') : e.entryId) + ' [' + e.slot + ']';
+      }).join('  vs  ')
+    ).join('\n');
+    alert(
+      '🛑 EXPORT BLOCKED — byte-identical photos are claimed by MULTIPLE entries with no recorded duplicate:\n\n' +
+      lines + (dupCollisions.length > 10 ? '\n…and ' + (dupCollisions.length - 10) + ' more' : '') +
+      '\n\nNothing was exported. Retake the wrong photo(s), or if the share is intentional, re-attach via "Reuse Photo" so it is recorded. Then export again.'
+    );
+    showToast('🛑 Export BLOCKED — cross-entry photo collision', true);
+    return;
   }
 
   try {
@@ -7407,11 +8252,10 @@ async function saveBackup() {
 
   if (allEntries.length === 0) { showToast('Nothing to back up', true); return; }
 
-  // Strip full photo data (IDB keys & thumbnails) — backup is text-only
-  const clean = allEntries.map(e => {
-    const { photos, ...rest } = e;
-    return rest;
-  });
+  // Photo REFERENCES (dbKey, sha256, dupOf, thumbnails) ride along so a
+  // restore re-links photos still on the device. Full-resolution bytes do NOT
+  // — the Backup dialog states that in red; the Export ZIP carries the bytes.
+  const clean = allEntries.map(e => ({ ...e }));
 
   const blob = new Blob([JSON.stringify({ version: 2, exported: new Date().toISOString(), hospitalCode: getHospitalCode(), entries: clean }, null, 2)], { type: 'application/json' });
   const backupFilename = `LOTO_Backup_${getDateStamp()}.json`;
@@ -7429,6 +8273,30 @@ async function saveBackup() {
 function importBackup() {
   document.getElementById('backupFileInput').value = '';
   document.getElementById('backupFileInput').click();
+}
+
+// Backup entry point — states IN RED that photo bytes are not in the file
+// (directive rule 8) before anything is written.
+function showBackupDialog() {
+  const old = document.getElementById('backupDialogOverlay');
+  if (old) old.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'backupDialogOverlay';
+  overlay.style.display = 'flex';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML =
+    '<div class="dialog" style="max-width:400px;">' +
+    '<h3>&#128228; JSON Backup</h3>' +
+    '<p style="font-size:13px;color:var(--text-dim);margin:0 0 10px;">Saves all entry data, photo links and thumbnails to a JSON file.</p>' +
+    '<div style="background:rgba(200,40,40,0.10);border:1px solid rgba(200,40,40,0.55);border-radius:8px;padding:10px 12px;margin-bottom:14px;color:#c82828;font-size:13px;font-weight:700;line-height:1.4;">' +
+    '&#9888; Full-resolution PHOTOS are NOT included in this backup.<br>' +
+    '<span style="font-weight:400;">Only the Export ZIP carries photo files. Export regularly — this JSON alone cannot restore your photos.</span></div>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
+    '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'backupDialogOverlay\').remove()">Cancel</button>' +
+    '<button class="btn btn-accent btn-sm" onclick="document.getElementById(\'backupDialogOverlay\').remove(); saveBackup();">Save Backup</button>' +
+    '</div></div>';
+  document.body.appendChild(overlay);
 }
 
 function handleBackupFile(event) {
@@ -7456,25 +8324,39 @@ function handleBackupFile(event) {
       );
 
       if (!action) {
-        // Replace
-        savedEquipment = entries.map(normaliseEntry);
+        // Replace — but never sever photo links: an entry that also exists
+        // locally (same UUID) keeps its local photo references, since the
+        // backup file carries no photo bytes.
+        const localById = new Map(savedEquipment.filter(e => e.id).map(e => [e.id, e]));
+        savedEquipment = entries.map(en => {
+          const norm = normaliseEntry(en);
+          const local = norm.id && localById.get(norm.id);
+          if (local) {
+            if (!Object.keys(norm.photos || {}).length && local.photos) norm.photos = local.photos;
+            if (!(norm.miscPhotos || []).length && local.miscPhotos) norm.miscPhotos = local.miscPhotos;
+          }
+          return norm;
+        });
       } else {
-        // Merge — skip duplicates by equipName
-        const existing = new Set(savedEquipment.map(e => e.equipName));
-        let added = 0;
+        // Merge — dedupe by entry UUID ONLY. Never by name: this app's data
+        // is full of legitimately same-named equipment ("1", "2",
+        // "Emergency"…), and a name-based merge silently collapses them —
+        // that is how a 42-entry day once came back as 22.
+        const existingIds = new Set(savedEquipment.map(e => e.id).filter(Boolean));
+        let added = 0, skipped = 0;
         entries.forEach(en => {
           const norm = normaliseEntry(en);
-          if (!existing.has(norm.equipName)) {
-            savedEquipment.push(norm);
-            existing.add(norm.equipName);
-            added++;
-          }
+          if (norm.id && existingIds.has(norm.id)) { skipped++; return; }
+          if (!norm.id) norm.id = genUuid();   // legacy backup rows get identity
+          savedEquipment.push(norm);
+          existingIds.add(norm.id);
+          added++;
         });
-        showToast(`Merged: ${added} new, ${entries.length - added} skipped (duplicate names)`);
+        showToast(`Merged: ${added} new, ${skipped} already present (same entry id)`);
       }
 
       // Persist and refresh UI
-      try { localStorage.setItem('loto_saved', JSON.stringify(savedEquipment)); } catch(e) {}
+      saveAll();
       renderSavedPanel();
       updateHeaderBadge();
       if (!action) showToast(`Loaded ${entries.length} entries from backup`);
@@ -7516,7 +8398,10 @@ function normaliseEntry(en) {
       noPhoto:      s.noPhoto       || false,
       collapsed:    false,
     })),
-    photos: {}
+    // Keep photo REFERENCES from the backup (dbKey/sha256/dupOf — no bytes).
+    // If the photo bytes still exist on this device, the links come back to
+    // life; the old behavior of wiping refs permanently severed live photos.
+    photos: en.photos || {}
   };
 }
 
@@ -7590,6 +8475,7 @@ function autoSaveCurrent() {
   setAutosaveStatus('saving');
   try {
     const state = {
+      entryId: currentEntryId,   // photo keys are bound to this — must survive reload
       equipType: document.getElementById('equipType').value,
       equipTypeCustom: document.getElementById('equipTypeCustom').value.trim(),
       equipName: document.getElementById('equipName').value,
@@ -7635,6 +8521,31 @@ function saveAll() {
       showToast('Storage error - export soon!', true);
     }
   });
+  // Entry-retention guards (rule 8). IndexedDB inside the iOS WebView can be
+  // silently evicted; if that ever happens again the app must NOT quietly boot
+  // with an empty (or shorter) list and then overwrite the store on next save.
+  //  • loto_entry_count — expected entry count, checked on every load.
+  //  • loto_saved_snapshot — thumbnail/sketch-stripped emergency copy in
+  //    localStorage (separate storage class), restored if IDB comes up empty.
+  try {
+    localStorage.setItem('loto_entry_count', String(savedEquipment.length));
+    const slim = savedEquipment.map(e => {
+      const c = { ...e };
+      delete c.sketch;
+      if (e.photos) {
+        c.photos = {};
+        for (const k of Object.keys(e.photos)) {
+          if (!e.photos[k]) continue;
+          const { thumbnail, ...pRest } = e.photos[k];
+          c.photos[k] = pRest;
+        }
+      }
+      if (e.miscPhotos) c.miscPhotos = e.miscPhotos.map(mp => { if (!mp) return mp; const { thumbnail, ...r } = mp; return r; });
+      return c;
+    });
+    localStorage.setItem('loto_saved_snapshot', JSON.stringify(slim));
+    localStorage.setItem('loto_saved_snapshot_at', new Date().toISOString());
+  } catch (e) { /* snapshot is best-effort — quota overflow must never block a save */ }
 }
 
 // Energy source name migrations — applied to saved entries on load so old
@@ -7708,6 +8619,34 @@ async function loadAll() {
     } catch(e) {}
   }
 
+  // ---- Entry-retention guards (rule 8) ----
+  // If the primary store came up EMPTY but we know entries existed, restore
+  // the localStorage emergency snapshot instead of silently starting fresh
+  // (which the next saveAll would have made permanent).
+  const expectedCount = parseInt((() => { try { return localStorage.getItem('loto_entry_count') || '0'; } catch (e) { return '0'; } })(), 10) || 0;
+  if (savedEquipment.length === 0 && expectedCount > 0) {
+    try {
+      const snap = localStorage.getItem('loto_saved_snapshot');
+      const arr = snap ? JSON.parse(snap) : null;
+      if (Array.isArray(arr) && arr.length > 0) {
+        savedEquipment = arr;
+        saveMetadata('saved_equipment', savedEquipment).catch(() => {});
+        console.warn('Entry store was EMPTY — restored ' + arr.length + ' entries from emergency snapshot');
+        showToast('⚠ Entry store was EMPTY — restored ' + arr.length + ' entries from the emergency snapshot (thumbnails omitted). EXPORT NOW.', true);
+      }
+    } catch (e) {}
+  }
+  if (expectedCount > savedEquipment.length) {
+    // Fewer entries than the last save wrote. Say so loudly and permanently —
+    // entries must never just quietly vanish.
+    const banner = document.createElement('div');
+    banner.style.cssText = 'margin:8px;padding:10px 12px;border-radius:8px;background:rgba(200,40,40,0.12);border:1px solid rgba(200,40,40,0.6);color:#c82828;font-size:13px;font-weight:700;line-height:1.4;';
+    banner.innerHTML = '&#9888; Loaded ' + savedEquipment.length + ' of ' + expectedCount +
+      ' expected entries — device storage may have evicted data. Do NOT delete anything. Export + Backup immediately, then contact support.';
+    const container = document.querySelector('.container');
+    if (container) container.insertBefore(banner, container.firstChild);
+  }
+
   // Rename any legacy CA In / CA Out energy sources to "Compressed Air ..."
   // so saved entries still match dropdown values after the source-list change.
   const migration = migrateSavedEnergySources(savedEquipment);
@@ -7746,6 +8685,7 @@ async function loadAll() {
   }
 
   if (state) {
+    currentEntryId = state.entryId || null;   // rebind restored photos to their entry UUID
     document.getElementById('equipType').value = state.equipType || '';
     filterTemplateDropdown(state.equipType === '** New Equipment Type **' ? '' : (state.equipType || ''));
 
