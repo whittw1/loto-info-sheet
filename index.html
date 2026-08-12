@@ -439,7 +439,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b84</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b85</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -6186,7 +6186,7 @@ async function showPhotoStoreReport() {
         report.suspects.map(s => s.entries.map(e => e.name + ' [' + e.slot + '] (' + [e.building, e.room].filter(Boolean).join(' ') + ')').join('  +  '))) +
       sec('Re-keyed (association preserved, now UUID-owned)',
         report.rekeyed.map(r => r.entry.name + ' [' + r.entry.slot + ']')) +
-      sec('Quarantined orphans (photos no entry references — possibly from deleted or lost entries; export below)',
+      sec('Quarantined orphans (photos no entry references — possibly from deleted or lost entries; export below. Retained originals of migrated photos are NOT listed or exported — their bytes are identical to photos your entries already have)',
         report.orphans.map(o => o.key)) +
       sec('Missing bytes (referenced but nowhere in storage)',
         report.missing.map(m => (m.entries || []).map(e => e.name + ' [' + e.slot + ']').join(', ')));
@@ -6203,36 +6203,82 @@ async function showPhotoStoreReport() {
   document.body.appendChild(overlay);
 }
 
-// ZIP every stored photo no entry references (the quarantine), named by its
-// raw key, with a metadata file — so "lost" photos can leave the device.
-async function exportQuarantineZip() {
-  showToast('Building quarantine export…');
-  const referenced = new Set();
-  for (const e of savedEquipment) collectEntryPhotoKeys(e).forEach(k => referenced.add(k));
-  Object.keys(photos).forEach(k => { if (photos[k] && photos[k].dbKey) referenced.add(photos[k].dbKey); });
-  miscPhotos.forEach(mp => { if (mp && mp.dbKey) referenced.add(mp.dbKey); });
-  let present;
-  try { present = await presentPhotoKeySet(); } catch (e) { present = new Set(); }
-  const orphanKeys = [...present].filter(k => !referenced.has(k));
-  if (!orphanKeys.length) { showToast('No quarantined photos — every stored photo is referenced.'); return; }
-  const zip = new JSZip();
-  const folder = zip.folder('quarantine');
-  const meta = [];
-  let n = 0;
-  for (const key of orphanKeys) {
-    const pd = await loadPhotoBytes(key, 'image/jpeg');
-    if (!pd || !pd.bytes) { meta.push({ key, error: 'bytes unreadable' }); continue; }
-    const fname = String(key).replace(/[^A-Za-z0-9_.-]/g, '_') + '.jpg';
-    folder.file(fname, pd.bytes);
-    meta.push({ key, filename: 'quarantine/' + fname, sha256: await sha256HexOfBytes(pd.bytes) });
-    n++;
+// Keys that were the SOURCE of a migration copy. Their bytes are identical to
+// the migrated, referenced copies — retained on-device backups, not lost
+// photos — so the quarantine export excludes them.
+async function collectMigrationSourceKeys() {
+  const src = new Set();
+  const note = ref => { if (ref && ref.migratedFrom) src.add(ref.migratedFrom); };
+  for (const e of savedEquipment) {
+    for (const s of Object.keys(e.photos || {})) note(e.photos[s]);
+    (e.miscPhotos || []).forEach(note);
   }
-  zip.file('quarantine.json', JSON.stringify({ exported: new Date().toISOString(), deviceId: ensureDeviceId(), count: n, records: meta }, null, 2));
-  const blob = await zip.generateAsync({ type: 'blob' });
-  const fname = 'PhotoQuarantine_' + getDateStamp() + '_' + (ensureDeviceId() || '').replace(/-/g, '').slice(0, 8) + '.zip';
-  const r = await saveOrShare(blob, fname, 'application/zip');
-  if (r && r.saved === false) showToast('Quarantine export did not save', true);
-  else showToast('Quarantine exported — ' + n + ' photo' + (n === 1 ? '' : 's'));
+  Object.keys(photos).forEach(k => note(photos[k]));
+  miscPhotos.forEach(note);
+  try {
+    const rep = await getMetadata('photo_migration_report');
+    if (rep) {
+      (rep.rekeyed || []).forEach(r => { if (r && r.oldKey) src.add(r.oldKey); });
+      (rep.suspects || []).forEach(s => { if (s && s.oldKey) src.add(s.oldKey); });
+    }
+  } catch (e) {}
+  return src;
+}
+
+// ZIP every stored photo that is truly unaccounted for — referenced by no
+// entry AND not a retained migration original — named by its raw key, with a
+// metadata file, so "lost" photos can leave the device. Large sets are split
+// into multiple ZIP parts: an all-in-one archive of hundreds of photos dies
+// of memory inside the iOS WebView — silently, which is worse. Every failure
+// path is loud.
+async function exportQuarantineZip() {
+  try {
+    const referenced = new Set();
+    for (const e of savedEquipment) collectEntryPhotoKeys(e).forEach(k => referenced.add(k));
+    Object.keys(photos).forEach(k => { if (photos[k] && photos[k].dbKey) referenced.add(photos[k].dbKey); });
+    miscPhotos.forEach(mp => { if (mp && mp.dbKey) referenced.add(mp.dbKey); });
+    const migrationSources = await collectMigrationSourceKeys();
+    let present;
+    try { present = await presentPhotoKeySet(); } catch (e) { present = new Set(); }
+    const orphanKeys = [...present].filter(k => !referenced.has(k) && !migrationSources.has(k));
+    if (!orphanKeys.length) {
+      alert('No quarantined photos to export.\n\nEvery photo stored on this device is either referenced by an entry or is a retained backup of a migrated photo (byte-identical to a photo an entry already has).\n\nStore: ' + present.size + ' photo records, ' + migrationSources.size + ' retained migration originals.');
+      return;
+    }
+    const PART_SIZE = 150;
+    const parts = Math.ceil(orphanKeys.length / PART_SIZE);
+    if (!confirm('Quarantine holds ' + orphanKeys.length + ' unreferenced photo' + (orphanKeys.length === 1 ? '' : 's') + (parts > 1 ? ' — exported as ' + parts + ' ZIP parts (save each one)' : '') + '.\n\nExport now?')) return;
+    let exported = 0, unreadable = 0;
+    for (let p = 0; p < parts; p++) {
+      const slice = orphanKeys.slice(p * PART_SIZE, (p + 1) * PART_SIZE);
+      showToast('Quarantine part ' + (p + 1) + ' of ' + parts + ' — packing ' + slice.length + ' photos…');
+      const zip = new JSZip();
+      const folder = zip.folder('quarantine');
+      const meta = [];
+      for (const key of slice) {
+        const pd = await loadPhotoBytes(key, 'image/jpeg');
+        if (!pd || !pd.bytes) { unreadable++; meta.push({ key, error: 'bytes unreadable' }); continue; }
+        const fname = String(key).replace(/[^A-Za-z0-9_.-]/g, '_') + '.jpg';
+        folder.file(fname, pd.bytes);
+        meta.push({ key, filename: 'quarantine/' + fname, sha256: await sha256HexOfBytes(pd.bytes) });
+        exported++;
+      }
+      zip.file('quarantine.json', JSON.stringify({
+        exported: new Date().toISOString(), deviceId: ensureDeviceId(),
+        part: p + 1, parts: parts, count: meta.filter(m => !m.error).length, records: meta
+      }, null, 2));
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const suffix = parts > 1 ? '_part' + (p + 1) + 'of' + parts : '';
+      const fname = 'PhotoQuarantine_' + getDateStamp() + '_' + (ensureDeviceId() || '').replace(/-/g, '').slice(0, 8) + suffix + '.zip';
+      const r = await saveOrShare(blob, fname, 'application/zip');
+      if (r && r.saved === false) { alert('Quarantine part ' + (p + 1) + ' of ' + parts + ' did NOT save. Stopping — ' + exported + ' photo(s) were exported in earlier parts.'); return; }
+      if (r && r.cancelled) { showToast('Quarantine export stopped at part ' + (p + 1) + ' of ' + parts, true); return; }
+    }
+    showToast('Quarantine exported — ' + exported + ' photo' + (exported === 1 ? '' : 's') + (unreadable ? ' (⚠ ' + unreadable + ' unreadable)' : '') + (parts > 1 ? ' across ' + parts + ' ZIPs' : ''));
+  } catch (e) {
+    console.error('Quarantine export failed', e);
+    alert('Quarantine export FAILED: ' + (e && e.message ? e.message : e) + '\n\nNothing was deleted — try again, or contact support if it repeats.');
+  }
 }
 
 // ---------------------------------------------------------------------------
