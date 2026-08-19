@@ -439,7 +439,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b85</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b86</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -797,7 +797,7 @@ if ('serviceWorker' in navigator) {
     <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
     <div style="margin-bottom:16px;">
       <label style="display:block;font-size:13px;color:var(--text-label);margin-bottom:6px;">&#128247; Photo Integrity</label>
-      <button class="btn btn-outline btn-sm" onclick="runPhotoAudit()" style="width:100%;margin-bottom:8px;">&#128269; Photo Audit &mdash; verify no cross-linked photos</button>
+      <button class="btn btn-outline btn-sm" onclick="runPhotoAudit('today')" style="width:100%;margin-bottom:8px;">&#128269; Photo Audit &mdash; verify TODAY&rsquo;s work is clean</button>
       <button class="btn btn-outline btn-sm" onclick="showPhotoStoreReport()" style="width:100%;">&#128451; Photo Store Report (migration &amp; quarantine)</button>
       <div style="font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.4;">Run the Audit before leaving site: it hashes every photo and proves no two pieces of equipment share an image unless it was an intentional recorded reuse.</div>
     </div>
@@ -6285,15 +6285,21 @@ async function exportQuarantineZip() {
 // PHOTO AUDIT (acceptance d) — on-demand hash audit so the field team can
 // verify a clean day BEFORE leaving site: total photos, distinct hashes, and
 // any byte-identical photos claimed by different entries.
+//
+// Scoped (build 86): 'today' audits only entries saved today + the open form —
+// the field pre-flight and end-of-day check — so fresh work isn't drowned out
+// by the historical legacy suspects. 'all' is the full-device audit.
 // ---------------------------------------------------------------------------
-async function runPhotoAudit() {
-  showToast('Auditing photos — hashing every stored image…');
+async function runPhotoAudit(scope) {
+  scope = scope === 'all' ? 'all' : 'today';
+  showToast('Auditing ' + (scope === 'today' ? "today's" : 'ALL') + ' photos — hashing…');
   const refIndex = {};   // dbKey → [{entryId, name, slot, dupOf}]
   const note = (entryId, name, slot, ref) => {
     if (!ref || !ref.dbKey) return;
     (refIndex[ref.dbKey] = refIndex[ref.dbKey] || []).push({ entryId, name, slot, dupOf: ref.dupOf || null });
   };
   for (const e of savedEquipment) {
+    if (scope === 'today' && !isSavedToday(e)) continue;
     for (const slot of Object.keys(e.photos || {})) note(e.id, e.equipName || '(unnamed)', slot, e.photos[slot]);
     (e.miscPhotos || []).forEach((mp, mi) => note(e.id, e.equipName || '(unnamed)', 'misc_' + mi, mp));
   }
@@ -6337,9 +6343,19 @@ async function runPhotoAudit() {
     '<div style="font-size:11px;padding:4px 0;color:var(--text-dim);border-bottom:1px solid var(--border);">&#8635; recorded dup: ' +
     c.owners.map(o => o.name + ' [' + o.slot + ']').join(' + ') + '</div>'
   ).join('');
+  const scopeBtn = (val, label) =>
+    '<button class="btn btn-sm" onclick="runPhotoAudit(\'' + val + '\')" style="padding:5px 12px;font-size:12px;' +
+    (scope === val
+      ? 'background:var(--accent);color:#fff;border:1px solid var(--accent);'
+      : 'background:var(--card);color:var(--text-dim);border:1px solid var(--border);') + '">' + label + '</button>';
+  const nToday = savedEquipment.filter(isSavedToday).length;
   overlay.innerHTML =
     '<div class="dialog" style="max-width:min(94vw,560px);max-height:84vh;display:flex;flex-direction:column;">' +
-    '<h3>&#128269; Photo Audit</h3>' +
+    '<h3>&#128269; Photo Audit — ' + (scope === 'today' ? "TODAY'S work" : 'ALL photos') + '</h3>' +
+    '<div style="display:flex;gap:8px;margin-bottom:10px;">' + scopeBtn('today', "Today's work (" + nToday + ' entr' + (nToday === 1 ? 'y' : 'ies') + ')') + scopeBtn('all', 'All photos') + '</div>' +
+    (scope === 'today'
+      ? '<div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;line-height:1.4;">Only entries saved today + the open form. Historical PHOTO SUSPECT flags from the old key scheme are excluded — switch to "All photos" to see those.</div>'
+      : '<div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;line-height:1.4;">Entire device, including migrated legacy photos — historical suspect clusters WILL appear here; that is old damage being surfaced, not today’s work.</div>') +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">' +
     stat('referenced photos', keys.length) +
     stat('hashed', hashed) +
@@ -6349,8 +6365,8 @@ async function runPhotoAudit() {
     '</div>' +
     '<div style="overflow-y:auto;flex:1;margin-bottom:12px;">' +
     (bad.length
-      ? '<div style="font-weight:700;font-size:13px;color:#c82828;margin-bottom:4px;">These photos are claimed by MULTIPLE entries with no recorded dup — fix before leaving site:</div>' + collisionRows
-      : '<div style="color:#4ab86a;font-weight:700;font-size:14px;">&#10003; CLEAN — no unintended cross-entry duplicates.</div>') +
+      ? '<div style="font-weight:700;font-size:13px;color:#c82828;margin-bottom:4px;">These photos are claimed by MULTIPLE entries with no recorded dup' + (scope === 'today' ? ' — fix before leaving site:' : ':') + '</div>' + collisionRows
+      : '<div style="color:#4ab86a;font-weight:700;font-size:14px;">&#10003; CLEAN — no unintended cross-entry duplicates' + (scope === 'today' ? " in today's work." : '.') + '</div>') +
     (dupRows ? '<div style="margin-top:10px;font-size:12px;font-weight:600;">Intentional recorded duplicates:</div>' + dupRows : '') +
     '</div>' +
     '<button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="document.getElementById(\'photoAuditOverlay\').remove()">Close</button>' +
