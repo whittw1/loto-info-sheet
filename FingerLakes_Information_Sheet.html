@@ -1896,6 +1896,7 @@ function init() {
     // show the photo-integrity badge.
     migratePhotosToFS()
       .then(() => runPhotoKeyMigration().catch(e => console.error('photo key migration failed', e)))
+      .then(() => reattachOrphanedPhotos(false).catch(e => console.error('reattach failed', e)))
       .then(() => runIntegrityCheck(false));
   }).catch(() => {
     renderSavedPanel();
@@ -6200,6 +6201,7 @@ async function showPhotoStoreReport() {
     '<h3>&#128451; Photo Store Report</h3>' +
     '<div style="overflow-y:auto;flex:1;margin-bottom:12px;">' + body + '</div>' +
     '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
+    '<button class="btn btn-outline btn-sm" onclick="reattachOrphanedPhotos(true)">&#128279; Re-attach orphaned photos</button>' +
     '<button class="btn btn-outline btn-sm" onclick="exportQuarantineZip()">&#128230; Export quarantined photos</button>' +
     '<button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="document.getElementById(\'photoReportOverlay\').remove()">Close</button>' +
     '</div></div>';
@@ -6282,6 +6284,103 @@ async function exportQuarantineZip() {
     console.error('Quarantine export failed', e);
     alert('Quarantine export FAILED: ' + (e && e.message ? e.message : e) + '\n\nNothing was deleted — try again, or contact support if it repeats.');
   }
+}
+
+// ---------------------------------------------------------------------------
+// RE-ATTACH ORPHANED PHOTOS  (build 87)
+// ----------------------------------------------------------------------------
+// Every photo key names its owning entry UUID and slot (sourceId / main / …).
+// So a stored photo that no entry references can be put back EXACTLY where it
+// belongs — no guessing. This is how the b83–b86 retake-delete damage is
+// undone on-device: the retaken photo survived under a new key while the
+// entry still pointed at the deleted one. Only slots whose current bytes are
+// MISSING (or that are empty) are filled; healthy slots are never touched.
+// ----------------------------------------------------------------------------
+async function fsPhotoMtime(dbKey) {
+  const FS = fsPlugin(); if (!FS) return 0;
+  try { const st = await FS.stat({ path: photoFsRelPath(dbKey), directory: 'DATA' }); return (st && st.mtime) || 0; } catch (e) { return 0; }
+}
+function thumbnailFromBytes(bytes) {
+  return new Promise(resolve => {
+    try {
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const c = document.createElement('canvas');
+          const tw = Math.min(THUMB_WIDTH, img.width);
+          c.width = tw; c.height = Math.round(img.height * (tw / img.width));
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          resolve(c.toDataURL('image/jpeg', THUMB_QUALITY));
+        } catch (e) { resolve(null); }
+        URL.revokeObjectURL(url);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    } catch (e) { resolve(null); }
+  });
+}
+async function reattachOrphanedPhotos(interactive) {
+  const referenced = new Set();
+  for (const e of savedEquipment) collectEntryPhotoKeys(e).forEach(k => referenced.add(k));
+  Object.keys(photos).forEach(k => { if (photos[k] && photos[k].dbKey) referenced.add(photos[k].dbKey); });
+  miscPhotos.forEach(mp => { if (mp && mp.dbKey) referenced.add(mp.dbKey); });
+  const migrationSources = await collectMigrationSourceKeys();
+  let present;
+  try { present = await presentPhotoKeySet(); } catch (e) { present = new Set(); }
+  const byEntry = {};
+  for (const e of savedEquipment) if (e.id) byEntry[e.id] = e;
+
+  // candidate orphans grouped by (entry, slot)
+  const groups = {};
+  for (const key of present) {
+    if (referenced.has(key) || migrationSources.has(key)) continue;
+    const p = parsePhotoKey(key);
+    if (!p) continue;
+    const e = byEntry[p.entryId];
+    if (!e) continue;
+    const tok = p.slotToken;
+    let slotKey = null;
+    if (tok === 'main') slotKey = 'equip_main';
+    else if (tok === 'dataplate') slotKey = 'equip_dataplate';
+    else if (tok === 'ee') slotKey = 'equip_ee';
+    else if (tok.indexOf('misc-') === 0) continue;   // misc has no stable slot to restore into
+    else { const i = (e.sources || []).findIndex(sx => sx && sx.sourceId === tok); if (i >= 0) slotKey = 'source_' + i; }
+    if (!slotKey) continue;
+    (groups[e.id + '|' + slotKey] = groups[e.id + '|' + slotKey] || { e, slotKey, keys: [] }).keys.push(key);
+  }
+
+  let relinked = 0; const details = [];
+  for (const g of Object.values(groups)) {
+    g.e.photos = g.e.photos || {};
+    const cur = g.e.photos[g.slotKey];
+    if (cur && cur.dbKey && await photoBytesExist(cur.dbKey)) continue;   // healthy — leave alone
+    // newest orphan wins when several exist (FS mtime on native; first otherwise)
+    let best = g.keys[0];
+    if (g.keys.length > 1 && fsPlugin()) {
+      let bestT = -1;
+      for (const k of g.keys) { const t = await fsPhotoMtime(k); if (t > bestT) { bestT = t; best = k; } }
+    }
+    const pd = await loadPhotoBytes(best, 'image/jpeg');
+    if (!pd || !pd.bytes) continue;
+    const thumb = await thumbnailFromBytes(pd.bytes);
+    g.e.photos[g.slotKey] = {
+      dbKey: best, thumbnail: thumb || (cur && cur.thumbnail) || '', timestamp: (cur && cur.timestamp) || new Date().toISOString(),
+      fileType: 'image/jpeg', sha256: await sha256HexOfBytes(pd.bytes), unsaved: false,
+      recoveredFrom: (cur && cur.dbKey) || null, recoveredAt: new Date().toISOString()
+    };
+    relinked++;
+    details.push((g.e.equipName || '(unnamed)') + ' [' + photoSlotLabel(g.slotKey) + ']');
+  }
+  if (relinked) { saveAll(); renderSavedPanel(); updateIntegrityBadge(); }
+  if (interactive) {
+    alert(relinked
+      ? '✓ Re-attached ' + relinked + ' orphaned photo' + (relinked === 1 ? '' : 's') + ' to the exact entry + slot their keys name:\n\n' + details.slice(0, 30).join('\n') + (details.length > 30 ? '\n…' : '')
+      : 'No orphaned photos matched a missing slot. (Orphans that belong to healthy slots are left as-is.)');
+  } else if (relinked) {
+    showToast('✓ Re-attached ' + relinked + ' orphaned photo' + (relinked === 1 ? '' : 's') + ' to their entries', false);
+  }
+  return { relinked, details };
 }
 
 // ---------------------------------------------------------------------------

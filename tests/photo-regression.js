@@ -477,13 +477,49 @@
       after ? 'misc bytes intact' : 'MISC BYTES DELETED by removal during edit');
   }
 
+
+  // T10 — repair of b83–b86 damage: entry points at a DELETED key while the
+  // retaken photo survives as an orphan under the same entry+sourceId key.
+  // reattachOrphanedPhotos must re-link the slot to the orphan (by key), and
+  // export must then contain the photo.
+  async function t10_reattachOrphans() {
+    if (typeof window.reattachOrphanedPhotos !== 'function') {
+      return record('T10 orphaned retake re-attached to its entry+slot', false, 'reattachOrphanedPhotos() missing (pre-b87 build)');
+    }
+    await resetAppState();
+    fillForm('Heat Exchanger Left');
+    sources[0].sourceId = genUuid();
+    await captureInto('source_0', await makePhotoFile('t10-orig'));
+    const A = saveEntry();
+    const src = A.sources[0];
+    const deadKey = A.photos.source_0.dbKey;
+    // the retake that b86 would have left orphaned: same entry, same sourceId, new rev
+    const orphanKey = photoStoreKey(A.id, src.sourceId);
+    const orphanBytes = dataUrlFromBytesSeed('t10-retake');
+    await storePhotoBytes(orphanKey, orphanBytes);
+    // and the b86 deletion of the original
+    await deletePhotoFromDB(deadKey);
+    if (await loadPhotoBytes(deadKey, 'image/jpeg')) return record('T10 orphaned retake re-attached to its entry+slot', false, 'setup: original not deleted');
+    const r = await reattachOrphanedPhotos(false);
+    const ref = A.photos.source_0;
+    const bytes = ref && ref.dbKey ? await loadPhotoBytes(ref.dbKey, 'image/jpeg') : null;
+    const wantHash = await sha256Hex(dataUrlToUint8Array(orphanBytes));
+    const gotHash = bytes ? await sha256Hex(bytes.bytes) : null;
+    const { zip, confirms } = await runExport({ confirmResponse: false });
+    let exported = false;
+    if (zip) { const u = await unzipExport(zip.blob); const ja = jsonEntryFor(u.entriesJson, A); exported = !!(ja && ja.sources[0].photoFile); }
+    record('T10 orphaned retake re-attached to its entry+slot',
+      r.relinked === 1 && ref.dbKey === orphanKey && gotHash === wantHash && exported && confirms.length === 0,
+      'relinked=' + r.relinked + ' keyMatch=' + (ref && ref.dbKey === orphanKey) + ' bytesMatch=' + (gotHash === wantHash) + ' exportedCleanly=' + exported + ' dialogs=' + confirms.length);
+  }
+
   // ---------- runner --------------------------------------------------------
   window.runPhotoRegressionSuite = async function (opts) {
     opts = opts || {};
     results.length = 0;
     window.__PHOTO_TEST_RESULTS = null;
     const tests = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
-      t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard, t9_removeMiscThenDiscard];
+      t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard, t9_removeMiscThenDiscard, t10_reattachOrphans];
     if (!opts.skipScale) tests.push(t7_scale);
     for (const t of tests) {
       try { await t(); }
