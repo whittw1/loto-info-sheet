@@ -441,13 +441,49 @@
       pass, photoPaths.length + ' files, ' + distinct.size + ' distinct hashes, ' + perEntryFiles.length + ' entry refs');
   }
 
+
+  // T8 — edit → retake → DISCARD must leave the saved entry's original bytes intact
+  async function t8_retakeThenDiscard() {
+    await resetAppState();
+    fillForm('AHU-16');
+    await captureInto('equip_main', await makePhotoFile('t8-orig'));
+    const A = saveEntry();
+    const origKey = A.photos.equip_main.dbKey;
+    const origBytes = await loadPhotoBytes(origKey, 'image/jpeg');
+    if (!origBytes) return record('T8 edit→retake→discard keeps original photo', false, 'original not stored');
+    editSaved(0);                                   // form now shares A's photo objects
+    await captureInto('equip_main', await makePhotoFile('t8-retake'));
+    await sleep(700);                               // let any post-save cleanup run
+    window.confirm = () => true; clearForm(true);   // DISCARD the edit
+    window.confirm = realConfirm;
+    const after = await loadPhotoBytes(A.photos.equip_main.dbKey, 'image/jpeg');
+    record('T8 edit→retake→discard keeps original photo', !!after && A.photos.equip_main.dbKey === origKey,
+      after ? 'original bytes intact' : 'ORIGINAL BYTES DELETED by retake');
+  }
+
+  // T9 — edit → remove a misc photo → DISCARD must leave the saved entry's misc bytes intact
+  async function t9_removeMiscThenDiscard() {
+    await resetAppState();
+    fillForm('Boiler-2');
+    handleMiscPhoto({ files: [await makePhotoFile('t9-misc')], value: '' });
+    await waitFor(() => miscPhotos.length === 1 && miscPhotos[0].unsaved === false, 15000, 'misc capture');
+    const A = saveEntry();
+    const key = A.miscPhotos[0].dbKey;
+    editSaved(0);
+    window.confirm = () => true; removeMiscPhoto(0); await sleep(500); clearForm(true);
+    window.confirm = realConfirm;
+    const after = await loadPhotoBytes(key, 'image/jpeg');
+    record('T9 edit→remove misc→discard keeps original misc photo', !!after,
+      after ? 'misc bytes intact' : 'MISC BYTES DELETED by removal during edit');
+  }
+
   // ---------- runner --------------------------------------------------------
   window.runPhotoRegressionSuite = async function (opts) {
     opts = opts || {};
     results.length = 0;
     window.__PHOTO_TEST_RESULTS = null;
     const tests = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
-      t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat];
+      t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard, t9_removeMiscThenDiscard];
     if (!opts.skipScale) tests.push(t7_scale);
     for (const t of tests) {
       try { await t(); }

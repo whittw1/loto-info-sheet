@@ -439,7 +439,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b86</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b87</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1667,6 +1667,9 @@ let photos = {};           // Current equipment's photos (keyed by slot id)
 // reset on clear. Photo store keys derive from THIS — never from any
 // user-editable string — so photos are bound to the entry, not its name.
 let currentEntryId = null;
+// Captures still resizing/saving. Save & New is refused while any are in
+// flight so a save can never snapshot a slot the capture hasn't landed in yet.
+let _capturesInFlight = 0;
 function ensureCurrentEntryId() {
   if (editingEntry && editingEntry.id) currentEntryId = editingEntry.id;
   if (!currentEntryId) currentEntryId = genUuid();
@@ -6386,13 +6389,20 @@ function handlePhoto(input, slotId) {
   const supersededKey = (photos[slotId] && photos[slotId].dbKey && !photos[slotId].dupOf &&
     photoKeyOwnedBy(photos[slotId].dbKey, currentEntryId)) ? photos[slotId].dbKey : null;
   const settings = getPhotoSettings();
+  const captureEntryId = currentEntryId;   // the entry this capture belongs to
+  _capturesInFlight++;
+  let _settled = false;
+  const settle = () => { if (!_settled) { _settled = true; _capturesInFlight = Math.max(0, _capturesInFlight - 1); } };
 
   // Read file as DataURL, then resize via canvas, then store
   const reader = new FileReader();
+  reader.onerror = settle;
   reader.onload = function(e) {
     const originalDataUrl = e.target.result;
     const img = new Image();
+    img.onerror = settle;
     img.onload = async function() {
+      try {
       // --- Resize to configured max dimensions ---
       let w = img.width;
       let h = img.height;
@@ -6430,48 +6440,65 @@ function handlePhoto(input, slotId) {
       tCtx.drawImage(resizeCanvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
       const thumbnail = thumbCanvas.toDataURL('image/jpeg', THUMB_QUALITY);
 
-      photos[slotId] = {
+      // If the form moved on (saved / cleared) while this capture was in
+      // flight, the photo belongs to the entry that owned it at capture time —
+      // attach it there, never into whatever form is open now.
+      const formMovedOn = currentEntryId !== captureEntryId;
+      const ownerEntry = formMovedOn ? savedEquipment.find(en => en.id === captureEntryId) : null;
+      if (formMovedOn && ownerEntry && !ownerEntry.photos) ownerEntry.photos = {};
+      const targetMap = formMovedOn ? (ownerEntry ? ownerEntry.photos : {}) : photos;
+
+      const rec = {
         timestamp: timestamp,
         thumbnail: thumbnail,
         originalName: file.name || '',
         fileType: 'image/jpeg',
         dbKey: dbKey
       };
+      targetMap[slotId] = rec;
 
-      const container = document.getElementById('photo_' + slotId);
-      container.classList.add('has-photo');
-      setPhotoSlotState(container, thumbnail, 'saving');
+      const container = formMovedOn ? null : document.getElementById('photo_' + slotId);
+      if (container) { container.classList.add('has-photo'); setPhotoSlotState(container, thumbnail, 'saving'); }
 
       // Persist durably and CONFIRM it stuck. A failed save is surfaced loudly
       // (red badge + toast) so nothing goes missing silently.
       const res = await storePhotoBytes(dbKey, resizedDataUrl);
       if (res.ok) {
-        photos[slotId].unsaved = false;
-        setPhotoSlotState(container, thumbnail, 'saved');
-        showToast('Photo saved (' + w + 'x' + h + ', ~' + resizedKB + 'KB)');
+        rec.unsaved = false;
+        if (container) setPhotoSlotState(container, thumbnail, 'saved');
+        showToast('Photo saved (' + w + 'x' + h + ', ~' + resizedKB + 'KB)' + (formMovedOn ? (ownerEntry ? ' \u2014 attached to saved "' + (ownerEntry.equipName || '') + '"' : ' \u2014 entry was cleared; photo kept in quarantine') : ''));
+        if (fsPlugin() && res.where !== 'fs') {
+          showToast('\u26a0 Photo saved to TEMPORARY storage (filesystem write failed) \u2014 export TODAY', true);
+        }
+        if (formMovedOn && ownerEntry) saveAll();
         // Stamp the content hash and warn if these exact bytes already belong
         // to a DIFFERENT entry (rule 6 \u2014 cross-link warning at capture time).
         try {
           const hash = await sha256HexOfDataUrl(resizedDataUrl);
-          if (hash && photos[slotId] && photos[slotId].dbKey === dbKey) {
-            photos[slotId].sha256 = hash;
-            const { collision } = await recordPhotoHash(hash, currentEntryId, dbKey, false);
+          if (hash) {
+            rec.sha256 = hash;
+            const { collision } = await recordPhotoHash(hash, captureEntryId, dbKey, false);
             if (collision) {
-              photos[slotId].hashWarning = true;
-              showPhotoHashWarning(slotId, collision);
+              rec.hashWarning = true;
+              if (!formMovedOn) showPhotoHashWarning(slotId, collision);
             }
-            autoSaveCurrent();
+            if (formMovedOn) { if (ownerEntry) saveAll(); } else autoSaveCurrent();
           }
         } catch (e) { console.warn('photo hash record failed', e); }
-        // New record verified on disk \u2014 now retire the one this retake replaced.
-        if (supersededKey && supersededKey !== dbKey) deletePhotoFromDB(supersededKey);
+        // The superseded record is deliberately NOT deleted. While editing, the
+        // form shares photo objects with the saved entry (editSaved shallow-copies
+        // them), so deleting here destroyed the saved entry's photo whenever the
+        // edit was discarded, reloaded, or saved mid-capture (build 83-86 bug,
+        // Air Handler 16 / 2026-08-21). Superseded records become orphans the
+        // quarantine tooling can list; bytes are never removed on a retake.
       } else {
-        photos[slotId].unsaved = true;
-        setPhotoSlotState(container, thumbnail, 'failed');
+        rec.unsaved = true;
+        if (container) setPhotoSlotState(container, thumbnail, 'failed');
         showToast('\u26a0 Photo did NOT save \u2014 storage problem. Export & clear now.', true);
       }
-      autoSaveCurrent();
+      if (!formMovedOn) autoSaveCurrent();
       updateIntegrityBadge();
+      } finally { settle(); }
     };
     img.src = originalDataUrl;
   };
@@ -6612,6 +6639,9 @@ function handleMiscPhoto(input) {
         unsaved: !res.ok
       };
       miscPhotos.push(miscRec);
+      if (res.ok && fsPlugin() && res.where !== 'fs') {
+        showToast('\u26a0 Misc photo saved to TEMPORARY storage (filesystem write failed) \u2014 export TODAY', true);
+      }
       if (res.ok) {
         try {
           const hash = await sha256HexOfDataUrl(resizedDataUrl);
@@ -6639,12 +6669,10 @@ function handleMiscPhoto(input) {
 
 function removeMiscPhoto(idx) {
   if (!confirm('Remove misc photo ' + (idx + 1) + '?')) return;
-  const removed = miscPhotos[idx];
   miscPhotos.splice(idx, 1);
-  // Explicit user deletion of this entry's own record — own-UUID keys only.
-  if (removed && removed.dbKey && photoKeyOwnedBy(removed.dbKey, currentEntryId)) {
-    deletePhotoFromDB(removed.dbKey);
-  }
+  // Bytes are NOT deleted here: during an edit the saved entry still references
+  // this record until Save & New — deleting made a discarded edit destroy the
+  // original's misc photo. Orphaned records are handled by quarantine tooling.
   renderMiscPhotos();
   autoSaveCurrent();
   updateIntegrityBadge();
@@ -6733,6 +6761,10 @@ function closeIncompleteWarning() {
 }
 
 function saveAndNew() {
+  if (_capturesInFlight > 0) {
+    showToast('\u23f3 A photo is still saving \u2014 wait a moment, then Save & New', true);
+    return;
+  }
   const equipName = document.getElementById('equipName').value.trim();
   if (!equipName) {
     showToast('Enter equipment name first', true);
@@ -6749,6 +6781,10 @@ function saveAndNew() {
 }
 
 function performSaveAndNew() {
+  if (_capturesInFlight > 0) {
+    showToast('\u23f3 A photo is still saving \u2014 wait a moment, then Save & New', true);
+    return;
+  }
   const equipName = document.getElementById('equipName').value.trim();
 
   // Ensure every source carries a stable UUID before it's cloned into the
