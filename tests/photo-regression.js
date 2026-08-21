@@ -513,13 +513,46 @@
       'relinked=' + r.relinked + ' keyMatch=' + (ref && ref.dbKey === orphanKey) + ' bytesMatch=' + (gotHash === wantHash) + ' exportedCleanly=' + exported + ' dialogs=' + confirms.length);
   }
 
+
+  // T11 — the Air Handler 16 field scenario: Duplicate a source that has a photo,
+  // retake the COPY's photo → the ORIGINAL source keeps its bytes, the copy has
+  // its own sourceId, and the carried-over photo was a recorded dup.
+  async function t11_duplicateSourceThenRetakeCopy() {
+    await resetAppState();
+    fillForm('AHU-16');
+    sources[0].sourceId = genUuid();
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('t11-first-device'));
+    const origKey = photos.source_0.dbKey;
+    duplicateSource(0);                                 // copy source + photo ref
+    const copyHadDup = !!(photos.source_1 && photos.source_1.dupOf);
+    await captureInto('source_1', await makePhotoFile('t11-second-device'));
+    await sleep(700);
+    const A = saveEntry();
+    const problems = [];
+    if (!(await loadPhotoBytes(origKey, 'image/jpeg'))) problems.push('ORIGINAL source photo bytes DELETED');
+    if (A.photos.source_0.dbKey !== origKey) problems.push('original slot re-pointed');
+    if (A.sources[0].sourceId === A.sources[1].sourceId) problems.push('duplicate sourceIds survived save');
+    if (!copyHadDup) problems.push('copied photo was a bare shared reference (no dupOf)');
+    const { zip } = await runExport();
+    if (!zip) problems.push('export produced no zip');
+    else {
+      const u = await unzipExport(zip.blob);
+      const ja = jsonEntryFor(u.entriesJson, A);
+      if (!ja || !ja.sources[0].photoFile || !ja.sources[1].photoFile) problems.push('a source photo is missing from the export');
+      else if (u.hashes[ja.sources[0].photoFile] === u.hashes[ja.sources[1].photoFile]) problems.push('both sources exported the SAME photo');
+      if (u.manifest && u.manifest.counts && u.manifest.counts.missingPhotos) problems.push('export reported missing photos');
+    }
+    record('T11 duplicate source → retake copy keeps original (AH16 scenario)', problems.length === 0, problems.join('; '));
+  }
+
   // ---------- runner --------------------------------------------------------
   window.runPhotoRegressionSuite = async function (opts) {
     opts = opts || {};
     results.length = 0;
     window.__PHOTO_TEST_RESULTS = null;
     const tests = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
-      t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard, t9_removeMiscThenDiscard, t10_reattachOrphans];
+      t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard, t9_removeMiscThenDiscard, t10_reattachOrphans, t11_duplicateSourceThenRetakeCopy];
     if (!opts.skipScale) tests.push(t7_scale);
     for (const t of tests) {
       try { await t(); }

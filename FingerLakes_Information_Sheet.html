@@ -439,7 +439,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b87</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b88</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -5036,6 +5036,11 @@ function duplicateSource(index) {
   const newSrc = JSON.parse(JSON.stringify(src));
   newSrc.auto = false;
   newSrc.collapsed = false;
+  // A duplicated source is a DIFFERENT physical device: it must get its own
+  // sourceId (minted at capture/save) — sharing the original's id made photo
+  // keys and manifests ambiguous (Air Handler 16, 2026-08-21).
+  delete newSrc.sourceId;
+  delete newSrc.linkedTo;
   sources.splice(index + 1, 0, newSrc);
   // Shift photos for sources after the insertion point
   for (let i = sources.length - 1; i > index + 1; i--) {
@@ -5045,9 +5050,17 @@ function duplicateSource(index) {
       delete photos[`source_${i}`];
     }
   }
-  // Copy photo from original source if it exists
+  // Carry the original's photo over as a RECORDED duplicate (dupOf), never a
+  // bare shared reference: export still writes it once, the audit/gate know
+  // it's intentional, and a retake on the copy can never be mistaken for
+  // superseding the original's record.
   if (photos[`source_${index}`]) {
-    photos[`source_${index + 1}`] = JSON.parse(JSON.stringify(photos[`source_${index}`]));
+    const orig = photos[`source_${index}`];
+    const copy = JSON.parse(JSON.stringify(orig));
+    copy.shared = true;
+    copy.dupOf = { entryId: currentEntryId || null, dbKey: orig.dbKey || null, label: 'duplicated source' };
+    delete copy.hashWarning;
+    photos[`source_${index + 1}`] = copy;
   } else {
     delete photos[`source_${index + 1}`];
   }
@@ -6888,7 +6901,15 @@ function performSaveAndNew() {
 
   // Ensure every source carries a stable UUID before it's cloned into the
   // saved entry. Assigned on the live objects so it round-trips through edits.
-  sources.forEach(ensureSourceId);
+  // Two sources must never share an id (older Duplicate-source copies did) —
+  // a repeated id gets a fresh one; photo export binds by slot, so nothing moves.
+  const seenSourceIds = new Set();
+  sources.forEach(src => {
+    if (!src) return;
+    if (src.sourceId && seenSourceIds.has(src.sourceId)) delete src.sourceId;
+    ensureSourceId(src);
+    seenSourceIds.add(src.sourceId);
+  });
 
   // Package current equipment into saved list. The id is the SAME UUID the
   // form's photos were keyed under (minted at first capture), so every photo
