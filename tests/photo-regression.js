@@ -126,11 +126,12 @@
     }
     lsKill.forEach(k => localStorage.removeItem(k));
     localStorage.removeItem('photoSeqNext');
-    document.getElementById('equipName').value = '';
-    document.getElementById('equipRoom').value = '';
-    document.getElementById('equipNotes').value = '';
-    renderSources();
+    // clear the form exactly as the app does (repaints the photo slots, clears
+    // building/room, autosaves the blank form so a relaunch doesn't restore a
+    // test form), then refresh the header count
+    clearForm(false);
     renderSavedPanel();
+    updateHeaderBadge();
   }
 
   function fillForm(name, opts) {
@@ -248,58 +249,99 @@
   const rawIdbDelete = (store, key) => rawIdb(store, 'readwrite', s => s.delete(key));
   const rawIdbKeys = (store) => rawIdb(store, 'readonly', s => s.getAllKeys());
 
-  // In-memory stand-in for the Capacitor Filesystem plugin, so the suite can
-  // exercise the NATIVE photo store the iPad actually uses. faults.* hooks
-  // inject failures: return 'throw' to fail the call, 'handled' to skip the
-  // default behaviour.
-  function installMockFS(faults) {
-    faults = faults || {};
-    const files = new Map();                 // path -> Uint8Array
+  // Filesystem test double. Wraps whichever Capacitor Filesystem plugin is live
+  // — the REAL native plugin when the suite runs inside the iOS app on the
+  // Simulator, the runner's in-memory one in {nativeMock} runs — or, in a plain
+  // browser, installs a fresh in-memory plugin. Fault hooks are injected on the
+  // way through: faults.writeFile(path, data, api) may return 'throw' (fail the
+  // call) or 'handled' (skip the real write); faults.readdir(path) may return
+  // 'throw'. The Share plugin is stubbed while installed (no share sheet).
+  // Tests read/modify the underlying store through the async helpers
+  // get/has/set/del, which bypass the faults.
+  const b64dec = (s) => { const b = atob(s || ''); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
+  const b64enc = (u) => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
+  const fsNorm = p => String(p || '').replace(/^\/+/, '').replace(/\/+$/, '');
+  function makeMemoryFS() {
+    const files = new Map();                 // path -> Uint8Array (directories ignored — paths never clash)
     const dirs = new Set();
-    const calls = [];
-    const dec = (s) => { const b = atob(s); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
-    const enc = (u) => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
-    const norm = p => String(p || '').replace(/^\/+/, '').replace(/\/+$/, '');
     const nf = () => { const e = new Error('File does not exist'); e.code = 'OS-PLUG-FILE-0008'; return e; };
-    const FS = {
-      async writeFile({ path, data }) {
-        path = norm(path); calls.push({ op: 'writeFile', path, len: String(data || '').length });
-        if (faults.writeFile) { const r = faults.writeFile(path, data, files, dec); if (r === 'throw') throw new Error('mock write failed'); if (r === 'handled') return { uri: 'mock://' + path }; }
-        files.set(path, dec(data)); return { uri: 'mock://' + path };
-      },
+    return {
+      async writeFile({ path, data }) { path = fsNorm(path); files.set(path, b64dec(data)); return { uri: 'mock://' + path }; },
       async appendFile({ path, data }) {
-        path = norm(path); calls.push({ op: 'appendFile', path, len: String(data || '').length });
-        const prev = files.get(path) || new Uint8Array(0); const add = dec(data);
+        path = fsNorm(path);
+        const prev = files.get(path) || new Uint8Array(0); const add = b64dec(data);
         const u = new Uint8Array(prev.length + add.length); u.set(prev); u.set(add, prev.length); files.set(path, u);
       },
-      async readFile({ path }) {
-        path = norm(path); calls.push({ op: 'readFile', path });
-        if (!files.has(path)) throw nf(); return { data: enc(files.get(path)) };
-      },
+      async readFile({ path }) { path = fsNorm(path); if (!files.has(path)) throw nf(); return { data: b64enc(files.get(path)) }; },
       async stat({ path }) {
-        path = norm(path);
+        path = fsNorm(path);
         if (files.has(path)) return { type: 'file', size: files.get(path).length, mtime: Date.now(), ctime: Date.now(), uri: 'mock://' + path };
         if (dirs.has(path) || [...files.keys()].some(k => k.indexOf(path + '/') === 0)) return { type: 'directory', size: 0, mtime: Date.now(), ctime: Date.now(), uri: 'mock://' + path };
         throw nf();
       },
       async readdir({ path }) {
-        path = norm(path); calls.push({ op: 'readdir', path });
-        if (faults.readdir) { const r = faults.readdir(path); if (r === 'throw') throw new Error('mock readdir failed'); }
+        path = fsNorm(path);
         const pre = path + '/'; const out = [];
         for (const [k, v] of files) if (k.indexOf(pre) === 0 && k.slice(pre.length).indexOf('/') < 0) out.push({ name: k.slice(pre.length), type: 'file', size: v.length, mtime: Date.now(), ctime: Date.now(), uri: 'mock://' + k });
         if (!out.length && !dirs.has(path)) throw nf();
         return { files: out };
       },
-      async deleteFile({ path }) { path = norm(path); calls.push({ op: 'deleteFile', path }); if (!files.delete(path)) throw nf(); },
-      async mkdir({ path }) { path = norm(path); if (dirs.has(path)) { const e = new Error('Directory exists'); throw e; } dirs.add(path); },
-      async rename({ from, to }) {
-        from = norm(from); to = norm(to); calls.push({ op: 'rename', from, to });
-        if (!files.has(from)) throw nf(); files.set(to, files.get(from)); files.delete(from);
-      },
+      async deleteFile({ path }) { path = fsNorm(path); if (!files.delete(path)) throw nf(); },
+      async mkdir({ path }) { path = fsNorm(path); if (dirs.has(path)) throw new Error('Directory exists'); dirs.add(path); },
+      async rename({ from, to }) { from = fsNorm(from); to = fsNorm(to); if (!files.has(from)) throw nf(); files.set(to, files.get(from)); files.delete(from); },
+      async getUri({ path }) { return { uri: 'mock://' + fsNorm(path) }; },
     };
-    const saved = window.Capacitor;
-    window.Capacitor = { isNativePlatform: () => true, Plugins: { Filesystem: FS, Share: { share: async () => ({}) } } };
-    return { files, dirs, calls, FS, dec, enc, restore: () => { window.Capacitor = saved; } };
+  }
+  function installMockFS(faults) {
+    faults = faults || {};
+    const calls = [];
+    const cap = window.Capacitor;
+    const live = !!(cap && cap.isNativePlatform && cap.isNativePlatform() && cap.Plugins && cap.Plugins.Filesystem);
+    const base = live ? cap.Plugins.Filesystem : makeMemoryFS();
+    const api = {
+      calls, dec: b64dec, enc: b64enc, real: live && !cap.__photoSuiteMock,
+      async get(path, directory) { try { const r = await base.readFile({ path, directory: directory || 'DATA' }); return b64dec(r.data); } catch (e) { return null; } },
+      async has(path, directory) { try { await base.stat({ path, directory: directory || 'DATA' }); return true; } catch (e) { return false; } },
+      async set(path, bytes, directory) { await base.writeFile({ path, data: b64enc(bytes), directory: directory || 'DATA', recursive: true }); },
+      async del(path, directory) { try { await base.deleteFile({ path, directory: directory || 'DATA' }); } catch (e) {} },
+    };
+    const wrapped = {
+      async writeFile(o) {
+        const path = fsNorm(o.path);
+        calls.push({ op: 'writeFile', path, len: String(o.data || '').length });
+        if (faults.writeFile) {
+          const r = await faults.writeFile(path, o.data, api);
+          if (r === 'throw') throw new Error('mock write failed');
+          if (r === 'handled') return { uri: 'mock://' + path };
+        }
+        return base.writeFile(o);
+      },
+      async appendFile(o) { calls.push({ op: 'appendFile', path: fsNorm(o.path), len: String(o.data || '').length }); return base.appendFile(o); },
+      async readFile(o) { calls.push({ op: 'readFile', path: fsNorm(o.path) }); return base.readFile(o); },
+      stat: (o) => base.stat(o),
+      async readdir(o) {
+        const path = fsNorm(o.path);
+        calls.push({ op: 'readdir', path });
+        if (faults.readdir && faults.readdir(path) === 'throw') throw new Error('mock readdir failed');
+        return base.readdir(o);
+      },
+      async deleteFile(o) { calls.push({ op: 'deleteFile', path: fsNorm(o.path) }); return base.deleteFile(o); },
+      mkdir: (o) => base.mkdir(o),
+      async rename(o) { calls.push({ op: 'rename', from: fsNorm(o.from), to: fsNorm(o.to) }); return base.rename(o); },
+      getUri: (o) => base.getUri(o),
+    };
+    const shareStub = { share: async () => ({}) };
+    if (live) {
+      const savedFS = cap.Plugins.Filesystem, savedShare = cap.Plugins.Share;
+      cap.Plugins.Filesystem = wrapped;
+      cap.Plugins.Share = shareStub;
+      api.restore = () => { cap.Plugins.Filesystem = savedFS; cap.Plugins.Share = savedShare; };
+    } else {
+      const saved = window.Capacitor;
+      window.Capacitor = { isNativePlatform: () => true, Plugins: { Filesystem: wrapped, Share: shareStub }, __photoSuiteMock: true };
+      api.restore = () => { window.Capacitor = saved; };
+    }
+    return api;
   }
 
   // ---------- export driver -------------------------------------------------
@@ -997,9 +1039,10 @@
   async function t23_interruptedFsWriteNeverServesPartialBytes() {
     const N = 'T23 interrupted filesystem write never serves partial bytes';
     await resetAppState();
+    // every photo write lands HALF its bytes, then fails — an interrupted write
     const fs = installMockFS({
-      writeFile: (path, data, files, dec) => {
-        if (path.indexOf('loto_photos/') === 0) { const b = dec(data); files.set(path, b.subarray(0, Math.floor(b.length / 2))); return 'throw'; }
+      writeFile: async (path, data, api) => {
+        if (path.indexOf('loto_photos/') === 0) { const b = api.dec(data); await api.set(path, b.subarray(0, Math.floor(b.length / 2))); return 'throw'; }
       }
     });
     try {
@@ -1024,8 +1067,8 @@
       const A = saveEntry();
       const key = A.photos.equip_main.dbKey;
       const path = photoFsRelPath(key);
-      if (!fs.files.has(path)) return record(N, false, 'setup: photo not on the (mock) filesystem');
-      fs.files.set(path, new Uint8Array(0));
+      if (!(await fs.has(path))) return record(N, false, 'setup: photo not on the filesystem');
+      await fs.set(path, new Uint8Array(0));
       await rawIdbDelete('photos', key).catch(() => {});
       try { localStorage.removeItem('photo_full_' + key); } catch (e) {}
       const r = await runIntegrityCheck(false);
@@ -1045,10 +1088,10 @@
       const A = saveEntry();
       const ref = A.photos.equip_main;
       const path = photoFsRelPath(ref.dbKey);
-      const good = fs.files.get(path);
+      const good = await fs.get(path);
       if (!good || !ref.sha256) return record(N, false, 'setup: FS copy=' + !!good + ' capture hash=' + !!ref.sha256);
       await savePhotoToDB(ref.dbKey, good.slice().buffer, 'image/jpeg');
-      fs.files.set(path, good.slice(0, Math.floor(good.length / 2)));
+      await fs.set(path, good.slice(0, Math.floor(good.length / 2)));
       const { zip, confirms } = await runExport({ confirmResponse: true });
       if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
       const u = await unzipExport(zip.blob);
@@ -1462,7 +1505,7 @@
     try {
       const e = mkEntry('FSOnly-46');
       const legacy = 'FSOnly-46__equip_main';
-      fs.files.set(photoFsRelPath(legacy), dataUrlToUint8Array(dataUrlFromBytesSeed('t46')));
+      await fs.set(photoFsRelPath(legacy), dataUrlToUint8Array(dataUrlFromBytesSeed('t46')));
       e.photos.equip_main = { dbKey: legacy, thumbnail: TINY_THUMB, timestamp: e.savedAt, fileType: 'image/jpeg' };
       savedEquipment = [e]; saveAll();
       localStorage.removeItem(PHOTO_KEY_MIGRATION_FLAG);
@@ -1558,7 +1601,8 @@
     try {
       const big = new Uint8Array(9 * 1024 * 1024); for (let i = 0; i < big.length; i += 997) big[i] = i & 255;
       const r = await saveOrShare(new Blob([big], { type: 'application/zip' }), 'FieldExport_t52.zip', 'application/zip');
-      const written = fs.files.get('FieldExport_t52.zip');
+      const written = await fs.get('FieldExport_t52.zip', 'CACHE');
+      await fs.del('FieldExport_t52.zip', 'CACHE');
       const writes = fs.calls.filter(c => (c.op === 'writeFile' || c.op === 'appendFile') && c.path === 'FieldExport_t52.zip');
       const maxLen = Math.max(0, ...writes.map(c => c.len));
       const same = !!written && written.length === big.length && (await sha256Hex(written)) === (await sha256Hex(big));
@@ -1663,6 +1707,33 @@
       'zip=' + !!zip + ', complete entry stamped=' + !!g.exportedAt + ', incomplete entry stamped "exported"=' + !!b.exportedAt);
   }
 
+  // T58 — the header photo-integrity badge follows deletes (it only refreshed
+  // on capture/launch, so it kept counting — or flagging as MISSING — photos
+  // of entries that no longer exist)
+  async function t58_integrityBadgeFollowsDeletes() {
+    const N = 'T58 photo-integrity badge updates after a delete';
+    await resetAppState();
+    fillForm('Badge-58');
+    await captureInto('equip_main', await makePhotoFile('t58'));
+    saveEntry();
+    const badge = () => { const b = document.getElementById('integrityBadge'); return !b ? '' : (b.style.display === 'none' ? '(hidden)' : b.textContent); };
+    // wait for the debounced check to run AND finish (hidden browser tabs
+    // throttle timers, so a fixed sleep can sample it mid-check)
+    const settled = async () => {
+      await sleep(700);
+      const t0 = Date.now();
+      while (Date.now() - t0 < 10000) {
+        if (!_integrityTimer && !/Checking/.test(badge())) return badge();
+        await sleep(100);
+      }
+      return badge();
+    };
+    const before = await settled();
+    await withDialogs({ confirm: true }, async () => { deleteSaved(0); });
+    const after = await settled();
+    record(N, /1 photo/.test(before) && after === '(hidden)', 'before delete "' + before + '", after delete "' + after + '"');
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -1689,18 +1760,48 @@
     t51_exportDefaultsToNewestDate, t52_nativeShareWritesZipInChunks,
     t53_sourcePhotoOnWrongSourceIsNotExportedSilently, t54_dedupedSourceKeepsItsOwnPhoto,
     t55_deletingASameIdCopyKeepsPhotos, t56_failedRetakeKeepsPreviousPhoto,
-    t57_incompleteExportIsNotStampedExported];
+    t57_incompleteExportIsNotStampedExported, t58_integrityBadgeFollowsDeletes];
 
-  // DESTRUCTIVE — erases every entry and photo in this browser profile. Refuses
-  // to run inside the app, off localhost, or where saved entries already exist.
+  // Inside the app, the suite may only run on the iOS SIMULATOR: its app
+  // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
+  // Mac, a real iPad's under /var/mobile/. Checked from the Filesystem
+  // plugin's own path for the DATA directory.
+  async function isIosSimulatorInstall() {
+    try {
+      const FS = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
+      const r = await FS.getUri({ path: 'loto_photos', directory: 'DATA' });
+      return /\/Library\/Developer\/CoreSimulator\/Devices\//.test(decodeURIComponent(String((r && r.uri) || '')));
+    } catch (e) { return false; }
+  }
+  async function nativePhotoFileCount() {
+    try {
+      const FS = window.Capacitor.Plugins.Filesystem;
+      const r = await FS.readdir({ path: 'loto_photos', directory: 'DATA' });
+      return ((r && r.files) || []).length;
+    } catch (e) { return 0; }   // folder not created yet
+  }
+
+  // DESTRUCTIVE — erases every entry and photo it can reach. In a browser it
+  // refuses off localhost or where saved entries exist; inside the app it runs
+  // ONLY with {iosSimulator:true}, ONLY on the iOS Simulator (never a device),
+  // and ONLY on a fresh install holding no entries and no photo files.
   window.runPhotoRegressionSuite = async function (opts) {
     opts = opts || {};
     const native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-    if (native) throw new Error('REFUSED: never run the photo suite inside the app — it erases every entry and photo');
-    if (!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname) && !opts.allowNonLocalhost)
-      throw new Error('REFUSED: run the photo suite only against a localhost dev server');
-    if (savedEquipment.length > 0 && !opts.iUnderstandThisErasesAllData)
-      throw new Error('REFUSED: this browser holds ' + savedEquipment.length + ' saved entries and the suite would ERASE them. Use a fresh browser profile, or pass {iUnderstandThisErasesAllData: true}.');
+    let simulator = false;
+    if (native) {
+      if (!opts.iosSimulator) throw new Error('REFUSED: never run the photo suite inside the app — it erases every entry and photo');
+      if (!(await isIosSimulatorInstall())) throw new Error('REFUSED: this is not the iOS Simulator — the photo suite must never run on a device');
+      const stored = await nativePhotoFileCount();
+      if (savedEquipment.length > 0 || stored > 0)
+        throw new Error('REFUSED: this Simulator install holds ' + savedEquipment.length + ' entries and ' + stored + ' photo files — erase the app (or use a fresh Simulator) first');
+      simulator = true;
+    } else {
+      if (!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname) && !opts.allowNonLocalhost)
+        throw new Error('REFUSED: run the photo suite only against a localhost dev server');
+      if (savedEquipment.length > 0 && !opts.iUnderstandThisErasesAllData)
+        throw new Error('REFUSED: this browser holds ' + savedEquipment.length + ' saved entries and the suite would ERASE them. Use a fresh browser profile, or pass {iUnderstandThisErasesAllData: true}.');
+    }
     results.length = 0;
     window.__PHOTO_TEST_RESULTS = null;
     let tests = ALL_TESTS.slice();
@@ -1709,7 +1810,7 @@
     // nativeMock: run EVERY test with the in-memory Filesystem plugin installed,
     // so capture / export / migration go through the native photo store the
     // iPad uses (atomic temp-file writes, directory listings, FS-first reads).
-    const nativeMock = opts.nativeMock ? installMockFS() : null;
+    const nativeMock = (opts.nativeMock && !simulator) ? installMockFS() : null;
     window.__PHOTO_SUITE_ARMED = true;
     try {
       for (const t of tests) {
@@ -1727,7 +1828,7 @@
       fail: results.filter(r => !r.pass).length,
       results: results.slice()
     };
-    summary.mode = opts.nativeMock ? 'native filesystem (mock)' : 'web (IndexedDB)';
+    summary.mode = simulator ? 'iOS Simulator app (REAL native filesystem)' : (opts.nativeMock ? 'native filesystem (mock)' : 'web (IndexedDB)');
     window.__PHOTO_TEST_RESULTS = summary;
     log('SUITE DONE (' + summary.mode + '):', summary.pass + ' pass / ' + summary.fail + ' fail');
     return summary;
