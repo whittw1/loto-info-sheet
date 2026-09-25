@@ -1,0 +1,92 @@
+name: iOS Release to TestFlight
+
+# Triggers:
+#   - Push a tag matching ios-v* (e.g. ios-v1.2) → automated TestFlight build
+#   - Manual trigger from the Actions tab → useful for testing without bumping marketing version
+#
+# Required GitHub secrets (set under repo Settings → Secrets and variables → Actions):
+#
+#   App Store Connect API (for authentication and provisioning profile management):
+#     APP_STORE_CONNECT_API_KEY_ID         — short Key ID, e.g. "ABC123DEF4"
+#     APP_STORE_CONNECT_API_KEY_ISSUER_ID  — UUID Issuer ID
+#     APP_STORE_CONNECT_API_KEY_CONTENT    — base64 of the downloaded .p8 file
+#
+#   Signing certificate (export iOS Distribution cert from Keychain as .p12):
+#     IOS_DIST_CERTIFICATE_BASE64          — base64 of the .p12 file
+#     IOS_DIST_CERTIFICATE_PASSWORD        — password you set when exporting
+#
+#   Build keychain (any random string, used to lock the runner's temp keychain):
+#     KEYCHAIN_PASSWORD                    — e.g. a 20-char random string
+#
+# See IOS_RELEASE_SETUP.md for the one-time Apple-side setup instructions.
+
+on:
+  push:
+    tags:
+      - 'ios-v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Ruby + bundler
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: ios/App
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Sync web assets into iOS project
+        run: npm run sync
+
+      - name: Import signing certificate into temp keychain
+        env:
+          CERT_BASE64: ${{ secrets.IOS_DIST_CERTIFICATE_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.IOS_DIST_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+
+          # Create temp keychain, unlock it
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Decode + import the .p12
+          echo -n "$CERT_BASE64" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" \
+            -P "$CERT_PASSWORD" \
+            -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+
+          # Allow codesign to use the private key without prompting
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Add temp keychain to the search list (default keychain first, then login)
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+
+      - name: Build and upload to TestFlight
+        working-directory: ios/App
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: bundle exec fastlane beta
