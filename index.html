@@ -9,30 +9,37 @@
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <title>VA LOTO Collector</title>
 <script>
+// Service-worker purge — ONCE per device (build 91). Its flag used to live in
+// sessionStorage, so EVERY cold start unregistered the worker, deleted the
+// offline cache and reloaded: offline, that reload had nothing to load and the
+// web app could not open at all. It never runs offline now either.
+window.shouldPurgeServiceWorkers = function (online) {
+  let done = false;
+  try { done = localStorage.getItem('sw_purged_v1') === '1'; } catch (e) { done = true; }
+  return !done && online !== false;
+};
 if ('serviceWorker' in navigator) {
-  // One-time purge: unregister old SW, clear all caches, then reload fresh
-  if (!sessionStorage.getItem('sw_purged')) {
-    navigator.serviceWorker.getRegistrations().then(regs => {
-      const unregPromises = regs.map(r => r.unregister());
-      return Promise.all(unregPromises);
-    }).then(() => caches.keys()).then(keys => {
-      return Promise.all(keys.map(k => caches.delete(k)));
-    }).then(() => {
-      sessionStorage.setItem('sw_purged', '1');
-      window.location.reload();
-    }).catch(() => {
-      sessionStorage.setItem('sw_purged', '1');
-      window.location.reload();
+  const registerSW = () => {
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      console.log('SW registered:', reg.scope);
+      reg.update();
+    }).catch(err => {
+      console.log('SW registration failed:', err);
     });
-  } else {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').then(reg => {
-        console.log('SW registered:', reg.scope);
-        reg.update();
-      }).catch(err => {
-        console.log('SW registration failed:', err);
+  };
+  if (window.shouldPurgeServiceWorkers(navigator.onLine)) {
+    navigator.serviceWorker.getRegistrations()
+      .then(regs => Promise.all(regs.map(r => r.unregister())))
+      .then(() => caches.keys()).then(keys => Promise.all(keys.map(k => caches.delete(k))))
+      .catch(() => {})
+      .then(() => {
+        let marked = false;
+        try { localStorage.setItem('sw_purged_v1', '1'); marked = localStorage.getItem('sw_purged_v1') === '1'; } catch (e) {}
+        if (marked) window.location.reload();          // reload fresh, once
+        else registerSW();                             // can't record it — never loop
       });
-    });
+  } else {
+    window.addEventListener('load', registerSW);
   }
 }
 </script>
@@ -439,7 +446,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b90</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b91</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -489,7 +496,7 @@ if ('serviceWorker' in navigator) {
       <div class="form-group">
         <label>Equipment ID / Name</label>
         <div class="scan-input-row">
-          <input type="text" id="equipName" placeholder="e.g. AHU-3000">
+          <input type="text" id="equipName" placeholder="e.g. AHU-3000" oninput="autoSaveCurrent()">
           <button type="button" class="scan-btn" onclick="scanTextToField('equipName')" title="Scan label">&#128247;</button>
         </div>
       </div>
@@ -513,7 +520,7 @@ if ('serviceWorker' in navigator) {
       </div>
       <div class="form-group">
         <label>Location / Room</label>
-        <input type="text" id="equipRoom" placeholder="e.g. Room 20">
+        <input type="text" id="equipRoom" placeholder="e.g. Room 20" oninput="autoSaveCurrent()">
       </div>
       <div class="form-group">
         <label>Template</label>
@@ -523,7 +530,7 @@ if ('serviceWorker' in navigator) {
       </div>
       <div class="form-group" id="customTemplateGroup" style="display:none;">
         <label>Custom Template Name</label>
-        <input type="text" id="equipTemplateCustom" placeholder="Enter new template name">
+        <input type="text" id="equipTemplateCustom" placeholder="Enter new template name" oninput="autoSaveCurrent()">
       </div>
       <div class="form-group">
         <label>Tied To Equipment</label>
@@ -1345,6 +1352,7 @@ function simpleVerifSuffix(src) {
   return getTempSuffixFor(src.energySource || '');
 }
 function updateSimpleVerif(index, which, checked) {
+  markSourceEdited(index);
   const src = sources[index];
   const cur = parseWaterVerification(src.verification);
   const drain = which === 'drain' ? checked : cur.drain;
@@ -1433,8 +1441,9 @@ const EQUIPMENT_ALLOW_PHOTO_FOR_SOURCE = {};
 //
 // Adding 'Gravity/Potential' here would extend the toggle to that source kind
 // too; left out per spec. 'Hydraulic' was added 2026-07-19 so techs can
-// photograph the hydraulic source (migrateToggleablePhotoFlags clears the
-// baked-in noPhoto on existing saves so the slot becomes visible).
+// photograph the hydraulic source. (A launch-time migration used to clear
+// noPhoto on these kinds on EVERY launch — it undid the user's own "hide"
+// and the templates' defaults; removed in build 91.)
 const SOURCE_KINDS_WITH_PHOTO_TOGGLE = new Set(['Kinetic', 'Hydraulic', 'Stored Electrical Energy']);
 
 function isPhotoToggleable(energySource) {
@@ -1447,11 +1456,19 @@ function shouldAllowPhotoForSource(equipType, energySource) {
 }
 
 // User-toggled per-source photo visibility. Flips src.noPhoto for a
-// toggleable source and re-renders.
+// toggleable source and re-renders. A slot that holds a photo is never hidden
+// (build 91): hiding it used to drop the photo from the export while the unit
+// was still stamped exported — and a bulk delete then erased the only copy.
 function togglePhotoSlot(index) {
   const src = sources[index];
   if (!src || !isPhotoToggleable(src.energySource)) return;
+  const ref = photos['source_' + index];
+  if (!src.noPhoto && ref && ref.dbKey) {
+    showToast('This source has a photo — it stays with the source and exports. Retake it if it is the wrong shot.', true);
+    return;
+  }
   src.noPhoto = !src.noPhoto;
+  src.userEdited = true;
   renderSources();
   autoSaveCurrent();
 }
@@ -1671,8 +1688,9 @@ let photos = {};           // Current equipment's photos (keyed by slot id)
 // (which loses editingEntry) can no longer save a second copy.
 let currentEntryId = null;
 function ensureCurrentEntryId() {
-  if (editingEntry && editingEntry.id) currentEntryId = editingEntry.id;
+  if (editingEntry && editingEntry.id) currentEntryId = normEntryId(editingEntry.id);
   if (!currentEntryId) currentEntryId = genUuid();
+  currentEntryId = normEntryId(currentEntryId);
   return currentEntryId;
 }
 // Entry ids that may own photo keys: v4 UUIDs, and the numeric Date.now()
@@ -1681,6 +1699,14 @@ function ensureCurrentEntryId() {
 const ENTRY_ID_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\\d{10,16}';
 const ENTRY_ID_RE = new RegExp('^(?:' + ENTRY_ID_PATTERN + ')$');
 function isValidEntryId(id) { return ENTRY_ID_RE.test(String(id == null ? '' : id)); }
+// Entry ids are STRINGS (build 91). Pre-UUID entries were saved with a JS
+// NUMBER id (Date.now()) and nothing converted it, while a photo key's owner
+// always parses back as a string — so every strict compare said "not this
+// entry's photo": their photos were excluded from every export and never
+// freed on delete. Ids are normalised wherever they come in (load, backup
+// import, edit, restore) and compared with sameEntryId().
+function normEntryId(id) { return (id === null || id === undefined || id === '') ? id : String(id); }
+function sameEntryId(a, b) { return a != null && b != null && a !== '' && b !== '' && String(a) === String(b); }
 
 // ---- Form sessions + in-flight photo writes (build 89) ----------------------
 // Every async photo writer (camera capture, misc capture, Reuse, Duplicate
@@ -1706,6 +1732,19 @@ function photoWritesBusy() {
 function refuseIfPhotoWritesBusy(action) {
   if (!photoWritesBusy()) return false;
   showToast('⏳ A photo is still saving — wait a moment, then ' + action, true);
+  return true;
+}
+function photoWriteKindBusy(kind) {
+  const now = Date.now();
+  for (const w of _photoWrites.values()) if (w.kind === kind && now - w.at < PHOTO_WRITE_STALE_MS) return true;
+  return false;
+}
+// While "Duplicate with photos" is still copying, no new photo goes into the
+// form (build 91): the copy loop used to overwrite a shot of the NEW unit
+// with the original's photo — exported as a recorded duplicate.
+function refuseIfDuplicateCopying() {
+  if (!photoWriteKindBusy('duplicate')) return false;
+  showToast('⏳ Still copying the duplicated unit\'s photos — wait for "Duplicated …", then take this photo', true);
   return true;
 }
 
@@ -2001,25 +2040,21 @@ function equipTypeChanged(equipType) {
   let keptPhotographed = 0;
   sources = sources.filter(s => {
     if (!s.auto) return true;
-    if (photographed.has(s)) { s.auto = false; keptPhotographed++; return true; }
+    if (photographed.has(s) || s.userEdited) { s.auto = false; keptPhotographed++; return true; }
     return false;
   });
   rebindSourcePhotos(prev);
   if (keptPhotographed) {
-    showToast('Kept ' + keptPhotographed + ' photographed source' + (keptPhotographed > 1 ? 's' : '') + ' (with photos) — remove any that don\'t apply', true);
+    showToast('Kept ' + keptPhotographed + ' source' + (keptPhotographed > 1 ? 's' : '') + ' you filled in or photographed — remove any that don\'t apply', true);
   }
 
-  // Equipment types with voltage prompts
-  if (equipType === 'ATS') {
-    showVoltageDialog('ATS');
-    return;
-  }
-  if (equipType === 'Generator') {
-    showVoltageDialog('Generator');
-    return;
-  }
-  if (equipType === 'Chiller') {
-    showVoltageDialog('Chiller');
+  // Equipment types with voltage prompts. The source list was just re-shaped,
+  // so the cards are re-drawn now (build 91): Cancel used to leave cards whose
+  // inline handlers pointed at OLD indexes — a disconnect photo or a typed
+  // breaker id landed on a different source.
+  if (equipType === 'ATS' || equipType === 'Generator' || equipType === 'Chiller') {
+    showVoltageDialog(equipType);
+    renderSources();
     return;
   }
 
@@ -2244,6 +2279,7 @@ function closeVoltageDialog() {
   const overlay = document.getElementById('voltageOverlay');
   if (overlay) overlay.remove();
   pendingVoltageEquipType = null;
+  renderSources();   // Cancel: the cards must match the (re-shaped) sources
 }
 
 // Map equipment types to available templates (filters dropdown + auto-selects if only one)
@@ -3065,7 +3101,32 @@ function resizeSketchCanvas() {
 
 function getSketchPos(e) {
   const rect = sketchCanvas.getBoundingClientRect();
-  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top, w: rect.width, h: rect.height };
+}
+// Pen strokes are stored as FRACTIONS of the drawing (build 91), like labels:
+//   { u: 'f', cw: <drawing width in CSS px when drawn>, points: [{x: 0..1, y: 0..1}] }
+// Builds up to 90 stored raw screen pixels: the export (drawn in the
+// diagram's own 612×500 units) put every saved unit's ink in the wrong place
+// or cut it off, and rotating the iPad pulled old ink off the diagram. Pixel
+// strokes from those builds still draw as before on screen and are scaled at
+// export (sketchStrokeGeometry).
+function sketchFrac(pos) { return { x: pos.w ? pos.x / pos.w : 0, y: pos.h ? pos.y / pos.h : 0 }; }
+// Width (CSS px) of the on-screen drawing that pre-build-91 pixel strokes were
+// drawn on: the sketch area fills the form column (container − paddings).
+function legacySketchRefWidth() {
+  const c = document.querySelector('.container');
+  const w = c ? c.clientWidth - 82 : Math.min(window.innerWidth || 900, 900) - 82;
+  return Math.max(240, w || 0);
+}
+// A stroke's points and line width in a target space w×h (screen CSS px or
+// diagram viewBox units). Pixel strokes scale by refW (their drawing width).
+function sketchStrokeGeometry(stroke, w, h, refW) {
+  if (stroke && stroke.u === 'f') {
+    const k = w / (stroke.cw || w);
+    return { pts: stroke.points.map(p => ({ x: p.x * w, y: p.y * h })), lw: (stroke.width || 3) * k };
+  }
+  const s = refW ? w / refW : 1;
+  return { pts: stroke.points.map(p => ({ x: p.x * s, y: p.y * s })), lw: (stroke.width || 3) * s };
 }
 
 function sketchPointerDown(e) {
@@ -3076,34 +3137,36 @@ function sketchPointerDown(e) {
     return;
   }
   isDrawing = true;
-  sketchCanvas.setPointerCapture(e.pointerId);
+  try { sketchCanvas.setPointerCapture(e.pointerId); } catch (err) {}
   const pos = getSketchPos(e);
   const width = sketchTool === 'eraser' ? 20 : sketchLineWidth;
   currentStroke = {
-    points: [pos],
+    points: [sketchFrac(pos)],
     color: sketchTool === 'eraser' ? '#ffffff' : sketchColor,
     width: width,
-    isEraser: sketchTool === 'eraser'
+    isEraser: sketchTool === 'eraser',
+    u: 'f',
+    cw: pos.w
   };
 }
 
 function sketchPointerMove(e) {
   if (!isDrawing || !currentStroke) return;
   const pos = getSketchPos(e);
-  currentStroke.points.push(pos);
-  // Draw the latest segment
+  currentStroke.points.push(sketchFrac(pos));
+  // Draw the latest segment (stored as fractions — drawn in screen px)
   const pts = currentStroke.points;
   sketchCtx.beginPath();
   sketchCtx.strokeStyle = currentStroke.color;
-  sketchCtx.lineWidth = currentStroke.width;
+  sketchCtx.lineWidth = currentStroke.width * (pos.w / (currentStroke.cw || pos.w || 1));
   sketchCtx.lineCap = 'round';
   sketchCtx.lineJoin = 'round';
   if (currentStroke.isEraser) {
     sketchCtx.globalCompositeOperation = 'destination-out';
   }
   if (pts.length >= 2) {
-    sketchCtx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
-    sketchCtx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+    sketchCtx.moveTo(pts[pts.length - 2].x * pos.w, pts[pts.length - 2].y * pos.h);
+    sketchCtx.lineTo(pts[pts.length - 1].x * pos.w, pts[pts.length - 1].y * pos.h);
   }
   sketchCtx.stroke();
   sketchCtx.globalCompositeOperation = 'source-over';
@@ -3125,16 +3188,17 @@ function redrawSketchStrokes() {
   const h = sketchCanvas.height / (window.devicePixelRatio || 2);
   sketchCtx.clearRect(0, 0, w, h);
   for (const stroke of sketchStrokes) {
-    if (stroke.points.length < 2) continue;
+    if (!stroke || !stroke.points || stroke.points.length < 2) continue;
+    const g = sketchStrokeGeometry(stroke, w, h, null);   // pixel strokes draw as captured
     sketchCtx.beginPath();
     sketchCtx.strokeStyle = stroke.color;
-    sketchCtx.lineWidth = stroke.width;
+    sketchCtx.lineWidth = g.lw;
     sketchCtx.lineCap = 'round';
     sketchCtx.lineJoin = 'round';
     if (stroke.isEraser) sketchCtx.globalCompositeOperation = 'destination-out';
-    sketchCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
-    for (let i = 1; i < stroke.points.length; i++) {
-      sketchCtx.lineTo(stroke.points[i].x, stroke.points[i].y);
+    sketchCtx.moveTo(g.pts[0].x, g.pts[0].y);
+    for (let i = 1; i < g.pts.length; i++) {
+      sketchCtx.lineTo(g.pts[i].x, g.pts[i].y);
     }
     sketchCtx.stroke();
     sketchCtx.globalCompositeOperation = 'source-over';
@@ -3626,8 +3690,11 @@ function restoreSketch(data) {
     initSketchCanvas();
   }
 
-  sketchStrokes = data.strokes || [];
-  sketchLabels = data.labels || [];
+  // The form gets its OWN copy (build 91). It used to share the saved
+  // entry's arrays, so drawing, Undo or moving a label during an edit changed
+  // the saved entry — even when the edit was then discarded.
+  sketchStrokes = JSON.parse(JSON.stringify(data.strokes || []));
+  sketchLabels = JSON.parse(JSON.stringify(data.labels || []));
 
   requestAnimationFrame(() => {
     resizeSketchCanvas();
@@ -3655,77 +3722,17 @@ function clearSketchState() {
   setSketchSectionExpanded(false);
 }
 
-// Export sketch to PNG data URL for saving to IndexedDB
+// The open form's drawing as a PNG data URL — rendered from its data, the same
+// way every saved entry is (build 91; the live-canvas render measured a
+// collapsed section as 0×0 and wrote a 0-byte PNG).
 async function exportSketchPNG() {
-  if (!sketchDiagramKey || (!sketchStrokes.length && !sketchLabels.length)) return null;
-
-  const container = document.getElementById('sketchContainer');
-  const svg = container.querySelector('svg');
-  if (!svg) return null;
-
-  // Create an offscreen canvas at high resolution
-  const svgRect = svg.getBoundingClientRect();
-  const scale = 2; // 2x for quality
-  const w = svgRect.width * scale;
-  const h = svgRect.height * scale;
-  const offscreen = document.createElement('canvas');
-  offscreen.width = w;
-  offscreen.height = h;
-  const ctx = offscreen.getContext('2d');
-  ctx.scale(scale, scale);
-
-  // Draw SVG background
-  const svgData = new XMLSerializer().serializeToString(svg);
-  const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-  const svgUrl = URL.createObjectURL(svgBlob);
-  const img = new Image();
-  await new Promise((resolve, reject) => {
-    img.onload = resolve;
-    img.onerror = reject;
-    img.src = svgUrl;
-  });
-  ctx.drawImage(img, 0, 0, svgRect.width, svgRect.height);
-  URL.revokeObjectURL(svgUrl);
-
-  // Draw canvas strokes
-  for (const stroke of sketchStrokes) {
-    if (stroke.points.length < 2) continue;
-    ctx.beginPath();
-    ctx.strokeStyle = stroke.color;
-    ctx.lineWidth = stroke.width;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    if (stroke.isEraser) ctx.globalCompositeOperation = 'destination-out';
-    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-    for (let i = 1; i < stroke.points.length; i++) {
-      ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-    }
-    ctx.stroke();
-    ctx.globalCompositeOperation = 'source-over';
-  }
-
-  // Draw labels
-  for (const lbl of sketchLabels) {
-    const lx = lbl.x * svgRect.width;
-    const ly = lbl.y * svgRect.height;
-    ctx.beginPath();
-    ctx.arc(lx, ly, 11, 0, Math.PI * 2);
-    ctx.fillStyle = lbl.color;
-    ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 9px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(lbl.text, lx, ly);
-  }
-
-  return offscreen.toDataURL('image/png');
+  const sk = getSketchData();
+  if (!sk || !sk.diagramKey || (!(sk.strokes || []).length && !(sk.labels || []).length)) return null;
+  return renderSketchOffscreen(JSON.parse(JSON.stringify(sk)));
 }
 
-// Render a saved sketch entry offscreen to PNG (for export of non-current entries)
+// Render a sketch (diagram + ink + labels) offscreen to a PNG data URL, in the
+// diagram's own viewBox units. Used for every exported diagram.
 async function renderSketchOffscreen(sketchData) {
   if (!sketchData || !sketchData.diagramKey || !SKETCH_DIAGRAMS[sketchData.diagramKey]) return null;
 
@@ -3745,29 +3752,36 @@ async function renderSketchOffscreen(sketchData) {
   const svgBlob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
   const svgUrl = URL.createObjectURL(svgBlob);
   const img = new Image();
-  await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = svgUrl; });
+  try {
+    await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = svgUrl; });
+  } finally { URL.revokeObjectURL(svgUrl); }
   ctx.drawImage(img, 0, 0, svgW, svgH);
-  URL.revokeObjectURL(svgUrl);
 
-  // Draw strokes (stored coordinates are relative to the on-screen canvas size,
-  // but for offscreen we render at SVG viewBox scale — need to approximate)
-  // Strokes are stored in CSS pixel coords at the time of drawing.
-  // We'll render them at viewBox coords (which is what the SVG uses).
+  // Ink on its OWN layer (build 91): the eraser removes ink only. Drawn on the
+  // diagram's canvas it punched transparent holes through the drawing.
+  // Strokes are placed in viewBox units: fraction strokes exactly; pixel
+  // strokes from builds up to 90 scaled by the on-screen drawing width.
+  const ink = document.createElement('canvas');
+  ink.width = offscreen.width;
+  ink.height = offscreen.height;
+  const ictx = ink.getContext('2d');
+  ictx.scale(scale, scale);
+  const refW = legacySketchRefWidth();
   for (const stroke of (sketchData.strokes || [])) {
-    if (stroke.points.length < 2) continue;
-    ctx.beginPath();
-    ctx.strokeStyle = stroke.color;
-    ctx.lineWidth = stroke.width;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    if (stroke.isEraser) ctx.globalCompositeOperation = 'destination-out';
-    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-    for (let i = 1; i < stroke.points.length; i++) {
-      ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-    }
-    ctx.stroke();
-    ctx.globalCompositeOperation = 'source-over';
+    if (!stroke || !stroke.points || stroke.points.length < 2) continue;
+    const g = sketchStrokeGeometry(stroke, svgW, svgH, refW);
+    ictx.beginPath();
+    ictx.strokeStyle = stroke.color;
+    ictx.lineWidth = g.lw;
+    ictx.lineCap = 'round';
+    ictx.lineJoin = 'round';
+    ictx.globalCompositeOperation = stroke.isEraser ? 'destination-out' : 'source-over';
+    ictx.moveTo(g.pts[0].x, g.pts[0].y);
+    for (let i = 1; i < g.pts.length; i++) ictx.lineTo(g.pts[i].x, g.pts[i].y);
+    ictx.stroke();
   }
+  ictx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(ink, 0, 0, svgW, svgH);
 
   // Draw labels
   for (const lbl of (sketchData.labels || [])) {
@@ -3794,6 +3808,13 @@ async function renderSketchOffscreen(sketchData) {
 window.addEventListener('resize', () => {
   if (sketchDiagramKey) resizeSketchCanvas();
 });
+// Flush the form autosave whenever the app is hidden (build 91): iOS may
+// reload the WebView while it's in the background or the camera is open, and
+// the reload restores the LAST autosave — typed names and rooms were not in it.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { try { autoSaveCurrent(); } catch (e) {} }
+});
+window.addEventListener('pagehide', () => { try { autoSaveCurrent(); } catch (e) {} });
 
 function handleTemplateChange() {
   const val = document.getElementById('equipTemplate').value;
@@ -3817,17 +3838,27 @@ function handleTemplateChange() {
   applyTemplate(val);
 }
 
-function sourcesHaveData() {
-  return sources.some(s =>
-    !s.auto &&
-    ((s.location && s.location !== '' && s.location !== 'On Equipment') ||
+// Does this source hold the user's own data? Anything they typed or picked
+// on it (userEdited, build 91 — template sources count too: a Device ID, a
+// location or a Normally Closed state typed into a template source used to be
+// discarded by a template or type change with no confirm), or a user-added
+// source with values.
+function sourceHasUserData(s) {
+  if (!s) return false;
+  if (s.userEdited) return true;
+  return !s.auto &&
+    !!((s.location && s.location !== '' && s.location !== 'On Equipment') ||
     (s.detail && s.detail !== '') ||
     (s.energySource && s.energySource !== '') ||
     (s._customEnergy) ||
     (s._customDevice) ||
-    (s._customLocation))
-  );
+    (s._customLoc));
 }
+function sourcesHaveData() {
+  return sources.some(sourceHasUserData);
+}
+// Record that the user changed a source (build 91) — see sourceHasUserData.
+function markSourceEdited(index) { if (sources[index]) sources[index].userEdited = true; }
 
 function showTemplateConfirmDialog(templateVal) {
   const overlay = document.createElement('div');
@@ -3836,9 +3867,9 @@ function showTemplateConfirmDialog(templateVal) {
   overlay.innerHTML = `
     <div class="dialog" style="max-width:340px;">
       <h3 style="margin:0 0 12px 0;color:var(--accent);">Change Template?</h3>
-      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">Changing the template will replace your current energy sources. You have data entered that will be lost. (Sources that already have a photo are kept, photo attached.)</p>
+      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">Changing the template replaces the template's energy sources. Sources you've filled in or photographed are KEPT (ahead of the new template's) — remove any that don't apply.</p>
       <div style="display:flex;flex-direction:column;gap:10px;">
-        <button class="btn btn-primary" onclick="confirmTemplateChange('${templateVal.replace(/'/g, "\\'")}')" style="padding:12px;font-size:15px;">Yes, Replace Sources</button>
+        <button class="btn btn-primary" onclick="confirmTemplateChange('${templateVal.replace(/'/g, "\\'")}')" style="padding:12px;font-size:15px;">Change Template</button>
         <button class="btn" onclick="cancelTemplateChange()" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Cancel</button>
       </div>
     </div>
@@ -3874,7 +3905,7 @@ function applyTemplate(val) {
   const prevSources = sources.slice();
   if (val && TEMPLATE_AUTO_SOURCES[val]) {
     const photographed = sourcesWithPhotos();
-    const kept = sources.filter(s => photographed.has(s));
+    const kept = sources.filter(s => photographed.has(s) || (s && s.userEdited));
     kept.forEach(s => { s.auto = false; });
     sources = kept.slice();
     const autoSources = TEMPLATE_AUTO_SOURCES[val];
@@ -3904,7 +3935,7 @@ function applyTemplate(val) {
     rebindSourcePhotos(prevSources);
     renderSources();
     if (kept.length) {
-      showToast(`Set ${sources.length - kept.length} source${sources.length - kept.length === 1 ? '' : 's'} for ${val} — kept ${kept.length} photographed source${kept.length > 1 ? 's' : ''} (remove any that don't apply)`, true);
+      showToast(`Set ${sources.length - kept.length} source${sources.length - kept.length === 1 ? '' : 's'} for ${val} — kept ${kept.length} source${kept.length > 1 ? 's' : ''} you filled in or photographed (remove any that don't apply)`, true);
     } else {
       showToast(`Set ${sources.length} source${sources.length > 1 ? 's' : ''} for ${val}`);
     }
@@ -4297,8 +4328,13 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Fuel Oil In', deviceType: '', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
+  // Cooling Tower: fan (Kinetic) + its Electrical disconnect. The template
+  // auto-applies and REPLACES the type's standard sources, so it has to carry
+  // the disconnect itself (build 91 — it used to leave a Cooling Tower with no
+  // electrical isolation point and skip the 120/208/480 prompt).
   'Cooling Tower': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   // Chiller intentionally has no template auto-sources — the Kinetic source
   // was removed per user request. The voltage dialog for Chiller still
@@ -4693,7 +4729,10 @@ function renderSources() {
       const noPhotoFromKind = sourceIsToggleable
         ? !!src.noPhoto
         : (src.noPhoto || (SOURCE_DEFAULTS[src.energySource] && SOURCE_DEFAULTS[src.energySource].noPhoto));
-      const isNoPhoto = isDuplicate || isLinked || (noPhotoFromKind && !photoAllowedForKind);
+      // A source that HOLDS a photo always shows it (build 91) — whatever the
+      // no-photo rules say — so it can be seen, retaken, and is never dropped.
+      const hasPhotoRef = !!(photos['source_' + i] && photos['source_' + i].dbKey);
+      const isNoPhoto = !hasPhotoRef && (isDuplicate || isLinked || (noPhotoFromKind && !photoAllowedForKind));
       const noPhotoMessage = isLinked
         ? `🔗 Linked to ${src.linkedTo.equipName} &mdash; ${src.linkedTo.sourceLabel}`
         : isDuplicate
@@ -4702,7 +4741,7 @@ function renderSources() {
         ? 'No photo on this source'
         : 'No photo needed "" uses main equipment photo';
       // Toggle button — only on toggleable sources that aren't duplicate/linked.
-      const showPhotoToggle = sourceIsToggleable && !isDuplicate && !isLinked;
+      const showPhotoToggle = sourceIsToggleable && !isDuplicate && !isLinked && !hasPhotoRef;
       const photoToggleBtn = showPhotoToggle
         ? `<button class="btn btn-sm" style="padding:6px 12px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="togglePhotoSlot(${i})">${isNoPhoto ? '&#128247; Add photo for this source' : '&#10005; Hide photo slot'}</button>`
         : '';
@@ -4887,13 +4926,14 @@ function renderSources() {
 }
 
 function updateSource(index, field, value) {
+  markSourceEdited(index);
   sources[index][field] = value;
   if (field === 'energySource' && value && SOURCE_DEFAULTS[value]) {
     const defaults = SOURCE_DEFAULTS[value];
     if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
     if (!sources[index].location) sources[index].location = defaults.location;
     if (!sources[index].verification) sources[index].verification = defaults.verification;
-    if (defaults.noPhoto && !shouldAllowPhotoForSource(getEquipType(), value)) sources[index].noPhoto = true;
+    applyNoPhotoDefault(index);
     renderSources();
     showToast(`Auto-filled defaults for ${value}`);
     return;
@@ -4959,10 +4999,26 @@ function splitSource(index) {
 // Equipment types where condensate sources auto-fill Gate Valve + Temp Only - Hot
 const CONDENSATE_AUTO_EQUIP = ['Air Handler','Heat Exchanger','Domestic Water Heater','Unit Heater'];
 
+// Photo-slot visibility follows the source's CURRENT energy kind (build 91):
+// a no-photo default (Gravity/Potential, Hydraulic, Stored Electrical Energy)
+// is never applied to a source that already has a photo, and switching to a
+// kind without one clears it. It used to stick: a mis-pick hid the slot of a
+// photographed disconnect for good ("No photo needed", no toggle) and the
+// export silently left its photo out.
+function applyNoPhotoDefault(index) {
+  const src = sources[index];
+  if (!src) return;
+  const d = SOURCE_DEFAULTS[src.energySource];
+  const hasPhoto = !!(photos['source_' + index] && photos['source_' + index].dbKey);
+  src.noPhoto = !!(d && d.noPhoto && !shouldAllowPhotoForSource(getEquipType(), src.energySource)) && !hasPhoto;
+}
+
 function handleEnergySourceChange(index, value) {
+  markSourceEdited(index);
   if (value === '** Custom Energy **') {
     sources[index]._customEnergy = true;
     sources[index].energySource = '';
+    applyNoPhotoDefault(index);
     renderSources();
     const el = document.getElementById('src_energy_custom_' + index);
     if (el) el.focus();
@@ -4975,9 +5031,9 @@ function handleEnergySourceChange(index, value) {
       if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
       if (!sources[index].location) sources[index].location = defaults.location;
       if (!sources[index].verification) sources[index].verification = defaults.verification;
-      if (defaults.noPhoto && !shouldAllowPhotoForSource(getEquipType(), value)) sources[index].noPhoto = true;
       showToast(`Auto-filled defaults for ${value}`);
     }
+    applyNoPhotoDefault(index);
     // Condensate on specific equipment types → Gate Valve + Temp Only - Hot
     if (value && value.startsWith('Condensate') && CONDENSATE_AUTO_EQUIP.includes(getEquipType())) {
       if (!sources[index].deviceType) sources[index].deviceType = 'Gate Valve';
@@ -5004,6 +5060,7 @@ function handleEnergySourceChange(index, value) {
 }
 
 function handleDeviceTypeChange(index, value) {
+  markSourceEdited(index);
   if (value === '** Custom Device **') {
     sources[index]._customDevice = true;
     sources[index].deviceType = '';
@@ -5020,6 +5077,7 @@ function handleDeviceTypeChange(index, value) {
 }
 
 function updateSourceCustomField(index, field, value) {
+  markSourceEdited(index);
   sources[index][field] = value;
   if (field === 'energySource' || field === 'deviceType') {
     // Re-render to update device/verification dropdowns for custom entries
@@ -5045,6 +5103,7 @@ function locationIdInfo(location) {
 }
 
 function handleLocationChange(index, value) {
+  markSourceEdited(index);
   if (value === '** Custom Location **') {
     sources[index]._customLoc = true;
     sources[index].location = '';
@@ -5069,6 +5128,7 @@ function handleLocationChange(index, value) {
 
 // Compose "MCC" + the typed ID into the single location string.
 function updateLocationId(index, value) {
+  markSourceEdited(index);
   const li = locationIdInfo(sources[index].location);
   const pfx = li ? li.prefix : 'MCC';
   sources[index].location = (pfx + ' ' + (value || '').trim()).trim();
@@ -5076,6 +5136,7 @@ function updateLocationId(index, value) {
 }
 
 function updateSourceCustomLoc(index, value) {
+  markSourceEdited(index);
   sources[index].location = value;
   autoSaveCurrent();
 }
@@ -5189,10 +5250,12 @@ function applyCopySource(entryIndex, sourceIndex) {
   // The source is now user-configured (not auto) and expanded so the copy
   // is visible to the user immediately.
   dest.auto = false;
+  dest.userEdited = true;
   dest.collapsed = false;
   // Explicitly do NOT copy: deviceId (typically unique per device), photos,
-  // linkedTo (linking is per-source, per-entry), noPhoto (user's choice on
-  // this new source).
+  // linkedTo (linking is per-source, per-entry). Photo-slot visibility
+  // follows the copied energy kind, never hiding a photographed slot (build 91).
+  applyNoPhotoDefault(targetIndex);
   closeCopySourceDialog();
   renderSources();
   autoSaveCurrent();
@@ -5447,6 +5510,10 @@ function takePhoto(slotId) {
     showPhotoDialog(slotId);
     return;
   }
+  if (refuseIfDuplicateCopying()) return;
+  // The camera is the likeliest moment for iOS to reload the WebView — make
+  // sure what was just typed is in the autosave first (build 91).
+  autoSaveCurrent();
   document.getElementById(`file_${slotId}`).click();
 }
 
@@ -5472,10 +5539,13 @@ function openLibraryPicker(handler) {
 }
 
 function browsePhoto(slotId) {
+  if (refuseIfDuplicateCopying()) return;
+  autoSaveCurrent();
   openLibraryPicker(input => handlePhoto(input, slotId));
 }
 
 function browseMiscPhoto() {
+  if (refuseIfDuplicateCopying()) return;
   if (miscPhotos.length >= MAX_MISC_PHOTOS) {
     showToast('Maximum ' + MAX_MISC_PHOTOS + ' misc photos reached', true);
     return;
@@ -5517,6 +5587,7 @@ function collectTodaysPhotos() {
 }
 let _reuseCandidates = [];
 function showReusePhotoPicker(slotId) {
+  if (refuseIfDuplicateCopying()) return;
   _reuseCandidates = collectTodaysPhotos();
   if (!_reuseCandidates.length) { showToast('No photos taken today to reuse', true); return; }
   closeReusePicker();
@@ -5561,6 +5632,7 @@ async function reusePhotoInto(slotId, idx) {
   const srcObj = sm ? sources[parseInt(sm[1], 10)] : null;
   if (sm && !srcObj) { showToast('⚠ That energy source no longer exists', true); return; }
   const newKey = photoStoreKey(entryId, sm ? slotTokenForSource(srcObj) : slotTokenForCapture(slotId));
+  const refBefore = photos[slotId] || null;   // what the slot held when Reuse was tapped
   const write = startPhotoWrite('reuse');
   try {
     const src = await loadPhotoBytes(p.dbKey, p.fileType, p.sha256 || undefined);
@@ -5579,6 +5651,11 @@ async function reusePhotoInto(slotId, idx) {
       : (sm ? (sources.indexOf(srcObj) >= 0 ? 'source_' + sources.indexOf(srcObj) : null) : slotId);
     if (!slot) {
       showToast('⚠ Reused photo copied but NOT attached — the form changed while it was copying. It is listed in Settings → Photo Store Report.', true);
+      return;
+    }
+    if ((photos[slot] || null) !== refBefore) {
+      // Another photo landed in this slot while the reuse was copying — keep it.
+      showToast('⚠ Reused photo NOT attached — a newer photo was taken in that slot meanwhile.', true);
       return;
     }
     photos[slot] = {
@@ -5958,7 +6035,7 @@ function parsePhotoKey(key) {
 }
 function photoKeyOwnedBy(key, entryId) {
   const p = parsePhotoKey(key);
-  return !!(p && entryId && p.entryId === entryId);
+  return !!(p && sameEntryId(p.entryId, entryId));
 }
 // The token a SOURCE photo's key carries: the source's own UUID, minted on
 // first use, so the binding survives renames and reorders. If another source
@@ -6027,8 +6104,8 @@ function confirmSourcePhoto(entryId, slotKey) {
     ref.sourceConfirmed = src.sourceId;
     return true;
   };
-  if (entryId && entryId === currentEntryId && mark(sources, photos)) { changed = true; autoSaveCurrent(); }
-  savedEquipment.forEach(e => { if (e.id === entryId && mark(e.sources, e.photos)) { delete e.exportedAt; changed = true; } });
+  if (sameEntryId(entryId, currentEntryId) && mark(sources, photos)) { changed = true; autoSaveCurrent(); }
+  savedEquipment.forEach(e => { if (sameEntryId(e.id, entryId) && mark(e.sources, e.photos)) { delete e.exportedAt; changed = true; } });
   if (changed) { saveAll(); renderSavedPanel(); }
   return changed;
 }
@@ -6070,7 +6147,30 @@ function photoKeyFromFsName(fileName) {
     const parts = base.slice(2).split('.');
     if (parts.length === 3) return 'photo::' + parts[0] + '::' + parts[1] + '::' + parts[2];
   }
+  // A numeric-owner key stored by builds 83-88 under its legacy name
+  // (photo__<id>__<slot>__<rev>) — see photoFsCandidatePaths.
+  const m = /^photo__(\d{10,16})__(.+)__([0-9a-f]{8})$/.exec(base);
+  if (m) return 'photo::' + m[1] + '::' + m[2] + '::' + m[3];
   return base;
+}
+// Where a key's file may be. Builds 83-88 parsed only UUID owners, so a key
+// owned by a pre-UUID (numeric id) entry fell through to the legacy branch
+// and its file was written as loto_photos/photo__<id>__<slot>__<rev>.jpg.
+// Build 89 began parsing those keys and looked only for p.<id>.<slot>.<rev>.jpg
+// — every such photo on a device that ran 83-88 became unreadable (fixed in
+// build 91). Reads, existence checks, deletes and listings accept both names;
+// no file is ever moved.
+function photoFsLegacyRelPath(dbKey) {
+  return 'loto_photos/' + String(dbKey).replace(/[^A-Za-z0-9_.-]/g, '_') + '.jpg';
+}
+function photoFsCandidatePaths(dbKey) {
+  const p = photoFsRelPath(dbKey);
+  const pk = parsePhotoKey(dbKey);
+  if (pk && /^\d+$/.test(pk.entryId)) {
+    const l = photoFsLegacyRelPath(dbKey);
+    if (l !== p) return [p, l];
+  }
+  return [p];
 }
 const PHOTO_DIR = 'loto_photos';
 const FS_TMP_PREFIX = '.tmp_';
@@ -6108,25 +6208,32 @@ async function fsWritePhoto(dbKey, base64, expectedBytes) {
 }
 async function fsReadPhoto(dbKey) {
   const FS = fsPlugin(); if (!FS) return null;
-  try {
-    const r = await FS.readFile({ path: photoFsRelPath(dbKey), directory: 'DATA' });
-    if (r && r.data) {
-      const bytes = base64ToUint8Array(r.data);
-      if (bytes.length >= MIN_PHOTO_BYTES) return { bytes, type: 'image/jpeg' };
-    }
-  } catch (e) { /* not found */ }
+  for (const path of photoFsCandidatePaths(dbKey)) {
+    try {
+      const r = await FS.readFile({ path, directory: 'DATA' });
+      if (r && r.data) {
+        const bytes = base64ToUint8Array(r.data);
+        if (bytes.length >= MIN_PHOTO_BYTES) return { bytes, type: 'image/jpeg' };
+      }
+    } catch (e) { /* not at this name */ }
+  }
   return null;
 }
 async function fsPhotoExists(dbKey) {
   const FS = fsPlugin(); if (!FS) return false;
-  try {
-    const st = await FS.stat({ path: photoFsRelPath(dbKey), directory: 'DATA' });
-    return !!st && (st.size == null || Number(st.size) >= MIN_PHOTO_BYTES);
-  } catch (e) { return false; }
+  for (const path of photoFsCandidatePaths(dbKey)) {
+    try {
+      const st = await FS.stat({ path, directory: 'DATA' });
+      if (st && (st.size == null || Number(st.size) >= MIN_PHOTO_BYTES)) return true;
+    } catch (e) { /* not at this name */ }
+  }
+  return false;
 }
 async function fsDeletePhoto(dbKey) {
   const FS = fsPlugin(); if (!FS) return;
-  try { await FS.deleteFile({ path: photoFsRelPath(dbKey), directory: 'DATA' }); } catch (e) {}
+  for (const path of photoFsCandidatePaths(dbKey)) {
+    try { await FS.deleteFile({ path, directory: 'DATA' }); } catch (e) {}
+  }
 }
 // Remove temp files left by writes that were interrupted (app killed). They
 // are never a photo: the real file only appears after the verified rename.
@@ -6296,7 +6403,7 @@ function recordPhotoHash(hash, entryId, dbKey, isDup) {
   const run = async () => {
     const index = await getPhotoHashIndex();
     const owners = index[hash] || [];
-    const collision = owners.find(o => o && o.entryId && o.entryId !== entryId) || null;
+    const collision = owners.find(o => o && o.entryId && !sameEntryId(o.entryId, entryId)) || null;
     if (!owners.some(o => o && o.dbKey === dbKey)) {
       owners.push({ entryId: entryId, dbKey: dbKey, at: new Date().toISOString() });
       index[hash] = owners;
@@ -6309,7 +6416,7 @@ function recordPhotoHash(hash, entryId, dbKey, isDup) {
   return p;
 }
 function entryNameForId(entryId) {
-  const e = savedEquipment.find(x => x.id === entryId);
+  const e = savedEquipment.find(x => sameEntryId(x.id, entryId));
   return e ? (e.equipName || '(unnamed)') : null;
 }
 // Visible warning banner on the entry form (rule 6). Not a toast — it stays
@@ -6486,7 +6593,7 @@ async function runPhotoKeyMigration() {
     const refs = refMap[key];
     const owners = [...new Set(refs.map(r => r.entry.id))];
     const parsed = parsePhotoKey(key);
-    if (parsed && owners.length === 1 && parsed.entryId === owners[0]) continue;   // already safe
+    if (parsed && owners.length === 1 && sameEntryId(parsed.entryId, owners[0])) continue;   // already safe
 
     const describe = r => ({ id: r.entry.id, name: r.entry.equipName || '(unnamed)', building: r.entry.equipBuilding || '', room: r.entry.equipRoom || '', slot: r.slot });
     if (!present.has(key)) {
@@ -6517,7 +6624,7 @@ async function runPhotoKeyMigration() {
       r.ref.migratedFrom = key;
       r.ref.dbKey = newKey;
       if (hash) r.ref.sha256 = hash;
-      if (corrupted || (parsed && parsed.entryId !== r.entry.id)) r.ref.legacySuspect = true;
+      if (corrupted || (parsed && !sameEntryId(parsed.entryId, r.entry.id))) r.ref.legacySuspect = true;
       if (hash) { try { await recordPhotoHash(hash, r.entry.id, newKey, true); } catch (e) {} }
       if (r.entry === wipEntry) wipTouched = true;
       if (++sinceCheckpoint >= 20) checkpoint();
@@ -6708,7 +6815,10 @@ async function exportQuarantineZip() {
 // ----------------------------------------------------------------------------
 async function fsPhotoMtime(dbKey) {
   const FS = fsPlugin(); if (!FS) return 0;
-  try { const st = await FS.stat({ path: photoFsRelPath(dbKey), directory: 'DATA' }); return (st && st.mtime) || 0; } catch (e) { return 0; }
+  for (const path of photoFsCandidatePaths(dbKey)) {
+    try { const st = await FS.stat({ path, directory: 'DATA' }); if (st) return st.mtime || 0; } catch (e) {}
+  }
+  return 0;
 }
 function thumbnailFromBytes(bytes) {
   return new Promise(resolve => {
@@ -6908,12 +7018,12 @@ async function runPhotoAudit(scope) {
       if (problem) bindingProblems.push({ entryId, name, slotKey: 'source_' + i, label: 'Source ' + (i + 1) + (src.energySource ? ' (' + src.energySource + ')' : ''), problem, thumb: ref.thumbnail || '' });
     });
   };
-  const formIsEdit = !!currentEntryId && savedEquipment.some(e => e.id === currentEntryId);
+  const formIsEdit = !!currentEntryId && savedEquipment.some(e => sameEntryId(e.id, currentEntryId));
   for (const e of savedEquipment) {
     if (scope === 'today' && !isSavedToday(e)) continue;
     for (const slot of Object.keys(e.photos || {})) note(e.id, e.equipName || '(unnamed)', slot, e.photos[slot]);
     (e.miscPhotos || []).forEach((mp, mi) => note(e.id, e.equipName || '(unnamed)', 'misc_' + mi, mp));
-    if (!(formIsEdit && e.id === currentEntryId)) checkBinding(e.id, e.equipName || '(unnamed)', e.sources, e.photos);
+    if (!(formIsEdit && sameEntryId(e.id, currentEntryId))) checkBinding(e.id, e.equipName || '(unnamed)', e.sources, e.photos);
   }
   const curName = (document.getElementById('equipName').value || '').trim() || '(current form)';
   for (const slot of Object.keys(photos)) note(currentEntryId, curName, slot, photos[slot]);
@@ -7036,6 +7146,7 @@ function renderCapture(img, settings) {
 function handlePhoto(input, slotId) {
   const file = input && input.files && input.files[0];
   if (!file) return;
+  if (refuseIfDuplicateCopying()) return;
 
   // Everything this capture belongs to is fixed NOW, when the camera hands
   // the file over (build 89): the form session, the entry id, and — for a
@@ -7238,16 +7349,19 @@ function updateIntegrityBadge() {
 const MAX_MISC_PHOTOS = 10;
 
 function addMiscPhoto() {
+  if (refuseIfDuplicateCopying()) return;
   if (miscPhotos.length >= MAX_MISC_PHOTOS) {
     showToast('Maximum ' + MAX_MISC_PHOTOS + ' misc photos reached', true);
     return;
   }
+  autoSaveCurrent();
   document.getElementById('file_misc_photo').click();
 }
 
 function handleMiscPhoto(input) {
   const file = input && input.files && input.files[0];
   if (!file) return;
+  if (refuseIfDuplicateCopying()) return;
   if (miscPhotos.length >= MAX_MISC_PHOTOS) return;
 
   // Bound to this form session + entry at the moment the file arrives
@@ -7489,7 +7603,7 @@ function performSaveAndNew() {
   // iOS WebView reload loses: that used to append a second entry with the
   // same id. An edit keeps the entry's original date, facility stamp and
   // legacy id; it is NOT stamped exported (its data changed).
-  const idx = savedEquipment.findIndex(e => e.id === entryId);
+  const idx = savedEquipment.findIndex(e => sameEntryId(e.id, entryId));
   if (idx >= 0) {
     const old = savedEquipment[idx];
     if (old.savedAt) entry.savedAt = old.savedAt;
@@ -7500,6 +7614,7 @@ function performSaveAndNew() {
     savedEquipment.push(entry);
   }
   editingEntry = null;
+  clearTombstones([entryId]);
   saveAll();
   const lastBuilding = entry.equipBuilding;
   const lastRoom = entry.equipRoom;
@@ -7791,7 +7906,7 @@ function deleteEntryPhotos(entry, keepReferencedBy) {
   // Another saved row with the SAME id (a unit saved twice by the pre-b89
   // reload bug), or the open form, may still need any of these photos —
   // delete nothing then. Unreferenced bytes are only ever orphans, never lost.
-  if (keep.some(e => e && entry && e.id === entry.id) || (entry && currentEntryId === entry.id)) return Promise.resolve();
+  if (keep.some(e => e && entry && sameEntryId(e.id, entry.id)) || (entry && sameEntryId(currentEntryId, entry.id))) return Promise.resolve();
   const stillUsed = (dbKey) => {
     for (const e of keep) if (collectEntryPhotoKeys(e).includes(dbKey)) return true;
     for (const k of Object.keys(photos)) if (photos[k] && photos[k].dbKey === dbKey) return true;
@@ -7809,6 +7924,10 @@ function deleteEntryPhotos(entry, keepReferencedBy) {
 }
 
 function deleteSaved(index) {
+  // Never delete under a photo that is still being written (build 91): a
+  // "Duplicate with photos" copies FROM this entry's bytes — deleting it
+  // mid-copy destroyed the photos of both units.
+  if (refuseIfPhotoWritesBusy('delete')) return;
   const entry = savedEquipment[index];
   const name = entry.equipName;
   const expNote = entry.exportedAt
@@ -7817,6 +7936,7 @@ function deleteSaved(index) {
   if (confirm(`Delete "${name}" from saved list?${expNote}`)) {
     deleteEntryPhotos(entry, savedEquipment.filter((_, idx) => idx !== index));
     savedEquipment.splice(index, 1);
+    tombstoneRemovedEntries([entry]);   // a later merge of stored copies must not bring it back
     saveAll();
     renderSavedPanel();
     updateHeaderBadge();
@@ -7924,6 +8044,7 @@ function exportBeforeBulkDelete() {
 }
 
 function confirmBulkDelete() {
+  if (refuseIfPhotoWritesBusy('delete')) return;
   const input = document.getElementById('bulkDeleteConfirmInput');
   if (!input || input.value.trim().toUpperCase() !== 'DELETE') { showToast('Type DELETE to confirm', true); return; }
   const targets = getBulkDeleteTargets();
@@ -7933,6 +8054,7 @@ function confirmBulkDelete() {
   targets.forEach(e => deleteEntryPhotos(e, remaining));   // background, reference-aware cleanup
   const removed = targets.length;
   savedEquipment = savedEquipment.filter(e => !set.has(e));
+  tombstoneRemovedEntries(targets);
   saveAll();
   closeBulkDeleteDialog();
   renderSavedPanel();
@@ -7965,6 +8087,7 @@ function editSaved(index) {
   // Editing works under the ORIGINAL entry's id so new/retaken photos key to
   // it. Entries without a usable id get a UUID here (old value kept).
   if (!isValidEntryId(entry.id)) { if (entry.id) entry.legacyId = String(entry.id); entry.id = genUuid(); saveAll(); }
+  else if (typeof entry.id !== 'string') { entry.id = normEntryId(entry.id); saveAll(); }
   currentEntryId = entry.id;
   
   // Restore equipment type "" check if it's a custom value
@@ -8150,15 +8273,16 @@ async function executeDuplicate(index, withPhotos) {
   renderSources();
   renderMiscPhotos();
 
-  // Load diagram but clear annotations (user re-annotates for duplicate)
+  // Load the diagram with a CLEAN drawing (the user re-annotates the
+  // duplicate). loadSketchDiagram keeps whatever strokes/labels the form had —
+  // the previous unit's — so they used to carry onto the copy (build 91).
+  clearSketchState();
   if (entry.template && TEMPLATE_DIAGRAM_MAP[entry.template]) {
     loadSketchDiagram(entry.template);
-  } else {
-    clearSketchState();
   }
   autoSaveCurrent();
 
-  let dupCopied = 0, dupFailed = 0, abandoned = false;
+  let dupCopied = 0, dupFailed = 0, abandoned = false, keptNewer = 0;
   if (withPhotos) {
     // Deep-copy every photo's BYTES to keys owned by the duplicate's UUID —
     // read via loadPhotoBytes (filesystem → IDB → localStorage, so native FS
@@ -8192,11 +8316,15 @@ async function executeDuplicate(index, withPhotos) {
         const copy = await copyPhoto(photo, slotTokenFor(slot, dupSources));
         if (session !== formSession) { abandoned = true; break; }
         // Place it where its SOURCE is now (the user may have reordered).
+        // A slot that already holds a photo got it DURING the copy (the
+        // copy started from an empty form) — that newer shot wins (build 91).
         if (sm) {
           const i = sources.indexOf(dupSources[parseInt(sm[1], 10)]);
           if (i < 0) continue;                                        // source removed meanwhile
+          if (photos['source_' + i] && photos['source_' + i].dbKey) { keptNewer++; continue; }
           photos['source_' + i] = copy;
         } else {
+          if (photos[slot] && photos[slot].dbKey) { keptNewer++; continue; }
           photos[slot] = copy;
           paintPhotoSlot(slot);
         }
@@ -8330,8 +8458,8 @@ function updateExportDateSummary() {
   const currentName = document.getElementById('equipName').value.trim();
   const formOk = !!(currentName && sources.length > 0);
   const filtered = getExportFilteredEntries();
-  const editingSaved = formOk && currentEntryId && filtered.some(e => e.id === currentEntryId);
-  const isEdit = formOk && currentEntryId && savedEquipment.some(e => e.id === currentEntryId);
+  const editingSaved = formOk && currentEntryId && filtered.some(e => sameEntryId(e.id, currentEntryId));
+  const isEdit = formOk && currentEntryId && savedEquipment.some(e => sameEntryId(e.id, currentEntryId));
   const hasNew = formOk && !isEdit && currentEntryPassesExportFilters();
   const n = filtered.length;
   el.textContent = hasNew
@@ -8534,8 +8662,8 @@ async function runCombinedExport() {
   const formEntries = new WeakSet();
   const formEntry = snapshotFormEntry();
   if (formEntry) {
-    const savedIdx = allEntries.findIndex(e => e.id === formEntry.id);
-    const isEdit = savedEquipment.some(e => e.id === formEntry.id);
+    const savedIdx = allEntries.findIndex(e => sameEntryId(e.id, formEntry.id));
+    const isEdit = savedEquipment.some(e => sameEntryId(e.id, formEntry.id));
     if (savedIdx >= 0) { allEntries[savedIdx] = formEntry; formEntries.add(formEntry); }
     else if (!isEdit && currentEntryPassesExportFilters()) { allEntries.push(formEntry); formEntries.add(formEntry); }
   }
@@ -8641,7 +8769,7 @@ async function runCombinedExport() {
     };
     const parsed = parsePhotoKey(ref.dbKey);
     if (!parsed) return unsafe('legacy pre-UUID key');
-    if (!entry.id || parsed.entryId !== entry.id) return unsafe('key owned by a different entry');
+    if (!entry.id || !sameEntryId(parsed.entryId, entry.id)) return unsafe('key owned by a different entry');
     if (opts.src) {
       const problem = sourcePhotoBindingProblem(opts.src, ref, opts.entrySources);
       if (problem) return unsafe(problem);
@@ -8685,7 +8813,10 @@ async function runCombinedExport() {
       const src = entry.sources[i];
       const ref = ep['source_' + i];
       let srcH = null;
-      if (src && !src.noPhoto && ref && ref.dbKey) {
+      // Every attached photo ships (build 91). A photographed source that had
+      // been marked "no photo" used to be skipped with no warning — and the
+      // unit was still stamped exported, so a bulk delete erased the only copy.
+      if (src && ref && ref.dbKey) {
         srcH = await resolveExportPhoto(entry, 'source-' + (i + 1), ref, { sourceId: src.sourceId, src: src, entrySources: entry.sources });
       }
       map.sourceHs.push(srcH);
@@ -8703,25 +8834,30 @@ async function runCombinedExport() {
   // ---- PASS 1B: export sketch diagrams ----
   const diagramsFolder = zip.folder('diagrams');
   const diagramFiles = []; // one per entry: filename or ''
+  const diagramFailures = [];
 
   for (let ei = 0; ei < allEntries.length; ei++) {
     const entry = allEntries[ei];
     let diagramFile = '';
     const sk = entry.sketch;
     if (sk && sk.diagramKey && ((sk.strokes || []).length > 0 || (sk.labels || []).length > 0)) {
-      // Only the OPEN FORM's own entry is rendered from the live canvas;
-      // every saved entry renders from its own data. (Before build 89 the
-      // last entry was assumed to be the form whenever a name was typed, so a
-      // saved unit could export the open form's drawing.)
-      const pngDataUrl = (formEntries.has(entry) && sketchDiagramKey)
-        ? await exportSketchPNG()
-        : await renderSketchOffscreen(sk);
-      if (pngDataUrl) {
+      // Every diagram — the open form's too — renders from the entry's own
+      // (snapshotted) data (build 91). The open form used to be drawn from the
+      // LIVE canvas after the long photo pass: a form changed meanwhile
+      // exported the wrong drawing, and a collapsed sketch section measured
+      // 0×0 and wrote a 0-byte PNG.
+      let pngDataUrl = null;
+      try { pngDataUrl = await renderSketchOffscreen(sk); }
+      catch (e) { console.error('diagram render failed', entry.equipName, e); diagramFailures.push(entry.equipName || '(unnamed)'); }
+      if (pngDataUrl && pngDataUrl.length > 200) {
         diagramFile = uniqueName(entryFileStem(entry) + '_diagram.png');
         diagramsFolder.file(diagramFile, dataUrlToUint8Array(pngDataUrl));
       }
     }
     diagramFiles.push(diagramFile);
+  }
+  if (diagramFailures.length) {
+    showToast('⚠ ' + diagramFailures.length + ' diagram' + (diagramFailures.length === 1 ? '' : 's') + ' could not be drawn (' + diagramFailures.slice(0, 3).join(', ') + (diagramFailures.length > 3 ? '…' : '') + ') — exporting without them', true);
   }
 
   // ---- PASS 1C: export misc photos ----
@@ -8788,7 +8924,7 @@ async function runCombinedExport() {
     const miscOut = miscFileNames[ei]
       ? miscFileNames[ei].split(', ').filter(Boolean).map(n => 'photos/' + n)
       : [];
-    const entryUnsafe = unsafeRefs.filter(u => u.entryId && entry.id && u.entryId === entry.id);
+    const entryUnsafe = unsafeRefs.filter(u => sameEntryId(u.entryId, entry.id));
     const entrySuspect = Object.values(entry.photos || {}).some(p => p && p.legacySuspect) ||
       (entry.miscPhotos || []).some(p => p && p.legacySuspect);
     return {
@@ -8836,6 +8972,7 @@ async function runCombinedExport() {
     const thinBorder = { style: 'thin', color: { argb: 'FF000000' } };
     const allBorders = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
 
+    const VALVE_STATE_SHEET_TEXT = { normally_closed: 'Normally Closed', normally_open: 'Normally Open' };
     function applyRow(row, font, fill, borders) {
       row.eachCell({ includeEmpty: true }, (cell, colNum) => {
         if (colNum <= 12) {
@@ -8898,7 +9035,7 @@ async function runCombinedExport() {
         const srcLabelRow = ws.addRow([
           `Energy Source #${n}`, ` Source #${n} Device`, 'Device ID', 'Total Device Quantity',
           ` Source #${n} Location`, `Source #${n} Photo`, '', 'Dup Photo',
-          `Source #${n} Verification`, `Verification Photo #${n}`, ''
+          `Source #${n} Verification`, `Verification Photo #${n}`, 'Valve State'
         ]);
         applyRow(srcLabelRow, labelFont, labelFill, allBorders);
 
@@ -8920,7 +9057,11 @@ async function runCombinedExport() {
           detailCell,
           src ? (src.duplicate || '') : '',
           src ? (src.verification || '') : '',
-          '', ''
+          '',
+          // Valve state (build 91). The office imports THIS sheet, and it had
+          // no valve state: a Normally Closed valve arrived as an ordinary one
+          // and the procedure said to open it at restore. Blank = normal.
+          src ? (VALVE_STATE_SHEET_TEXT[src.valveState] || '') : ''
         ]);
         applyRow(srcDataRow, dataFont, null, allBorders);
       }
@@ -9056,7 +9197,7 @@ async function runCombinedExport() {
   if (dupCollisions.length > 0) {
     const lines = dupCollisions.slice(0, 10).map(rec =>
       rec.filename + ' — ' + rec.entries.map(e => {
-        const en = allEntries.find(a => a.id === e.entryId);
+        const en = allEntries.find(a => sameEntryId(a.id, e.entryId));
         return (en ? (en.equipName || '(unnamed)') : e.entryId) + ' [' + e.slot + ']';
       }).join('  vs  ')
     ).join('\n');
@@ -9087,6 +9228,9 @@ async function runCombinedExport() {
     const lastName = formatPhotoName(datePrefix, seqCounter - 1);
     if (saveResult && saveResult.cancelled) {
       showToast(`Export ready — share cancelled. ${allEntries.length} equipment, ${photoCount} photos.`);
+    } else if (saveResult && saveResult.unconfirmed) {
+      showToast('Export NOT marked done — the file save was not confirmed. Export again if it did not save.', true);
+      return;
     } else if (saveResult && saveResult.saved === false) {
       showToast('Export error - file did not save', true);
       return;
@@ -9145,7 +9289,7 @@ async function saveBackup() {
   // a restore re-links its photos.
   let allEntries = [...savedEquipment];
   const fe = snapshotFormEntry();
-  if (fe && !savedEquipment.some(e => e.id === fe.id)) {
+  if (fe && !savedEquipment.some(e => sameEntryId(e.id, fe.id))) {
     fe.hospitalCode = getHospitalCode();
     fe.savedAt = new Date().toISOString();
     allEntries.push(fe);
@@ -9163,6 +9307,8 @@ async function saveBackup() {
   const saveResult = await saveOrShare(blob, backupFilename, 'application/json');
   if (saveResult && saveResult.cancelled) {
     showToast(`Backup ready — share cancelled. ${clean.length} entries.`);
+  } else if (saveResult && saveResult.unconfirmed) {
+    showToast('Backup not confirmed as saved — run it again if the file did not save.', true);
   } else if (saveResult && saveResult.saved === false) {
     showToast('Backup error - file did not save', true);
   } else {
@@ -9172,6 +9318,7 @@ async function saveBackup() {
 }
 
 function importBackup() {
+  if (refuseIfPhotoWritesBusy('import a backup')) return;
   document.getElementById('backupFileInput').value = '';
   document.getElementById('backupFileInput').click();
 }
@@ -9254,7 +9401,10 @@ function handleBackupFile(event) {
           seen.add(pick.id);
           next.push(pick);
         });
+        const leaving = savedEquipment.filter(e => !next.includes(e));
         savedEquipment = next;
+        clearTombstones(next.map(e => e.id));
+        tombstoneRemovedEntries(leaving);   // a later merge of stored copies must not bring them back
       } else {
         // Merge — dedupe by entry id ONLY. Never by name: this app's data is
         // full of legitimately same-named equipment ("1", "2", "Emergency"…),
@@ -9267,6 +9417,7 @@ function handleBackupFile(event) {
           const norm = normaliseEntry(en);
           if (existingIds.has(norm.id) || (norm.legacyId && existingIds.has(norm.legacyId))) { skipped++; return; }
           savedEquipment.push(norm);
+          clearTombstones([norm.id]);
           existingIds.add(norm.id);
           if (norm.legacyId) existingIds.add(norm.legacyId);
           added++;
@@ -9323,8 +9474,10 @@ function normaliseEntry(en) {
     photos: en.photos || {}
   };
   // Only a UUID (or a pre-UUID numeric id) may own photo keys. A missing or
-  // malformed id gets a fresh UUID; the old value is kept as legacyId.
+  // malformed id gets a fresh UUID; the old value is kept as legacyId. Ids are
+  // strings from here on (build 91 — see sameEntryId).
   if (!isValidEntryId(out.id)) { if (out.id) out.legacyId = String(out.id); out.id = genUuid(); }
+  out.id = normEntryId(out.id);
   return out;
 }
 
@@ -9376,7 +9529,11 @@ function checkStorage() {
 function setAutosaveStatus(kind) {
   const el = document.getElementById('autosaveStatus');
   if (!el) return;
-  // 'saving' | 'saved' | 'error'
+  // 'saving' | 'saved' | 'error'. The chip never says "Saved" while the
+  // saved-entry list itself could not be written (build 91): the small form
+  // autosave kept succeeding and showed "✓ Saved" over an entry list that was
+  // living only in memory.
+  if (kind === 'saved' && _entryListWriteFailed) kind = 'error';
   if (kind === 'saving') {
     el.innerHTML = '&#128190; Saving…';
     el.style.color = 'var(--text-dim)';
@@ -9394,8 +9551,15 @@ function setAutosaveStatus(kind) {
   }
 }
 
+// The form autosave. While the stored in-progress unit could not be READ at
+// launch (_wipUnread), autosaves go to current_wip_alt instead: the blank form
+// this launch starts with must never overwrite an unsaved unit it couldn't
+// read (build 91). The next launch resolves the two copies (resolveWipCopies).
+let _wipUnread = false;
 function autoSaveCurrent() {
   setAutosaveStatus('saving');
+  const idbKey = _wipUnread ? 'current_wip_alt' : 'current_wip';
+  const lsKey = _wipUnread ? 'loto_current_alt' : 'loto_current';
   try {
     const state = {
       at: new Date().toISOString(),  // which copy is newest (IndexedDB vs the localStorage fallback)
@@ -9415,14 +9579,14 @@ function autoSaveCurrent() {
       miscPhotos: miscPhotos,
       sketch: getSketchData()
     };
-    saveMetadata('current_wip', state).then(() => {
-      try { localStorage.removeItem('loto_current'); } catch (e) {}   // IndexedDB has the newest now
+    saveMetadata(idbKey, state).then(() => {
+      try { localStorage.removeItem(lsKey); } catch (e) {}   // IndexedDB has the newest now
       checkStorage();
       setAutosaveStatus('saved');
     }).catch(() => {
       // Fallback to localStorage if IDB fails (even after reconnecting)
       try {
-        localStorage.setItem('loto_current', JSON.stringify(state));
+        localStorage.setItem(lsKey, JSON.stringify(state));
         setAutosaveStatus('saved');
       } catch(e2) {
         setAutosaveStatus('error');
@@ -9435,36 +9599,184 @@ function autoSaveCurrent() {
   }
 }
 
-// ---- Entry-list persistence (build 89) --------------------------------------
+// ---- Deleted-entry tombstones (build 91) -----------------------------------
+// loadAll now MERGES every stored copy of the entry list instead of picking
+// one. A merge must never bring back an entry the user deleted, so deleting
+// (and a backup Replace) records the id; saving or importing that id again
+// clears it. Kept in localStorage, mirrored into IndexedDB on every save.
+const TOMBSTONE_KEY = 'loto_deleted_ids';
+function getTombstones() {
+  try { const t = JSON.parse(localStorage.getItem(TOMBSTONE_KEY) || '{}'); return (t && typeof t === 'object' && !Array.isArray(t)) ? t : {}; }
+  catch (e) { return {}; }
+}
+function writeTombstones(t) {
+  const keys = Object.keys(t);
+  if (keys.length > 5000) keys.sort((a, b) => String(t[a]).localeCompare(String(t[b]))).slice(0, keys.length - 5000).forEach(k => delete t[k]);
+  try { localStorage.setItem(TOMBSTONE_KEY, JSON.stringify(t)); } catch (e) {}
+}
+// Tombstone the ids of removed entries that no longer appear in the list —
+// a unit saved twice under one id keeps its other copy.
+function tombstoneRemovedEntries(removed) {
+  const still = new Set(savedEquipment.filter(e => e && e.id != null).map(e => String(e.id)));
+  const t = getTombstones(); const at = new Date().toISOString(); let n = 0;
+  (removed || []).forEach(e => { if (e && e.id != null && e.id !== '' && !still.has(String(e.id))) { t[String(e.id)] = at; n++; } });
+  if (n) writeTombstones(t);
+}
+function clearTombstones(ids) {
+  const t = getTombstones(); let changed = false;
+  (ids || []).forEach(id => { if (id != null && t[String(id)]) { delete t[String(id)]; changed = true; } });
+  if (changed) writeTombstones(t);
+}
+
+// ---- Merging copies of the entry list (build 91) ---------------------------
+// The newest time recorded INSIDE a list (saves, edits, exports, captures) —
+// how copies written before build 89 (no store stamp) are dated.
+function entryListStamp(list) {
+  let m = '';
+  for (const e of list || []) {
+    if (!e) continue;
+    for (const v of [e.updatedAt, e.savedAt, e.exportedAt]) if (v && v > m) m = v;
+    for (const k of Object.keys(e.photos || {})) { const p = e.photos[k]; if (p && p.timestamp && p.timestamp > m) m = p.timestamp; }
+    for (const p of e.miscPhotos || []) if (p && p.timestamp && p.timestamp > m) m = p.timestamp;
+  }
+  return m;
+}
+// A stored copy is "stripped" when it lacks what a full save carries: the
+// emergency snapshot drops `sketch` and photo thumbnails.
+function entryIsStripped(e) {
+  if (!e) return true;
+  if (!('sketch' in e)) return true;
+  for (const k of Object.keys(e.photos || {})) { const p = e.photos[k]; if (p && p.dbKey && !p.thumbnail) return true; }
+  return false;
+}
+// A copy of `v` with anything stripped filled back from `donors` (other copies
+// of the same entry): the sketch from the newest donor that has one, a photo
+// thumbnail from a donor holding the same stored photo.
+function hydrateEntry(v, donors) {
+  if (!entryIsStripped(v)) return v;
+  const out = Object.assign({}, v);
+  const ds = (donors || []).filter(Boolean);
+  if (!('sketch' in out)) {
+    const d = ds.filter(x => 'sketch' in x).sort((x, y) => entryRecency(y).localeCompare(entryRecency(x)))[0];
+    out.sketch = d ? d.sketch : null;
+  }
+  if (out.photos) {
+    const ph = {};
+    for (const k of Object.keys(out.photos)) {
+      const p = out.photos[k];
+      if (p && p.dbKey && !p.thumbnail) {
+        const d = ds.map(x => x.photos && x.photos[k]).find(q => q && q.dbKey === p.dbKey && q.thumbnail);
+        ph[k] = d ? Object.assign({}, p, { thumbnail: d.thumbnail }) : p;
+      } else ph[k] = p;
+    }
+    out.photos = ph;
+  }
+  if (Array.isArray(out.miscPhotos)) {
+    out.miscPhotos = out.miscPhotos.map(mp => {
+      if (!mp || !mp.dbKey || mp.thumbnail) return mp;
+      const d = ds.map(x => (x.miscPhotos || []).find(q => q && q.dbKey === mp.dbKey && q.thumbnail)).find(Boolean);
+      return d ? Object.assign({}, mp, { thumbnail: d.thumbnail }) : mp;
+    });
+  }
+  return out;
+}
+// Merge `others` (other stored copies of the list) into `primary`. For each
+// entry id, a newer save in another copy replaces the primary's (filled back
+// from it if the newer copy is stripped); a primary copy that is stripped
+// gets the full copy of the same save. Ids only in another copy are ADDED —
+// that is how units saved while the primary store was failing come back.
+// Tombstoned (deleted) ids are dropped everywhere. Rows the primary holds
+// twice under one id (the pre-b89 "SAVED TWICE" rows) stay as they are.
+// `others` items are lists, or { list, allowAdd } — a copy with allowAdd false
+// may update or fill back entries the primary has, but never ADD one.
+function mergeEntryCopies(primary, others, tombstones) {
+  tombstones = tombstones || {};
+  const dead = (e) => e && e.id != null && e.id !== '' && !!tombstones[String(e.id)];
+  const out = (Array.isArray(primary) ? primary : []).filter(e => e && typeof e === 'object' && !dead(e));
+  const at = new Map();
+  out.forEach((e, i) => { if (e.id != null && e.id !== '') { const k = String(e.id); if (!at.has(k)) at.set(k, []); at.get(k).push(i); } });
+  const cand = new Map();   // id -> { best, all, canAdd }
+  (others || []).forEach(o => {
+    const list = Array.isArray(o) ? o : (o && o.list);
+    const allowAdd = Array.isArray(o) ? true : !!(o && o.allowAdd);
+    (Array.isArray(list) ? list : []).forEach(e => {
+    if (!e || typeof e !== 'object' || e.id == null || e.id === '' || dead(e)) return;
+    const k = String(e.id);
+    const c = cand.get(k) || { best: null, all: [], canAdd: false };
+    if (allowAdd) c.canAdd = true;
+    c.all.push(e);
+    const b = c.best;
+    if (!b || entryRecency(e) > entryRecency(b) || (entryRecency(e) === entryRecency(b) && entryIsStripped(b) && !entryIsStripped(e))) c.best = e;
+    cand.set(k, c);
+    });
+  });
+  let added = 0, updated = 0;
+  for (const [k, c] of cand) {
+    const idx = at.get(k);
+    if (!idx) { if (c.canAdd) { out.push(hydrateEntry(c.best, c.all)); added++; } continue; }
+    let pi = idx[0];
+    for (const i of idx) if (entryRecency(out[i]) > entryRecency(out[pi])) pi = i;
+    const pv = out[pi];
+    if (entryRecency(c.best) > entryRecency(pv)) { out[pi] = hydrateEntry(c.best, [pv].concat(c.all)); updated++; }
+    else if (entryRecency(c.best) === entryRecency(pv) && entryIsStripped(pv)) {
+      const full = c.all.filter(v => entryRecency(v) === entryRecency(pv) && !entryIsStripped(v))[0];
+      out[pi] = full || hydrateEntry(pv, c.all);
+    }
+  }
+  return { list: out, added, updated };
+}
+
+// ---- Entry-list persistence (build 89, reworked in build 91) ---------------
 // Every write carries a timestamp (saved_equipment_at in IndexedDB,
-// loto_saved_at beside the localStorage fallback) so a load can always pick
-// the NEWEST copy. Before, a save that fell back to localStorage (dropped
-// IndexedDB connection) was ignored at the next launch in favour of the stale
-// IndexedDB copy — retakes and new entries silently reverted.
+// loto_saved_at beside the localStorage fallback). loadAll MERGES every copy.
 //
 // _entryStoreUnread: the launch couldn't READ IndexedDB, so what's in memory
 // may be partial (or the stripped emergency snapshot). saveAll then re-reads
-// the store before writing, merges back anything memory lacks, and never
-// writes a partial list over an intact one.
+// the store before writing, merges it back into memory, and never writes a
+// partial list over an intact one.
 let _entryStoreUnread = false;
+let _entryListWriteFailed = false;
+// A sticky banner while the saved-entry list can't be written anywhere
+// durable — a 2-second toast was the only signal before (build 91).
+function setStorageFailBanner(on, detail) {
+  let b = document.getElementById('storageFailBanner');
+  if (!on) { if (b) b.remove(); return; }
+  if (!b) {
+    b = document.createElement('div');
+    b.id = 'storageFailBanner';
+    b.style.cssText = 'margin:8px;padding:10px 12px;border-radius:8px;background:rgba(200,40,40,0.12);border:1px solid rgba(200,40,40,0.6);color:#c82828;font-size:13px;font-weight:700;line-height:1.4;';
+    const container = document.querySelector('.container');
+    if (container) container.insertBefore(b, container.firstChild); else document.body.insertBefore(b, document.body.firstChild);
+  }
+  b.innerHTML = '&#9888; Saved entries could NOT be written to this device\'s storage' + (detail ? ' (' + escHtml(detail) + ')' : '') +
+    '. New work is at risk until this clears — Export + Backup NOW.';
+}
 function saveAll() {
   const at = new Date().toISOString();
   // An entry id must appear once. Duplicates are left in place (they're user
   // data) but reported — the saved panel badges them "SAVED TWICE".
   const seen = new Set(), dups = new Set();
-  savedEquipment.forEach(e => { if (e && e.id) { if (seen.has(e.id)) dups.add(e.id); seen.add(e.id); } });
+  savedEquipment.forEach(e => { if (e && e.id) { if (seen.has(String(e.id))) dups.add(e.id); seen.add(String(e.id)); } });
   if (dups.size) console.warn('saveAll: ' + dups.size + ' entry id(s) appear more than once', [...dups]);
 
+  const markOk = () => { if (_entryListWriteFailed) { _entryListWriteFailed = false; setStorageFailBanner(false); setAutosaveStatus('saved'); } };
   const writeFallback = () => {
     try {
       localStorage.setItem('loto_saved', JSON.stringify(savedEquipment));
       localStorage.setItem('loto_saved_at', at);
+      markOk();
     } catch (e) {
+      // A stale fallback copy only competes with the snapshot for the quota.
+      try { localStorage.removeItem('loto_saved'); localStorage.removeItem('loto_saved_at'); } catch (e2) {}
+      _entryListWriteFailed = true;
+      setStorageFailBanner(true, 'storage full or unavailable');
+      setAutosaveStatus('error');
       showToast('Storage error - export soon!', true);
     }
   };
-  const writePrimary = () => saveMetadataMany({ saved_equipment: savedEquipment, saved_equipment_at: at }).then(() => {
+  const writePrimary = () => saveMetadataMany({ saved_equipment: savedEquipment, saved_equipment_at: at, deleted_ids: getTombstones() }).then(() => {
     try { localStorage.removeItem('loto_saved'); localStorage.removeItem('loto_saved_at'); } catch (e) {}
+    markOk();
     checkStorage();
   });
   if (_entryStoreUnread) {
@@ -9481,7 +9793,8 @@ function saveAll() {
   // with an empty (or shorter) list and then overwrite the store on next save.
   //  • loto_entry_count — expected entry count, checked on every load.
   //  • loto_saved_snapshot — thumbnail/sketch-stripped emergency copy in
-  //    localStorage (separate storage class), restored if IDB comes up empty.
+  //    localStorage (separate storage class). loadAll merges it in (build 91:
+  //    always — it used to be read only when the store came up EMPTY).
   try {
     const prevCount = parseInt(localStorage.getItem('loto_entry_count') || '0', 10) || 0;
     localStorage.setItem('loto_entry_count', String(_entryStoreUnread ? Math.max(prevCount, savedEquipment.length) : savedEquipment.length));
@@ -9501,44 +9814,24 @@ function saveAll() {
     });
     localStorage.setItem('loto_saved_snapshot', JSON.stringify(slim));
     localStorage.setItem('loto_saved_snapshot_at', at);
-  } catch (e) { /* snapshot is best-effort — quota overflow must never block a save */ }
+  } catch (e) {
+    // Best-effort — a quota overflow must never block a save — but NOT silent:
+    // the emergency copy is now stale (build 91).
+    console.warn('emergency snapshot not written', e);
+  }
 }
 // Merge the entry list we couldn't read at launch back into memory: entries
-// memory lacks are added; for shared ids, memory wins but gets back the
-// sketch and photo thumbnails the emergency snapshot had stripped.
+// memory lacks are added (unless the user deleted them this session); for
+// shared ids the newer save wins and a stripped copy gets its sketch and
+// photo thumbnails back.
 function mergeUnreadEntryStore(stored) {
   if (!Array.isArray(stored) || !stored.length) return;
-  const byId = new Map(savedEquipment.filter(e => e && e.id).map(e => [e.id, e]));
-  let added = 0;
-  stored.forEach(se => {
-    if (!se || !se.id) return;
-    const mem = byId.get(se.id);
-    if (!mem) { savedEquipment.push(se); added++; return; }
-    if (!mem.sketch && se.sketch) mem.sketch = se.sketch;
-    Object.keys(mem.photos || {}).forEach(k => {
-      const mp = mem.photos[k], sp = (se.photos || {})[k];
-      if (mp && sp && !mp.thumbnail && sp.thumbnail && sp.dbKey === mp.dbKey) mp.thumbnail = sp.thumbnail;
-    });
-  });
-  if (added) { renderSavedPanel(); updateHeaderBadge(); }
-}
-// Which of two entry-list copies is newer: by store timestamp when both have
-// one; a stamped copy beats an unstamped (pre-b89) one; otherwise by the
-// newest time recorded INSIDE the entries (saves, edits, exports, captures).
-function entryListStamp(list) {
-  let m = '';
-  for (const e of list || []) {
-    if (!e) continue;
-    for (const v of [e.updatedAt, e.savedAt, e.exportedAt]) if (v && v > m) m = v;
-    for (const k of Object.keys(e.photos || {})) { const p = e.photos[k]; if (p && p.timestamp && p.timestamp > m) m = p.timestamp; }
-    for (const p of e.miscPhotos || []) if (p && p.timestamp && p.timestamp > m) m = p.timestamp;
-  }
-  return m;
-}
-function firstCopyIsNewer(aAt, aList, bAt, bList) {
-  if (aAt && bAt) return aAt > bAt;
-  if (aAt || bAt) return !!aAt;
-  return entryListStamp(aList) > entryListStamp(bList);
+  const before = savedEquipment.length;
+  const m = mergeEntryCopies(savedEquipment, [stored], getTombstones());
+  savedEquipment = m.list;
+  savedEquipment.forEach(e => { if (e && e.id != null && typeof e.id !== 'string') e.id = String(e.id); });
+  if (editingEntry) editingEntry = savedEquipment.find(e => sameEntryId(e.id, editingEntry.id)) || editingEntry;
+  if (savedEquipment.length !== before || m.updated) { renderSavedPanel(); updateHeaderBadge(); }
 }
 
 // Background repair of photo refs: rebuild thumbnails the emergency snapshot
@@ -9597,75 +9890,117 @@ function migrateSavedEnergySources(entries) {
   return { changedEntries, changedSources };
 }
 
-// Clear the noPhoto flag on existing saved sources whose energy source is now
-// user-toggleable (SOURCE_KINDS_WITH_PHOTO_TOGGLE — currently Kinetic). Older
-// saves baked in noPhoto:true on every Kinetic source via SOURCE_DEFAULTS and
-// the auto-source templates. Now we want those sources to default to "photo
-// slot visible" so the user actually sees and can use the slot. The toggle
-// button on the source card still lets them hide it again if they want.
-function migrateToggleablePhotoFlags(entriesAndSources) {
-  let cleared = 0;
-  for (const sources of entriesAndSources) {
-    for (const src of sources || []) {
-      if (isPhotoToggleable(src.energySource) && src.noPhoto) {
-        src.noPhoto = false;
-        cleared++;
-      }
-    }
-  }
-  return cleared;
+// ---- The unsaved unit in the form (build 91) --------------------------------
+function readLsJson(key) { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
+function newerWip(a, b) {
+  if (!a) return b || null;
+  if (!b) return a;
+  return (b.at && (!a.at || b.at > a.at)) ? b : a;
+}
+// Does an autosaved form hold anything worth keeping? (A blank form after
+// Save & New carries only the building/room forward.)
+function wipHasContent(st) {
+  if (!st) return false;
+  const typeNames = (DATA && DATA.equipmentTypes) || [];
+  const name = String(st.equipName || '').trim();
+  return !!((name && !typeNames.includes(name)) ||
+    (st.sources || []).length ||
+    Object.keys(st.photos || {}).some(k => st.photos[k] && st.photos[k].dbKey) ||
+    (st.miscPhotos || []).some(m => m && m.dbKey) ||
+    (st.sketch && (((st.sketch.strokes || []).length) || ((st.sketch.labels || []).length))) ||
+    String(st.notes || '').trim() || String(st.lotoId || '').trim());
+}
+// An autosaved form that would otherwise be lost becomes a saved entry,
+// flagged recoveredDraft, keyed by its own entry id (its photo keys are).
+function keepWipAsRecoveredEntry(st) {
+  if (!wipHasContent(st)) return false;
+  // An unsaved EDIT of a saved entry: the saved entry is intact; a second row
+  // under its id would win the export. Its new photos stay on the device
+  // (Settings → Photo Store Report can re-attach them).
+  if (st.entryId != null && savedEquipment.some(e => sameEntryId(e.id, st.entryId))) return false;
+  const photosMap = Object.assign({}, st.photos || {});
+  dropStaleSourceRefs(photosMap, st.sources || []);
+  const now = new Date().toISOString();
+  const entry = {
+    id: normEntryId(st.entryId) || genUuid(),
+    equipType: st.equipType === '** New Equipment Type **' ? (st.equipTypeCustom || '') : (st.equipType || ''),
+    equipName: String(st.equipName || '').trim() || 'Recovered draft',
+    lotoId: st.lotoId || '', hospitalCode: getHospitalCode(),
+    equipRoom: st.equipRoom || '', equipBuilding: st.equipBuilding || '',
+    template: st.template || '', tiedTo: st.tiedTo || '', tiedToName: st.tiedToName || '', notes: st.notes || '',
+    sources: JSON.parse(JSON.stringify(st.sources || [])),
+    photoCount: Object.keys(photosMap).filter(k => photosMap[k] && photosMap[k].timestamp).length,
+    timestamp: '', savedAt: st.at || now, updatedAt: now,
+    photos: photosMap, miscPhotos: st.miscPhotos || [], sketch: st.sketch || null,
+    recoveredDraft: true
+  };
+  clearTombstones([entry.id]);
+  savedEquipment.push(entry);
+  return true;
 }
 
 async function loadAll() {
-  // ---- The saved entry list: IndexedDB vs the localStorage fallback copy.
-  // The NEWEST wins (build 89) — a save that had to fall back to
-  // localStorage is newer than the IndexedDB copy it couldn't overwrite.
-  let idbList, idbAt = null, idbReadOk = false;
+  // ---- The saved entry list (build 91): every stored copy is MERGED —
+  // IndexedDB, the localStorage fallback (written when an IndexedDB save
+  // failed) and the emergency snapshot (written on every save). Picking ONE
+  // copy lost data: a fallback written by a session that couldn't read the
+  // store beat the intact store at the next launch (every sketch gone), and
+  // units saved while every full write failed lived only in the snapshot,
+  // which was ignored unless the store came up completely EMPTY — then the
+  // next save overwrote it. Deleted ids are tombstoned so nothing deleted
+  // comes back.
+  let idbList, idbAt = null, idbTomb = null, idbReadOk = false;
   try {
-    const r = await getMetadataMany(['saved_equipment', 'saved_equipment_at']);
+    const r = await getMetadataMany(['saved_equipment', 'saved_equipment_at', 'deleted_ids']);
     idbList = r.saved_equipment;
     idbAt = r.saved_equipment_at || null;
+    idbTomb = r.deleted_ids || null;
     idbReadOk = true;
   } catch(e) { console.warn('IDB load saved_equipment failed:', e); }
-  let lsList = null, lsAt = null;
-  try {
-    const raw = localStorage.getItem('loto_saved');
-    if (raw) { lsList = JSON.parse(raw); lsAt = localStorage.getItem('loto_saved_at'); }
-  } catch(e) { lsList = null; }
+  const lsStamp = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const lsList = readLsJson('loto_saved');              // written when an IndexedDB save failed
+  const snapList = readLsJson('loto_saved_snapshot');   // written on every save (stripped)
+  const copies = [
+    { list: idbList, at: idbAt },
+    { list: lsList, at: lsStamp('loto_saved_at') },
+    { list: snapList, at: lsStamp('loto_saved_snapshot_at') },
+  ].filter(c => Array.isArray(c.list));
+  let tomb = getTombstones();
+  if (!Object.keys(tomb).length && idbTomb && typeof idbTomb === 'object') { tomb = idbTomb; writeTombstones(Object.assign({}, idbTomb)); }
   const haveIdb = Array.isArray(idbList);
-  const haveLs = Array.isArray(lsList);
-  if (haveLs && (!haveIdb || firstCopyIsNewer(lsAt, lsList, idbAt, idbList))) {
-    savedEquipment = lsList;
-    console.warn('Loaded the localStorage entry copy — it is newer than IndexedDB\'s');
-    if (idbReadOk) saveAll();     // make IndexedDB current again (also clears the fallback copy)
-  } else if (haveIdb) {
-    savedEquipment = idbList;
-  }
+  const primaryCopy = copies[0] || { list: [], at: null };
+  const stampOf = (c) => c.at || entryListStamp(c.list);
+  // A copy OLDER than the primary (e.g. an emergency snapshot the storage
+  // quota froze weeks ago) can only resurrect entries deleted since — skip it.
+  // And a copy may ADD entries only when it is provably newer than the
+  // primary's last write: the primary is empty (evicted), or both carry store
+  // stamps and the copy's is newer, or it is the fallback list (written only
+  // because a store write FAILED). A pre-b89 store has no stamp; its emergency
+  // snapshot may have stopped updating at the quota, and deletes don't change
+  // the entries' own dates — adding from it could resurrect deleted entries.
+  const pStamp = stampOf(primaryCopy);
+  const primaryEmpty = !(primaryCopy.list || []).length;
+  const others = copies.filter(c => c !== primaryCopy && !(pStamp && stampOf(c) && stampOf(c) < pStamp)).map(c => ({
+    list: c.list,
+    allowAdd: primaryEmpty || c.list === lsList || !!(primaryCopy.at && c.at && c.at >= primaryCopy.at)
+  }));
+  const merged = mergeEntryCopies(primaryCopy.list, others, tomb);
+  savedEquipment = merged.list;
+  // Entry ids are strings from here on (build 91 — see sameEntryId).
+  let idsNormalized = 0;
+  savedEquipment.forEach(e => { if (e && e.id != null && typeof e.id !== 'string') { e.id = String(e.id); idsNormalized++; } });
   if (!idbReadOk) _entryStoreUnread = true;   // saveAll will re-read + merge before writing
+  const recovered = merged.added + merged.updated;
+  const primaryWasStored = haveIdb && (idbList || []).length > 0;
 
   // ---- Entry-retention guards (rule 8) ----
-  // If no copy has entries but we know entries existed, show the emergency
-  // snapshot rather than silently starting fresh. It is written back ONLY if
-  // IndexedDB actually READ as empty (evicted). After a failed READ the real
-  // store may be intact, and the snapshot has no sketches or thumbnails —
-  // writing it back used to overwrite the good copy (build 83–88).
   const expectedCount = parseInt((() => { try { return localStorage.getItem('loto_entry_count') || '0'; } catch (e) { return '0'; } })(), 10) || 0;
-  if (savedEquipment.length === 0 && expectedCount > 0) {
-    try {
-      const snap = localStorage.getItem('loto_saved_snapshot');
-      const arr = snap ? JSON.parse(snap) : null;
-      if (Array.isArray(arr) && arr.length > 0) {
-        savedEquipment = arr;
-        if (idbReadOk) {
-          saveMetadataMany({ saved_equipment: savedEquipment, saved_equipment_at: new Date().toISOString() }).catch(() => {});
-          console.warn('Entry store was EMPTY — restored ' + arr.length + ' entries from emergency snapshot');
-          showToast('⚠ Entry store was EMPTY — restored ' + arr.length + ' entries from the emergency snapshot. EXPORT NOW.', true);
-        } else {
-          console.warn('Entry store could not be READ — showing the emergency snapshot (' + arr.length + ' entries) without overwriting it');
-          showToast('⚠ Could not read the entry store — showing the emergency copy. Nothing was overwritten. Export now; restart the app if it persists.', true);
-        }
-      }
-    } catch (e) {}
+  if (!idbReadOk && savedEquipment.length) {
+    console.warn('Entry store could not be READ — showing the stored copies (' + savedEquipment.length + ' entries) without overwriting it');
+    showToast('⚠ Could not read the entry store — showing the emergency copy. Nothing was overwritten. Export now; restart the app if it persists.', true);
+  } else if (idbReadOk && recovered > 0) {
+    console.warn('Entry list: restored ' + recovered + ' entr' + (recovered === 1 ? 'y' : 'ies') + ' from backup copies the store lacked');
+    showToast('⚠ Restored ' + recovered + ' entr' + (recovered === 1 ? 'y' : 'ies') + ' that the last save could not write' + (primaryWasStored ? '' : ' (entry store was EMPTY)') + '. EXPORT NOW.', true);
   }
   if (expectedCount > savedEquipment.length) {
     // Fewer entries than the last save wrote. Say so loudly and permanently —
@@ -9683,42 +10018,58 @@ async function loadAll() {
   const migration = migrateSavedEnergySources(savedEquipment);
   if (migration.changedSources > 0) {
     console.log(`Renamed ${migration.changedSources} CA → Compressed Air sources across ${migration.changedEntries} entries`);
-    saveMetadata('saved_equipment', savedEquipment).catch(() => {});
   }
+  // Write the merged / migrated list back ONLY through saveAll (stamped,
+  // guarded) and only when the store was actually read (build 91: the two
+  // launch migrations used to write saved_equipment directly, which put the
+  // stripped emergency snapshot over an intact store after a failed read).
+  if (idbReadOk && (recovered > 0 || idsNormalized > 0 || migration.changedSources > 0 || Array.isArray(lsList))) saveAll();
 
-  // Clear noPhoto:true on any Kinetic source in saved entries — the photo
-  // slot is now controlled per source via the toggle button.
-  const cleared = migrateToggleablePhotoFlags((savedEquipment || []).map(e => e.sources));
-  if (cleared > 0) {
-    console.log(`Cleared noPhoto on ${cleared} toggleable saved sources (Kinetic)`);
-    saveMetadata('saved_equipment', savedEquipment).catch(() => {});
-  }
-
-  // Load the work-in-progress form: IndexedDB copy vs the localStorage
-  // fallback copy — the newer one (by its own 'at' stamp) wins.
-  let state = null;
-  try {
-    state = await getMetadata('current_wip');
-  } catch(e) { console.warn('IDB load current_wip failed:', e); }
-  try {
-    const lsCurrent = localStorage.getItem('loto_current');
-    if (lsCurrent) {
-      const lsState = JSON.parse(lsCurrent);
-      if (lsState && (!state || (lsState.at && (!state.at || lsState.at > state.at)))) {
-        state = lsState;
-        saveMetadata('current_wip', state).then(() => {
-          localStorage.removeItem('loto_current');
-        }).catch(() => {});
+  // ---- The form autosave (build 91). Its own failed read must not be
+  // overwritten by the blank form this launch will autosave: while
+  // current_wip can't be read, autosaves go to current_wip_alt, and the next
+  // launch resolves the two — the newer is restored; an older unit with
+  // content is kept as a saved "recovered draft" entry, never dropped.
+  let state = null, wipReadOk = true, alt = null;
+  try { state = await getMetadata('current_wip'); } catch(e) { wipReadOk = false; console.warn('IDB load current_wip failed:', e); }
+  try { alt = await getMetadata('current_wip_alt'); } catch(e) {}
+  const lsState = readLsJson('loto_current'), lsAlt = readLsJson('loto_current_alt');
+  const lsWon = !!lsState && newerWip(state, lsState) === lsState;
+  state = newerWip(state, lsState);
+  alt = newerWip(alt, lsAlt);
+  _wipUnread = !wipReadOk;
+  if (wipReadOk) {
+    if (alt || lsAlt) {
+      const a = wipHasContent(state) ? state : null, b = wipHasContent(alt) ? alt : null;
+      if (a && b) {
+        const newer = (String(b.at || '') > String(a.at || '')) ? b : a;
+        const older = newer === a ? b : a;
+        if (!sameEntryId(a.entryId, b.entryId) && keepWipAsRecoveredEntry(older)) {
+          if (idbReadOk) saveAll();
+          showToast('⚠ Recovered an unsaved unit ("' + (String(older.equipName || '').trim() || 'unnamed') + '") from an earlier session — it is in the saved list. Check it.', true);
+        }
+        state = newer;
+      } else {
+        state = a || b || state;
       }
+      deleteMetadata('current_wip_alt');
+      try { localStorage.removeItem('loto_current_alt'); } catch (e) {}
+      saveMetadata('current_wip', state).catch(() => {});
+    } else if (lsWon) {
+      saveMetadata('current_wip', state).then(() => { try { localStorage.removeItem('loto_current'); } catch (e) {} }).catch(() => {});
     }
-  } catch(e) {}
+  } else {
+    // current_wip is unreadable: leave it alone. A form an earlier failed
+    // session left in the alternate slot is shown instead (if any).
+    state = alt;
+  }
 
   if (state) {
-    currentEntryId = state.entryId || null;   // rebind restored photos to their entry id
+    currentEntryId = normEntryId(state.entryId) || null;   // rebind restored photos to their entry id
     // Re-derive "editing": the open form is an edit when a saved entry has its
     // id. (editingEntry itself doesn't survive a reload — that is how a reload
     // mid-edit used to save a SECOND copy of the entry.)
-    editingEntry = currentEntryId ? (savedEquipment.find(e => e.id === currentEntryId) || null) : null;
+    editingEntry = currentEntryId ? (savedEquipment.find(e => sameEntryId(e.id, currentEntryId)) || null) : null;
     document.getElementById('equipType').value = state.equipType || '';
     filterTemplateDropdown(state.equipType === '** New Equipment Type **' ? '' : (state.equipType || ''));
 
@@ -9766,9 +10117,6 @@ async function loadAll() {
         src.energySource = ENERGY_SOURCE_RENAMES[src.energySource];
       }
     }
-    // Clear noPhoto on toggleable sources in the in-progress entry too —
-    // matches the savedEquipment migration above.
-    migrateToggleablePhotoFlags([sources]);
     photos = state.photos || {};
     dropStaleSourceRefs(photos, sources);
     miscPhotos = state.miscPhotos || [];
@@ -9834,21 +10182,54 @@ function showToast(msg, isWarning = false) {
 //   the device; anything that calls a.click() with a blob URL is a no-op
 //   on iOS and the file is discarded.
 // ============================================================================
+// Web: a page can't know whether a download happened (iPad Safari asks
+// "Download …?" and the user may dismiss it; revoking the URL at once can even
+// cancel it). This used to report success regardless — the export then
+// stamped every entry "exported", and Bulk Delete later erased entries whose
+// file never left the device (build 91). Now: the share sheet where the
+// browser can share files (it reports a cancel), otherwise a download plus an
+// explicit "did it save?" — only a confirmed save counts as saved.
+async function saveOrShareWeb(blob, filename, mimeType) {
+  const sizeMB = (blob.size / 1048576).toFixed(1);
+  const go = await askChoice({
+    id: 'web-save', defaultValue: 'save',
+    title: '&#128190; Save ' + escHtml(filename),
+    html: 'The file is ready (' + sizeMB + ' MB). Tap <b>Save</b>, then keep it in Files / Downloads.',
+    choices: [{ value: 'save', label: 'Save', primary: true }, { value: 'cancel', label: 'Cancel' }]
+  });
+  if (go !== 'save') return { saved: true, native: false, cancelled: true };
+  let file = null;
+  try { file = new File([blob], filename, { type: mimeType || blob.type || 'application/octet-stream' }); } catch (e) {}
+  if (file && typeof navigator.canShare === 'function' && typeof navigator.share === 'function') {
+    let can = false;
+    try { can = navigator.canShare({ files: [file] }); } catch (e) {}
+    if (can) {
+      try { await navigator.share({ files: [file], title: filename }); return { saved: true, native: false, shared: true }; }
+      catch (err) { if (err && err.name === 'AbortError') return { saved: true, native: false, cancelled: true }; }
+      // any other share failure: fall through to a download
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 120000);   // never cancel a download still waiting on a prompt
+  const ok = await askChoice({
+    id: 'web-save-confirm', defaultValue: 'no',
+    title: 'Did the file save?',
+    html: 'Check that <b>' + escHtml(filename) + '</b> is in your Files / Downloads. Entries are marked exported ONLY if it saved.',
+    choices: [{ value: 'yes', label: 'Yes — it saved', primary: true }, { value: 'no', label: 'No / not sure' }]
+  });
+  return ok === 'yes' ? { saved: true, native: false } : { saved: false, native: false, unconfirmed: true };
+}
+
 async function saveOrShare(blob, filename, _mimeType) {
   const native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
-  if (!native) {
-    // Web fallback: classic browser download
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    return { saved: true, native: false };
-  }
+  if (!native) return saveOrShareWeb(blob, filename, _mimeType);
 
   // Native iOS path
   const FS = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
