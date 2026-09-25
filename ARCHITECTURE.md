@@ -1,6 +1,6 @@
 # LOTO Field Collector — Architecture Reference
 
-**Date:** 2026-09-24 (rev 15 — **build 89 fixes all 28 photo-integrity defects the 2026-09-24 review found** — see §6 "Photo-integrity fixes — build 89", which replaces rev 14's open-defects list. Source photos now follow their source *object* (no more index-keyed misattachment on template / type / electrical-count changes); every async photo writer is bound to its form session and Save & New / Edit / Duplicate / Clear / Export / Backup wait for it; one form identity (Save & New replaces-or-appends BY ID — a reload mid-edit can no longer save a second copy); orphan re-attach is a reviewed, missing-slots-only repair instead of a launch-time guess; filesystem writes are atomic and size-verified, IndexedDB reconnects, and the newest copy of the entry list wins at load. Every fix has a regression test written first and proven to FAIL on build 88: the suite is now 61 tests and passes 61/61 in web mode AND with the whole suite run against a mock native filesystem (`runPhotoRegressionSuite({nativeMock:true})`), and it refuses to run anywhere real data could live. Photo filenames now always carry the device code (`0924_JW-a1b2_00001`, §7); linked sources keep and export their photo, with entry + source ids on `linkedTo` (§10). §2: iOS is at 89 (archive pending); the web (`main`) is still 86 with 89 staged. Prior: rev 14 — documented the review (its open-defects list is now §6's build-89 fixes table). A max-effort code review of build 88 (nine finder angles, every candidate independently verified, plus a gap sweep) found 28 photo-integrity defects — 20 confirmed, 4 plausible, 4 unverified, none refuted, none yet fixed — documented by root cause: index-keyed source photos (template/type changes silently misattach or drop photos), three unguarded async photo writers, split form identity, launch-time orphan re-attach, and unverified storage writes; plus field rules until fixed. §6 also gains what a stored photo is (no EXIF survives the canvas) and the deferred off-app backup design, and **the regression-suite instruction now carries a hard warning: its reset erases real data, so never run it where field data lives.** §2 records which build each channel carries — the web (`main`) is on build 86 and still has the photo-destroying retake-delete. §3 adds `tests/` and the public-repo rule; §9 documents promoting builds to the web via the `loto-main-web` worktree; new §13 points to the recovery tooling and the Lumix frame-number rule. Prior: rev 13 — builds 83–88, the photo-store rebuild and its aftermath. **§6 is the section to read.** Build 83 re-keyed the photo store on entry UUIDs after name-derived keys corrupted ~1,100 photo slots across five VA facilities, adding migration/quarantine, a hard export duplicate gate, capture-time hash warnings, Photo Audit and entry-retention guards. Builds 84–88 then fixed what 83 got wrong or left rough: 84 made the migration done-flag conditional on the stores being readable; 85 scoped and chunked the quarantine export; 86 scoped Photo Audit to today's work; **87 removed the retake/misc-removal deletes that were destroying live photos**, added the in-flight capture guard and `reattachOrphanedPhotos()`; 88 gave duplicated sources their own `sourceId` and recorded the copied photo as a `{dupOf}`. The regression suite is now 12 tests and is the gate on any photo-path change. §10 gains the office `Information_Sheet_MMDDYY.xlsx` field-app layout spec — geometry, the bare-reference photo rule, the `photo_detail` `String(20)` position-marker trap — and the cross-date survey problem that stranded 71 Atlanta photos. §8 versioning and §11 code map refreshed to build 88 / cache v7.84. Prior: build 79: simplified verification — water sources get Drain/Gauge checkboxes synthesizing the same canonical strings, electrical defaults to Controls, Settings toggle reverts to classic pickers (§5.4c). Prior: rev 10 — builds 74–77: durable photo storage + integrity. §6 rewritten: full-res photos now write to the **native filesystem** (Capacitor Filesystem, `DATA/loto_photos/`) with IndexedDB/localStorage as fallbacks, after iOS storage eviction silently lost 74 photos on 2026-08-04; capture-time save verification, export integrity guard, header integrity badge, collision-proof photo keys. §7: local-day date semantics + filtered-day export stamps; reuse-a-photo share model with export dedup; per-entry `exportedAt`/`exportId` stamps. §5.5: export-status badges + delete guards with "Export these first" escape hatch. New template: Unit Heater - Natural Gas. Prior: rev 9 — §5 registry inventory expanded. Named the equipment-side registries the doc had glossed over (`EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT`, `EQUIPMENT_PROMPT_FOR_TEMPLATE`, `EQUIPMENT_DIAGRAM_OVERRIDE`, `CONDENSATE_AUTO_EQUIP`, `CUSTOM_EQUIP_KEYWORD_TEMPLATE`) plus a new "Other registries (misc but load-bearing)" bullet block covering `SOURCE_DEFAULTS`, `ENERGY_DEVICE_MAP`, `ENERGY_KEYWORD_TEMP`, `ENERGY_LABEL_PREFIX/COLORS`, `PHOTO_DEFAULTS`, `SKETCH_DIAGRAMS`, `SAVED_FILTERS`, `HOSPITALS`. Prior revs: rev 8 = ingester live; rev 7 = data-entry UX pass; rev 6 = ZIP restructure.)
+**Date:** 2026-09-24 (rev 16 — **build 90 = build 89 + one fix found while re-testing it**: the header photo-integrity badge now refreshes after a delete, bulk delete, backup import, clear, source removal or duplicate (it used to keep counting — or flagging MISSING — photos no longer referenced; T58). **The regression suite now runs inside the real iOS app**: `tests/run-sim-suite.sh` builds a throwaway copy of `ios/` with `tests/sim-harness.js` in its bundle (never the project's own bundle, which is what Xcode archives), reinstalls it fresh on a dedicated "LOTO Test iPad" Simulator and runs the suite against the real WKWebView and the real Capacitor Filesystem plugin — 62/62 there, and 62/62 in both desktop modes. The runner's guard was widened for this and only this: inside the app it runs only with `{iosSimulator:true}`, only when the app container is under `CoreSimulator` (never a device), and only on an empty install. §2: iOS 90 (committed, synced, in Xcode; archive pending); web still 86 with 90 staged. Prior: rev 15 — **build 89 fixes all 28 photo-integrity defects the 2026-09-24 review found** — see §6 "Photo-integrity fixes — build 89", which replaces rev 14's open-defects list. Source photos now follow their source *object* (no more index-keyed misattachment on template / type / electrical-count changes); every async photo writer is bound to its form session and Save & New / Edit / Duplicate / Clear / Export / Backup wait for it; one form identity (Save & New replaces-or-appends BY ID — a reload mid-edit can no longer save a second copy); orphan re-attach is a reviewed, missing-slots-only repair instead of a launch-time guess; filesystem writes are atomic and size-verified, IndexedDB reconnects, and the newest copy of the entry list wins at load. Every fix has a regression test written first and proven to FAIL on build 88: the suite is now 61 tests and passes 61/61 in web mode AND with the whole suite run against a mock native filesystem (`runPhotoRegressionSuite({nativeMock:true})`), and it refuses to run anywhere real data could live. Photo filenames now always carry the device code (`0924_JW-a1b2_00001`, §7); linked sources keep and export their photo, with entry + source ids on `linkedTo` (§10). §2: iOS is at 89 (archive pending); the web (`main`) is still 86 with 89 staged. Prior: rev 14 — documented the review (its open-defects list is now §6's build-89 fixes table). A max-effort code review of build 88 (nine finder angles, every candidate independently verified, plus a gap sweep) found 28 photo-integrity defects — 20 confirmed, 4 plausible, 4 unverified, none refuted, none yet fixed — documented by root cause: index-keyed source photos (template/type changes silently misattach or drop photos), three unguarded async photo writers, split form identity, launch-time orphan re-attach, and unverified storage writes; plus field rules until fixed. §6 also gains what a stored photo is (no EXIF survives the canvas) and the deferred off-app backup design, and **the regression-suite instruction now carries a hard warning: its reset erases real data, so never run it where field data lives.** §2 records which build each channel carries — the web (`main`) is on build 86 and still has the photo-destroying retake-delete. §3 adds `tests/` and the public-repo rule; §9 documents promoting builds to the web via the `loto-main-web` worktree; new §13 points to the recovery tooling and the Lumix frame-number rule. Prior: rev 13 — builds 83–88, the photo-store rebuild and its aftermath. **§6 is the section to read.** Build 83 re-keyed the photo store on entry UUIDs after name-derived keys corrupted ~1,100 photo slots across five VA facilities, adding migration/quarantine, a hard export duplicate gate, capture-time hash warnings, Photo Audit and entry-retention guards. Builds 84–88 then fixed what 83 got wrong or left rough: 84 made the migration done-flag conditional on the stores being readable; 85 scoped and chunked the quarantine export; 86 scoped Photo Audit to today's work; **87 removed the retake/misc-removal deletes that were destroying live photos**, added the in-flight capture guard and `reattachOrphanedPhotos()`; 88 gave duplicated sources their own `sourceId` and recorded the copied photo as a `{dupOf}`. The regression suite is now 12 tests and is the gate on any photo-path change. §10 gains the office `Information_Sheet_MMDDYY.xlsx` field-app layout spec — geometry, the bare-reference photo rule, the `photo_detail` `String(20)` position-marker trap — and the cross-date survey problem that stranded 71 Atlanta photos. §8 versioning and §11 code map refreshed to build 88 / cache v7.84. Prior: build 79: simplified verification — water sources get Drain/Gauge checkboxes synthesizing the same canonical strings, electrical defaults to Controls, Settings toggle reverts to classic pickers (§5.4c). Prior: rev 10 — builds 74–77: durable photo storage + integrity. §6 rewritten: full-res photos now write to the **native filesystem** (Capacitor Filesystem, `DATA/loto_photos/`) with IndexedDB/localStorage as fallbacks, after iOS storage eviction silently lost 74 photos on 2026-08-04; capture-time save verification, export integrity guard, header integrity badge, collision-proof photo keys. §7: local-day date semantics + filtered-day export stamps; reuse-a-photo share model with export dedup; per-entry `exportedAt`/`exportId` stamps. §5.5: export-status badges + delete guards with "Export these first" escape hatch. New template: Unit Heater - Natural Gas. Prior: rev 9 — §5 registry inventory expanded. Named the equipment-side registries the doc had glossed over (`EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT`, `EQUIPMENT_PROMPT_FOR_TEMPLATE`, `EQUIPMENT_DIAGRAM_OVERRIDE`, `CONDENSATE_AUTO_EQUIP`, `CUSTOM_EQUIP_KEYWORD_TEMPLATE`) plus a new "Other registries (misc but load-bearing)" bullet block covering `SOURCE_DEFAULTS`, `ENERGY_DEVICE_MAP`, `ENERGY_KEYWORD_TEMP`, `ENERGY_LABEL_PREFIX/COLORS`, `PHOTO_DEFAULTS`, `SKETCH_DIAGRAMS`, `SAVED_FILTERS`, `HOSPITALS`. Prior revs: rev 8 = ingester live; rev 7 = data-entry UX pass; rev 6 = ZIP restructure.)
 **Repo:** [github.com/whittw1/loto-info-sheet](https://github.com/whittw1/loto-info-sheet)
 **Prior standalone doc:** `LOTO_Integration_Architecture.md` in `~/Desktop/Claude Apps/LOTO Information Sheet App/` (April 2026, pre-iOS work — kept for reference, superseded by this file).
 
@@ -31,8 +31,8 @@ Both HTML files must be updated in lockstep — `FingerLakes_Information_Sheet.h
 
 | Channel | Source branch | Build | Photo-safety status |
 |---|---|---|---|
-| iOS / TestFlight | `ios-testflight-scaffold` | **89** (cache v7.85) — committed `c9fc0c9`, pushed, synced | Current line: all 28 review defects fixed (§6). Each build must be archived from Xcode by the user — confirm the device header reads `b89`. |
-| Azure SWA + GitHub Pages (web) | `main` | **86** (cache v7.82) | ⚠ **Behind, and unsafe.** Still contains the build-83 retake-delete (`deletePhotoFromDB(supersededKey)` in `handlePhoto`), which destroys a saved entry's photo when a retake is discarded — the defect build 87 removed — plus every defect build 89 fixes. **Build 89 is staged, uncommitted, in the promotion worktree (§9)** — commit + push it. |
+| iOS / TestFlight | `ios-testflight-scaffold` | **90** (cache v7.86) — committed `2ad0593`, pushed, synced, open in Xcode | Current line: all 28 review defects fixed (§6) + the integrity-badge refresh. Each build must be archived from Xcode by the user — confirm the device header reads `b90`. (89 was never archived; build numbers only need to increase.) |
+| Azure SWA + GitHub Pages (web) | `main` | **86** (cache v7.82) | ⚠ **Behind, and unsafe.** Still contains the build-83 retake-delete (`deletePhotoFromDB(supersededKey)` in `handlePhoto`), which destroys a saved entry's photo when a retake is discarded — the defect build 87 removed — plus every defect builds 89–90 fix. **Build 90 is staged, uncommitted, in the promotion worktree (§9)** — commit + push it. |
 
 **The web build is used in the field** — Bath VAMC (April 2026) was collected entirely on it — so a crew may be on either channel. Treat the two as one release: never leave `main` behind a photo-safety fix. To check what a channel carries: `git show origin/main:index.html | grep -o 'b[0-9]*</span>'`, or read the header on the device.
 
@@ -55,7 +55,9 @@ loto-info-sheet/                              (the GitHub repo)
 ├── TODO.md                                   (deferred work)
 ├── IOS_RELEASE_SETUP.md                      (fastlane + GitHub Action prereqs)
 ├── tests/
-│   ├── photo-regression.js                   (browser-injected photo-store regression suite, 61 tests — §6)
+│   ├── photo-regression.js                   (photo-store regression suite, 62 tests — runs in a browser or inside the app on a Simulator — §6)
+│   ├── sim-harness.js                        (loads the suite into a throwaway SIMULATOR build; inert without its trigger file)
+│   ├── run-sim-suite.sh                      (one command: sync → throwaway ios/ copy + harness → fresh install on "LOTO Test iPad" → run → report)
 │   ├── production_store_scan.py              (read-only quarantine classifier over export bundles)
 │   └── production-scan/                      (GITIGNORED — facility-identifying output; never commit)
 ├── .github/workflows/
@@ -603,27 +605,42 @@ timestamp on the first successful save after page load.
   in the ~340 historical legacy-suspect entries and told the crew nothing about
   the day in front of them. Each scope labels what it covers, so a historical
   collision is never mistaken for today's work.
-- **Tests:** `tests/photo-regression.js` — browser-injected suite, **61 tests**,
-  run by loading the app and calling `runPhotoRegressionSuite()`. T1–T7 cover the
+- **Tests:** `tests/photo-regression.js` — **62 tests**, run by loading the app
+  and calling `runPhotoRegressionSuite()`. T1–T7 cover the
   original directive (same-name isolation, re-export byte stability, duplicate
   provenance, the cross-link/legacy export gates, key format, and a 500-entry /
   50-same-named scale test); T8–T11 the data-loss regressions of builds 83–88
   (edit→retake→discard, edit→remove-misc→discard, orphan re-attach, the Air
   Handler 16 duplicate-source scenario); **T12–T57 one per defect of the
   2026-09-24 review**, each written before its fix and proven to FAIL on build 88
-  (see the table below). **If you change any photo path, run it and expect 61/61 —
-  in BOTH modes:** `runPhotoRegressionSuite()` (web: IndexedDB) and
-  `runPhotoRegressionSuite({nativeMock: true})`, which installs an in-memory
-  Capacitor Filesystem for the whole run so capture, export and migration go
-  through the native photo store the iPad uses. `{skipScale:true}` skips the slow
-  500-entry test; `{only:['t12_', …]}` runs a subset.
+  (see the table below); T58 (build 90) checks the integrity badge follows
+  deletes. **If you change any photo path, run it in all three environments and
+  expect 62/62 in each:**
+  1. `runPhotoRegressionSuite()` in a desktop browser (web: IndexedDB);
+  2. `runPhotoRegressionSuite({nativeMock: true})` there too — an in-memory
+     Capacitor Filesystem for the whole run;
+  3. **`tests/run-sim-suite.sh`** — the suite INSIDE the real iOS app on an iOS
+     Simulator (real WKWebView, real Filesystem plugin): it syncs, builds a
+     throwaway copy of `ios/` with `tests/sim-harness.js` + the suite in its
+     bundle (the project's own `ios/App/App/public`, which Xcode archives, is
+     never touched — the script aborts if the harness ever appears there),
+     reinstalls fresh on a dedicated "LOTO Test iPad" simulator, drops the
+     trigger file `Documents/RUN_PHOTO_SUITE` into the app container, launches,
+     and reads `Documents/loto_test_results.json` back (exit 0 = all pass).
+     `SUITE_OPTS='{"skipScale":true}'` passes options through.
+  The fault-injection tests wrap whichever Filesystem plugin is live, so inside
+  the app they inject REAL partial writes, 0-byte files and listing failures.
+  `{skipScale:true}` skips the slow 500-entry test; `{only:['t12_', …]}` runs a
+  subset.
   > **⚠ Run it ONLY in a desktop browser against a local server with no real data**
   > (e.g. `python3 -m http.server` in the repo root, a fresh browser profile). It
-  > ERASES every entry and photo in that browser profile. Since build 89 the runner
-  > enforces this: it refuses inside the app (even with an override), off
-  > `localhost`, and wherever saved entries exist unless called with
-  > `{iUnderstandThisErasesAllData: true}`; its reset refuses to run outside an
-  > armed suite run.
+  > ERASES every entry and photo in that browser profile. The runner enforces
+  > this: in a browser it refuses off `localhost` and wherever saved entries exist
+  > unless called with `{iUnderstandThisErasesAllData: true}`; inside the app it
+  > runs ONLY with `{iosSimulator: true}`, ONLY when the Filesystem plugin's
+  > container path is under `~/Library/Developer/CoreSimulator/Devices/` (a real
+  > iPad's is `/var/mobile/…`), and ONLY on an install with no entries and no
+  > photo files; its reset refuses to run outside an armed suite run.
 
   Also `tests/production_store_scan.py` (read-only quarantine classifier against the
   8/5 all-dates export bundles).
@@ -716,6 +733,12 @@ retake that fails to save keeps the previous photo (T56), and an edit keeps its
 entry's facility stamp instead of re-stamping it with the current setting. Left as
 is: `hashWarning` (written, not read — kept as evidence) and an unpruned
 `photo_hash_index` (~100 bytes per photo).
+
+**Build 90 (found while re-testing b89):** the header integrity badge refreshed
+only on capture and at launch, so after a delete, bulk delete, backup import,
+clear, source removal or duplicate it kept counting — or flagging as MISSING —
+photos no longer referenced. Each of those now calls `updateIntegrityBadge()`
+(T58: fails on b89, passes on b90).
 
 **In the field with build 89:** install it on every device, and promote it to the
 web — `main` is still 86 (§2). After a template or type change on a unit you've
@@ -1127,11 +1150,11 @@ Required by Apple even though the app only uses `<input type="file" capture="env
 ### Versioning
 
 - `MARKETING_VERSION` — user-facing (currently `1.4`); bump for user-visible releases
-- `CURRENT_PROJECT_VERSION` — build number (currently **89**); **must be strictly increasing** for the same `MARKETING_VERSION` or Apple rejects the upload. Bumped by +1 on every commit that goes to TestFlight. Both Debug + Release entries in `project.pbxproj` must match.
+- `CURRENT_PROJECT_VERSION` — build number (currently **90**); **must be strictly increasing** for the same `MARKETING_VERSION` or Apple rejects the upload. Bumped by +1 on every commit that goes to TestFlight. Both Debug + Release entries in `project.pbxproj` must match.
 
 ### Service worker cache
 
-`sw.js` uses network-first for HTML/JSON, cache-first for static assets. **`CACHE_NAME` must be bumped every time cached files change** — otherwise the WebView serves stale HTML on next launch. Currently `loto-collector-v7.85` (kept in lockstep with builds: build 89 ↔ v7.85).
+`sw.js` uses network-first for HTML/JSON, cache-first for static assets. **`CACHE_NAME` must be bumped every time cached files change** — otherwise the WebView serves stale HTML on next launch. Currently `loto-collector-v7.86` (kept in lockstep with builds: build 90 ↔ v7.86).
 
 ---
 
@@ -1160,8 +1183,8 @@ repo on branch `main-promotion`, tracking `origin/main`.
    public static site.
 3. `git commit`, then `git push origin main-promotion:main`. Azure deploys automatically.
 
-> **As of 2026-09-24 build 89 is staged in the worktree (not yet committed).** From
-> `~/Desktop/Claude Apps/loto-main-web`: `git commit -m "Build 89 (cache v7.85)"`, then
+> **As of 2026-09-24 build 90 is staged in the worktree (not yet committed).** From
+> `~/Desktop/Claude Apps/loto-main-web`: `git commit -m "Build 90 (cache v7.86)"`, then
 > `git push origin main-promotion:main`.
 
 Existing web users migrate in place on their next load: the IndexedDB schema
