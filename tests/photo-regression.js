@@ -11,6 +11,12 @@
 //   T5  legacy name-keyed reference must NOT ship bytes silently
 //   T6  every stored photo key parses to photo::<owning entry UUID>::…
 //   T7  scale: 500 entries / 50 same-named — zero unintended hash collisions
+//   T8–T58  data-loss regressions of builds 83–90 (see ARCHITECTURE.md §6)
+//   T59–T77 build 91: one per defect of the 2026-09-25 review (numeric-id
+//           photos, b83–88 filenames, no-photo drops, web save, failed-read
+//           overwrites, write-outage losses, XLSX valve state, Duplicate
+//           races, template data, voltage Cancel, diagrams, sketch leaks,
+//           name/room autosave, SW purge, Cooling Tower)
 // Results land in window.__PHOTO_TEST_RESULTS and the console.
 // ============================================================================
 (function () {
@@ -1734,6 +1740,512 @@
     record(N, /1 photo/.test(before) && after === '(hidden)', 'before delete "' + before + '", after delete "' + after + '"');
   }
 
+  // ======================================================================
+  // BUILD 91 — one test per defect of the 2026-09-25 review (+ Cooling
+  // Tower). Each was written first and run against build 90 to prove it
+  // fails there.
+  // ======================================================================
+
+  // Remove the red load banners a storage-fault test provokes.
+  function dropLoadBanners() {
+    document.querySelectorAll('.container > div, #storageFailBanner').forEach(d => {
+      if (d.id === 'storageFailBanner' || /expected entries|entry store|could NOT be written|Recovered/i.test(d.textContent || '')) d.remove();
+    });
+  }
+  // Decode a PNG data URL and sample one pixel at fractional (fx, fy).
+  async function pngPixel(dataUrl, fx, fy) {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = dataUrl; });
+    const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+    const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(Math.round(fx * (img.width - 1)), Math.round(fy * (img.height - 1)), 1, 1).data;
+    return { r: d[0], g: d[1], b: d[2], a: d[3] };
+  }
+
+  // T59 — pre-UUID ids are JS NUMBERS in real data (Date.now()); their photos
+  // must export (T43 only ever used a string id)
+  async function t59_numberTypedIdEntryExportsItsPhotos() {
+    const N = 'T59 entry with a NUMBER id (pre-UUID) exports its photos, reshoots included';
+    await resetAppState();
+    const A = mkEntry('Num-59', { id: 1781725580060 });
+    const k = photoStoreKey(A.id, 'main');
+    await storePhotoBytes(k, dataUrlFromBytesSeed('t59-a'));
+    A.photos.equip_main = { dbKey: k, thumbnail: TINY_THUMB, timestamp: A.savedAt, fileType: 'image/jpeg' };
+    savedEquipment = [A]; saveAll();
+    await withDialogs({ confirm: true }, async () => { editSaved(0); });
+    await captureInto('equip_dataplate', await makePhotoFile('t59-dp'));
+    performSaveAndNew();
+    const owned = photoKeyOwnedBy(k, 1781725580060) && photoKeyOwnedBy(k, '1781725580060');
+    const { zip, confirms } = await runExport({ confirmResponse: false });
+    let main = false, dp = false;
+    if (zip) {
+      const u = await unzipExport(zip.blob);
+      const ja = u.entriesJson.entries.find(e => String(e.id) === '1781725580060');
+      main = !!(ja && ja.photoFiles.main); dp = !!(ja && ja.photoFiles.dataplate);
+    }
+    record(N, main && dp && owned, 'main=' + main + ' reshoot=' + dp + ' owned=' + owned + (zip ? '' : ' | export stopped: ' + confirms.join(' | ').slice(0, 140)));
+  }
+
+  // T60 — builds 83-88 stored numeric-owner photos under the LEGACY filename
+  // (their regex couldn't parse the key); build 89 moved where it looks
+  async function t60_numericKeyFileFromB83to88IsFound() {
+    const N = 'T60 photo stored by builds 83-88 under the legacy filename (numeric owner) is found + exported';
+    await resetAppState();
+    const fs = installMockFS();
+    try {
+      const id = '1781725580060';
+      const A = mkEntry('Legacy-60', { id });
+      const key = 'photo::' + id + '::main::abcd1234';
+      await fs.set('loto_photos/' + key.replace(/[^A-Za-z0-9_.-]/g, '_') + '.jpg', dataUrlToUint8Array(dataUrlFromBytesSeed('t60')));
+      A.photos.equip_main = { dbKey: key, thumbnail: TINY_THUMB, timestamp: A.savedAt, fileType: 'image/jpeg' };
+      savedEquipment = [A]; saveAll();
+      const read = await loadPhotoBytes(key, 'image/jpeg');
+      const present = await presentPhotoKeySet();
+      const { zip } = await runExport({ confirmResponse: false });
+      let exported = false;
+      if (zip) { const u = await unzipExport(zip.blob); const ja = jsonEntryFor(u.entriesJson, A); exported = !!(ja && ja.photoFiles.main); }
+      record(N, !!read && present.has(key) && exported, 'read=' + !!read + ' listed=' + present.has(key) + ' exported=' + exported);
+    } finally { fs.restore(); }
+  }
+
+  // T61 — a photographed source's photo is never silently dropped by noPhoto
+  async function t61_photographedSourceNeverSilentlyDroppedByNoPhoto() {
+    const N = 'T61 photographed source keeps + exports its photo through an energy-source mis-pick';
+    const N2 = 'T61b "Hide photo slot" never drops an attached photo from the export';
+    const N3 = 'T61c a hidden (no-photo) slot stays hidden after a reload';
+    await resetAppState();
+    fillFormNoSources('NoPhoto-61');
+    sources.push(mkSrc('Electrical 480V')); renderSources();
+    await captureInto('source_0', await makePhotoFile('t61'));
+    handleEnergySourceChange(0, 'Stored Electrical Energy');
+    handleEnergySourceChange(0, 'Electrical 480V');
+    const visible = !sources[0].noPhoto;
+    const A = saveEntry();
+    let exported = false;
+    { const { zip } = await runExport({ confirmResponse: false }); if (zip) { const u = await unzipExport(zip.blob); const j = jsonEntryFor(u.entriesJson, A); exported = !!(j && j.sources[0].photoFile); } }
+    record(N, visible && exported, 'slot visible=' + visible + ' exported=' + exported);
+
+    await resetAppState();
+    fillFormNoSources('Hide-61');
+    sources.push(Object.assign(mkSrc('Kinetic'), { deviceType: 'Rotating' })); renderSources();
+    await captureInto('source_0', await makePhotoFile('t61b'));
+    await withDialogs({ confirm: true }, async () => { togglePhotoSlot(0); });
+    const B = saveEntry();
+    let exportedB = false;
+    { const { zip } = await runExport({ confirmResponse: false }); if (zip) { const u = await unzipExport(zip.blob); const j = jsonEntryFor(u.entriesJson, B); exportedB = !!(j && j.sources[0].photoFile); } }
+    record(N2, exportedB, 'photo exported after Hide=' + exportedB);
+
+    await resetAppState();
+    const C = mkEntry('Hidden-61', { sources: [Object.assign(mkSrc('Kinetic'), { sourceId: genUuid(), noPhoto: true })] });
+    savedEquipment = [C]; saveAll(); await sleep(300);
+    savedEquipment = []; await loadAll(); await sleep(200);
+    const c = savedEquipment.find(e => e.id === C.id);
+    record(N3, !!(c && c.sources[0].noPhoto === true), 'noPhoto after reload=' + (c && c.sources[0].noPhoto));
+    dropLoadBanners();
+  }
+
+  // T62 — the web build can't tell whether a download happened; it must not
+  // claim "saved" (and stamp entries exported) unless the save is confirmed
+  async function t62_webSaveNeverClaimsAnUnconfirmedDownload() {
+    const N = 'T62 web save is not "saved" unless the user confirms the file saved';
+    const cap = window.Capacitor;
+    const realClick = HTMLAnchorElement.prototype.click;
+    const ownCanShare = Object.prototype.hasOwnProperty.call(navigator, 'canShare');
+    let rNo, rYes;
+    window.Capacitor = undefined;
+    HTMLAnchorElement.prototype.click = function () {};                          // no real download in the test browser
+    Object.defineProperty(navigator, 'canShare', { value: () => false, configurable: true });   // force the download path
+    try {
+      rNo = (await withDialogs({ choice: { 'web-save': 'save', 'web-save-confirm': 'no' } }, () => saveOrShare(new Blob(['t62']), 't62.zip', 'application/zip'))).result;
+      rYes = (await withDialogs({ choice: { 'web-save': 'save', 'web-save-confirm': 'yes' } }, () => saveOrShare(new Blob(['t62']), 't62.zip', 'application/zip'))).result;
+    } finally {
+      HTMLAnchorElement.prototype.click = realClick;
+      window.Capacitor = cap;
+      if (!ownCanShare) delete navigator.canShare;
+    }
+    record(N, !!rNo && rNo.saved !== true && !!rYes && rYes.saved === true, 'declined → ' + JSON.stringify(rNo) + ', confirmed → ' + JSON.stringify(rYes));
+  }
+
+  // T63 — T28 again, with the entry shapes that made loadAll's migration
+  // write fire (a no-photo Stored Electrical source, a legacy "CA In" name)
+  async function t63_failedReadWithMigratableEntryNeverOverwritesStore() {
+    const N = 'T63 failed entry-store read never overwrites the store (entry the launch migrations touch)';
+    await resetAppState();
+    const A = mkEntry('Sketch-63', { sources: [
+      Object.assign(mkSrc('Stored Electrical Energy'), { sourceId: genUuid(), deviceType: 'Capacitor', noPhoto: true, auto: true }),
+      Object.assign(mkSrc('CA In'), { sourceId: genUuid(), deviceType: 'Ball Valve' })] });
+    A.sketch = { diagramKey: 'general', strokes: [{ color: '#f00', width: 3, points: [{ x: 0.1, y: 0.1 }, { x: 0.5, y: 0.5 }] }], labels: [] };
+    savedEquipment = [A]; saveAll(); await sleep(400);
+    const realGet = IDBObjectStore.prototype.get;
+    IDBObjectStore.prototype.get = function (k) {
+      if (k === 'saved_equipment') throw new DOMException('Connection to Indexed Database server lost', 'UnknownError');
+      return realGet.apply(this, arguments);
+    };
+    try { savedEquipment = []; await loadAll(); await sleep(400); }
+    finally { IDBObjectStore.prototype.get = realGet; }
+    const onDisk = await rawIdbGet('metadata', 'saved_equipment');
+    const kept = Array.isArray(onDisk) && onDisk[0] && onDisk[0].sketch && (onDisk[0].sketch.strokes || []).length === 1;
+    record(N, kept, kept ? 'intact store untouched' : 'store OVERWRITTEN by the stripped snapshot — sketch lost');
+    _entryStoreUnread = false;
+    savedEquipment = Array.isArray(onDisk) ? onDisk : [];
+    dropLoadBanners();
+  }
+
+  // T64 — a session that could never read the store must not overwrite it
+  // at the NEXT launch through its localStorage fallback copy
+  async function t64_unreadSessionFallbackNeverOverwritesStore() {
+    const N = 'T64 a session that could not read the store never overwrites it at the next launch';
+    await resetAppState();
+    const A = mkEntry('Keep-64');
+    A.sketch = { diagramKey: 'general', strokes: [{ color: '#f00', width: 3, points: [{ x: 0.1, y: 0.1 }, { x: 0.5, y: 0.5 }] }], labels: [] };
+    savedEquipment = [A]; saveAll(); await sleep(400);
+    const realGet = IDBObjectStore.prototype.get;
+    IDBObjectStore.prototype.get = function (k) {
+      if (k === 'saved_equipment') throw new DOMException('Connection to Indexed Database server lost', 'UnknownError');
+      return realGet.apply(this, arguments);
+    };
+    const B = mkEntry('New-64');
+    try {
+      savedEquipment = []; await loadAll(); await sleep(300);    // launch 1: unreadable
+      savedEquipment.push(B); saveAll(); await sleep(600);      // a unit saved that session
+    } finally { IDBObjectStore.prototype.get = realGet; }
+    _entryStoreUnread = false;
+    savedEquipment = []; await loadAll(); await sleep(500);     // launch 2: readable again
+    const onDisk = (await rawIdbGet('metadata', 'saved_equipment')) || [];
+    const a = onDisk.find(e => e.id === A.id), b = onDisk.find(e => e.id === B.id);
+    const aOk = !!(a && a.sketch && (a.sketch.strokes || []).length === 1);
+    record(N, aOk && !!b, 'A keeps its sketch=' + aOk + ', B (saved that session) kept=' + !!b);
+    dropLoadBanners();
+  }
+
+  // T65 — a failed read of the unit in progress must not be overwritten by
+  // the blank form the launch autosaves
+  async function t65_failedWipReadNeverOverwritesTheUnitInProgress() {
+    const N = 'T65 a failed read of the in-progress unit never overwrites it';
+    await resetAppState();
+    const wip = { at: new Date().toISOString(), entryId: genUuid(), equipType: '', equipName: 'Draft-65', lotoId: '', equipRoom: 'R1', equipBuilding: 'Main',
+      template: '', tiedTo: '', tiedToName: '', notes: '', sources: [mkSrc('Electrical 480V')], photos: {}, miscPhotos: [], sketch: null };
+    await rawIdbPut('metadata', 'current_wip', wip);
+    try { localStorage.removeItem('loto_current'); } catch (e) {}
+    const realGet = IDBObjectStore.prototype.get;
+    IDBObjectStore.prototype.get = function (k) {
+      if (k === 'current_wip') throw new DOMException('Connection to Indexed Database server lost', 'UnknownError');
+      return realGet.apply(this, arguments);
+    };
+    try { savedEquipment = []; await loadAll(); renderSources(); autoSaveCurrent(); await sleep(500); }
+    finally { IDBObjectStore.prototype.get = realGet; }
+    savedEquipment = []; await loadAll(); await sleep(300);    // next launch
+    const nameNow = document.getElementById('equipName').value;
+    const recovered = savedEquipment.some(e => e.equipName === 'Draft-65');
+    record(N, nameNow === 'Draft-65' || recovered, 'form name after relaunch="' + nameNow + '", kept as a recovered entry=' + recovered);
+    dropLoadBanners();
+  }
+
+  // T66 — units saved while IndexedDB writes fail (and the full-list
+  // fallback is over quota) must survive the relaunch AND the next save
+  async function t66_unitsSavedDuringAWriteOutageSurvive() {
+    const N = 'T66 units saved while storage writes fail survive the relaunch and the next save';
+    await resetAppState();
+    const A = mkEntry('Before-66'); savedEquipment = [A]; saveAll(); await sleep(400);
+    const realPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (v, k) {
+      if (k === 'saved_equipment' || k === 'saved_equipment_at') throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+      return realPut.apply(this, arguments);
+    };
+    const realSet = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k, v) {
+      if (k === 'loto_saved') throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+      return realSet.apply(this, arguments);
+    };
+    const B = mkEntry('During-66');
+    try { savedEquipment.push(B); saveAll(); await sleep(600); }
+    finally { IDBObjectStore.prototype.put = realPut; Storage.prototype.setItem = realSet; }
+    savedEquipment = []; await loadAll(); await sleep(300);     // relaunch: the store is readable but older
+    const afterLoad = savedEquipment.some(e => e.id === B.id);
+    saveAll(); await sleep(400);                               // e.g. the export's stamping save
+    const onDisk = (await rawIdbGet('metadata', 'saved_equipment')) || [];
+    const kept = onDisk.some(e => e.id === B.id);
+    record(N, afterLoad && kept, 'in memory after relaunch=' + afterLoad + ', in the store after the next save=' + kept);
+    dropLoadBanners();
+  }
+
+  // T67 — the Information Sheet XLSX (the office import path) carries valve state
+  async function t67_xlsxCarriesValveState() {
+    const N = 'T67 the Information Sheet XLSX carries Normally Closed';
+    await resetAppState();
+    const A = mkEntry('NC-67', { sources: [
+      Object.assign(mkSrc('LPS 10 PSI'), { sourceId: genUuid(), deviceType: 'Gate Valve', valveState: 'normally_closed' }),
+      Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid() })] });
+    savedEquipment = [A]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    if (!xpath) return record(N, false, 'no XLSX in the ZIP');
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+    const ws = wb.worksheets[0];
+    let nc = null, normal = null, label = null;
+    ws.eachRow(row => {
+      const a = String(row.getCell(1).value || '');
+      if (a === 'LPS 10 PSI') nc = String(row.getCell(11).value || '');
+      if (a === 'Electrical 480V') normal = String(row.getCell(11).value || '');
+      if (a === 'Energy Source #1') label = String(row.getCell(11).value || '');
+    });
+    record(N, /normally closed/i.test(nc || '') && !/normally closed/i.test(normal || '') && /valve state/i.test(label || ''),
+      'header col 11="' + label + '", NC source="' + nc + '", normal source="' + normal + '"');
+  }
+
+  // T68 — Duplicate With Photos vs a capture / a delete during the copy
+  async function t68_duplicateCopyNeverOverwritesACaptureOrLosesPhotos() {
+    const N = 'T68 a photo taken during a Duplicate-with-photos copy is never replaced by the copy';
+    const N2 = 'T68b deleting the original during the copy is refused — no photo lost';
+    await resetAppState();
+    fillFormNoSources('Orig-68'); sources.push(mkSrc('Electrical 480V'), mkSrc('LPS 10 PSI')); renderSources();
+    await captureInto('source_0', await makePhotoFile('t68-o0'));
+    await captureInto('source_1', await makePhotoFile('t68-o1'));
+    await captureInto('equip_main', await makePhotoFile('t68-om'));
+    const O = saveEntry();
+    const f = await makePhotoFile('t68-new');            // ready before the copy starts
+    const realLoad = window.loadPhotoBytes;
+    window.loadPhotoBytes = async function () { await sleep(700); return realLoad.apply(this, arguments); };
+    let myKey = null, stillThere = false;
+    try {
+      const dupP = executeDuplicate(savedEquipment.indexOf(O), true);
+      await sleep(50);
+      await withDialogs({}, async () => { handlePhoto({ files: [f] }, 'source_1'); });
+      // the capture lands (or is refused) well before the copy reaches source_1 (~1.4 s)
+      const t0 = Date.now();
+      while (Date.now() - t0 < 1200) { const r = photos.source_1; if (r && r.dbKey && !r.dupOf) { myKey = r.dbKey; break; } await sleep(40); }
+      await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.indexOf(O)); });
+      stillThere = savedEquipment.some(e => e.id === O.id);
+      await dupP;
+      await waitForPhotoWritesIdle(20000);
+    } finally { window.loadPhotoBytes = realLoad; }
+    const s1 = photos.source_1;
+    const ok = myKey ? !!(s1 && s1.dbKey === myKey) : !!(s1 && s1.dupOf && !s1.unsaved);
+    record(N, ok, myKey ? ('capture accepted during the copy; the slot ' + (s1 && s1.dbKey === myKey ? 'kept it' : 'was OVERWRITTEN by the copy')) : ('capture refused during the copy; copy landed=' + !!(s1 && s1.dupOf)));
+    const lost = ['source_0', 'equip_main'].filter(k => !photos[k] || photos[k].unsaved);
+    record(N2, stillThere && lost.length === 0, 'original still saved=' + stillThere + (lost.length ? ', copies FAILED: ' + lost.join(',') : ''));
+  }
+
+  // T69 — typed data on template sources is never silently discarded
+  async function t69_templateOrTypeChangeNeverDropsTypedSourceData() {
+    const N = 'T69 template change never silently drops data typed into template sources';
+    const N2 = 'T69b equipment-type change keeps template sources the user filled in';
+    await resetAppState();
+    fillFormNoSources('WH-69');
+    document.getElementById('equipTemplate').value = 'Water Heater - Electric';
+    await withDialogs({ confirm: true }, async () => { handleTemplateChange(); });
+    closeAllPrompts();
+    let i = sources.findIndex(s => /^Electrical/.test(s.energySource || ''));
+    if (i < 0) return record(N, false, 'setup: no electrical source (' + sources.map(s => s.energySource).join(',') + ')');
+    updateSource(i, 'deviceId', 'DISC-14');
+    document.getElementById('equipTemplate').value = 'Water Heater - Steam';
+    let confirmShown = false;
+    await withDialogs({ confirm: true }, async () => {
+      handleTemplateChange();
+      if (document.getElementById('templateConfirmOverlay')) { confirmShown = true; confirmTemplateChange('Water Heater - Steam'); }
+    });
+    closeAllPrompts();
+    const kept = sources.some(s => s.deviceId === 'DISC-14');
+    record(N, confirmShown && kept, 'confirm shown=' + confirmShown + ', typed source kept=' + kept);
+
+    await resetAppState();
+    fillFormNoSources('Pump-69');
+    document.getElementById('equipType').value = 'CHW Pump';
+    await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+    closeAllPrompts();
+    i = sources.findIndex(s => /^Electrical/.test(s.energySource || ''));
+    if (i < 0) return record(N2, false, 'setup: no electrical source');
+    updateSource(i, 'deviceId', 'VFD-3');
+    document.getElementById('equipType').value = 'Heating HW Pump';
+    await withDialogs({ confirm: true }, async () => {
+      handleEquipTypeChange();
+      if (document.getElementById('templateConfirmOverlay')) confirmTemplateChange(document.getElementById('equipTemplate').value);
+    });
+    closeAllPrompts();
+    record(N2, sources.some(s => s.deviceId === 'VFD-3'), 'sources now: ' + sources.map(s => s.energySource + (s.deviceId ? ' [' + s.deviceId + ']' : '')).join(', '));
+  }
+
+  // T70 — Cancel on the Chiller/ATS/Generator voltage prompt must leave the
+  // cards on screen matching `sources` (their inline handlers use the index)
+  async function t70_voltageCancelKeepsCardsInSync() {
+    const N = 'T70 cancelling the voltage prompt leaves the source cards matching the sources';
+    await resetAppState();
+    fillFormNoSources('Chiller-70');
+    sources.push(Object.assign(mkSrc('Electrical 208V'), { auto: true, collapsed: false }), Object.assign(mkSrc('Condenser Water In'), { collapsed: false }));
+    renderSources();
+    equipTypeChanged('Chiller');
+    closeVoltageDialog();
+    const cards = [...document.querySelectorAll('#sourcesContainer .source-card')];
+    const shown = cards.map(c => {
+      const sel = c.querySelector('select[id^="src_energy_"]'); if (sel) return sel.value || '';
+      const st = c.querySelector('.source-summary-text strong'); return st ? st.textContent.trim() : '?';
+    });
+    const want = sources.map(s => s.energySource || 'Empty source');
+    record(N, cards.length === sources.length && shown.every((v, k) => v === want[k]), 'cards=' + JSON.stringify(shown) + ' sources=' + JSON.stringify(want));
+  }
+
+  // T71 — exported diagrams: ink where it was drawn; the eraser removes ink only
+  async function t71_exportedDiagramInkLandsWhereDrawn() {
+    const N = 'T71 exported diagram: pen ink lands where it was drawn';
+    const N2 = 'T71b exported diagram: the eraser never cuts holes in the equipment drawing';
+    await resetAppState();
+    fillFormNoSources('Ink-71');
+    // the sketch section is hidden unless the facility opted in — opt in for this test
+    const prefsBefore = localStorage.getItem('loto_sketch_prefs');
+    setSketchPrefForFacility(getHospitalCode(), true);
+    restoreSketch({ diagramKey: 'general', strokes: [], labels: [] });
+    applySketchVisibility();
+    setSketchSectionExpanded(true);
+    await sleep(400);
+    const cv = document.getElementById('sketchCanvas');
+    const r = cv.getBoundingClientRect();
+    try { if (prefsBefore === null) localStorage.removeItem('loto_sketch_prefs'); else localStorage.setItem('loto_sketch_prefs', prefsBefore); } catch (e) {}
+    if (!r.width) { record(N, false, 'setup: sketch canvas not laid out'); }
+    else {
+      const ev = (type, fx, fy) => ({ type, pointerId: 1, clientX: r.left + fx * r.width, clientY: r.top + fy * r.height, preventDefault() {}, stopPropagation() {} });
+      const realCap = cv.setPointerCapture;
+      cv.setPointerCapture = () => {};
+      try {
+        setSketchTool('pen'); sketchColor = '#ff0000'; sketchLineWidth = 10;
+        sketchPointerDown(ev('pointerdown', 0.93, 0.2)); sketchPointerMove(ev('pointermove', 0.93, 0.5)); sketchPointerMove(ev('pointermove', 0.93, 0.8)); sketchPointerUp(ev('pointerup', 0.93, 0.8));
+      } finally { cv.setPointerCapture = realCap; }
+      const sk = JSON.parse(JSON.stringify(getSketchData()));
+      const png = await renderSketchOffscreen(sk);
+      const px = png ? await pngPixel(png, 0.93, 0.5) : null;
+      record(N, !!(px && px.r > 180 && px.g < 90 && px.b < 90), 'canvas ' + Math.round(r.width) + 'px wide; exported pixel at the drawn spot = ' + JSON.stringify(px));
+    }
+    // A pen line through the centre, then the eraser over the centre — as
+    // stored by builds up to 90 (screen pixels, no unit marker).
+    const sk2 = { diagramKey: 'general', labels: [], strokes: [
+      { color: '#ff0000', width: 12, points: [{ x: 250, y: 250 }, { x: 362, y: 250 }] },
+      { color: '#ffffff', width: 40, isEraser: true, points: [{ x: 300, y: 250 }, { x: 312, y: 250 }] }] };
+    const png2 = await renderSketchOffscreen(sk2);
+    const cpx = png2 ? await pngPixel(png2, 0.5, 0.5) : null;
+    record(N2, !!(cpx && cpx.a === 255), 'pixel under the eraser = ' + JSON.stringify(cpx));
+  }
+
+  // T72 — the open form's diagram is exported from its snapshot, never a
+  // 0-byte PNG (collapsed sketch section)
+  async function t72_openFormDiagramExportsWithSectionCollapsed() {
+    const N = 'T72 the open form\'s diagram exports (never a 0-byte PNG), sketch section collapsed';
+    await resetAppState();
+    fillForm('Form-72');
+    restoreSketch({ diagramKey: 'general', strokes: [{ color: '#ff0000', width: 6, points: [{ x: 10, y: 10 }, { x: 200, y: 200 }] }], labels: [{ x: 0.5, y: 0.5, text: 'E-1', color: '#d94a4a' }] });
+    await sleep(250);
+    setSketchSectionExpanded(false);
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const j = (u.entriesJson.entries || []).find(e => e.equipName === 'Form-72');
+    const f = j && j.photoFiles && j.photoFiles.diagram;
+    const len = f && u.files[f] ? u.files[f].length : 0;
+    record(N, len > 1000, 'diagram file=' + (f || '(none)') + ' bytes=' + len);
+  }
+
+  // T73 — sketch edits in a discarded edit never reach the saved entry
+  async function t73_discardedEditNeverChangesSavedSketch() {
+    const N = 'T73 sketch changes in a discarded edit never reach the saved entry';
+    await resetAppState();
+    const A = mkEntry('SkA-73');
+    A.sketch = { diagramKey: 'general', strokes: [{ color: '#f00', width: 3, points: [{ x: 5, y: 5 }, { x: 50, y: 50 }] }], labels: [{ x: 0.2, y: 0.2, text: 'E-1', color: '#d94a4a' }] };
+    const B = mkEntry('SkB-73');
+    savedEquipment = [A, B]; saveAll();
+    await withDialogs({ confirm: true }, async () => { editSaved(0); });
+    sketchUndo();
+    sketchLabels.push({ x: 0.7, y: 0.7, text: 'S-1', color: '#000' });
+    if (sketchLabels[0]) sketchLabels[0].x = 0.9;
+    await withDialogs({ confirm: true }, async () => { editSaved(1); });
+    const a = savedEquipment.find(e => e.id === A.id);
+    const ok = a.sketch.strokes.length === 1 && a.sketch.labels.length === 1 && a.sketch.labels[0].x === 0.2;
+    record(N, ok, 'saved A now: ' + a.sketch.strokes.length + ' stroke(s), labels ' + a.sketch.labels.map(l => l.text + '@' + l.x).join(','));
+  }
+
+  // T74 — Duplicate starts with a clean drawing, and never writes into
+  // another entry's saved sketch
+  async function t74_duplicateNeverInheritsTheOpenFormsSketch() {
+    const N = 'T74 Duplicate never inherits (or writes into) another unit\'s drawing';
+    await resetAppState();
+    const A = mkEntry('DupA-74'); A.template = 'AHU - Steam'; A.equipType = 'Air Handler';
+    const B = mkEntry('EditB-74'); B.template = 'Chilled Water Pump'; B.equipType = 'CHW Pump';
+    B.sketch = { diagramKey: 'pump', strokes: [{ color: '#00f', width: 3, points: [{ x: 5, y: 5 }, { x: 60, y: 60 }] }], labels: [{ x: 0.3, y: 0.3, text: 'W-4', color: '#00f' }] };
+    savedEquipment = [A, B]; saveAll();
+    await withDialogs({ confirm: true }, async () => { editSaved(1); });
+    await withDialogs({ confirm: true }, async () => { await executeDuplicate(0, false); });
+    const clean = sketchStrokes.length === 0 && sketchLabels.length === 0;
+    sketchLabels.push({ x: 0.5, y: 0.5, text: 'E-1', color: '#d94a4a' });
+    const b = savedEquipment.find(e => e.id === B.id);
+    const bIntact = b.sketch.labels.length === 1 && b.sketch.strokes.length === 1;
+    record(N, clean && bIntact, 'duplicate starts clean=' + clean + ', B untouched=' + bIntact);
+  }
+
+  // T75 — typing a name / room autosaves (an iOS reload restores the autosave)
+  async function t75_typedNameAndRoomAreAutosaved() {
+    const N = 'T75 a typed equipment name and room are autosaved';
+    await resetAppState();
+    fillForm('Before-75');
+    autoSaveCurrent(); await sleep(300);
+    const nameEl = document.getElementById('equipName'), roomEl = document.getElementById('equipRoom');
+    nameEl.value = 'AHU-7'; nameEl.dispatchEvent(new Event('input', { bubbles: true }));
+    roomEl.value = 'B-121'; roomEl.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(500);
+    const wip = await rawIdbGet('metadata', 'current_wip');
+    record(N, !!(wip && wip.equipName === 'AHU-7' && wip.equipRoom === 'B-121'), 'autosaved name="' + (wip && wip.equipName) + '" room="' + (wip && wip.equipRoom) + '"');
+  }
+
+  // T76 — the web build's service-worker purge runs once per device, and
+  // never while offline (it used to run on every cold start)
+  async function t76_serviceWorkerPurgeIsOncePerDevice() {
+    const N = 'T76 service-worker purge runs once per device, never offline';
+    if (typeof window.shouldPurgeServiceWorkers !== 'function') return record(N, false, 'no purge policy — the purge is keyed to sessionStorage and runs on every cold start');
+    const had = localStorage.getItem('sw_purged_v1');
+    try {
+      localStorage.setItem('sw_purged_v1', '1');
+      const again = shouldPurgeServiceWorkers(true);
+      localStorage.removeItem('sw_purged_v1');
+      const offline = shouldPurgeServiceWorkers(false);
+      const first = shouldPurgeServiceWorkers(true);
+      record(N, !again && !offline && first, 'after a purge=' + again + ', offline=' + offline + ', first online launch=' + first);
+    } finally { if (had) localStorage.setItem('sw_purged_v1', had); else localStorage.removeItem('sw_purged_v1'); }
+  }
+
+  // T77 — Cooling Tower keeps its electrical disconnect (its template used to
+  // replace the type's Kinetic + Electrical with Kinetic alone)
+  async function t77_coolingTowerKeepsItsElectricalDisconnect() {
+    const N = 'T77 Cooling Tower keeps its electrical disconnect';
+    await resetAppState();
+    fillFormNoSources('CT-77');
+    document.getElementById('equipType').value = 'Cooling Tower';
+    await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+    const promptOpen = !!document.getElementById('templateVoltageOverlay');
+    closeAllPrompts();
+    const elec = sources.filter(s => /^Electrical/.test(s.energySource || ''));
+    record(N, elec.length >= 1, 'sources: ' + sources.map(s => s.energySource).join(', ') + ' | voltage prompt offered=' + promptOpen);
+  }
+
+  // T78 — guard for build 91's load-time merge: an emergency snapshot that
+  // stopped updating (quota) must never resurrect entries deleted since, on a
+  // store last written before build 89 (no store stamp; deletes don't change
+  // the remaining entries' own dates)
+  async function t78_staleSnapshotNeverResurrectsDeletedEntries() {
+    const N = 'T78 a frozen emergency snapshot never brings back deleted entries (unstamped store)';
+    await resetAppState();
+    const old = new Date(Date.now() - 5 * 86400e3).toISOString();
+    const A = mkEntry('Kept-78', { savedAt: old }), D = mkEntry('Deleted-78', { savedAt: old });
+    await rawIdbPut('metadata', 'saved_equipment', [A]);
+    await rawIdbDelete('metadata', 'saved_equipment_at').catch(() => {});
+    await rawIdbDelete('metadata', 'deleted_ids').catch(() => {});
+    localStorage.removeItem('loto_deleted_ids');
+    const slim = [A, D].map(e => { const c = JSON.parse(JSON.stringify(e)); delete c.sketch; return c; });
+    localStorage.setItem('loto_saved_snapshot', JSON.stringify(slim));
+    localStorage.setItem('loto_saved_snapshot_at', new Date(Date.now() - 86400e3).toISOString());
+    savedEquipment = []; await loadAll(); await sleep(300);
+    const back = savedEquipment.some(e => e.id === D.id), kept = savedEquipment.some(e => e.id === A.id);
+    record(N, kept && !back, 'kept A=' + kept + ', deleted D came back=' + back);
+    dropLoadBanners();
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -1760,7 +2272,17 @@
     t51_exportDefaultsToNewestDate, t52_nativeShareWritesZipInChunks,
     t53_sourcePhotoOnWrongSourceIsNotExportedSilently, t54_dedupedSourceKeepsItsOwnPhoto,
     t55_deletingASameIdCopyKeepsPhotos, t56_failedRetakeKeepsPreviousPhoto,
-    t57_incompleteExportIsNotStampedExported, t58_integrityBadgeFollowsDeletes];
+    t57_incompleteExportIsNotStampedExported, t58_integrityBadgeFollowsDeletes,
+    t59_numberTypedIdEntryExportsItsPhotos, t60_numericKeyFileFromB83to88IsFound,
+    t61_photographedSourceNeverSilentlyDroppedByNoPhoto, t62_webSaveNeverClaimsAnUnconfirmedDownload,
+    t63_failedReadWithMigratableEntryNeverOverwritesStore, t64_unreadSessionFallbackNeverOverwritesStore,
+    t65_failedWipReadNeverOverwritesTheUnitInProgress, t66_unitsSavedDuringAWriteOutageSurvive,
+    t67_xlsxCarriesValveState, t68_duplicateCopyNeverOverwritesACaptureOrLosesPhotos,
+    t69_templateOrTypeChangeNeverDropsTypedSourceData, t70_voltageCancelKeepsCardsInSync,
+    t71_exportedDiagramInkLandsWhereDrawn, t72_openFormDiagramExportsWithSectionCollapsed,
+    t73_discardedEditNeverChangesSavedSketch, t74_duplicateNeverInheritsTheOpenFormsSketch,
+    t75_typedNameAndRoomAreAutosaved, t76_serviceWorkerPurgeIsOncePerDevice,
+    t77_coolingTowerKeepsItsElectricalDisconnect, t78_staleSnapshotNeverResurrectsDeletedEntries];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
