@@ -1,13 +1,14 @@
-const CACHE_NAME = 'loto-collector-v7.88';
+const CACHE_NAME = 'loto-collector-v7.89';
 const URLS_TO_CACHE = [
   './',
   './index.html',
   './FingerLakes_Information_Sheet.html',
   './manifest.json',
   './manifest_fl.json',
-  'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
-  // ExcelJS builds the Information Sheet — without it an offline export stops.
-  'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'
+  // Bundled export libraries (build 93 — no longer CDN): without them an
+  // offline export stops.
+  './vendor/jszip-3.10.1.min.js',
+  './vendor/exceljs-4.4.0.min.js'
 ];
 
 // Install — cache the app. Each URL on its own: one CDN hiccup must not stop
