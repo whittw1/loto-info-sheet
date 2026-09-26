@@ -5,8 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-title" content="FL VA LOTO">
 <link rel="manifest" href="manifest_fl.json">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<!-- Bundled with the app (build 93), not fetched from a CDN: the iOS app has no
+     service worker, so once iOS purged WebKit's cache an offline launch could
+     not export at all. Same files as the CDN copies (JSZip 3.10.1 cdnjs SRI
+     sha512-XMVd28F1…OHvegtg==, ExcelJS 4.4.0 jsDelivr sha256 fknaaFiOJQ27…Qsk=). -->
+<script src="vendor/jszip-3.10.1.min.js"></script>
+<script src="vendor/exceljs-4.4.0.min.js"></script>
 <title>VA LOTO Collector</title>
 <script>
 // Service-worker purge — ONCE per device (build 91). Its flag used to live in
@@ -433,6 +437,10 @@ if ('serviceWorker' in navigator) {
   .dialog {
     background: var(--card); border: 1px solid var(--border);
     border-radius: 16px; width: 100%; max-width: 400px; padding: 24px;
+    /* Never taller than the screen (build 93): Settings outgrew a landscape
+       iPad / an iPhone and its only exit (Save) sat off-screen. */
+    max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px);
+    overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
   }
   .dialog h3 { font-size: 18px; margin-bottom: 12px; }
   .dialog p { font-size: 14px; color: var(--text-dim); margin-bottom: 20px; line-height: 1.5; }
@@ -447,11 +455,15 @@ if ('serviceWorker' in navigator) {
 </style>
 </head>
 <body>
+<!-- Covers the form until the saved units + the unit in progress are loaded
+     (build 93) — a tap or keystroke before that used to overwrite the unsaved
+     unit. Removed by init() (hideBootOverlay). -->
+<div id="bootOverlay" style="position:fixed;inset:0;z-index:250;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.35);color:#fff;font:600 15px -apple-system,system-ui,sans-serif;">Loading saved units&hellip;</div>
 <script>try { if (localStorage.getItem('loto_theme') === 'dark') document.body.classList.add('theme-dark'); } catch (e) {}</script>
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b92</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b93</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -737,7 +749,11 @@ if ('serviceWorker' in navigator) {
 <!-- Photo Settings Modal -->
 <div class="dialog-overlay" id="settingsOverlay" style="display:none;">
   <div class="dialog" style="max-width:440px;">
-    <h3>&#9881; Settings</h3>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;">
+      <h3 style="margin:0;">&#9881; Settings</h3>
+      <button type="button" id="settingsCloseBtn" onclick="closeSettings()" aria-label="Close without saving" title="Close without saving"
+        style="background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:4px 10px;font-size:16px;line-height:1;cursor:pointer;">&#10005;</button>
+    </div>
     <div style="margin-bottom:16px;">
       <label style="display:block;font-size:13px;color:var(--text-label);margin-bottom:6px;">&#127973; Facility / Hospital</label>
       <select id="settingsHospital" onchange="onHospitalSelectChange()" style="width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
@@ -820,6 +836,7 @@ if ('serviceWorker' in navigator) {
     </div>
     <div class="dialog-actions">
       <button class="btn btn-outline btn-sm" onclick="resetPhotoSettings()">Reset Defaults</button>
+      <button class="btn btn-sm" onclick="closeSettings()" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Cancel</button>
       <button class="btn btn-accent btn-sm" onclick="savePhotoSettings()">Save Settings</button>
     </div>
   </div>
@@ -972,12 +989,20 @@ function updateEstimates() {
   document.getElementById('estDaySize').textContent = '~' + dayMB + ' MB total';
 }
 
+// Close Settings WITHOUT saving (build 93) — the dialog had no way out but Save.
+function closeSettings() {
+  document.getElementById('settingsOverlay').style.display = 'none';
+}
+
 function savePhotoSettings() {
   const preset = document.getElementById('photoPreset').value;
+  // A custom size is clamped (build 93): a typo ("192") used to become every
+  // later photo's size — unreadable — and a negative one a black image.
+  const clampInt = (v, lo, hi, dflt) => { const n = parseInt(v, 10); return isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt; };
   const settings = {
-    maxWidth: parseInt(document.getElementById('photoMaxW').value) || 1920,
-    maxHeight: parseInt(document.getElementById('photoMaxH').value) || 1080,
-    quality: (parseInt(document.getElementById('photoQuality').value) || 80) / 100,
+    maxWidth: clampInt(document.getElementById('photoMaxW').value, 640, 8192, 1920),
+    maxHeight: clampInt(document.getElementById('photoMaxH').value, 480, 8192, 1080),
+    quality: clampInt(document.getElementById('photoQuality').value, 30, 100, 80) / 100,
     preset: preset
   };
   if (preset === 'original') {
@@ -2014,7 +2039,21 @@ function init() {
     idbAvailable = false;
   });
 
+  const bootTimer = setTimeout(() => {
+    if (_bootWipSettled) return;
+    _bootLoadTimedOut = true;
+    _wipUnread = true;          // protect the stored unit: autosave to the alternate slot
+    _bootWipSettled = true;
+    hideBootOverlay();
+    showToast('\u26a0 Storage is slow \u2014 your saved units are still loading. Keep working; nothing will be overwritten.', true);
+  }, 20000);
+  const settleBoot = () => {
+    clearTimeout(bootTimer);
+    if (!_bootWipSettled) { _wipUnread = true; _bootWipSettled = true; }   // loadAll failed before deciding
+    hideBootOverlay();
+  };
   loadAll().then(() => {
+    settleBoot();
     renderSavedPanel();
     renderSources();
     updateHeaderBadge();
@@ -2033,12 +2072,17 @@ function init() {
       .then(() => repairPhotoRefs().catch(e => console.error('photo ref repair failed', e)))
       .then(() => runIntegrityCheck(false));
   }).catch(() => {
+    settleBoot();
     renderSavedPanel();
     renderSources();
     updateHeaderBadge();
     updateSketchSectionDefault();
     runIntegrityCheck(false);
   });
+}
+function hideBootOverlay() {
+  const o = document.getElementById('bootOverlay');
+  if (o) o.remove();
 }
 
 // Called by handleEquipTypeChange with the resolved equipment type
@@ -2052,7 +2096,7 @@ function equipTypeChanged(equipType) {
   let keptPhotographed = 0;
   sources = sources.filter(s => {
     if (!s.auto) return true;
-    if (photographed.has(s) || s.userEdited) { s.auto = false; keptPhotographed++; return true; }
+    if (photographed.has(s) || sourceHasUserData(s)) { s.auto = false; keptPhotographed++; return true; }
     return false;
   });
   rebindSourcePhotos(prev);
@@ -2281,7 +2325,13 @@ function applyVoltageChoice(voltage) {
   // Now push the voltage-specific source(s). This runs AFTER applyTemplate so
   // it doesn't get cleared by the template's sources = [] reset.
   if (equipType && VOLTAGE_PROMPT_CONFIG[equipType]) {
+    // Marked as the TYPE's voltage source (build 93): when the form already
+    // held data, the template change above only opened its confirm, and the
+    // confirmed applyTemplate then dropped this source — a Generator with no
+    // electrical isolation.
+    const before = sources.length;
     VOLTAGE_PROMPT_CONFIG[equipType].apply(voltage);
+    for (let i = before; i < sources.length; i++) if (sources[i]) sources[i]._voltagePick = true;
   }
   renderSources();
   autoSaveCurrent();
@@ -2293,6 +2343,14 @@ function closeVoltageDialog() {
   pendingVoltageEquipType = null;
   renderSources();   // Cancel: the cards must match the (re-shaped) sources
 }
+
+// Template sources an equipment type must NOT get from a shared template
+// (build 93): Condensate Pump uses the Heating Hot Water Pump template (loto-web
+// classifies it by that name), which gained an HHW In supply valve in build
+// 22 — a condensate pump has none.
+const EQUIPMENT_TEMPLATE_SOURCE_EXCLUDE = {
+  'Condensate Pump': ['HHW In'],
+};
 
 // Map equipment types to available templates (filters dropdown + auto-selects if only one)
 const EQUIPMENT_TEMPLATE_MAP = {
@@ -3858,6 +3916,10 @@ function handleTemplateChange() {
 function sourceHasUserData(s) {
   if (!s) return false;
   if (s.userEdited) return true;
+  // Values no template or type default ever sets (build 93): sources saved
+  // before build 91 carry no userEdited flag, and a typed Device ID, a
+  // Normally Closed state or a link on one of them is still the user's.
+  if ((s.deviceId && String(s.deviceId).trim()) || (s.valveState && s.valveState !== 'normal') || s.linkedTo) return true;
   return !s.auto &&
     !!((s.location && s.location !== '' && s.location !== 'On Equipment') ||
     (s.detail && s.detail !== '') ||
@@ -3917,13 +3979,19 @@ function applyTemplate(val) {
   const prevSources = sources.slice();
   if (val && TEMPLATE_AUTO_SOURCES[val]) {
     const photographed = sourcesWithPhotos();
-    const kept = sources.filter(s => photographed.has(s) || (s && s.userEdited));
-    kept.forEach(s => { s.auto = false; });
+    // Kept: exactly what the confirm promised — photographed, or holding the
+    // user's data (build 93: the filter used to test only userEdited, so a
+    // source saved before build 91 was dropped after the dialog said KEPT).
+    // Voltage sources the type's own voltage prompt added stay too.
+    const kept = sources.filter(s => photographed.has(s) || sourceHasUserData(s) || (s && s._voltagePick));
+    kept.forEach(s => { if (!s._voltagePick) s.auto = false; });   // a type's voltage source stays the type's
     sources = kept.slice();
     const autoSources = TEMPLATE_AUTO_SOURCES[val];
     const atsOverride = isATSEquipment();
     const voltOverride = EQUIPMENT_VOLTAGE_OVERRIDE[getEquipType()];
+    const skipEnergy = EQUIPMENT_TEMPLATE_SOURCE_EXCLUDE[getEquipType()] || [];
     for (const autoSrc of autoSources) {
+      if (skipEnergy.includes(autoSrc.energySource)) continue;
       const src = { ...autoSrc, collapsed: true };
       if (atsOverride) src.verification = 'Meter';
       // Equipment-specific electrical voltage override: lets an equipment type reuse a
@@ -4968,6 +5036,7 @@ function updateSource(index, field, value) {
   if (field === 'quantity') {
     // The user has taken manual control of the count — never auto-reset it later.
     delete sources[index]._autoQty2;
+    reconcileSourceMarks(index);
     // Re-render so the "Split 1" button appears/disappears (only shown when quantity >= 2)
     renderSources();
     return;
@@ -4999,9 +5068,11 @@ function splitSource(index) {
   delete newSrc.linkedTo;      // links belong to the original source only
   delete newSrc.sourceId;      // a distinct valve: fresh UUID minted at capture/save
   delete newSrc.priorSourceIds;
+  newSrc.deviceId = '';        // a distinct valve → its own tag (build 93)
   const prev = sources.slice();
   sources.splice(index + 1, 0, newSrc);
   rebindSourcePhotos(prev);    // photos follow their sources; the split valve starts empty
+  reconcileSourceMarks(index); // which of the marked valves left is unknown — re-mark
 
   renderSources();
   autoSaveCurrent();
@@ -5042,6 +5113,19 @@ function handleEnergySourceChange(index, value) {
   } else {
     sources[index]._customEnergy = false;
     sources[index].energySource = value;
+    // A check that belongs to the previous source's family is never valid on
+    // the new one (build 93): a water check auto-filled for "HHW In" stayed on
+    // the source after it became "Electrical 208V", and a temperature check
+    // was exported for a disconnect. Cleared; the defaults below refill it.
+    {
+      const v = sources[index].verification || '';
+      const pw = parseWaterVerification(v);
+      const waterCheck = !!v && pw.recognized && !pw.blank;
+      const water = isWaterFamilySource(value);
+      if ((waterCheck && !water && /^(Electrical|Stored)/i.test(value || '')) || (water && v === 'Controls')) {
+        sources[index].verification = '';
+      }
+    }
     // Auto-fill defaults for special energy sources
     if (value && SOURCE_DEFAULTS[value]) {
       const defaults = SOURCE_DEFAULTS[value];
@@ -5067,7 +5151,7 @@ function handleEnergySourceChange(index, value) {
         sources[index]._autoQty2 = true;
       }
     } else if (sources[index]._autoQty2) {
-      if (sources[index].quantity === 2) sources[index].quantity = 1;
+      if (sources[index].quantity === 2) { sources[index].quantity = 1; reconcileSourceMarks(index); }
       delete sources[index]._autoQty2;
     }
     // Re-render to update device + verification dropdowns
@@ -5295,6 +5379,7 @@ function duplicateSource(index) {
   delete newSrc.sourceId;
   delete newSrc.linkedTo;
   delete newSrc.priorSourceIds;
+  newSrc.deviceId = '';          // its own device → its own tag (build 93)
   const prev = sources.slice();
   sources.splice(index + 1, 0, newSrc);
   rebindSourcePhotos(prev);
@@ -5490,6 +5575,16 @@ function applyLink(equipIndex, sourceIndex) {
   // name/index — names repeat and indexes shift. An older target source
   // without an id gets one now (and is saved).
   if (!src.sourceId) { ensureSourceId(src); saveAll(); }
+  // A link says "this is the SAME isolation point" (build 93): the target's
+  // energy source / device / tag / location fill any the linking source left
+  // blank. A linked source with no energy source used to export as a blank
+  // row, which the office import skips — the shared breaker never reached
+  // the procedure.
+  const mine = sources[pendingLinkSourceIndex];
+  for (const f of ['energySource', 'deviceType', 'deviceId', 'location', 'verification']) {
+    if (!mine[f] && src[f]) mine[f] = src[f];
+  }
+  mine.userEdited = true;
   sources[pendingLinkSourceIndex].linkedTo = {
     equipName: entry.equipName || '',
     equipType: entry.equipType || '',
@@ -5834,6 +5929,29 @@ function cleanValveMarks(marks) {
 function valveMarkSlots(src) {
   return Math.max(1, Math.min(VALVE_MARK_MAX, parseInt(src && src.quantity, 10) || 1));
 }
+// A quantity-2 "In/Out" source: loto-web makes its FIRST device the "In" and
+// its second the "Out", and binds mark[0] / mark[1] to them (build 93) — so the
+// dialog asks for the IN valve first.
+function isInOutPair(src) {
+  return !!src && valveMarkSlots(src) === 2 && /In\/Out/i.test(src.energySource || '');
+}
+// Marks are one per device (build 93). When a source's device count drops
+// below the marks it holds (Split, the Quantity box, an In/Out source changed
+// back), nobody can tell which mark belonged to the device that left — the
+// export used to keep the first-tapped ones, which could be the valve that was
+// split off. The marks are cleared (a NEW reference — see VALVE MARKS) and
+// the tech re-marks.
+function reconcileSourceMarks(index) {
+  const slot = 'source_' + index, ref = photos[slot], src = sources[index];
+  if (!ref || !src || !ref.dbKey) return false;
+  if (cleanValveMarks(ref.marks).length <= valveMarkSlots(src)) return false;
+  const next = Object.assign({}, ref);
+  delete next.marks;
+  photos[slot] = next;
+  paintPhotoSlot(slot);
+  showToast('\ud83d\udccd Valve marks cleared \u2014 the device count changed. Tap \ud83d\udccd Mark to place them again.', true);
+  return true;
+}
 // The marks an export ships for entry source i — none without its photo.
 function sourceMarksForExport(entry, i) {
   const src = entry && entry.sources && entry.sources[i];
@@ -6002,7 +6120,7 @@ function openValveMarkDialog(slotId, opts) {
     <div class="dialog" style="max-width:min(96vw,760px);padding:14px 14px 12px;max-height:96vh;overflow-y:auto;">
       <h3 style="margin:0 0 4px;font-size:17px;">&#128205; Where is the ${escHtml(what)}?</h3>
       <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;line-height:1.4;">
-        Source #${idx + 1} &mdash; ${escHtml(src.energySource || 'energy source')}. ${slots > 1 ? 'Tap each of the ' + slots + ' devices in the photo.' : 'Tap it in the photo.'}
+        Source #${idx + 1} &mdash; ${escHtml(src.energySource || 'energy source')}. ${isInOutPair(src) ? '<b>Tap the IN valve first, then the OUT valve.</b>' : slots > 1 ? 'Tap each of the ' + slots + ' devices in the photo.' : 'Tap it in the photo.'}
         The arrow on the LOTO procedure will point there.
       </div>
       <div id="valveMarkWrap" style="position:relative;margin:0 auto;cursor:crosshair;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;">
@@ -6029,7 +6147,9 @@ function openValveMarkDialog(slotId, opts) {
   const color = VALVE_MARK_COLORS[getSourceColorClass(src.energySource)] || '#ffff00';
   const draw = () => {
     const w = wrap.clientWidth, h = wrap.clientHeight;
-    count.textContent = slots > 1 ? (marks.length + ' of ' + slots + ' marked')
+    count.textContent = isInOutPair(src)
+      ? (marks.length === 0 ? 'Tap the IN valve' : marks.length === 1 ? 'IN marked \u2014 now tap the OUT valve' : 'IN + OUT marked \u2014 tap again to move the nearest')
+      : slots > 1 ? (marks.length + ' of ' + slots + ' marked')
       : (marks.length ? 'Marked \u2014 tap again to move it' : 'Not marked yet');
     if (!w || !h) return;
     svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
@@ -6037,7 +6157,7 @@ function openValveMarkDialog(slotId, opts) {
     let out = '';
     g.items.forEach((it, k) => {
       const other = sources[it.srcIndex];
-      const label = '#' + (it.srcIndex + 1) + (it.qty > 1 ? '.' + (it.sub + 1) : '');
+      const label = '#' + (it.srcIndex + 1) + (isInOutPair(other) ? (it.sub ? ' Out' : ' In') : (it.qty > 1 ? '.' + (it.sub + 1) : ''));
       out += valveMarkShapeSvg(g.layout[k], w, h, label,
         it.mine ? color : (VALVE_MARK_COLORS[getSourceColorClass(other && other.energySource)] || '#ffff00'),
         it.mine ? 0.92 : 0.4);
@@ -6453,7 +6573,7 @@ function confirmSourcePhoto(entryId, slotKey) {
     return true;
   };
   if (sameEntryId(entryId, currentEntryId) && mark(sources, photos)) { changed = true; autoSaveCurrent(); }
-  savedEquipment.forEach(e => { if (sameEntryId(e.id, entryId) && mark(e.sources, e.photos)) { delete e.exportedAt; changed = true; } });
+  savedEquipment.forEach(e => { if (sameEntryId(e.id, entryId) && mark(e.sources, e.photos)) { delete e.exportedAt; delete e.exportedAllPhotos; changed = true; } });
   if (changed) { saveAll(); renderSavedPanel(); }
   return changed;
 }
@@ -7258,6 +7378,7 @@ async function applyReattach(list) {
       recoveredFrom: (c.cur && c.cur.dbKey) || null, recoveredAt: new Date().toISOString()
     };
     delete c.e.exportedAt;        // this photo never left the device — the entry needs exporting again
+    delete c.e.exportedAllPhotos;
     relinked++;
     details.push((c.e.equipName || '(unnamed)') + ' [' + photoSlotLabel(c.slotKey) + ']');
   }
@@ -7830,7 +7951,12 @@ function collectIncompleteFields() {
   }
 
   sources.forEach((s, i) => {
-    if (s.linkedTo) return;
+    if (s.linkedTo) {
+      // Linked sources skip the rest, but not the energy source (build 93):
+      // without it the office import drops the row.
+      if (!s.energySource) missing.push(`Source #${i + 1} (linked) \u2014 Energy Source`);
+      return;
+    }
     const gaps = [];
     // Acknowledgement-only sources (Stored Electrical Energy) have no lockout
     // device and their verification is generated downstream by loto-web, so
@@ -8152,11 +8278,13 @@ function renderSavedPanel() {
           ${entry.equipType || 'No type'} "&#183; ${entry.template || 'No template'}
           "&#183; ${entry.sources.length} source${entry.sources.length !== 1 ? 's' : ''}
           "&#183; ${photoCount} &#128247;
-          "&#183; ${entry.exportedAt
+          "&#183; ${(() => { const st = entryExportState(entry); return st === 'exported'
             ? '<span style="color:#4ab86a;font-weight:600;" title="Exported ' + new Date(entry.exportedAt).toLocaleString() + '">&#10003; exported</span>'
-            : entry.exportIncompleteAt
+            : st === 'incomplete'
             ? '<span style="color:#e0553a;font-weight:700;" title="Exported ' + new Date(entry.exportIncompleteAt).toLocaleString() + ' WITHOUT some of its photos (missing or excluded) — not safe to delete">&#9888; exported incomplete</span>'
-            : '<span style="color:#e0a44a;font-weight:700;">&#9888; not exported</span>'}
+            : st === 'unproven'
+            ? '<span style="color:#e0553a;font-weight:700;" title="Exported ' + new Date(entry.exportedAt).toLocaleString() + ' by an older build that left this unit\'s photos out — export it again before deleting">&#9888; export again (photos)</span>'
+            : '<span style="color:#e0a44a;font-weight:700;">&#9888; not exported</span>'; })()}
           "&#183; ${entry.equipBuilding || '?'} ${entry.equipRoom || ''}
           "&#183; ${entry.timestamp}
         </div>
@@ -8243,6 +8371,24 @@ function showExportLog() {
 // ============================================================================
 // PHOTO CLEANUP + DELETE  (single + bulk)
 // ============================================================================
+// Did this entry's LAST export ship all of its photos? (build 93) The one rule
+// the delete confirm, Bulk Delete and the saved-list badge read.
+//   'exported'   — yes: safe to delete from this device
+//   'incomplete' — the newest export left photos behind (missing or excluded)
+//   'unproven'   — a pre-UUID (numeric-id) entry stamped by an older build:
+//                  builds 83–88 excluded EVERY photo of these entries yet
+//                  stamped them exported, and since build 91 deleting them
+//                  really erases their files — only an export by this build
+//                  (exportedAllPhotos) proves their photos left the device
+//   'none'       — never exported
+function entryExportState(e) {
+  if (!e) return 'none';
+  const done = String(e.exportedAt || ''), inc = String(e.exportIncompleteAt || '');
+  if (inc && inc >= done) return 'incomplete';
+  if (!done) return 'none';
+  if (/^\d{10,16}$/.test(String(e.id)) && !e.exportedAllPhotos) return 'unproven';
+  return 'exported';
+}
 function collectEntryPhotoKeys(entry) {
   const keys = [];
   if (entry && entry.photos) for (const k of Object.keys(entry.photos)) {
@@ -8284,8 +8430,13 @@ function deleteSaved(index) {
   if (refuseIfPhotoWritesBusy('delete')) return;
   const entry = savedEquipment[index];
   const name = entry.equipName;
-  const expNote = entry.exportedAt
+  const expState = entryExportState(entry);
+  const expNote = expState === 'exported'
     ? `\n\nExported ${new Date(entry.exportedAt).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}.`
+    : expState === 'incomplete'
+    ? '\n\n\u26a0\ufe0f Its last export went out WITHOUT some of its photos \u2014 deleting loses them permanently!'
+    : expState === 'unproven'
+    ? '\n\n\u26a0\ufe0f Its photos have NOT been exported by this build yet (older builds left them out) \u2014 export first, or they are lost!'
     : '\n\n\u26a0\ufe0f NO export record \u2014 this entry may never have left the device!';
   if (confirm(`Delete "${name}" from saved list?${expNote}`)) {
     deleteEntryPhotos(entry, savedEquipment.filter((_, idx) => idx !== index));
@@ -8354,15 +8505,14 @@ function updateBulkDeleteSummary() {
   const btn = document.getElementById('bulkDeleteConfirmBtn');
   const input = document.getElementById('bulkDeleteConfirmInput');
   if (el) el.textContent = `${n} entr${n===1?'y':'ies'} will be permanently deleted`;
-  // Exact per-entry check: exportedAt is stamped on every entry included in a
-  // completed export (since v7.71). Entries exported before that show as
-  // unstamped until they ride along in one more export.
-  const neverExported = targets.filter(e => !e.exportedAt).length;
+  // Exact per-entry check (build 93: entryExportState): only an export that
+  // shipped ALL of an entry's photos makes it safe to delete.
+  const neverExported = targets.filter(e => entryExportState(e) !== 'exported').length;
   if (warnEl) {
     if (neverExported > 0) {
       warnEl.style.display = 'block';
       warnEl.innerHTML = '&#9888; <b>' + neverExported + '</b> of these entries ' + (neverExported===1?'has':'have') +
-        ' NO export record on this device \u2014 deleting would lose ' + (neverExported===1?'it':'them') + ' permanently.' +
+        ' NO complete export on this device (never exported, exported without some photos, or exported by an older build that left the photos out) \u2014 deleting would lose ' + (neverExported===1?'it':'them') + ' permanently.' +
         '<button class="btn btn-outline btn-sm" onclick="exportBeforeBulkDelete()" style="display:block;margin-top:8px;">&#128230; Export these first</button>';
     } else {
       warnEl.style.display = 'none';
@@ -8581,7 +8731,8 @@ async function executeDuplicate(index, withPhotos) {
     filterTemplateDropdown(entry.equipType || '');
   }
   document.getElementById('equipName').value = entry.equipName || '';
-  document.getElementById('equipLotoId').value = entry.lotoId || '';
+  // The LOTO ID names ONE unit (build 93) — a duplicate is another unit.
+  document.getElementById('equipLotoId').value = '';
   // Loaded an existing entry — its name is the user's, not an auto-fill.
   // Switching equipment types from here should NOT clobber it.
   lastAutoFilledEquipName = null;
@@ -8618,7 +8769,10 @@ async function executeDuplicate(index, withPhotos) {
   // of equipment, not an edit, so it must not share stable ids with the
   // original. Minted now so each photo copy's key names its own source.
   sources = JSON.parse(JSON.stringify(entry.sources || []));
-  sources.forEach(s => { if (s) { delete s.sourceId; delete s.priorSourceIds; ensureSourceId(s); } });
+  // …and each Device ID is the tag of the ORIGINAL unit's breaker / valve
+  // (build 93): copied, the duplicate's procedure told the worker to lock out
+  // the other unit's breaker. The tech enters this unit's own.
+  sources.forEach(s => { if (s) { delete s.sourceId; delete s.priorSourceIds; s.deviceId = ''; ensureSourceId(s); } });
   const dupSources = sources.slice();   // the source OBJECTS the copies belong to
 
   photos = {};
@@ -9039,7 +9193,7 @@ async function runCombinedExport() {
   }
 
   if (allEntries.length === 0) { showToast('Nothing to export', true); return; }
-  if (typeof ExcelJS === 'undefined') { showToast('ExcelJS not loaded — check connection', true); return; }
+  if (typeof ExcelJS === 'undefined' || typeof JSZip === 'undefined') { showToast('⚠ Export library not loaded — restart the app', true); return; }
 
   // The Information Sheet XLSX holds 10 sources per unit (loto-web's office
   // importer reads fixed 27-row blocks), so sources 11+ can't be on it.
@@ -9049,6 +9203,24 @@ async function runCombinedExport() {
     '\n\nThe Information Sheet (XLSX) holds ' + MAX_XLSX_SOURCES + ' sources per unit, so sources 11+ are in the CSV and entries.json only (loto-web\'s field import reads entries.json — nothing is lost there).\n\nOK = export\nCancel = stop')) {
     showToast('Export cancelled', true);
     return;
+  }
+
+  // A source with no Energy Source (build 93): loto-web's Information Sheet
+  // import skips a row whose Energy Source cell is blank — with its photo. Say
+  // so before export; such rows go out as "Unknown" so the office sees them.
+  const blankEnergy = [];
+  allEntries.forEach(e => (e.sources || []).forEach((src, si) => {
+    if (src && !String(src.energySource || '').trim()) blankEnergy.push('\u2022 ' + (e.equipName || '(unnamed)') + ' \u2014 source #' + (si + 1) + (src.linkedTo ? ' (linked)' : ''));
+  }));
+  if (blankEnergy.length) {
+    const go = await askChoice({
+      id: 'export-blank-energy', defaultValue: 'export',
+      title: '&#9888; ' + blankEnergy.length + ' source' + (blankEnergy.length === 1 ? ' has' : 's have') + ' no Energy Source',
+      html: escHtml(blankEnergy.slice(0, 12).join('\n') + (blankEnergy.length > 12 ? '\n\u2026' : '')).replace(/\n/g, '<br>') +
+        '<br><br>They export as <b>Unknown</b> so the office sees them — fix them first if you can.',
+      choices: [{ value: 'export', label: 'Export anyway', primary: true }, { value: 'cancel', label: 'Cancel' }]
+    });
+    if (go !== 'export') { showToast('Export cancelled', true); return; }
   }
 
   // Photo numbers: never reuse numbers this device already handed off for this date.
@@ -9310,153 +9482,175 @@ async function runCombinedExport() {
   }, null, 2));
 
   // ---- PASS 3: build Info Sheet xlsx (ExcelJS with formatting) ----
-  if (typeof ExcelJS !== 'undefined') {
-    const ewb = new ExcelJS.Workbook();
-    const ws = ewb.addWorksheet('InfoSheetForm');
-
-    // Column widths matching original
-    ws.columns = [
-      { width: 28 }, { width: 22 }, { width: 16 }, { width: 26 }, { width: 18 },
-      { width: 14 }, { width: 10 }, { width: 22 }, { width: 18 }, { width: 8 }, { width: 22 }, { width: 30 }
-    ];
-
-    // Style definitions matching original info sheet
-    const topHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD6DCE4' } }; // light blue-gray (row 1)
-    const labelFill     = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } }; // light yellow (label rows)
-    const headerFont = { bold: true, size: 10, name: 'Calibri' };
-    const labelFont  = { size: 10, name: 'Calibri' };
-    const dataFont   = { size: 10, name: 'Calibri' };
-    const boldData   = { bold: true, size: 10, name: 'Calibri' };
-    const thinBorder = { style: 'thin', color: { argb: 'FF000000' } };
-    const allBorders = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
-
-    const VALVE_STATE_SHEET_TEXT = { normally_closed: 'Normally Closed', normally_open: 'Normally Open' };
-    function applyRow(row, font, fill, borders) {
-      row.eachCell({ includeEmpty: true }, (cell, colNum) => {
-        if (colNum <= 12) {
-          cell.font = font;
-          if (fill) cell.fill = fill;
-          if (borders) cell.border = borders;
-          cell.alignment = { vertical: 'middle', wrapText: true };
-        }
-      });
-    }
-
-    // Facility banner row (only if a facility is known for this export) — a
-    // single sheet-level header; the CSV/JSON carry the authoritative per-entry
-    // code. Prefer the current setting, else the first stamped entry.
-    const sheetHospitalCode = effectiveFacilityCode || (allEntries.find(e => e.hospitalCode) || {}).hospitalCode || '';
-    if (sheetHospitalCode) {
-      const facRow = ws.addRow(['Facility', hospitalName(sheetHospitalCode) + ' [' + sheetHospitalCode + ']']);
-      applyRow(facRow, { bold: true, size: 10, name: 'Calibri' }, topHeaderFill, allBorders);
-      ws.mergeCells(facRow.number, 2, facRow.number, 12); // span the name across the row
-      ws.addRow([]); // spacer before the column titles
-    }
-
-    // Title row (light blue-gray fill like original)
-    const titleRow = ws.addRow(['Energy Sources','Source Devices','','Location','Photo #','','','','','Page #','Diagram','Misc Photos']);
-    applyRow(titleRow, { bold: true, size: 10, name: 'Calibri' }, topHeaderFill, allBorders);
-
-    // Blank separator
-    ws.addRow([]);
-
+  // One Information Sheet PER SURVEY DATE (build 93). loto-web reads the date
+  // from the sheet's filename and matches its units against the inventory of
+  // THAT date; an "All dates" export used to put every day's units into one
+  // sheet named with TODAY's date, and an older unit then matched today's
+  // similarly named one ("Exhaust Fan 1" → "Exhaust Fan 12"). A date-filtered
+  // export is one sheet named for that date, as before. Undated units go in a
+  // sheet with no date in its name, so loto-web doesn't scope them to a day.
+  const infoSheetGroups = [];
+  {
+    const byName = new Map();
+    const fixedDay = (dateFilter && /^\d{4}-\d{2}-\d{2}$/.test(dateFilter)) ? dateFilter : null;
     allEntries.forEach((entry, ei) => {
-      const map = entryMaps[ei];
-      const pageNum  = ei + 1;
-      const location = [entry.equipBuilding, entry.equipRoom].filter(Boolean).join(' ');
+      const d = fixedDay || getEntryDate(entry);
+      const name = d ? 'Information_Sheet_' + getDateStamp(exportDateFrom(d)) + '.xlsx' : 'Information_Sheet_undated.xlsx';
+      if (!byName.has(name)) { const g = { name: name, day: d || '', idx: [] }; byName.set(name, g); infoSheetGroups.push(g); }
+      byName.get(name).idx.push(ei);
+    });
+    infoSheetGroups.sort((x, y) => (x.day || '9999').localeCompare(y.day || '9999'));
+  }
+  if (typeof ExcelJS !== 'undefined') {
+   for (const sheetGroup of infoSheetGroups) {
+      const ewb = new ExcelJS.Workbook();
+      const ws = ewb.addWorksheet('InfoSheetForm');
 
-      // Equipment header row (light yellow fill like original)
-      const eqHeaderRow = ws.addRow(['Equipment ID/Name','','','Location','Main Photo','Details','','Data Plate Photo','EE Number Photo','Page #','Diagram File','Misc Photo Files']);
-      applyRow(eqHeaderRow, headerFont, labelFill, allBorders);
-      const eqHdrNum = eqHeaderRow.number;
-      ws.mergeCells(eqHdrNum, 1, eqHdrNum, 2); // A:B merge
+      // Column widths matching original
+      ws.columns = [
+        { width: 28 }, { width: 22 }, { width: 16 }, { width: 26 }, { width: 18 },
+        { width: 14 }, { width: 10 }, { width: 22 }, { width: 18 }, { width: 8 }, { width: 22 }, { width: 30 }
+      ];
 
-      // Equipment data row
-      const eqDataRow = ws.addRow([entry.equipName || '', '', '', location, map.mainH || '', entry.equipType || '', '', map.dpH || '', map.eeH || '', pageNum, diagramFiles[ei] || '', miscFileNames[ei] || '']);
-      applyRow(eqDataRow, dataFont, null, allBorders);
-      eqDataRow.getCell(10).font = boldData;
-      const eqDataNum = eqDataRow.number;
-      ws.mergeCells(eqDataNum, 1, eqDataNum, 2); // A:B merge
+      // Style definitions matching original info sheet
+      const topHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD6DCE4' } }; // light blue-gray (row 1)
+      const labelFill     = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } }; // light yellow (label rows)
+      const headerFont = { bold: true, size: 10, name: 'Calibri' };
+      const labelFont  = { size: 10, name: 'Calibri' };
+      const dataFont   = { size: 10, name: 'Calibri' };
+      const boldData   = { bold: true, size: 10, name: 'Calibri' };
+      const thinBorder = { style: 'thin', color: { argb: 'FF000000' } };
+      const allBorders = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
 
-      // Merge C across header+data (like original: quantity header spans 2 rows)
-      ws.mergeCells(eqHdrNum, 3, eqDataNum, 3);
-
-      // 10 energy source rows — FIXED: loto-web's office importer reads this
-      // sheet as 27-row blocks, so a taller block would shift every unit after
-      // it. Sources 11+ are in the CSV and entries.json (the export warns).
-      for (let s = 0; s < MAX_XLSX_SOURCES; s++) {
-        const n   = s + 1;
-        const src = entry.sources[s] || null;
-        const srcH = src ? (map.sourceHs[s] || null) : null;
-
-        // Source label row (light fill)
-        const srcLabelRow = ws.addRow([
-          `Energy Source #${n}`, ` Source #${n} Device`, 'Device ID', 'Total Device Quantity',
-          ` Source #${n} Location`, `Source #${n} Photo`, '', 'Dup Photo',
-          `Source #${n} Verification`, `Verification Photo #${n}`, 'Valve State', 'Valve Mark'
-        ]);
-        applyRow(srcLabelRow, labelFont, labelFill, allBorders);
-
-        // Build detail cell — prepend link info if this source is linked
-        let detailCell = src ? (src.detail || '') : '';
-        if (src && src.linkedTo) {
-          const linkStr = `LINKED → ${src.linkedTo.equipName} Src#${src.linkedTo.sourceIndex + 1}`;
-          detailCell = detailCell ? `${linkStr} | ${detailCell}` : linkStr;
-        }
-
-        // Source data row
-        const srcDataRow = ws.addRow([
-          src ? (src.energySource || '') : '',
-          src ? (src.deviceType   || '') : '',
-          src ? (src.deviceId     || '') : '',
-          src ? (src.quantity     || '') : '',
-          src ? (src.location     || '') : '',
-          srcH || '',
-          detailCell,
-          src ? (src.duplicate || '') : '',
-          src ? (src.verification || '') : '',
-          '',
-          // Valve state (build 91). The office imports THIS sheet, and it had
-          // no valve state: a Normally Closed valve arrived as an ordinary one
-          // and the procedure said to open it at restore. Blank = normal.
-          src ? (VALVE_STATE_SHEET_TEXT[src.valveState] || '') : '',
-          // Valve mark (build 92): where the tech tapped the valve in THIS
-          // row's photo — "x,y" fractions, qty-N rows "x,y; x,y". loto-web
-          // starts the box + arrow there. Blank without a photo.
-          srcH ? valveMarksText(sourceMarksForExport(entry, s)) : ''
-        ]);
-        applyRow(srcDataRow, dataFont, null, allBorders);
+      const VALVE_STATE_SHEET_TEXT = { normally_closed: 'Normally Closed', normally_open: 'Normally Open' };
+      function applyRow(row, font, fill, borders) {
+        row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+          if (colNum <= 12) {
+            cell.font = font;
+            if (fill) cell.fill = fill;
+            if (borders) cell.border = borders;
+            cell.alignment = { vertical: 'middle', wrapText: true };
+          }
+        });
       }
 
-      // Tied to / Other Hazards / Stored Energy / Template label row
-      const metaLabelRow = ws.addRow(['Tied to Equipment','','Other Hazards','','Stored Energy','','','Template','','']);
-      applyRow(metaLabelRow, labelFont, labelFill, allBorders);
+      // Facility banner row (only if a facility is known for this export) — a
+      // single sheet-level header; the CSV/JSON carry the authoritative per-entry
+      // code. Prefer the current setting, else the first stamped entry.
+      const sheetHospitalCode = effectiveFacilityCode || (allEntries.find(e => e.hospitalCode) || {}).hospitalCode || '';
+      if (sheetHospitalCode) {
+        const facRow = ws.addRow(['Facility', hospitalName(sheetHospitalCode) + ' [' + sheetHospitalCode + ']']);
+        applyRow(facRow, { bold: true, size: 10, name: 'Calibri' }, topHeaderFill, allBorders);
+        ws.mergeCells(facRow.number, 2, facRow.number, 12); // span the name across the row
+        ws.addRow([]); // spacer before the column titles
+      }
 
-      // Meta data row
-      const metaDataRow = ws.addRow([
-        entry.tiedTo ? `${entry.tiedTo}${entry.tiedToName ? ' — ' + entry.tiedToName : ''}` : '',
-        '', '', '', '', '', '', entry.template || '', '', ''
-      ]);
-      applyRow(metaDataRow, dataFont, null, allBorders);
+      // Title row (light blue-gray fill like original)
+      const titleRow = ws.addRow(['Energy Sources','Source Devices','','Location','Photo #','','','','','Page #','Diagram','Misc Photos']);
+      applyRow(titleRow, { bold: true, size: 10, name: 'Calibri' }, topHeaderFill, allBorders);
 
-      // Notes label row
-      const notesLabelRow = ws.addRow(['Notes:', '', '', '', '', '', '', '', '', '']);
-      applyRow(notesLabelRow, boldData, null, allBorders);
-
-      // Notes data row (merged across B:I like original)
-      const notesDataRow = ws.addRow([entry.notes || '', '', '', '', '', '', '', '', '', '']);
-      applyRow(notesDataRow, dataFont, null, allBorders);
-      const notesNum = notesDataRow.number;
-      ws.mergeCells(notesNum, 2, notesNum, 9);
-
-      // Blank separator between equipment entries
+      // Blank separator
       ws.addRow([]);
-    });
 
-    // Generate xlsx bytes
-    const xlsxBuffer = await ewb.xlsx.writeBuffer();
-    const dateStamp = getDateStamp(exportDate);
-    zip.file('info_sheets/Information_Sheet_' + dateStamp + '.xlsx', xlsxBuffer);
+      sheetGroup.idx.forEach((ei, pageIdx) => {
+        const entry = allEntries[ei];
+        const map = entryMaps[ei];
+        const pageNum  = pageIdx + 1;
+        const location = [entry.equipBuilding, entry.equipRoom].filter(Boolean).join(' ');
+
+        // Equipment header row (light yellow fill like original)
+        const eqHeaderRow = ws.addRow(['Equipment ID/Name','','','Location','Main Photo','Details','','Data Plate Photo','EE Number Photo','Page #','Diagram File','Misc Photo Files']);
+        applyRow(eqHeaderRow, headerFont, labelFill, allBorders);
+        const eqHdrNum = eqHeaderRow.number;
+        ws.mergeCells(eqHdrNum, 1, eqHdrNum, 2); // A:B merge
+
+        // Equipment data row
+        const eqDataRow = ws.addRow([entry.equipName || '', '', '', location, map.mainH || '', entry.equipType || '', '', map.dpH || '', map.eeH || '', pageNum, diagramFiles[ei] || '', miscFileNames[ei] || '']);
+        applyRow(eqDataRow, dataFont, null, allBorders);
+        eqDataRow.getCell(10).font = boldData;
+        const eqDataNum = eqDataRow.number;
+        ws.mergeCells(eqDataNum, 1, eqDataNum, 2); // A:B merge
+
+        // Merge C across header+data (like original: quantity header spans 2 rows)
+        ws.mergeCells(eqHdrNum, 3, eqDataNum, 3);
+
+        // 10 energy source rows — FIXED: loto-web's office importer reads this
+        // sheet as 27-row blocks, so a taller block would shift every unit after
+        // it. Sources 11+ are in the CSV and entries.json (the export warns).
+        for (let s = 0; s < MAX_XLSX_SOURCES; s++) {
+          const n   = s + 1;
+          const src = entry.sources[s] || null;
+          const srcH = src ? (map.sourceHs[s] || null) : null;
+
+          // Source label row (light fill)
+          const srcLabelRow = ws.addRow([
+            `Energy Source #${n}`, ` Source #${n} Device`, 'Device ID', 'Total Device Quantity',
+            ` Source #${n} Location`, `Source #${n} Photo`, '', 'Dup Photo',
+            `Source #${n} Verification`, `Verification Photo #${n}`, 'Valve State', 'Valve Mark'
+          ]);
+          applyRow(srcLabelRow, labelFont, labelFill, allBorders);
+
+          // Build detail cell — prepend link info if this source is linked
+          let detailCell = src ? (src.detail || '') : '';
+          if (src && src.linkedTo) {
+            const linkStr = `LINKED → ${src.linkedTo.equipName} Src#${src.linkedTo.sourceIndex + 1}`;
+            detailCell = detailCell ? `${linkStr} | ${detailCell}` : linkStr;
+          }
+
+          // Source data row
+          const srcDataRow = ws.addRow([
+            // A blank Energy Source makes loto-web skip the whole row (build 93)
+            src ? (String(src.energySource || '').trim() || 'Unknown') : '',
+            src ? (src.deviceType   || '') : '',
+            src ? (src.deviceId     || '') : '',
+            src ? (src.quantity     || '') : '',
+            src ? (src.location     || '') : '',
+            srcH || '',
+            detailCell,
+            src ? (src.duplicate || '') : '',
+            src ? (src.verification || '') : '',
+            '',
+            // Valve state (build 91). The office imports THIS sheet, and it had
+            // no valve state: a Normally Closed valve arrived as an ordinary one
+            // and the procedure said to open it at restore. Blank = normal.
+            src ? (VALVE_STATE_SHEET_TEXT[src.valveState] || '') : '',
+            // Valve mark (build 92): where the tech tapped the valve in THIS
+            // row's photo — "x,y" fractions, qty-N rows "x,y; x,y". loto-web
+            // starts the box + arrow there. Blank without a photo.
+            srcH ? valveMarksText(sourceMarksForExport(entry, s)) : ''
+          ]);
+          applyRow(srcDataRow, dataFont, null, allBorders);
+        }
+
+        // Tied to / Other Hazards / Stored Energy / Template label row
+        const metaLabelRow = ws.addRow(['Tied to Equipment','','Other Hazards','','Stored Energy','','','Template','','']);
+        applyRow(metaLabelRow, labelFont, labelFill, allBorders);
+
+        // Meta data row
+        const metaDataRow = ws.addRow([
+          entry.tiedTo ? `${entry.tiedTo}${entry.tiedToName ? ' — ' + entry.tiedToName : ''}` : '',
+          '', '', '', '', '', '', entry.template || '', '', ''
+        ]);
+        applyRow(metaDataRow, dataFont, null, allBorders);
+
+        // Notes label row
+        const notesLabelRow = ws.addRow(['Notes:', '', '', '', '', '', '', '', '', '']);
+        applyRow(notesLabelRow, boldData, null, allBorders);
+
+        // Notes data row (merged across B:I like original)
+        const notesDataRow = ws.addRow([entry.notes || '', '', '', '', '', '', '', '', '', '']);
+        applyRow(notesDataRow, dataFont, null, allBorders);
+        const notesNum = notesDataRow.number;
+        ws.mergeCells(notesNum, 2, notesNum, 9);
+
+        // Blank separator between equipment entries
+        ws.addRow([]);
+      });
+
+      // Generate xlsx bytes
+      const xlsxBuffer = await ewb.xlsx.writeBuffer();
+      zip.file('info_sheets/' + sheetGroup.name, xlsxBuffer);
+   }
   }
 
   // ---- Add CSV + manifest, then download ZIP ----
@@ -9488,7 +9682,8 @@ async function runCombinedExport() {
     files: {
       entries: 'entries.json',
       csv:  'info_sheets/LOTO_FieldData_' + dateStamp + '.csv',
-      xlsx: 'info_sheets/Information_Sheet_' + dateStamp + '.xlsx',
+      xlsx: 'info_sheets/' + (infoSheetGroups[0] ? infoSheetGroups[0].name : 'Information_Sheet_' + dateStamp + '.xlsx'),
+      xlsxSheets: infoSheetGroups.map(g => 'info_sheets/' + g.name),   // one per survey date (build 93)
       photosDir: 'photos/',
       diagramsDir: 'diagrams/'
     }
@@ -9625,8 +9820,9 @@ async function runCombinedExport() {
       allEntries.forEach(en => {
         if (formEntries.has(en)) return;
         en.exportId = exportId;
-        if (incomplete.has(en.id)) { en.exportIncompleteAt = stampAt; return; }
+        if (incomplete.has(en.id)) { en.exportIncompleteAt = stampAt; delete en.exportedAllPhotos; return; }
         en.exportedAt = stampAt;
+        en.exportedAllPhotos = true;    // this build ships every photo — see entryExportState
         delete en.exportIncompleteAt;
       });
       saveAll();
@@ -9918,7 +10114,15 @@ function setAutosaveStatus(kind) {
 // this launch starts with must never overwrite an unsaved unit it couldn't
 // read (build 91). The next launch resolves the two copies (resolveWipCopies).
 let _wipUnread = false;
+// Until loadAll has read — and restored — the stored in-progress unit, the form
+// on screen is the BLANK launch form (build 93). An autosave in that window (the
+// app backgrounded, a keystroke, a photo tap) wrote it over the unit in
+// progress, and the restore then brought back the blank. Set by loadAll once the
+// form is decided (or by the launch's safety timeout).
+let _bootWipSettled = false;
+let _bootLoadTimedOut = false;
 function autoSaveCurrent() {
+  if (!_bootWipSettled) return;
   setAutosaveStatus('saving');
   const idbKey = _wipUnread ? 'current_wip_alt' : 'current_wip';
   const lsKey = _wipUnread ? 'loto_current_alt' : 'loto_current';
@@ -10357,7 +10561,14 @@ async function loadAll() {
 
   // ---- Entry-retention guards (rule 8) ----
   const expectedCount = parseInt((() => { try { return localStorage.getItem('loto_entry_count') || '0'; } catch (e) { return '0'; } })(), 10) || 0;
-  if (!idbReadOk && savedEquipment.length) {
+  if (idbReadOk && !haveIdb && savedEquipment.length) {
+    // IndexedDB answered but holds NO entry list while a stored copy has
+    // entries: the store was evicted (build 93 — b90 said so; b91's merge
+    // loaded the stripped copy silently, and the next save made the loss of
+    // every sketch permanent). The copy is kept; the tech is told to export.
+    console.warn('Entry store EMPTY/evicted — restored ' + savedEquipment.length + ' entries from the emergency copy');
+    showToast('\u26a0 Entry store was EMPTY \u2014 restored ' + savedEquipment.length + ' entr' + (savedEquipment.length === 1 ? 'y' : 'ies') + ' from the emergency copy (sketches could not be recovered). EXPORT NOW.', true);
+  } else if (!idbReadOk && savedEquipment.length) {
     console.warn('Entry store could not be READ — showing the stored copies (' + savedEquipment.length + ' entries) without overwriting it');
     showToast('⚠ Could not read the entry store — showing the emergency copy. Nothing was overwritten. Export now; restart the app if it persists.', true);
   } else if (idbReadOk && recovered > 0) {
@@ -10426,6 +10637,18 @@ async function loadAll() {
     state = alt;
   }
 
+  if (_bootLoadTimedOut && !_bootWipSettled) {
+    // The launch took so long that the form was handed to the tech first
+    // (build 93): what they are doing autosaves to the alternate slot. It is
+    // not overwritten — a stored unit with content is kept as a recovered
+    // draft (a saved entry) instead.
+    if (state && wipHasContent(state) && keepWipAsRecoveredEntry(state)) {
+      if (idbReadOk) saveAll();
+      showToast('\u26a0 Recovered an unsaved unit ("' + (String(state.equipName || '').trim() || 'unnamed') + '") \u2014 it is in the saved list. Check it.', true);
+    }
+    state = null;
+    _wipUnread = true;
+  }
   if (state) {
     currentEntryId = normEntryId(state.entryId) || null;   // rebind restored photos to their entry id
     // Re-derive "editing": the open form is an edit when a saved entry has its
@@ -10498,6 +10721,7 @@ async function loadAll() {
       showToast('Previous session photos were not saved (storage full)', true);
     }
   }
+  _bootWipSettled = true;    // the form is decided — autosaves may write it now
 }
 
 function clearAllData() {

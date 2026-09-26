@@ -20,6 +20,11 @@
 //   T79–T85 build 92: valve marks (tap the valve in a source photo → the
 //           mark rides on that photo's reference into entries.json, the
 //           Information Sheet XLSX col 12 and the CSV; loto-web's layout)
+//   T86–T99 build 93: one per finding of the 2026-09-26 review (old export
+//           stamps vs delete, copied device tags, launch autosave, In/Out
+//           marks, marks vs quantity, Settings on small screens, stale water
+//           checks, bundled libraries, evicted store, per-date sheets, blank
+//           energy sources, Condensate Pump, template keep rule, photo size)
 // Results land in window.__PHOTO_TEST_RESULTS and the console.
 // ============================================================================
 (function () {
@@ -2513,6 +2518,329 @@
     record(N, !!shapes && shapes.length === 2 && !overlap, 'group of ' + (shapes ? shapes.length : 0) + ': ' + JSON.stringify(shapes));
   }
 
+  // ---------- build 93 — the 2026-09-26 review -------------------------------
+  // The unit names on one exported Information Sheet, in order.
+  async function sheetUnits(bytes) {
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(bytes);
+    const out = []; let prevHeader = false;
+    wb.worksheets[0].eachRow(row => {
+      const a = String(row.getCell(1).value || '');
+      if (prevHeader) out.push(a);
+      prevHeader = a === 'Equipment ID/Name';
+    });
+    return out;
+  }
+
+  // T86 — an export stamp from builds 83–88 on a pre-UUID (numeric-id) entry is
+  // not proof its photos left: those builds excluded every such photo but
+  // stamped the entry. Delete must not treat it as exported (b91 made delete
+  // really erase those files).
+  async function t86_oldExportStampIsNotProofForNumericIdPhotos() {
+    const N = 'T86 an old export stamp on a numeric-id entry never counts as "exported" for delete';
+    await resetAppState();
+    const id = '1718612345678';
+    const key = photoStoreKey(id, 'main');
+    await storePhotoBytes(key, dataUrlFromBytesSeed('t86'));
+    const E = mkEntry('June-86', { id });
+    E.photos = { equip_main: { dbKey: key, thumbnail: TINY_THUMB, timestamp: new Date().toISOString(), fileType: 'image/jpeg' } };
+    E.exportedAt = '2026-09-01T12:00:00.000Z';        // a b83–b88 "Export anyway" stamp
+    savedEquipment = [E]; saveAll();
+    const before = typeof entryExportState === 'function' ? entryExportState(E) : 'n/a';
+    showBulkDeleteDialog();
+    const warn = document.getElementById('bulkDeleteWarn');
+    const warned = !!warn && warn.style.display !== 'none' && /\b1\b/.test(warn.textContent || '');
+    closeBulkDeleteDialog();
+    const badge = (document.getElementById('savedPanelBody') || {}).innerHTML || '';
+    renderSavedPanel();
+    const listHtml = (document.getElementById('savedPanelBody') || {}).innerHTML || badge;
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const after = typeof entryExportState === 'function' ? entryExportState(savedEquipment[0]) : 'n/a';
+    record(N, before !== 'exported' && before !== 'n/a' && warned && after === 'exported' && !/&#10003; exported/.test(listHtml),
+      'state before=' + before + ', bulk-delete warned=' + warned + ', list shows ✓ exported=' + /&#10003; exported/.test(listHtml) + ', state after a fresh export=' + after);
+  }
+
+  // T87 — a Device ID (and the LOTO ID) names ONE physical device: Duplicate,
+  // Dup on a source and Split must not copy it onto another device
+  async function t87_copiesNeverCarryADeviceTag() {
+    const N = 'T87 Duplicate / Dup source / Split never copy a Device ID (or the LOTO ID) to another device';
+    await resetAppState();
+    const A = mkEntry('EF-1', { sources: [Object.assign(mkSrc('Electrical 208V'), { sourceId: genUuid(), deviceType: 'Breaker', deviceId: 'LP-2 CKT 14' })] });
+    A.lotoId = 'ATL-LOTO-001';
+    savedEquipment = [A]; saveAll();
+    await withDialogs({ confirm: true }, async () => { await executeDuplicate(0, false); });
+    const dupDev = sources[0] && sources[0].deviceId;
+    const dupLoto = document.getElementById('equipLotoId').value;
+    sources[0].deviceId = 'V-7'; sources[0].quantity = 2; renderSources();
+    duplicateSource(0);
+    const dupSrcDev = sources[1] && sources[1].deviceId;
+    splitSource(0);
+    const splitDev = sources[1] && sources[1].deviceId;
+    record(N, !dupDev && !dupLoto && !dupSrcDev && !splitDev && sources[0].deviceId === 'V-7',
+      'duplicate entry deviceId=' + JSON.stringify(dupDev) + ' lotoId=' + JSON.stringify(dupLoto) +
+      ', dup source=' + JSON.stringify(dupSrcDev) + ', split valve=' + JSON.stringify(splitDev) + ', original kept=' + sources[0].deviceId);
+  }
+
+  // T88 — at launch the form is blank until loadAll restores the unit in
+  // progress; an autosave in that window (backgrounding, a keystroke, a photo
+  // tap) wrote the blank form over it
+  async function t88_launchAutosaveNeverWipesTheUnitInProgress() {
+    const N = 'T88 an autosave during launch (before the restore) never overwrites the unit in progress';
+    await resetAppState();
+    fillForm('WIP-88');
+    await captureInto('source_0', await makePhotoFile('wip88'));
+    autoSaveCurrent(); await sleep(400);
+    const id = currentEntryId;
+    const hasFlag = typeof _bootWipSettled !== 'undefined';
+    try {
+      if (hasFlag) _bootWipSettled = false;
+      beginNewFormSession(); currentEntryId = null; sources = []; photos = {}; miscPhotos = [];
+      document.getElementById('equipName').value = ''; document.getElementById('equipRoom').value = '';
+      autoSaveCurrent();                 // backgrounded during the load window
+      await sleep(400);
+      await loadAll(); await sleep(200);
+    } finally { if (hasFlag) _bootWipSettled = true; }
+    const name = document.getElementById('equipName').value;
+    const ok = sameEntryId(currentEntryId, id) && name === 'WIP-88' && !!(photos.source_0 && photos.source_0.dbKey);
+    record(N, ok, 'restored name="' + name + '", same unit=' + sameEntryId(currentEntryId, id) + ', photo=' + !!(photos.source_0 && photos.source_0.dbKey));
+    dropLoadBanners();
+  }
+
+  // T89 — loto-web makes an In/Out pair's FIRST device the "In" and binds
+  // mark[0] to it; the dialog must ask for the In valve first
+  async function t89_inOutMarksAskForTheInValveFirst() {
+    const N = 'T89 an In/Out source\'s mark dialog asks for the IN valve first, then OUT';
+    await resetAppState();
+    fillFormNoSources('IO-89');
+    sources.push(Object.assign(mkSrc('HHW In/Out'), { deviceType: 'Ball Valve', quantity: 2, collapsed: false }));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('io89'));
+    openValveMarkDialog('source_0'); await markDialogReady();
+    const txt = (document.getElementById('valveMarkOverlay') || {}).textContent || '';
+    const asksIn = /tap the IN valve first/i.test(txt);
+    tapMark(0.3, 0.5);
+    const cnt = (document.getElementById('valveMarkCount') || {}).textContent || '';
+    const asksOut = /\bOUT\b/.test(cnt);
+    clickById('valveMarkSkip');
+    record(N, asksIn && asksOut, 'asks IN first=' + asksIn + ', then OUT=' + asksOut + ' ("' + cnt + '")');
+  }
+
+  // T90 — marks are one per device; when the device count drops (Split, the
+  // Quantity box) nobody knows which mark left, so they must be cleared, not
+  // silently trimmed to the first-tapped ones
+  async function t90_deviceCountDropClearsTheMarks() {
+    const N = 'T90 a Split or a lower quantity clears the source\'s valve marks (no arrow on the wrong valve)';
+    await resetAppState();
+    fillFormNoSources('Q-90');
+    sources.push(Object.assign(mkSrc('HHW In/Out'), { deviceType: 'Ball Valve', quantity: 2, collapsed: false }));
+    sources.push(Object.assign(mkSrc('CHW In/Out'), { deviceType: 'Ball Valve', quantity: 2, collapsed: false }));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('q90a'));
+    await captureInto('source_1', await makePhotoFile('q90b'));
+    for (const sl of ['source_0', 'source_1']) { openValveMarkDialog(sl); await markDialogReady(); tapMark(0.3, 0.5); tapMark(0.7, 0.5); clickById('valveMarkSave'); }
+    const before = [(photos.source_0.marks || []).length, (photos.source_1.marks || []).length].join(',');
+    splitSource(0);                                   // HHW: 2 → 1, split valve at index 1, CHW → index 2
+    const afterSplit = photos.source_0 && photos.source_0.marks;
+    updateSource(2, 'quantity', 1);                   // CHW: 2 → 1
+    const afterQty = photos.source_2 && photos.source_2.marks;
+    record(N, before === '2,2' && !(afterSplit && afterSplit.length) && !(afterQty && afterQty.length),
+      'marks before=' + before + ', after Split=' + JSON.stringify(afterSplit || null) + ', after quantity 2→1=' + JSON.stringify(afterQty || null));
+  }
+
+  // T91 — Settings was taller than a landscape iPad / an iPhone with no scroll
+  // and no way out but Save (off-screen)
+  async function t91_settingsFitsTheScreenAndCloses() {
+    const N = 'T91 Settings scrolls within the screen and can be closed without saving';
+    showSettings();
+    const ov = document.getElementById('settingsOverlay');
+    const dlg = ov && ov.querySelector('.dialog');
+    const cs = dlg ? getComputedStyle(dlg) : null;
+    const scrolls = !!cs && (cs.overflowY === 'auto' || cs.overflowY === 'scroll') && cs.maxHeight !== 'none';
+    const h = dlg ? Math.round(dlg.getBoundingClientRect().height) : 0;
+    const fits = !!dlg && h <= window.innerHeight + 1;
+    const closeBtn = document.getElementById('settingsCloseBtn');
+    if (closeBtn) closeBtn.click();
+    const closed = !!ov && ov.style.display === 'none';
+    if (ov) ov.style.display = 'none';
+    record(N, scrolls && fits && !!closeBtn && closed, 'scrolls=' + scrolls + ', fits ' + window.innerHeight + 'px screen=' + fits + ' (' + h + 'px), close button=' + !!closeBtn + ', closed=' + closed);
+  }
+
+  // T92 — a water check auto-filled for a water source must not survive a
+  // switch to Electrical (it exported a temperature check for a disconnect)
+  async function t92_waterCheckNeverStaysOnAnElectricalSource() {
+    const N = 'T92 switching a source from water to Electrical drops the water verification';
+    await resetAppState();
+    fillFormNoSources('V-92');
+    addSource();
+    handleEnergySourceChange(0, 'HHW In');
+    renderSources();
+    const wv = sources[0].verification || '';
+    handleEnergySourceChange(0, 'Electrical 208V');
+    handleDeviceTypeChange(0, 'Disconnect');
+    renderSources();
+    const ev = sources[0].verification || '';
+    const pw = parseWaterVerification(wv), pe = parseWaterVerification(ev);
+    const scenario = pw.recognized && !pw.blank;
+    const clean = !(pe.recognized && !pe.blank);
+    record(N, scenario && clean, 'water check first="' + wv + '", after switching to Electrical/Disconnect="' + ev + '"');
+  }
+
+  // T93 — the ZIP and Excel libraries ship with the app: the iOS app used to
+  // fetch them from CDNs, so an offline launch after iOS purged its cache
+  // could not export at all
+  async function t93_exportLibrariesAreBundled() {
+    const N = 'T93 JSZip + ExcelJS are bundled with the app (not CDN) and precached';
+    const srcs = Array.from(document.querySelectorAll('script[src]')).map(x => x.getAttribute('src') || '');
+    const z = srcs.find(x => /jszip/i.test(x)) || '', x = srcs.find(y => /exceljs/i.test(y)) || '';
+    let sw = '';
+    try { sw = await (await fetch('sw.js', { cache: 'no-store' })).text(); } catch (e) {}
+    const local = !!z && !!x && !/^https?:/i.test(z) && !/^https?:/i.test(x);
+    const precached = /vendor\/jszip/.test(sw) && /vendor\/exceljs/.test(sw) && !/cdnjs\.cloudflare|cdn\.jsdelivr/.test(sw);
+    record(N, local && precached && typeof JSZip === 'function' && typeof ExcelJS === 'object',
+      'jszip src=' + z + ', exceljs src=' + x + ', sw precaches vendor copies=' + precached + ', loaded=' + (typeof JSZip) + '/' + (typeof ExcelJS));
+  }
+
+  // T94 — the entry store evicted (IndexedDB readable, list gone) while the
+  // emergency copy survives: say so loudly (b90 did; b91 went silent and the
+  // next save made the loss of every sketch permanent)
+  async function t94_evictedStoreIsAnnounced() {
+    const N = 'T94 an evicted entry store restored from the emergency copy is announced (EXPORT NOW)';
+    await resetAppState();
+    const A = mkEntry('Evict-94');
+    A.sketch = { diagramKey: 'general', strokes: [], labels: [{ x: 0.2, y: 0.2, text: 'E-1', color: '#d94a4a' }] };
+    savedEquipment = [A]; saveAll(); await sleep(400);
+    await rawIdbDelete('metadata', 'saved_equipment');
+    await rawIdbDelete('metadata', 'saved_equipment_at').catch(() => {});
+    const msgs = await withToasts(async () => { savedEquipment = []; await loadAll(); await sleep(300); });
+    const said = msgs.some(m => /EMPTY|evict/i.test(m) && /EXPORT NOW/i.test(m));
+    record(N, savedEquipment.length === 1 && said, 'entries back=' + savedEquipment.length + ', toasts=' + JSON.stringify(msgs));
+    dropLoadBanners();
+  }
+
+  // T95 — loto-web reads the survey date from the sheet's filename; an "All
+  // dates" export must write one sheet per survey date, never one sheet named
+  // with today's date holding every day's units
+  async function t95_allDatesExportWritesOneSheetPerSurveyDate() {
+    const N = 'T95 an "All dates" export writes one Information Sheet per survey date';
+    await resetAppState();
+    const A = mkEntry('EF-1', { savedAt: new Date(2026, 8, 22, 10).toISOString() });
+    const B = mkEntry('EF-12', { savedAt: new Date(2026, 8, 24, 10).toISOString() });
+    savedEquipment = [A, B]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true, dateFilter: 'all' });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const sheets = Object.keys(u.files).filter(q => /^info_sheets\/Information_Sheet_.*\.xlsx$/.test(q)).sort();
+    const units = {};
+    for (const q of sheets) units[q.replace('info_sheets/', '')] = await sheetUnits(u.files[q]);
+    const ok = JSON.stringify(units) === JSON.stringify({ 'Information_Sheet_092226.xlsx': ['EF-1'], 'Information_Sheet_092426.xlsx': ['EF-12'] });
+    record(N, ok, JSON.stringify(units));
+  }
+
+  // T96 — a source with no Energy Source used to export as a blank row that
+  // loto-web's import skips (with its photo); linked sources were never even
+  // flagged
+  async function t96_blankEnergySourceIsFlaggedAndKept() {
+    const N = 'T96 a source with no Energy Source is flagged and never exported as a row the office import drops';
+    await resetAppState();
+    const T = mkEntry('MCC-96', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Breaker', deviceId: 'MCC-2A #7' })] });
+    savedEquipment = [T]; saveAll();
+    fillFormNoSources('EF-96');
+    addSource();
+    pendingLinkSourceIndex = 0; applyLink(0, 0);
+    const filled = sources[0].energySource || '';
+    sources[0].energySource = ''; renderSources();          // …and if it is blank anyway
+    const flagged = collectIncompleteFields().some(m => /Source #1/.test(m) && /Energy Source/.test(m));
+    const E = saveEntry();
+    const { zip, confirms } = await runExport({ confirmResponse: true, choice: { 'export-blank-energy': 'export' } });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const xpath = Object.keys(u.files).find(q => /Information_Sheet_.*\.xlsx$/.test(q));
+    let col1 = null;
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      let inUnit = false, prevHeader = false;
+      wb.worksheets[0].eachRow(row => {
+        const a = String(row.getCell(1).value || '');
+        if (prevHeader) inUnit = a === 'EF-96';
+        prevHeader = a === 'Equipment ID/Name';
+        if (inUnit && col1 === null && a === 'Energy Source #1') col1 = '__next__';
+        else if (col1 === '__next__') col1 = a;
+      });
+    }
+    const prompted = confirms.some(c => /export-blank-energy/.test(c));
+    record(N, filled === 'Electrical 480V' && flagged && !!col1 && col1 !== '__next__' && prompted,
+      'link filled energy="' + filled + '", flagged=' + flagged + ', XLSX col 1="' + col1 + '", export asked=' + prompted + (E ? '' : ' (not saved)'));
+  }
+
+  // T97 — Condensate Pump reuses the HHW pump template, which gained an HHW In
+  // source (build 22) that a condensate pump doesn't have
+  async function t97_condensatePumpHasNoHhwSupply() {
+    const N = 'T97 a new Condensate Pump gets no phantom HHW In source';
+    await resetAppState();
+    fillFormNoSources('CP-97');
+    document.getElementById('equipType').value = 'Condensate Pump';
+    await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+    closeAllPrompts();
+    const names = sources.map(x => x.energySource);
+    record(N, !names.some(n => /^HHW In/.test(n || '')) && names.some(n => /^Kinetic/.test(n || '')), 'sources: ' + names.join(', '));
+  }
+
+  // T98 — the template-change dialog promises that sources holding the user's
+  // data are KEPT; sources saved before build 91 carry no userEdited flag and
+  // were dropped anyway. And a Generator's voltage source, pushed while the
+  // dialog was still open, was dropped by the confirmed template change.
+  async function t98_templateChangeKeepsWhatItPromises() {
+    const N = 'T98 a template / type change keeps pre-b91 sources holding data, and the Generator voltage source';
+    await resetAppState();
+    fillFormNoSources('Old-98');
+    document.getElementById('equipType').value = 'Air Handler'; filterTemplateDropdown('Air Handler');
+    sources.push(Object.assign(mkSrc('Natural Gas'), { deviceType: 'Ball Valve', location: 'Mech Rm 2', auto: false }));
+    sources.push(Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Disconnect', deviceId: 'VFD-3', auto: true }));
+    sources.forEach(x => { delete x.userEdited; });
+    renderSources();
+    document.getElementById('equipTemplate').value = 'AHU - HHW';
+    await withDialogs({ confirm: true }, async () => { handleTemplateChange(); });
+    if (document.getElementById('templateConfirmOverlay')) confirmTemplateChange('AHU - HHW');
+    closeAllPrompts();
+    const keptGas = sources.some(x => x.energySource === 'Natural Gas' && x.location === 'Mech Rm 2');
+    const keptTag = sources.some(x => x.deviceId === 'VFD-3');
+    // Generator: a user source already on the form → the template confirm opens
+    await resetAppState();
+    fillFormNoSources('Gen-98');
+    sources.push(Object.assign(mkSrc('Fuel Oil'), { deviceType: 'Ball Valve', location: 'Day tank', auto: false }));
+    renderSources();
+    document.getElementById('equipType').value = 'Generator';
+    await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+    if (document.getElementById('voltageOverlay')) applyVoltageChoice('480V');
+    if (document.getElementById('templateConfirmOverlay')) {
+      const t = (EQUIPMENT_TEMPLATE_MAP.Generator || [])[0];
+      confirmTemplateChange(t);
+    }
+    closeAllPrompts();
+    const genElec = sources.some(x => /^Electrical 480V/.test(x.energySource || ''));
+    record(N, keptGas && keptTag && genElec, 'kept gas source=' + keptGas + ', kept typed Device ID=' + keptTag + ', Generator 480V source=' + genElec + ' (' + sources.map(x => x.energySource).join(', ') + ')');
+  }
+
+  // T99 — a mistyped custom photo size ("192") became every later photo's size
+  async function t99_customPhotoSizeIsClamped() {
+    const N = 'T99 a mistyped custom photo size is clamped, not applied to every later capture';
+    let had = null;
+    try { had = localStorage.getItem('loto_photo_settings'); } catch (e) {}
+    try {
+      showSettings();
+      document.getElementById('photoPreset').value = 'custom';
+      applyPhotoPreset();
+      document.getElementById('photoMaxW').value = '192';
+      document.getElementById('photoMaxH').value = '-5';
+      savePhotoSettings();
+      const st = getPhotoSettings();
+      record(N, st.maxWidth >= 640 && st.maxHeight >= 480, 'saved maxWidth=' + st.maxWidth + ', maxHeight=' + st.maxHeight);
+    } finally {
+      try { if (had === null) localStorage.removeItem('loto_photo_settings'); else localStorage.setItem('loto_photo_settings', had); } catch (e) {}
+      const ov = document.getElementById('settingsOverlay'); if (ov) ov.style.display = 'none';
+    }
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -2552,7 +2880,14 @@
     t77_coolingTowerKeepsItsElectricalDisconnect, t78_staleSnapshotNeverResurrectsDeletedEntries,
     t79_valveMarkIsSavedAndExported, t79b_quantityTwoTakesTwoMarks, t80_markPromptFollowsASourcePhoto,
     t81_retakeDropsTheOldMark, t82_discardedEditNeverChangesSavedMarks, t83_duplicatedSourceStartsUnmarked,
-    t84_markLayoutMatchesLotoWeb, t85_sharedPhotoMarksAreLaidOutTogether];
+    t84_markLayoutMatchesLotoWeb, t85_sharedPhotoMarksAreLaidOutTogether,
+    t86_oldExportStampIsNotProofForNumericIdPhotos, t87_copiesNeverCarryADeviceTag,
+    t88_launchAutosaveNeverWipesTheUnitInProgress, t89_inOutMarksAskForTheInValveFirst,
+    t90_deviceCountDropClearsTheMarks, t91_settingsFitsTheScreenAndCloses,
+    t92_waterCheckNeverStaysOnAnElectricalSource, t93_exportLibrariesAreBundled,
+    t94_evictedStoreIsAnnounced, t95_allDatesExportWritesOneSheetPerSurveyDate,
+    t96_blankEnergySourceIsFlaggedAndKept, t97_condensatePumpHasNoHhwSupply,
+    t98_templateChangeKeepsWhatItPromises, t99_customPhotoSizeIsClamped];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
