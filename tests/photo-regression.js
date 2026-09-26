@@ -17,6 +17,9 @@
 //           overwrites, write-outage losses, XLSX valve state, Duplicate
 //           races, template data, voltage Cancel, diagrams, sketch leaks,
 //           name/room autosave, SW purge, Cooling Tower)
+//   T79–T85 build 92: valve marks (tap the valve in a source photo → the
+//           mark rides on that photo's reference into entries.json, the
+//           Information Sheet XLSX col 12 and the CSV; loto-web's layout)
 // Results land in window.__PHOTO_TEST_RESULTS and the console.
 // ============================================================================
 (function () {
@@ -2098,9 +2101,13 @@
     restoreSketch({ diagramKey: 'general', strokes: [], labels: [] });
     applySketchVisibility();
     setSketchSectionExpanded(true);
-    await sleep(400);
+    // Wait for the canvas to be laid out (its diagram loads first). Polled, not
+    // a fixed sleep: a background tab throttles timers and lost that race.
     const cv = document.getElementById('sketchCanvas');
-    const r = cv.getBoundingClientRect();
+    let r = cv.getBoundingClientRect();
+    for (const t0 = Date.now(); !r.width && Date.now() - t0 < 5000; r = cv.getBoundingClientRect()) await sleep(100);
+    await sleep(100);
+    r = cv.getBoundingClientRect();
     try { if (prefsBefore === null) localStorage.removeItem('loto_sketch_prefs'); else localStorage.setItem('loto_sketch_prefs', prefsBefore); } catch (e) {}
     if (!r.width) { record(N, false, 'setup: sketch canvas not laid out'); }
     else {
@@ -2246,6 +2253,266 @@
     dropLoadBanners();
   }
 
+  // ---------- valve marks (build 92) -----------------------------------------
+  // The mark dialog is driven the way a finger does: a click at a fraction of
+  // the photo box.
+  async function markDialogReady() {
+    await waitFor(() => {
+      const w = document.getElementById('valveMarkWrap');
+      const r = w && w.getBoundingClientRect();
+      return !!(r && r.width > 20 && r.height > 20);
+    }, 8000, 'valve mark dialog laid out');
+    return document.getElementById('valveMarkWrap');
+  }
+  function tapMark(fx, fy) {
+    const w = document.getElementById('valveMarkWrap');
+    const r = w.getBoundingClientRect();
+    w.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: r.left + fx * r.width, clientY: r.top + fy * r.height }));
+  }
+  function clickById(id) {
+    const b = document.getElementById(id);
+    if (!b) throw new Error('no element #' + id);
+    b.click();
+  }
+  const nearMark = (m, x, y) => !!m && Math.abs(m.x - x) <= 0.012 && Math.abs(m.y - y) <= 0.012;
+  const marksText = (marks) => (marks || []).map(m => m.x.toFixed(3) + ',' + m.y.toFixed(3)).join('; ');
+  // The last field of one CSV line (quoted or not).
+  function lastCsvField(line) {
+    const out = []; let cur = '', q = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (q) { if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; } else if (c === '"') q = false; else cur += c; }
+      else if (c === '"') q = true;
+      else if (c === ',') { out.push(cur); cur = ''; }
+      else cur += c;
+    }
+    out.push(cur);
+    return out[out.length - 1];
+  }
+  const artifacts = () => (window.__PHOTO_SUITE_ARTIFACTS = window.__PHOTO_SUITE_ARTIFACTS || {});
+
+  // T79 — tap the valve → the mark is on the source photo's reference and in
+  // every export loto-web can read
+  async function t79_valveMarkIsSavedAndExported() {
+    const N = 'T79 a valve mark is saved on its source photo and exported (entries.json, XLSX col 12, CSV)';
+    await resetAppState();
+    if (typeof openValveMarkDialog !== 'function') return record(N, false, 'this build has no valve-mark dialog');
+    fillFormNoSources('VM-79');
+    sources.push(Object.assign(mkSrc('LPS 10 PSI'), { deviceType: 'Gate Valve', collapsed: false }));
+    sources.push(Object.assign(mkSrc('Electrical 480V'), { collapsed: false }));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('vm79a'));
+    await captureInto('source_1', await makePhotoFile('vm79b'));
+    openValveMarkDialog('source_0');
+    await markDialogReady();
+    tapMark(0.7, 0.4);
+    clickById('valveMarkSave');
+    const ref = photos.source_0;
+    const okRef = !!(ref && Array.isArray(ref.marks) && ref.marks.length === 1 && nearMark(ref.marks[0], 0.7, 0.4));
+    const want = marksText(ref && ref.marks);
+    const A = saveEntry();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const je = jsonEntryFor(u.entriesJson, A);
+    const pm0 = je && je.sources[0] && je.sources[0].photoMarks;
+    const pm1 = je && je.sources[1] && je.sources[1].photoMarks;
+    const okJson = Array.isArray(pm0) && marksText(pm0) === want && Array.isArray(pm1) && pm1.length === 0;
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    let xCell = null, xLabel = null, xOther = null;
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      wb.worksheets[0].eachRow(row => {
+        const a = String(row.getCell(1).value || '');
+        if (a === 'LPS 10 PSI') xCell = String(row.getCell(12).value || '');
+        if (a === 'Electrical 480V') xOther = String(row.getCell(12).value || '');
+        if (a === 'Energy Source #1') xLabel = String(row.getCell(12).value || '');
+      });
+      artifacts()['t79_Information_Sheet.xlsx'] = u.files[xpath];
+      artifacts()['t79_entries.json'] = u.files['entries.json'];
+    }
+    const okX = xCell === want && xOther === '' && /valve mark/i.test(xLabel || '');
+    const cpath = Object.keys(u.files).find(p => /\.csv$/.test(p));
+    const lines = cpath ? new TextDecoder().decode(u.files[cpath]).split('\n').filter(Boolean) : [];
+    const csvHead = lines.length ? lastCsvField(lines[0]) : '';
+    const csvRow = lines.find(l => l.indexOf('LPS 10 PSI') >= 0);
+    const okCsv = /valve marks?/i.test(csvHead) && !!csvRow && lastCsvField(csvRow) === want;
+    record(N, okRef && okJson && okX && okCsv,
+      'ref=' + JSON.stringify(ref && ref.marks) + ' | json=' + JSON.stringify(pm0) + '/' + JSON.stringify(pm1) +
+      ' | xlsx col12 label="' + xLabel + '" value="' + xCell + '" other="' + xOther + '" | csv head="' + csvHead + '" value="' + (csvRow ? lastCsvField(csvRow) : 'no row') + '"');
+  }
+
+  // T79b — a source with 2 devices takes 2 marks; a third tap moves the
+  // nearest one; Clear + Save removes them
+  async function t79b_quantityTwoTakesTwoMarks() {
+    const N = 'T79b a quantity-2 source takes one mark per device; a further tap moves the nearest';
+    await resetAppState();
+    if (typeof openValveMarkDialog !== 'function') return record(N, false, 'this build has no valve-mark dialog');
+    fillFormNoSources('VM-79b');
+    sources.push(Object.assign(mkSrc('HHW In/Out'), { deviceType: 'Ball Valve', quantity: 2, collapsed: false }));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('vm79b'));
+    openValveMarkDialog('source_0');
+    await markDialogReady();
+    tapMark(0.3, 0.5); tapMark(0.7, 0.5); tapMark(0.72, 0.56);
+    clickById('valveMarkSave');
+    const m = photos.source_0 && photos.source_0.marks;
+    const two = Array.isArray(m) && m.length === 2 && nearMark(m[0], 0.3, 0.5) && nearMark(m[1], 0.72, 0.56);
+    openValveMarkDialog('source_0');
+    await markDialogReady();
+    clickById('valveMarkClear');
+    clickById('valveMarkSave');
+    const cleared = !(photos.source_0.marks && photos.source_0.marks.length);
+    record(N, two && cleared, 'after 3 taps: ' + JSON.stringify(m) + ' | cleared=' + cleared);
+  }
+
+  // T80 — the prompt opens by itself after a SOURCE photo (setting on — the
+  // default), never after an equipment photo, never when turned off
+  async function t80_markPromptFollowsASourcePhoto() {
+    const N = 'T80 the mark prompt opens after a source photo (default on), not after equipment photos or when off; 📍 Mark appears with the photo';
+    await resetAppState();
+    if (typeof valveMarkPromptEnabled !== 'function') return record(N, false, 'this build has no valve-mark prompt');
+    const had = localStorage.getItem('loto_ask_valve_mark');
+    const open = () => !!document.getElementById('valveMarkOverlay');
+    const close = () => { const o = document.getElementById('valveMarkOverlay'); if (o) o.remove(); };
+    try {
+      localStorage.removeItem('loto_ask_valve_mark');
+      const defaultOn = valveMarkPromptEnabled();
+      fillFormNoSources('VM-80');
+      sources.push(Object.assign(mkSrc('LPS 10 PSI'), { deviceType: 'Gate Valve', collapsed: false }));
+      renderSources();
+      const btn = () => document.getElementById('markbtn_source_0');
+      const hiddenBefore = !!btn() && btn().style.display === 'none';
+      await captureInto('source_0', await makePhotoFile('vm80a'));
+      const shownAfter = !!btn() && btn().style.display !== 'none';
+      let afterSource = false;
+      try { await waitFor(open, 4000, 'mark prompt'); afterSource = true; } catch (e) {}
+      close();
+      await captureInto('equip_main', await makePhotoFile('vm80b'));
+      await sleep(600);
+      const afterEquip = open(); close();
+      localStorage.setItem('loto_ask_valve_mark', '0');
+      await captureInto('source_0', await makePhotoFile('vm80c'));
+      await sleep(600);
+      const whenOff = open(); close();
+      record(N, defaultOn && afterSource && !afterEquip && !whenOff && hiddenBefore && shownAfter,
+        'default on=' + defaultOn + ', after source photo=' + afterSource + ', after equipment photo=' + afterEquip + ', when off=' + whenOff +
+        ' | Mark button hidden before the photo=' + hiddenBefore + ', shown after=' + shownAfter);
+    } finally {
+      close();
+      if (had === null) localStorage.setItem('loto_ask_valve_mark', '0'); else localStorage.setItem('loto_ask_valve_mark', had);
+    }
+  }
+
+  // T81 — a retake is a new photo: the old photo's mark must not carry over
+  async function t81_retakeDropsTheOldMark() {
+    const N = 'T81 a retaken source photo starts without the old photo\'s mark';
+    await resetAppState();
+    if (typeof openValveMarkDialog !== 'function') return record(N, false, 'this build has no valve-mark dialog');
+    fillFormNoSources('VM-81');
+    sources.push(Object.assign(mkSrc('LPS 10 PSI'), { deviceType: 'Gate Valve', collapsed: false }));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('vm81a'));
+    openValveMarkDialog('source_0'); await markDialogReady(); tapMark(0.6, 0.6); clickById('valveMarkSave');
+    const marked = !!(photos.source_0.marks && photos.source_0.marks.length === 1);
+    await captureInto('source_0', await makePhotoFile('vm81b'));
+    const after = photos.source_0.marks;
+    record(N, marked && !(after && after.length), 'marked before retake=' + marked + ', after retake=' + JSON.stringify(after || null));
+  }
+
+  // T82 — marking during an edit that is then discarded never changes the
+  // saved entry (the form shares photo references with it until saved)
+  async function t82_discardedEditNeverChangesSavedMarks() {
+    const N = 'T82 a mark placed in a discarded edit never reaches the saved entry';
+    await resetAppState();
+    if (typeof openValveMarkDialog !== 'function') return record(N, false, 'this build has no valve-mark dialog');
+    fillFormNoSources('VM-82');
+    sources.push(Object.assign(mkSrc('LPS 10 PSI'), { deviceType: 'Gate Valve', collapsed: false }));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('vm82'));
+    openValveMarkDialog('source_0'); await markDialogReady(); tapMark(0.25, 0.25); clickById('valveMarkSave');
+    const A = saveEntry();
+    const B = mkEntry('Other-82'); savedEquipment.push(B); saveAll();
+    const before = JSON.stringify(A.photos.source_0.marks);
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(A)); });
+    openValveMarkDialog('source_0'); await markDialogReady(); tapMark(0.8, 0.8); clickById('valveMarkSave');
+    const formMoved = nearMark(photos.source_0.marks && photos.source_0.marks[0], 0.8, 0.8);
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(B)); });
+    const a = savedEquipment.find(e => e.id === A.id);
+    const after = JSON.stringify(a.photos.source_0.marks);
+    record(N, formMoved && after === before, 'saved before=' + before + ', form moved=' + formMoved + ', saved after discard=' + after);
+  }
+
+  // T83 — Duplicate Source is a DIFFERENT device on the same photo: it starts
+  // unmarked (the original keeps its mark); Duplicate Entry keeps marks
+  async function t83_duplicatedSourceStartsUnmarked() {
+    const N = 'T83 a duplicated source starts unmarked; the original keeps its mark';
+    await resetAppState();
+    if (typeof openValveMarkDialog !== 'function') return record(N, false, 'this build has no valve-mark dialog');
+    fillFormNoSources('VM-83');
+    sources.push(Object.assign(mkSrc('LPS 10 PSI'), { deviceType: 'Gate Valve', collapsed: false }));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('vm83'));
+    openValveMarkDialog('source_0'); await markDialogReady(); tapMark(0.4, 0.6); clickById('valveMarkSave');
+    duplicateSource(0);
+    const orig = photos.source_0 && photos.source_0.marks, copy = photos.source_1 && photos.source_1.marks;
+    record(N, !!(orig && orig.length === 1) && !(copy && copy.length) && !!(photos.source_1 && photos.source_1.dbKey),
+      'original=' + JSON.stringify(orig || null) + ', copy=' + JSON.stringify(copy || null));
+  }
+
+  // T84 — the placement rule is loto-web's, value for value (golden values
+  // from app/services/valve_marks.py; scripts/smoke_valve_marks.py asserts
+  // the same numbers)
+  async function t84_markLayoutMatchesLotoWeb() {
+    const N = 'T84 the valve-mark layout matches loto-web\'s (golden values)';
+    if (typeof layoutValveMarks !== 'function') return record(N, false, 'this build has no layoutValveMarks');
+    const CASES = {
+      G1: [{ x: 0.7, y: 0.4 }],
+      G2: [{ x: 0.2, y: 0.8 }],
+      G3: [{ x: 0.55, y: 0.5 }, { x: 0.65, y: 0.5 }],
+      G4: [{ x: 0.5, y: 0.45 }, { x: 0.5, y: 0.55 }],
+      G5: [{ x: 0.02, y: 0.02 }, { x: 0.98, y: 0.98 }],
+      G6: [{ x: 0.3, y: 0.3 }, { x: 0.35, y: 0.35 }, { x: 0.7, y: 0.7 }],
+    };
+    const GOLDEN = {"G1":[{"box_x":0.13,"box_y":0.335,"arrow_x":0.45,"arrow_y":0.345,"arrow_dir":"right","arrow_len":0.25}],"G2":[{"box_x":0.45,"box_y":0.735,"arrow_x":0.2,"arrow_y":0.745,"arrow_dir":"left","arrow_len":0.25}],"G3":[{"box_x":0.0,"box_y":0.435,"arrow_x":0.32,"arrow_y":0.445,"arrow_dir":"right","arrow_len":0.23},{"box_x":0.49,"box_y":0.12,"arrow_x":0.595,"arrow_y":0.25,"arrow_dir":"down","arrow_len":0.25}],"G4":[{"box_x":0.0,"box_y":0.385,"arrow_x":0.32,"arrow_y":0.395,"arrow_dir":"right","arrow_len":0.18},{"box_x":0.68,"box_y":0.485,"arrow_x":0.5,"arrow_y":0.495,"arrow_dir":"left","arrow_len":0.18}],"G5":[{"box_x":0.27,"box_y":0.0,"arrow_x":0.02,"arrow_y":0.0,"arrow_dir":"left","arrow_len":0.25},{"box_x":0.41,"box_y":0.87,"arrow_x":0.73,"arrow_y":0.89,"arrow_dir":"right","arrow_len":0.25}],"G6":[{"box_x":0.14,"box_y":0.0,"arrow_x":0.245,"arrow_y":0.13,"arrow_dir":"down","arrow_len":0.17},{"box_x":0.19,"box_y":0.6,"arrow_x":0.295,"arrow_y":0.35,"arrow_dir":"up","arrow_len":0.25},{"box_x":0.54,"box_y":0.32,"arrow_x":0.645,"arrow_y":0.45,"arrow_dir":"down","arrow_len":0.25}]};
+    const bad = [];
+    for (const k of Object.keys(CASES)) {
+      const got = layoutValveMarks(CASES[k]);
+      if (JSON.stringify(got) !== JSON.stringify(GOLDEN[k])) bad.push(k + ' got ' + JSON.stringify(got));
+    }
+    record(N, !bad.length, bad.length ? bad.join(' | ') : Object.keys(CASES).length + ' cases identical');
+  }
+
+  // T85 — two sources marked on ONE shared photo are previewed together, the
+  // way loto-web lays them out (no stacked boxes)
+  async function t85_sharedPhotoMarksAreLaidOutTogether() {
+    const N = 'T85 marks of two sources on one shared photo are laid out together (no overlapping boxes)';
+    await resetAppState();
+    if (typeof openValveMarkDialog !== 'function' || typeof valveMarkGroupFor !== 'function') return record(N, false, 'this build has no shared-photo mark layout');
+    fillFormNoSources('VM-85');
+    sources.push(Object.assign(mkSrc('HHW Supply'), { deviceType: 'Ball Valve', collapsed: false }));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('vm85'));
+    openValveMarkDialog('source_0'); await markDialogReady(); tapMark(0.5, 0.45); clickById('valveMarkSave');
+    duplicateSource(0);                                   // HHW Return — same photo, a different valve
+    sources[1].energySource = 'HHW Return';
+    openValveMarkDialog('source_1'); await markDialogReady(); tapMark(0.5, 0.55); clickById('valveMarkSave');
+    const g = valveMarkGroupFor(photos.source_1);
+    const shapes = g && g.layout;
+    let overlap = false;
+    if (shapes && shapes.length === 2) {
+      const rect = (o, kind) => {
+        if (kind === 'box') return [o.box_x, o.box_y, 0.32, 0.13];
+        const vert = o.arrow_dir === 'up' || o.arrow_dir === 'down';
+        return [o.arrow_x, o.arrow_y, vert ? 0.11 : o.arrow_len, vert ? o.arrow_len : 0.11];
+      };
+      const ov = (a, b) => a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];
+      const r0 = [rect(shapes[0], 'box'), rect(shapes[0], 'arrow')], r1 = [rect(shapes[1], 'box'), rect(shapes[1], 'arrow')];
+      overlap = r0.some(a => r1.some(b => ov(a, b)));
+    }
+    record(N, !!shapes && shapes.length === 2 && !overlap, 'group of ' + (shapes ? shapes.length : 0) + ': ' + JSON.stringify(shapes));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -2282,7 +2549,10 @@
     t71_exportedDiagramInkLandsWhereDrawn, t72_openFormDiagramExportsWithSectionCollapsed,
     t73_discardedEditNeverChangesSavedSketch, t74_duplicateNeverInheritsTheOpenFormsSketch,
     t75_typedNameAndRoomAreAutosaved, t76_serviceWorkerPurgeIsOncePerDevice,
-    t77_coolingTowerKeepsItsElectricalDisconnect, t78_staleSnapshotNeverResurrectsDeletedEntries];
+    t77_coolingTowerKeepsItsElectricalDisconnect, t78_staleSnapshotNeverResurrectsDeletedEntries,
+    t79_valveMarkIsSavedAndExported, t79b_quantityTwoTakesTwoMarks, t80_markPromptFollowsASourcePhoto,
+    t81_retakeDropsTheOldMark, t82_discardedEditNeverChangesSavedMarks, t83_duplicatedSourceStartsUnmarked,
+    t84_markLayoutMatchesLotoWeb, t85_sharedPhotoMarksAreLaidOutTogether];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
@@ -2334,6 +2604,9 @@
     // iPad uses (atomic temp-file writes, directory listings, FS-first reads).
     const nativeMock = (opts.nativeMock && !simulator) ? installMockFS() : null;
     window.__PHOTO_SUITE_ARMED = true;
+    window.__PHOTO_SUITE_ARTIFACTS = {};
+    let askMarkWas = null;
+    try { askMarkWas = localStorage.getItem('loto_ask_valve_mark'); localStorage.setItem('loto_ask_valve_mark', '0'); } catch (e) {}
     try {
       for (const t of tests) {
         try { await t(); }
@@ -2344,6 +2617,7 @@
     } finally {
       window.__PHOTO_SUITE_ARMED = false;
       if (nativeMock) nativeMock.restore();
+      try { if (askMarkWas === null) localStorage.removeItem('loto_ask_valve_mark'); else localStorage.setItem('loto_ask_valve_mark', askMarkWas); } catch (e) {}
     }
     const summary = {
       pass: results.filter(r => r.pass).length,

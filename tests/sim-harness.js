@@ -35,6 +35,22 @@
     } catch (e) { console.error('[sim-harness] could not write results', e); }
   }
 
+  // Files a test kept for checks outside the app (window.__PHOTO_SUITE_ARTIFACTS,
+  // name -> bytes) — e.g. T79's real exported Information Sheet, which
+  // loto-web's scripts/smoke_valve_marks.py imports. Written BEFORE the results
+  // file, so they are complete once the runner sees the results.
+  async function writeArtifacts() {
+    const arts = window.__PHOTO_SUITE_ARTIFACTS || {};
+    for (const name of Object.keys(arts)) {
+      try {
+        const u = arts[name] instanceof Uint8Array ? arts[name] : new Uint8Array(arts[name]);
+        let s = '';
+        for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+        await FS().writeFile({ path: 'suite_artifacts/' + name.replace(/[^A-Za-z0-9._-]/g, '_'), data: btoa(s), directory: 'DATA', recursive: true });
+      } catch (e) { console.error('[sim-harness] could not write artifact ' + name, e); }
+    }
+  }
+
   async function main() {
     const fs = FS();
     if (!fs) return;
@@ -56,6 +72,7 @@
     try {
       const R = await window.runPhotoRegressionSuite(Object.assign({}, opts, { iosSimulator: true }));
       const secs = Math.round((Date.now() - t0) / 1000);
+      await writeArtifacts();
       await writeResult(Object.assign({ at: new Date().toISOString(), secs, userAgent: navigator.userAgent }, R));
       show('SUITE — ' + R.mode + ': ' + R.pass + ' pass / ' + R.fail + ' fail in ' + secs + 's\n' +
         R.results.map(r => (r.pass ? 'PASS ' : 'FAIL ') + r.name + (r.pass ? '' : '  ::  ' + r.detail)).join('\n'),

@@ -89,6 +89,10 @@ R="$DATA/Documents/loto_test_results.json"
 for _ in $(seq 1 180); do [ -f "$R" ] && break; sleep 5; done
 [ -f "$R" ] || { echo "NO RESULTS after 15 min"; exit 1; }
 cp "$R" "$WORK/results.json"
+if [ -d "$DATA/Documents/suite_artifacts" ]; then
+  rm -rf "$WORK/artifacts"; cp -R "$DATA/Documents/suite_artifacts" "$WORK/artifacts"
+  echo "artifacts: $WORK/artifacts ($(ls "$WORK/artifacts" | tr '\n' ' '))"
+fi
 python3 - "$R" <<'EOF'
 import json, sys
 d = json.load(open(sys.argv[1]))

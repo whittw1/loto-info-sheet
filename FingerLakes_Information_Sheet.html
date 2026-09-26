@@ -306,6 +306,11 @@ if ('serviceWorker' in navigator) {
     background: rgba(0,0,0,0.7); color: white; font-size: 11px;
     padding: 3px 8px; border-radius: 4px; font-weight: 600;
   }
+  .photo-capture .mark-badge {
+    position: absolute; top: 4px; right: 4px;
+    background: rgba(0,0,0,0.7); color: white; font-size: 11px;
+    padding: 2px 6px; border-radius: 3px; font-weight: 700;
+  }
 
   .source-card {
     background: var(--card); border: 1px solid var(--border);
@@ -446,7 +451,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div style="display:flex;align-items:center;">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b91</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b92</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -759,6 +764,11 @@ if ('serviceWorker' in navigator) {
         Dark theme
       </label>
       <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">Light is the default. This is a manual switch only &mdash; the app never changes theme on its own.</div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="settingsAskValveMark" style="width:18px;height:18px;" onchange="setValveMarkPrompt(this.checked)">
+        Ask me to mark the valve after each source photo
+      </label>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">Tap where the valve / breaker is in the photo &mdash; loto-web starts that source&rsquo;s ID box and arrow there. Off: mark any time with &#128205; Mark under the photo.</div>
     </div>
     <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
     <div style="margin-bottom:16px;">
@@ -889,6 +899,8 @@ function showSettings() {
   if (svChk) svChk.checked = simpleVerifEnabled();
   const dtChk = document.getElementById('settingsDarkTheme');
   if (dtChk) dtChk.checked = document.body.classList.contains('theme-dark');
+  const vmChk = document.getElementById('settingsAskValveMark');
+  if (vmChk) vmChk.checked = valveMarkPromptEnabled();
   updateCollectorTagHint();
   // Facility picker
   populateHospitalSelect();
@@ -4665,7 +4677,9 @@ function photoSlotInnerHtml(ref) {
   const img = ref.thumbnail
     ? '<img src="' + ref.thumbnail + '">'
     : '<span class="placeholder" style="color:var(--text);">&#128247;<br>Photo saved<br><span style="font-size:10px;">preview unavailable &mdash; tap to view</span></span>';
-  return img + '<span class="retake-badge">Tap to retake</span>' + photoSlotBadge(ref);
+  const n = cleanValveMarks(ref.marks).length;
+  const pin = n ? '<span class="mark-badge" title="Valve location marked">&#128205;' + (n > 1 ? ' ' + n : '') + '</span>' : '';
+  return img + '<span class="retake-badge">Tap to retake</span>' + photoSlotBadge(ref) + pin;
 }
 // Repaint one slot from photos[slot]. A source slot whose card isn't on
 // screen (collapsed) is repainted by re-rendering the source list.
@@ -4675,6 +4689,8 @@ function paintPhotoSlot(slot) {
   const ref = photos[slot];
   el.classList.toggle('has-photo', !!(ref && ref.dbKey));
   el.innerHTML = photoSlotInnerHtml(ref);
+  const markBtn = document.getElementById('markbtn_' + slot);   // source cards: 📍 Mark needs a photo
+  if (markBtn) markBtn.style.display = (ref && ref.dbKey) ? '' : 'none';
 }
 function paintEquipPhotoSlots() { ['equip_main', 'equip_dataplate', 'equip_ee'].forEach(paintPhotoSlot); }
 
@@ -4699,7 +4715,7 @@ function renderSources() {
         <div class="source-summary" onclick="expandSource(${i})">
           <span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
           <div class="source-summary-text">
-            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${src.valveState==='normally_closed' ? ' <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">NC</span>' : ''}${src.linkedTo ? ' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>' : ''}
+            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${src.valveState==='normally_closed' ? ' <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">NC</span>' : ''}${photoData && photoData.dbKey && cleanValveMarks(photoData.marks).length ? ' <span title="Valve location marked">&#128205;</span>' : ''}${src.linkedTo ? ' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>' : ''}
             ${src.deviceType ? ' &mdash; ' + src.deviceType : ''}${src.deviceId ? ' <span style="color:#7eb8da;">(' + src.deviceId + ')</span>' : ''}
             ${src.location ? ' &mdash; ' + src.location : ''}
             ${src.detail ? ' <span style="color:var(--accent);font-weight:600;font-family:monospace;">(' + src.detail + ')</span>' : ''}
@@ -4898,6 +4914,7 @@ function renderSources() {
               <div style="display:flex;gap:6px;margin-top:6px;">
                 <button type="button" class="btn btn-sm" onclick="browsePhoto('source_${i}')" title="Pick from the photo library" style="flex:1;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#128194; Browse</button>
                 <button type="button" class="btn btn-sm" onclick="showReusePhotoPicker('source_${i}')" title="Reuse a photo already taken today (shared)" style="flex:1;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#8635; Reuse</button>
+                <button type="button" id="markbtn_source_${i}" class="btn btn-sm" onclick="openValveMarkDialog('source_${i}')" title="Tap where the valve / device is in this photo" style="flex:1;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;${photos['source_'+i] && photos['source_'+i].dbKey ? '' : 'display:none;'}">&#128205; Mark</button>
               </div>
               ${photos['source_'+i] && photos['source_'+i].timestamp ?
                 `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;text-align:center;">
@@ -5292,6 +5309,7 @@ function duplicateSource(index) {
     copy.dupOf = { entryId: currentEntryId || null, dbKey: orig.dbKey || null, label: 'duplicated source' };
     delete copy.hashWarning;
     delete copy.sourceConfirmed;
+    delete copy.marks;             // a different device: mark it on the same photo
     photos[`source_${index + 1}`] = copy;
   } else {
     delete photos[`source_${index + 1}`];
@@ -5668,6 +5686,7 @@ async function reusePhotoInto(slotId, idx) {
     autoSaveCurrent();
     updateIntegrityBadge();
     showToast('Photo reused — recorded as an intentional duplicate');
+    if (sm) promptValveMarkAfterPhoto(slot);
   } finally { endPhotoWrite(write); }
 }
 
@@ -5703,6 +5722,8 @@ function showPhotoDialog(slotId) {
   const ts = p.timestamp
     ? new Date(p.timestamp).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
     : '';
+  const isSourceSlot = /^source_\d+$/.test(slotId);
+  const markCount = cleanValveMarks(p.marks).length;
   overlay.innerHTML = `
     <div class="dialog" style="max-width:min(94vw,720px);">
       <div style="text-align:center;margin-bottom:10px;">
@@ -5711,6 +5732,7 @@ function showPhotoDialog(slotId) {
         <div id="photoViewerNote" style="font-size:11px;color:var(--text-dim);margin-top:6px;">Loading full resolution\u2026</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:10px;">
+        ${isSourceSlot ? `<button class="btn btn-outline" onclick="openValveMarkDialog('${slotId}')" style="padding:12px;font-size:15px;">&#128205; ${markCount ? 'Move the valve mark' : 'Mark the valve location'}</button>` : ''}
         <button class="btn btn-primary" onclick="retakePhoto('${slotId}')" style="padding:12px;font-size:15px;">Retake Photo</button>
         <button class="btn btn-outline" onclick="closePhotoDialog(); browsePhoto('${slotId}');" style="padding:12px;font-size:15px;">&#128194; Choose from Library</button>
         <button class="btn" onclick="closePhotoDialog()" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Close</button>
@@ -5773,6 +5795,332 @@ function showMiscPhotoViewer(index) {
 function retakePhoto(slotId) {
   closePhotoDialog();
   document.getElementById(`file_${slotId}`).click();
+}
+
+// ============================================================================
+// VALVE MARKS (build 92) — the tech taps where the valve / breaker is in a
+// source photo; loto-web starts that source's ID box + arrow there instead of
+// a preset corner, so nobody has to drag every box onto its valve afterwards.
+// ----------------------------------------------------------------------------
+// A mark lives on the SOURCE PHOTO REFERENCE: photos['source_N'].marks =
+// [{x, y}], fractions of the image (0..1 from its top-left, 3 decimals), one
+// per device of the source's quantity. It belongs to that photo: a retake or
+// a reuse makes a new reference with no mark, Duplicate Source (a different
+// device) starts unmarked, Duplicate Entry copies it with the photo. Saving a
+// mark REPLACES the reference object — while a saved entry is being edited
+// the form shares its references, and a discarded edit must not change it.
+// Exported: entries.json sources[i].photoMarks, the Information Sheet XLSX
+// col 12 "Valve Mark" ("x,y"; several "x,y; x,y") and the CSV's last column.
+// layoutValveMarks() is loto-web's placement rule, number for number — KEEP
+// IDENTICAL to app/services/valve_marks.py and _layoutValveMarks in its
+// frontend_dist/index.html (suite T84 pins golden values).
+// ============================================================================
+const VALVE_MARK_GEOM = { BOX_W: 0.32, BOX_H: 0.13, LEN: 0.25, THICK: 0.11, MIN_LEN: 0.08 };
+const VALVE_MARK_MAX = 10;
+
+function cleanValveMarks(marks) {
+  if (!Array.isArray(marks)) return [];
+  const out = [];
+  for (const m of marks) {
+    if (!m || typeof m !== 'object') continue;
+    const x = Number(m.x), y = Number(m.y);
+    if (!isFinite(x) || !isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) continue;
+    out.push({ x: x, y: y });
+    if (out.length >= VALVE_MARK_MAX) break;
+  }
+  return out;
+}
+// How many devices a source's marks can cover (its quantity).
+function valveMarkSlots(src) {
+  return Math.max(1, Math.min(VALVE_MARK_MAX, parseInt(src && src.quantity, 10) || 1));
+}
+// The marks an export ships for entry source i — none without its photo.
+function sourceMarksForExport(entry, i) {
+  const src = entry && entry.sources && entry.sources[i];
+  const ref = entry && entry.photos && entry.photos['source_' + i];
+  if (!src || !ref || !ref.dbKey) return [];
+  return cleanValveMarks(ref.marks).slice(0, valveMarkSlots(src));
+}
+function valveMarksText(marks) {
+  return (marks || []).map(m => m.x.toFixed(3) + ',' + m.y.toFixed(3)).join('; ');
+}
+
+// ---- loto-web's layout: marks of ONE image -> box/arrow overrides ----------
+// Arrow tip on the mark; the ID box at the arrow's tail on the side with room.
+// A later mark on the same photo takes another side rather than cover an
+// earlier box / arrow or another valve. Same constants, candidate order,
+// strict comparisons and rounding as loto-web.
+function _vmClamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+function _vmRound(v) { return Math.floor(v * 10000 + 0.5) / 10000; }
+function _vmPlace(x, y, d) {
+  const G = VALVE_MARK_GEOM;
+  let room, ln, arrow, box;
+  if (d === 'right') {          // box left of the valve, arrow points right
+    room = x - G.BOX_W; if (room < G.MIN_LEN) return null;
+    ln = Math.min(G.LEN, room);
+    arrow = [x - ln, _vmClamp(y - G.THICK / 2, 0, 1 - G.THICK), ln, G.THICK];
+    box = [x - ln - G.BOX_W, _vmClamp(y - G.BOX_H / 2, 0, 1 - G.BOX_H), G.BOX_W, G.BOX_H];
+  } else if (d === 'left') {    // box right of the valve, arrow points left
+    room = 1 - x - G.BOX_W; if (room < G.MIN_LEN) return null;
+    ln = Math.min(G.LEN, room);
+    arrow = [x, _vmClamp(y - G.THICK / 2, 0, 1 - G.THICK), ln, G.THICK];
+    box = [x + ln, _vmClamp(y - G.BOX_H / 2, 0, 1 - G.BOX_H), G.BOX_W, G.BOX_H];
+  } else if (d === 'down') {    // box above the valve, arrow points down
+    room = y - G.BOX_H; if (room < G.MIN_LEN) return null;
+    ln = Math.min(G.LEN, room);
+    arrow = [_vmClamp(x - G.THICK / 2, 0, 1 - G.THICK), y - ln, G.THICK, ln];
+    box = [_vmClamp(x - G.BOX_W / 2, 0, 1 - G.BOX_W), y - ln - G.BOX_H, G.BOX_W, G.BOX_H];
+  } else {                      // 'up': box below the valve, arrow points up
+    room = 1 - y - G.BOX_H; if (room < G.MIN_LEN) return null;
+    ln = Math.min(G.LEN, room);
+    arrow = [_vmClamp(x - G.THICK / 2, 0, 1 - G.THICK), y, G.THICK, ln];
+    box = [_vmClamp(x - G.BOX_W / 2, 0, 1 - G.BOX_W), y + ln, G.BOX_W, G.BOX_H];
+  }
+  return { dir: d, len: ln, arrow: arrow, box: box };
+}
+function _vmOverlap(a, b) { return a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]; }
+function _vmCovers(r, p) { return p[0] > r[0] && p[0] < r[0] + r[2] && p[1] > r[1] && p[1] < r[1] + r[3]; }
+function layoutValveMarks(marks) {
+  const pts = (marks || []).map(m => [_vmClamp(Number(m.x), 0, 1), _vmClamp(Number(m.y), 0, 1)]);
+  const placed = [];
+  return pts.map((pt, i) => {
+    const x = pt[0], y = pt[1];
+    const h1 = x >= 0.5 ? 'right' : 'left';
+    const v1 = y >= 0.5 ? 'down' : 'up';
+    const order = [h1, h1 === 'right' ? 'left' : 'right', v1, v1 === 'down' ? 'up' : 'down'];
+    const cands = order.map(d => _vmPlace(x, y, d)).filter(Boolean);
+    const others = pts.filter((q, j) => j !== i);
+    const fits = c => !placed.some(r => _vmOverlap(c.box, r) || _vmOverlap(c.arrow, r)) &&
+      !others.some(q => _vmCovers(c.box, q) || _vmCovers(c.arrow, q));
+    const pick = cands.find(fits) || cands[0];
+    placed.push(pick.box, pick.arrow);
+    return {
+      box_x: _vmRound(pick.box[0]), box_y: _vmRound(pick.box[1]),
+      arrow_x: _vmRound(pick.arrow[0]), arrow_y: _vmRound(pick.arrow[1]),
+      arrow_dir: pick.dir, arrow_len: _vmRound(pick.len)
+    };
+  });
+}
+// Every source photo on the open form that shows the SAME image as `ref` (a
+// reused or duplicated shot: the export writes it once and loto-web puts all
+// their boxes on it), in source order, with the marks each carries — `draft`
+// ({ref, marks}) stands in for the marks being placed in the dialog.
+function valveMarkGroupFor(ref, draft) {
+  if (!ref || !ref.dbKey) return null;
+  const same = r => !!(r && r.dbKey && (r === ref || r.dbKey === ref.dbKey || (r.sha256 && ref.sha256 && r.sha256 === ref.sha256)));
+  const items = [];
+  sources.forEach((src, i) => {
+    const r = photos['source_' + i];
+    if (!same(r)) return;
+    const marks = (draft && r === draft.ref) ? draft.marks : cleanValveMarks(r.marks).slice(0, valveMarkSlots(src));
+    marks.forEach((m, k) => items.push({ srcIndex: i, sub: k, mine: r === ref, mark: m, qty: valveMarkSlots(src) }));
+  });
+  return { items: items, layout: layoutValveMarks(items.map(t => t.mark)) };
+}
+
+// ---- the prompt ------------------------------------------------------------
+function valveMarkPromptEnabled() {
+  try { return localStorage.getItem('loto_ask_valve_mark') !== '0'; } catch (e) { return true; }
+}
+function setValveMarkPrompt(on) {
+  try { localStorage.setItem('loto_ask_valve_mark', on ? '1' : '0'); } catch (e) {}
+  ['settingsAskValveMark', 'valveMarkAsk'].forEach(id => { const c = document.getElementById(id); if (c) c.checked = !!on; });
+}
+function anyDialogOpen() {
+  return Array.from(document.querySelectorAll('.dialog-overlay')).some(o => getComputedStyle(o).display !== 'none');
+}
+// After a source photo lands (capture or reuse): ask where the valve is —
+// unless turned off, or another dialog is already up.
+function promptValveMarkAfterPhoto(slot) {
+  if (!/^source_\d+$/.test(slot || '') || !valveMarkPromptEnabled() || anyDialogOpen()) return;
+  openValveMarkDialog(slot, { auto: true });
+}
+function closeValveMarkDialog() {
+  const o = document.getElementById('valveMarkOverlay');
+  if (o) { if (o._cleanup) o._cleanup(); o.remove(); }
+}
+const VALVE_MARK_COLORS = {
+  'source-electrical': '#ff6b6b', 'source-steam': '#ffb36b', 'source-water': '#6bd5ff',
+  'source-gas': '#fff06b', 'source-default': '#ffff00'
+};
+// One box + block arrow as SVG, in the photo box's pixel space. The arrow is
+// Excel's preset (shaft half its thickness, head half its short side) — what
+// loto-web draws.
+function valveMarkShapeSvg(ov, w, h, label, color, opacity) {
+  const G = VALVE_MARK_GEOM;
+  const vert = ov.arrow_dir === 'up' || ov.arrow_dir === 'down';
+  const ax = ov.arrow_x * w, ay = ov.arrow_y * h;
+  const aw = (vert ? G.THICK : ov.arrow_len) * w, ah = (vert ? ov.arrow_len : G.THICK) * h;
+  const hl = Math.min(aw, ah) * 0.5;
+  let pts;
+  if (!vert) {
+    const t0 = ay + ah * 0.25, t1 = ay + ah * 0.75, cy = ay + ah / 2;
+    pts = ov.arrow_dir === 'right'
+      ? [[ax, t0], [ax + aw - hl, t0], [ax + aw - hl, ay], [ax + aw, cy], [ax + aw - hl, ay + ah], [ax + aw - hl, t1], [ax, t1]]
+      : [[ax + aw, t0], [ax + hl, t0], [ax + hl, ay], [ax, cy], [ax + hl, ay + ah], [ax + hl, t1], [ax + aw, t1]];
+  } else {
+    const s0 = ax + aw * 0.25, s1 = ax + aw * 0.75, cx = ax + aw / 2;
+    pts = ov.arrow_dir === 'down'
+      ? [[s0, ay], [s0, ay + ah - hl], [ax, ay + ah - hl], [cx, ay + ah], [ax + aw, ay + ah - hl], [s1, ay + ah - hl], [s1, ay]]
+      : [[s0, ay + ah], [s0, ay + hl], [ax, ay + hl], [cx, ay], [ax + aw, ay + hl], [s1, ay + hl], [s1, ay + ah]];
+  }
+  const bx = ov.box_x * w, by = ov.box_y * h, bw = G.BOX_W * w, bh = G.BOX_H * h;
+  const fs = Math.max(9, Math.min(bh * 0.6, 22));
+  return '<g opacity="' + opacity + '">' +
+    '<polygon points="' + pts.map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' ') + '" fill="' + color + '" stroke="#000" stroke-width="1"/>' +
+    '<rect x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + bh.toFixed(1) + '" fill="' + color + '" stroke="#000" stroke-width="1"/>' +
+    '<text x="' + (bx + bw / 2).toFixed(1) + '" y="' + (by + bh / 2).toFixed(1) + '" font-size="' + fs.toFixed(1) + '" font-weight="700" text-anchor="middle" dominant-baseline="central" fill="#000" font-family="Arial, sans-serif">' + escHtml(label) + '</text>' +
+    '</g>';
+}
+
+// ---- the dialog ------------------------------------------------------------
+// Tap the photo where the valve is (one tap per device for a quantity-N
+// source; once all are placed a tap moves the nearest). The preview draws the
+// boxes + arrows exactly as loto-web will lay them out, other sources on the
+// same shared photo dimmed. Bound to the photo REFERENCE shown: if that photo
+// is retaken / removed meanwhile, the mark is not saved.
+function openValveMarkDialog(slotId, opts) {
+  opts = opts || {};
+  const sm = /^source_(\d+)$/.exec(slotId || '');
+  if (!sm) return false;
+  if (refuseIfDuplicateCopying()) return false;
+  const idx = parseInt(sm[1], 10);
+  const src = sources[idx], ref = photos[slotId];
+  if (!src || !ref || !ref.dbKey) { showToast('Take the source photo first, then mark the valve', true); return false; }
+  closePhotoDialog();
+  closeValveMarkDialog();
+  const session = formSession;
+  const slots = valveMarkSlots(src);
+  let marks = cleanValveMarks(ref.marks).slice(0, slots);
+  const what = src.deviceType || 'valve / device';
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'valveMarkOverlay';
+  overlay.style.padding = '10px';
+  let objUrl = null;
+  overlay.innerHTML = `
+    <div class="dialog" style="max-width:min(96vw,760px);padding:14px 14px 12px;max-height:96vh;overflow-y:auto;">
+      <h3 style="margin:0 0 4px;font-size:17px;">&#128205; Where is the ${escHtml(what)}?</h3>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;line-height:1.4;">
+        Source #${idx + 1} &mdash; ${escHtml(src.energySource || 'energy source')}. ${slots > 1 ? 'Tap each of the ' + slots + ' devices in the photo.' : 'Tap it in the photo.'}
+        The arrow on the LOTO procedure will point there.
+      </div>
+      <div id="valveMarkWrap" style="position:relative;margin:0 auto;cursor:crosshair;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;">
+        <img id="valveMarkImg" src="${ref.thumbnail || ''}" draggable="false" alt="" style="display:block;width:100%;height:100%;border-radius:6px;background:#000;pointer-events:none;">
+        <svg id="valveMarkSvg" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible;"></svg>
+      </div>
+      <div id="valveMarkNote" style="font-size:11px;color:var(--text-dim);margin-top:6px;text-align:center;">Loading full resolution\u2026</div>
+      <div id="valveMarkCount" style="font-size:13px;font-weight:600;text-align:center;margin-top:2px;"></div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button id="valveMarkSave" class="btn btn-primary" style="flex:2;padding:12px;font-size:15px;">Save</button>
+        <button id="valveMarkClear" class="btn btn-outline" style="flex:1;padding:12px;font-size:14px;">Clear</button>
+        <button id="valveMarkSkip" class="btn" style="flex:1;padding:12px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">${opts.auto ? 'Skip' : 'Cancel'}</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--text-dim);cursor:pointer;">
+        <input type="checkbox" id="valveMarkAsk" style="width:16px;height:16px;"> Ask after every source photo
+      </label>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+  const wrap = overlay.querySelector('#valveMarkWrap');
+  const img = overlay.querySelector('#valveMarkImg');
+  const svg = overlay.querySelector('#valveMarkSvg');
+  const count = overlay.querySelector('#valveMarkCount');
+  const color = VALVE_MARK_COLORS[getSourceColorClass(src.energySource)] || '#ffff00';
+  const draw = () => {
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    count.textContent = slots > 1 ? (marks.length + ' of ' + slots + ' marked')
+      : (marks.length ? 'Marked \u2014 tap again to move it' : 'Not marked yet');
+    if (!w || !h) return;
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    const g = valveMarkGroupFor(ref, { ref: ref, marks: marks });
+    let out = '';
+    g.items.forEach((it, k) => {
+      const other = sources[it.srcIndex];
+      const label = '#' + (it.srcIndex + 1) + (it.qty > 1 ? '.' + (it.sub + 1) : '');
+      out += valveMarkShapeSvg(g.layout[k], w, h, label,
+        it.mine ? color : (VALVE_MARK_COLORS[getSourceColorClass(other && other.energySource)] || '#ffff00'),
+        it.mine ? 0.92 : 0.4);
+    });
+    marks.forEach(m => {
+      const cx = (m.x * w).toFixed(1), cy = (m.y * h).toFixed(1);
+      out += '<circle cx="' + cx + '" cy="' + cy + '" r="9" fill="none" stroke="#fff" stroke-width="4"/>' +
+             '<circle cx="' + cx + '" cy="' + cy + '" r="9" fill="none" stroke="#e02020" stroke-width="2.5"/>' +
+             '<circle cx="' + cx + '" cy="' + cy + '" r="2" fill="#e02020"/>';
+    });
+    svg.innerHTML = out;
+  };
+  const fit = () => {
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    if (!iw || !ih) return;
+    const dlg = overlay.querySelector('.dialog');
+    const maxW = Math.max(120, Math.min(dlg.clientWidth - 28, 732));
+    const maxH = Math.max(140, window.innerHeight * 0.6);
+    let w = maxW, h = w * ih / iw;
+    if (h > maxH) { h = maxH; w = h * iw / ih; }
+    wrap.style.width = Math.round(w) + 'px';
+    wrap.style.height = Math.round(h) + 'px';
+    draw();
+  };
+  wrap.addEventListener('click', (e) => {
+    const r = wrap.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const p = {
+      x: Math.round(_vmClamp((e.clientX - r.left) / r.width, 0, 1) * 1000) / 1000,
+      y: Math.round(_vmClamp((e.clientY - r.top) / r.height, 0, 1) * 1000) / 1000
+    };
+    if (marks.length < slots) marks = marks.concat([p]);
+    else {
+      let j = 0, best = Infinity;
+      marks.forEach((m, k) => { const d = (m.x - p.x) * (m.x - p.x) + (m.y - p.y) * (m.y - p.y); if (d < best) { best = d; j = k; } });
+      marks = marks.map((m, k) => (k === j ? p : m));
+    }
+    draw();
+  });
+  overlay.querySelector('#valveMarkClear').onclick = () => { marks = []; draw(); };
+  overlay.querySelector('#valveMarkSkip').onclick = () => closeValveMarkDialog();
+  overlay.querySelector('#valveMarkSave').onclick = () => { closeValveMarkDialog(); saveValveMarks(ref, marks, session); };
+  const ask = overlay.querySelector('#valveMarkAsk');
+  ask.checked = valveMarkPromptEnabled();
+  ask.onchange = () => setValveMarkPrompt(ask.checked);
+  img.addEventListener('load', fit);
+  window.addEventListener('resize', fit);
+  overlay._cleanup = () => {
+    window.removeEventListener('resize', fit);
+    if (objUrl) { URL.revokeObjectURL(objUrl); objUrl = null; }
+  };
+  if (img.complete && img.naturalWidth) fit();
+  draw();
+  loadFullPhotoUrl(ref.dbKey, ref.fileType).then(url => {
+    const note = overlay.querySelector('#valveMarkNote');
+    if (!overlay.isConnected) { if (url && url.indexOf('blob:') === 0) URL.revokeObjectURL(url); return; }
+    if (url) {
+      if (url.indexOf('blob:') === 0) objUrl = url;
+      img.src = url;
+      if (note) note.textContent = '';
+    } else if (note) {
+      note.textContent = 'Full-resolution image unavailable \u2014 showing the preview';
+    }
+  });
+  return true;
+}
+// Store the marks on the photo reference the dialog was opened for — as a NEW
+// reference object (see VALVE MARKS above). Nothing is written if the form or
+// that photo changed meanwhile.
+function saveValveMarks(ref, marks, session) {
+  if (session !== formSession) { showToast('\u26a0 The form changed \u2014 valve mark not saved', true); return false; }
+  if (refuseIfDuplicateCopying()) return false;
+  const slot = Object.keys(photos).find(k => /^source_\d+$/.test(k) && photos[k] === ref);
+  if (!slot) { showToast('\u26a0 That photo changed while you were marking \u2014 mark not saved. Tap \ud83d\udccd Mark to place it again.', true); return false; }
+  const clean = cleanValveMarks(marks);
+  if (JSON.stringify(clean) === JSON.stringify(cleanValveMarks(ref.marks))) return true;
+  const next = Object.assign({}, ref);
+  if (clean.length) next.marks = clean; else delete next.marks;
+  photos[slot] = next;
+  paintPhotoSlot(slot);
+  autoSaveCurrent();
+  showToast(clean.length ? '\ud83d\udccd Valve location saved' : 'Valve mark removed');
+  return true;
 }
 
 // ============================================================================
@@ -7250,6 +7598,12 @@ function handlePhoto(input, slotId) {
               }
             }
           } catch (e) { console.warn('photo hash record failed', e); }
+          // Where is the valve? (build 92) Asked once the photo is stored and
+          // hashed, so the mark lands on the finished reference.
+          if (sm) {
+            const now = liveSlot();
+            if (now && photos[now] === rec && !rec.hashWarning) promptValveMarkAfterPhoto(now);
+          }
         }
       } catch (err) {
         console.error('Photo capture failed', err);
@@ -8878,7 +9232,7 @@ async function runCombinedExport() {
   }
 
   // ---- PASS 2: build CSV ----
-  let csv = 'Hospital Code,Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Valve State,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames\n';
+  let csv = 'Hospital Code,Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Valve State,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames,Valve Marks\n';
 
   allEntries.forEach((entry, ei) => {
     const map = entryMaps[ei];
@@ -8901,7 +9255,9 @@ async function runCombinedExport() {
         quote(map.mainH || ''),
         quote(map.dpH || ''), quote(map.eeH || ''),
         quote(diagramFiles[ei] || ''),
-        quote(miscFileNames[ei] || '')
+        quote(miscFileNames[ei] || ''),
+        // Where the tech tapped the valve(s) in this source's photo (build 92)
+        quote(map.sourceHs[i] ? valveMarksText(sourceMarksForExport(entry, i)) : '')
       ].join(',') + '\n';
     });
   });
@@ -8919,7 +9275,9 @@ async function runCombinedExport() {
     const srcOut = (rest.sources || []).map((src, i) => ({
       ...src,
       valveState: src.valveState || 'normal',   // always present for downstream (loto-web)
-      photoFile: map.sourceHs[i] ? 'photos/' + map.sourceHs[i] : ''
+      photoFile: map.sourceHs[i] ? 'photos/' + map.sourceHs[i] : '',
+      // Valve marks (build 92): [{x, y}] fractions of photoFile, one per device
+      photoMarks: map.sourceHs[i] ? sourceMarksForExport(entry, i) : []
     }));
     const miscOut = miscFileNames[ei]
       ? miscFileNames[ei].split(', ').filter(Boolean).map(n => 'photos/' + n)
@@ -9035,7 +9393,7 @@ async function runCombinedExport() {
         const srcLabelRow = ws.addRow([
           `Energy Source #${n}`, ` Source #${n} Device`, 'Device ID', 'Total Device Quantity',
           ` Source #${n} Location`, `Source #${n} Photo`, '', 'Dup Photo',
-          `Source #${n} Verification`, `Verification Photo #${n}`, 'Valve State'
+          `Source #${n} Verification`, `Verification Photo #${n}`, 'Valve State', 'Valve Mark'
         ]);
         applyRow(srcLabelRow, labelFont, labelFill, allBorders);
 
@@ -9061,7 +9419,11 @@ async function runCombinedExport() {
           // Valve state (build 91). The office imports THIS sheet, and it had
           // no valve state: a Normally Closed valve arrived as an ordinary one
           // and the procedure said to open it at restore. Blank = normal.
-          src ? (VALVE_STATE_SHEET_TEXT[src.valveState] || '') : ''
+          src ? (VALVE_STATE_SHEET_TEXT[src.valveState] || '') : '',
+          // Valve mark (build 92): where the tech tapped the valve in THIS
+          // row's photo — "x,y" fractions, qty-N rows "x,y; x,y". loto-web
+          // starts the box + arrow there. Blank without a photo.
+          srcH ? valveMarksText(sourceMarksForExport(entry, s)) : ''
         ]);
         applyRow(srcDataRow, dataFont, null, allBorders);
       }

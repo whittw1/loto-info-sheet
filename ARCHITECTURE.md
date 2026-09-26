@@ -1,6 +1,6 @@
 # LOTO Field Collector — Architecture Reference
 
-**Date:** 2026-09-25 (rev 17 — **build 91 fixes the 15 defects of the 2026-09-25 max-effort review, plus Cooling Tower** — see §6 "Build 91". The two that mattered most on the iPad: pre-UUID entries (June Atlanta Main Campus, **numeric ids**) could never export a photo (a number-vs-string owner compare), and build 89 had silently moved the filename it looks for when reading those entries' photos — both fixed together (no file is moved). The entry list is now MERGED at load from every stored copy (IndexedDB, the localStorage fallback, the emergency snapshot) with deleted-id tombstones, which closes three ways the build-89 failed-read guard could still be bypassed or entries saved during a storage outage lost. The XLSX Information Sheet (the office import path) now carries **Valve State** (col 11); the web build never reports an unconfirmed download as saved; the web purge runs once per device. Suite: 82 tests (20 new — 19 each first proven to fail on build 90, plus a guard for the new load-time merge, T78); 87/87 in web, native-mock and inside the app on the Simulator. Prior: rev 16 — **build 90 = build 89 + one fix found while re-testing it**: the header photo-integrity badge now refreshes after a delete, bulk delete, backup import, clear, source removal or duplicate (it used to keep counting — or flagging MISSING — photos no longer referenced; T58). **The regression suite now runs inside the real iOS app**: `tests/run-sim-suite.sh` builds a throwaway copy of `ios/` with `tests/sim-harness.js` in its bundle (never the project's own bundle, which is what Xcode archives), reinstalls it fresh on a dedicated "LOTO Test iPad" Simulator and runs the suite against the real WKWebView and the real Capacitor Filesystem plugin — 62/62 there, and 62/62 in both desktop modes. The runner's guard was widened for this and only this: inside the app it runs only with `{iosSimulator:true}`, only when the app container is under `CoreSimulator` (never a device), and only on an empty install. §2: iOS 90 (committed, synced, in Xcode; archive pending); web still 86 with 90 staged. Prior: rev 15 — **build 89 fixes all 28 photo-integrity defects the 2026-09-24 review found** — see §6 "Photo-integrity fixes — build 89", which replaces rev 14's open-defects list. Source photos now follow their source *object* (no more index-keyed misattachment on template / type / electrical-count changes); every async photo writer is bound to its form session and Save & New / Edit / Duplicate / Clear / Export / Backup wait for it; one form identity (Save & New replaces-or-appends BY ID — a reload mid-edit can no longer save a second copy); orphan re-attach is a reviewed, missing-slots-only repair instead of a launch-time guess; filesystem writes are atomic and size-verified, IndexedDB reconnects, and the newest copy of the entry list wins at load. Every fix has a regression test written first and proven to FAIL on build 88: the suite is now 61 tests and passes 61/61 in web mode AND with the whole suite run against a mock native filesystem (`runPhotoRegressionSuite({nativeMock:true})`), and it refuses to run anywhere real data could live. Photo filenames now always carry the device code (`0924_JW-a1b2_00001`, §7); linked sources keep and export their photo, with entry + source ids on `linkedTo` (§10). §2: iOS is at 89 (archive pending); the web (`main`) is still 86 with 89 staged. Prior: rev 14 — documented the review (its open-defects list is now §6's build-89 fixes table). A max-effort code review of build 88 (nine finder angles, every candidate independently verified, plus a gap sweep) found 28 photo-integrity defects — 20 confirmed, 4 plausible, 4 unverified, none refuted, none yet fixed — documented by root cause: index-keyed source photos (template/type changes silently misattach or drop photos), three unguarded async photo writers, split form identity, launch-time orphan re-attach, and unverified storage writes; plus field rules until fixed. §6 also gains what a stored photo is (no EXIF survives the canvas) and the deferred off-app backup design, and **the regression-suite instruction now carries a hard warning: its reset erases real data, so never run it where field data lives.** §2 records which build each channel carries — the web (`main`) is on build 86 and still has the photo-destroying retake-delete. §3 adds `tests/` and the public-repo rule; §9 documents promoting builds to the web via the `loto-main-web` worktree; new §13 points to the recovery tooling and the Lumix frame-number rule. Prior: rev 13 — builds 83–88, the photo-store rebuild and its aftermath. **§6 is the section to read.** Build 83 re-keyed the photo store on entry UUIDs after name-derived keys corrupted ~1,100 photo slots across five VA facilities, adding migration/quarantine, a hard export duplicate gate, capture-time hash warnings, Photo Audit and entry-retention guards. Builds 84–88 then fixed what 83 got wrong or left rough: 84 made the migration done-flag conditional on the stores being readable; 85 scoped and chunked the quarantine export; 86 scoped Photo Audit to today's work; **87 removed the retake/misc-removal deletes that were destroying live photos**, added the in-flight capture guard and `reattachOrphanedPhotos()`; 88 gave duplicated sources their own `sourceId` and recorded the copied photo as a `{dupOf}`. The regression suite is now 12 tests and is the gate on any photo-path change. §10 gains the office `Information_Sheet_MMDDYY.xlsx` field-app layout spec — geometry, the bare-reference photo rule, the `photo_detail` `String(20)` position-marker trap — and the cross-date survey problem that stranded 71 Atlanta photos. §8 versioning and §11 code map refreshed to build 88 / cache v7.84. Prior: build 79: simplified verification — water sources get Drain/Gauge checkboxes synthesizing the same canonical strings, electrical defaults to Controls, Settings toggle reverts to classic pickers (§5.4c). Prior: rev 10 — builds 74–77: durable photo storage + integrity. §6 rewritten: full-res photos now write to the **native filesystem** (Capacitor Filesystem, `DATA/loto_photos/`) with IndexedDB/localStorage as fallbacks, after iOS storage eviction silently lost 74 photos on 2026-08-04; capture-time save verification, export integrity guard, header integrity badge, collision-proof photo keys. §7: local-day date semantics + filtered-day export stamps; reuse-a-photo share model with export dedup; per-entry `exportedAt`/`exportId` stamps. §5.5: export-status badges + delete guards with "Export these first" escape hatch. New template: Unit Heater - Natural Gas. Prior: rev 9 — §5 registry inventory expanded. Named the equipment-side registries the doc had glossed over (`EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT`, `EQUIPMENT_PROMPT_FOR_TEMPLATE`, `EQUIPMENT_DIAGRAM_OVERRIDE`, `CONDENSATE_AUTO_EQUIP`, `CUSTOM_EQUIP_KEYWORD_TEMPLATE`) plus a new "Other registries (misc but load-bearing)" bullet block covering `SOURCE_DEFAULTS`, `ENERGY_DEVICE_MAP`, `ENERGY_KEYWORD_TEMP`, `ENERGY_LABEL_PREFIX/COLORS`, `PHOTO_DEFAULTS`, `SKETCH_DIAGRAMS`, `SAVED_FILTERS`, `HOSPITALS`. Prior revs: rev 8 = ingester live; rev 7 = data-entry UX pass; rev 6 = ZIP restructure.)
+**Date:** 2026-09-26 (rev 18 — **build 92 adds VALVE MARKS**: right after each source photo the tech taps where the valve / breaker is; the tap rides on that photo's reference and goes out in the Information Sheet XLSX (col 12 "Valve Mark"), `entries.json` (`photoMarks`) and the CSV, and loto-web starts that source's ID box + arrow on it instead of a preset corner — see §6 "Build 92". Placement is ONE rule shared number-for-number with loto-web (`layoutValveMarks`), so two valves in one shot never get stacked boxes. Suite: 90 tests (8 new, each first proven to fail on build 91); 95/95 in web, native-mock and inside the app on the Simulator. Prior: rev 17 — **build 91 fixes the 15 defects of the 2026-09-25 max-effort review, plus Cooling Tower** — see §6 "Build 91". The two that mattered most on the iPad: pre-UUID entries (June Atlanta Main Campus, **numeric ids**) could never export a photo (a number-vs-string owner compare), and build 89 had silently moved the filename it looks for when reading those entries' photos — both fixed together (no file is moved). The entry list is now MERGED at load from every stored copy (IndexedDB, the localStorage fallback, the emergency snapshot) with deleted-id tombstones, which closes three ways the build-89 failed-read guard could still be bypassed or entries saved during a storage outage lost. The XLSX Information Sheet (the office import path) now carries **Valve State** (col 11); the web build never reports an unconfirmed download as saved; the web purge runs once per device. Suite: 82 tests (20 new — 19 each first proven to fail on build 90, plus a guard for the new load-time merge, T78); 87/87 in web, native-mock and inside the app on the Simulator. Prior: rev 16 — **build 90 = build 89 + one fix found while re-testing it**: the header photo-integrity badge now refreshes after a delete, bulk delete, backup import, clear, source removal or duplicate (it used to keep counting — or flagging MISSING — photos no longer referenced; T58). **The regression suite now runs inside the real iOS app**: `tests/run-sim-suite.sh` builds a throwaway copy of `ios/` with `tests/sim-harness.js` in its bundle (never the project's own bundle, which is what Xcode archives), reinstalls it fresh on a dedicated "LOTO Test iPad" Simulator and runs the suite against the real WKWebView and the real Capacitor Filesystem plugin — 62/62 there, and 62/62 in both desktop modes. The runner's guard was widened for this and only this: inside the app it runs only with `{iosSimulator:true}`, only when the app container is under `CoreSimulator` (never a device), and only on an empty install. §2: iOS 90 (committed, synced, in Xcode; archive pending); web still 86 with 90 staged. Prior: rev 15 — **build 89 fixes all 28 photo-integrity defects the 2026-09-24 review found** — see §6 "Photo-integrity fixes — build 89", which replaces rev 14's open-defects list. Source photos now follow their source *object* (no more index-keyed misattachment on template / type / electrical-count changes); every async photo writer is bound to its form session and Save & New / Edit / Duplicate / Clear / Export / Backup wait for it; one form identity (Save & New replaces-or-appends BY ID — a reload mid-edit can no longer save a second copy); orphan re-attach is a reviewed, missing-slots-only repair instead of a launch-time guess; filesystem writes are atomic and size-verified, IndexedDB reconnects, and the newest copy of the entry list wins at load. Every fix has a regression test written first and proven to FAIL on build 88: the suite is now 61 tests and passes 61/61 in web mode AND with the whole suite run against a mock native filesystem (`runPhotoRegressionSuite({nativeMock:true})`), and it refuses to run anywhere real data could live. Photo filenames now always carry the device code (`0924_JW-a1b2_00001`, §7); linked sources keep and export their photo, with entry + source ids on `linkedTo` (§10). §2: iOS is at 89 (archive pending); the web (`main`) is still 86 with 89 staged. Prior: rev 14 — documented the review (its open-defects list is now §6's build-89 fixes table). A max-effort code review of build 88 (nine finder angles, every candidate independently verified, plus a gap sweep) found 28 photo-integrity defects — 20 confirmed, 4 plausible, 4 unverified, none refuted, none yet fixed — documented by root cause: index-keyed source photos (template/type changes silently misattach or drop photos), three unguarded async photo writers, split form identity, launch-time orphan re-attach, and unverified storage writes; plus field rules until fixed. §6 also gains what a stored photo is (no EXIF survives the canvas) and the deferred off-app backup design, and **the regression-suite instruction now carries a hard warning: its reset erases real data, so never run it where field data lives.** §2 records which build each channel carries — the web (`main`) is on build 86 and still has the photo-destroying retake-delete. §3 adds `tests/` and the public-repo rule; §9 documents promoting builds to the web via the `loto-main-web` worktree; new §13 points to the recovery tooling and the Lumix frame-number rule. Prior: rev 13 — builds 83–88, the photo-store rebuild and its aftermath. **§6 is the section to read.** Build 83 re-keyed the photo store on entry UUIDs after name-derived keys corrupted ~1,100 photo slots across five VA facilities, adding migration/quarantine, a hard export duplicate gate, capture-time hash warnings, Photo Audit and entry-retention guards. Builds 84–88 then fixed what 83 got wrong or left rough: 84 made the migration done-flag conditional on the stores being readable; 85 scoped and chunked the quarantine export; 86 scoped Photo Audit to today's work; **87 removed the retake/misc-removal deletes that were destroying live photos**, added the in-flight capture guard and `reattachOrphanedPhotos()`; 88 gave duplicated sources their own `sourceId` and recorded the copied photo as a `{dupOf}`. The regression suite is now 12 tests and is the gate on any photo-path change. §10 gains the office `Information_Sheet_MMDDYY.xlsx` field-app layout spec — geometry, the bare-reference photo rule, the `photo_detail` `String(20)` position-marker trap — and the cross-date survey problem that stranded 71 Atlanta photos. §8 versioning and §11 code map refreshed to build 88 / cache v7.84. Prior: build 79: simplified verification — water sources get Drain/Gauge checkboxes synthesizing the same canonical strings, electrical defaults to Controls, Settings toggle reverts to classic pickers (§5.4c). Prior: rev 10 — builds 74–77: durable photo storage + integrity. §6 rewritten: full-res photos now write to the **native filesystem** (Capacitor Filesystem, `DATA/loto_photos/`) with IndexedDB/localStorage as fallbacks, after iOS storage eviction silently lost 74 photos on 2026-08-04; capture-time save verification, export integrity guard, header integrity badge, collision-proof photo keys. §7: local-day date semantics + filtered-day export stamps; reuse-a-photo share model with export dedup; per-entry `exportedAt`/`exportId` stamps. §5.5: export-status badges + delete guards with "Export these first" escape hatch. New template: Unit Heater - Natural Gas. Prior: rev 9 — §5 registry inventory expanded. Named the equipment-side registries the doc had glossed over (`EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT`, `EQUIPMENT_PROMPT_FOR_TEMPLATE`, `EQUIPMENT_DIAGRAM_OVERRIDE`, `CONDENSATE_AUTO_EQUIP`, `CUSTOM_EQUIP_KEYWORD_TEMPLATE`) plus a new "Other registries (misc but load-bearing)" bullet block covering `SOURCE_DEFAULTS`, `ENERGY_DEVICE_MAP`, `ENERGY_KEYWORD_TEMP`, `ENERGY_LABEL_PREFIX/COLORS`, `PHOTO_DEFAULTS`, `SKETCH_DIAGRAMS`, `SAVED_FILTERS`, `HOSPITALS`. Prior revs: rev 8 = ingester live; rev 7 = data-entry UX pass; rev 6 = ZIP restructure.)
 **Repo:** [github.com/whittw1/loto-info-sheet](https://github.com/whittw1/loto-info-sheet)
 **Prior standalone doc:** `LOTO_Integration_Architecture.md` in `~/Desktop/Claude Apps/LOTO Information Sheet App/` (April 2026, pre-iOS work — kept for reference, superseded by this file).
 
@@ -55,7 +55,7 @@ loto-info-sheet/                              (the GitHub repo)
 ├── TODO.md                                   (deferred work)
 ├── IOS_RELEASE_SETUP.md                      (fastlane + GitHub Action prereqs)
 ├── tests/
-│   ├── photo-regression.js                   (photo-store regression suite, 82 tests — runs in a browser or inside the app on a Simulator — §6)
+│   ├── photo-regression.js                   (photo-store regression suite, 90 tests — runs in a browser or inside the app on a Simulator — §6)
 │   ├── sim-harness.js                        (loads the suite into a throwaway SIMULATOR build; inert without its trigger file)
 │   ├── run-sim-suite.sh                      (one command: sync → throwaway ios/ copy + harness → fresh install on "LOTO Test iPad" → run → report)
 │   ├── production_store_scan.py              (read-only quarantine classifier over export bundles)
@@ -605,7 +605,7 @@ timestamp on the first successful save after page load.
   in the ~340 historical legacy-suspect entries and told the crew nothing about
   the day in front of them. Each scope labels what it covers, so a historical
   collision is never mistaken for today's work.
-- **Tests:** `tests/photo-regression.js` — **82 tests** (87 results), run by loading the app
+- **Tests:** `tests/photo-regression.js` — **90 tests** (95 results), run by loading the app
   and calling `runPhotoRegressionSuite()`. T1–T7 cover the
   original directive (same-name isolation, re-export byte stability, duplicate
   provenance, the cross-link/legacy export gates, key format, and a 500-entry /
@@ -615,7 +615,7 @@ timestamp on the first successful save after page load.
   2026-09-24 review**, each written before its fix and proven to FAIL on build 88
   (see the table below); T58 (build 90) checks the integrity badge follows
   deletes. **If you change any photo path, run it in all three environments and
-  expect every result to pass in each (87/87 at build 91):**
+  expect every result to pass in each (95/95 at build 92):**
   1. `runPhotoRegressionSuite()` in a desktop browser (web: IndexedDB);
   2. `runPhotoRegressionSuite({nativeMock: true})` there too — an in-memory
      Capacitor Filesystem for the whole run;
@@ -938,6 +938,63 @@ runs at launch.
 
 ---
 
+### Build 92 — valve marks (tap the valve in the source photo)
+
+**Why:** loto-web draws each source's ID box + arrow on its photo. With nothing to
+go on it used a preset corner (from the L/R/T/B detail), so the office dragged every
+box onto its valve by hand after each import. The tech standing at the valve is the
+one who knows where it is.
+
+**What the tech sees.** After a source photo is stored (capture or Reuse), a
+"📍 Where is the Ball Valve?" dialog shows the photo: tap the valve (a quantity-N
+source takes N taps; once all are placed a tap moves the nearest). The preview draws
+the boxes and arrows exactly as loto-web will lay them out — other sources that share
+the same shot are dimmed. **Save / Clear / Skip**; "Ask after every source photo"
+(also in Settings, `localStorage.loto_ask_valve_mark`, default on) turns the prompt
+off — then mark any time with **📍 Mark** under the photo or from the photo viewer.
+A marked slot shows a 📍 badge (📍 2 for two devices), the collapsed card a 📍.
+
+**Data.** `photos['source_N'].marks = [{x, y}]` — fractions of the image (0..1 from
+its top-left, 3 decimals), one per device of the source's quantity — on the SOURCE
+PHOTO REFERENCE, because a mark belongs to one photo: a retake or a reuse makes a new
+reference with no mark (T81); Duplicate Source is a different device, so its copy
+starts unmarked (T83); Duplicate Entry copies marks with the photos. Saving REPLACES
+the reference object (`saveValveMarks`): while a saved entry is being edited the form
+shares its references, and a discarded edit must not move the saved entry's mark
+(T82). The dialog is bound to the reference it opened on — if that photo is retaken
+or the form changes meanwhile, nothing is saved.
+
+**Placement rule** (`layoutValveMarks`, identical in loto-web's
+`app/services/valve_marks.py` and its editor's `_layoutValveMarks`): per photo, in
+source order, the arrow tip goes on the mark and the ID box (0.32 × 0.13 of the
+frame) at the arrow's tail; candidate sides in order: the horizontal side with more
+room, the other horizontal side, then vertical (box above for a mark in the lower
+half, below otherwise), the other vertical — the first whose box and arrow overlap
+no shape already placed and cover no other mark wins. Arrows are 0.25 long, shorter
+(≥ 0.08) near an edge. Strict comparisons and `floor(v·10⁴ + ½)/10⁴` rounding make
+the JS and Python copies agree exactly: T84 pins golden values that loto-web's
+`scripts/smoke_valve_marks.py` asserts too, and that script also runs both JS copies
+against the Python one on 400 random mark sets. Because loto-web STRETCHES each
+photo to its procedure frame (never crops), image fractions are frame fractions.
+
+**Exports.** `entries.json` `sources[i].photoMarks`; the Information Sheet XLSX
+col 12 **Valve Mark** (`"0.412,0.633"`, several `"x,y; x,y"`); the CSV's last
+column **Valve Marks**. All three only when that source's photo is in the export.
+loto-web (separate deploy) stores them on `EnergySource.photo_marks`, and uses them
+only where nobody has placed that box in its editor — a saved placement always wins.
+
+Tests T79–T85, each first proven to FAIL on build 91 (and T82/T83 re-checked by
+putting the bug back): T79 mark → ref → entries.json / XLSX col 12 / CSV; T79b
+quantity-2 taps + Clear; T80 the prompt (default on; not after equipment photos; not
+when off; 📍 Mark appears with the photo); T81 retake drops the mark; T82 discarded
+edit; T83 Duplicate Source; T84 golden layout; T85 two sources on one shared photo.
+**90 tests** (95 results) — **95/95** in web, `{nativeMock:true}` and inside the app
+on the Simulator (incl. the 500-entry scale test). The Simulator run now also saves
+T79's real exported Information Sheet (`<work>/artifacts/`), which loto-web's smoke
+test imports with `--xlsx`.
+
+---
+
 ## 7. Exports — the integration surface
 
 ### ZIP export (`Export` button → `runCombinedExport`)
@@ -1064,7 +1121,8 @@ The cleanest way to ingest a field export: read `entries.json` instead of parsin
       "id": "…", "lotoId": "BATH-AHU-001", "hospitalCode": "Atlanta",
       "equipName": "AHU-1", "sources": [
         { "sourceId": "…", "energySource": "Electrical 208V", "deviceId": "D3",
-          "valveState": "normally_closed", "photoFile": "photos/0713_00003.jpg" }
+          "valveState": "normally_closed", "photoFile": "photos/0713_00003.jpg",
+          "photoMarks": [ { "x": 0.412, "y": 0.633 } ] }
       ],
       "photoFiles": {
         "main": "photos/0713_00001.jpg", "dataplate": "", "ee": "photos/0713_00002.jpg",
@@ -1120,9 +1178,17 @@ side — see §10 for how ingest should reconcile blank vs. populated.
 
 `Linked To` is populated when a source is linked to another equipment's source (see `LinkedSourceRef`).
 
+`Valve Marks` (build 92) is the LAST column: the source photo's valve marks, `x,y`
+fractions (`x,y; x,y` for several), same text as the XLSX's col 12.
+
 ### XLSX Information Sheet
 
 Professional formatted `.xlsx` mirroring the paper "LOTO Information Sheet" form used by field crews. Header rows for the equipment metadata, a 10-row source table (padded with blanks if fewer than 10 sources), photo filename references in the detail cell, page numbering, and linked-source markers. Styled per-cell via ExcelJS.
+
+**Valve Mark (build 92):** column 12 of every source row — header `Valve Mark`,
+value `x,y` photo fractions where the tech tapped the valve (`x,y; x,y` for a
+quantity-2 row), blank without a mark or without a photo. loto-web reads it as
+`col_valve_mark` and starts the source's box + arrow there (§6 "Build 92").
 
 **Valve State (build 91):** column 11 of every source row — header `Valve State`,
 value `Normally Closed` (blank = normal). This sheet is what the office actually
