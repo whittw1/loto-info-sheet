@@ -30,6 +30,11 @@
 //           count, phone header, names as HTML, copy-source marks, undated
 //           open unit, linked Detail cell, save message) + the two known items
 //           it re-found (CSV line breaks, unreadable unit-in-progress)
+//   T111–T124 build 95: one per finding of the 2026-09-27 review of build 94
+//           (stale unit-in-progress copy, merge-before-save, the tab claim,
+//           paused-tab launch, backup Replace, twin delete, marks messages and
+//           In/Out shape, undated edit, emergency-copy banner, bottom-bar
+//           warning, canary escaping sweep)
 // Results land in window.__PHOTO_TEST_RESULTS and the console.
 // ============================================================================
 (function () {
@@ -125,8 +130,12 @@
     document.getElementById('equipTemplate').value = '';
     try { localStorage.removeItem(PHOTO_KEY_MIGRATION_FLAG); } catch (e) {}
     try { localStorage.removeItem('loto_seq_used'); } catch (e) {}
-    try { localStorage.removeItem('loto_saved'); localStorage.removeItem('loto_saved_at'); } catch (e) {}
+    try { localStorage.removeItem('loto_saved'); localStorage.removeItem('loto_saved_at'); localStorage.removeItem('loto_wip_superseded'); } catch (e) {}
     try { await saveMetadata('photo_hash_index', {}); } catch (e) {}
+    // build 95: saveAll merges a list another writer stored — a test's raw
+    // write of the store is not "another writer" for the reset
+    try { if (typeof _entryStoreAt !== 'undefined') _entryStoreAt = (await rawIdbGet('metadata', 'saved_equipment_at')) || null; } catch (e) {}
+    try { if (typeof _tombAdds !== 'undefined') { Object.keys(_tombAdds).forEach(k => delete _tombAdds[k]); _tombClears.clear(); } } catch (e) {}
     saveAll();
     // wipe photo stores (IDB + localStorage fallback + the MOCK filesystem in
     // native-mock runs — the runner refuses to start on a real device)
@@ -1761,8 +1770,9 @@
 
   // Remove the red load banners a storage-fault test provokes.
   function dropLoadBanners() {
-    document.querySelectorAll('.container > div, #storageFailBanner').forEach(d => {
-      if (d.id === 'storageFailBanner' || /expected entries|entry store|could NOT be written|Recovered/i.test(d.textContent || '')) d.remove();
+    document.querySelectorAll('.container > div, #storageFailBanner, .sticky-banner, #wipReadBanner').forEach(d => {
+      if (d.id === 'storageFailBanner' || d.id === 'wipReadBanner' || d.classList.contains('sticky-banner') ||
+          /expected entries|entry store|could NOT be written|Recovered|emergency copy/i.test(d.textContent || '')) d.remove();
     });
   }
   // Decode a PNG data URL and sample one pixel at fractional (fx, fy).
@@ -2915,32 +2925,31 @@
   }
 
   // T101 — two tabs of the web app share one storage and each wrote its own
-  // list over the other's: a unit saved in one tab vanished when the other saved
+  // list over the other's: a unit saved in one tab vanished when the other saved.
+  // Build 95: the tab that opened last holds a claim in localStorage; the other
+  // one is told (storage event) and pauses — and writes nothing.
   async function t101_aSecondTabPausesInsteadOfOverwriting() {
-    const N = 'T101 another tab of the app takes over → this one pauses and writes nothing (no lost saves)';
+    const N = 'T101 another tab takes the claim → this one pauses and writes nothing (no lost saves)';
     await resetAppState();
-    if (typeof BroadcastChannel !== 'function') return record(N, true, 'no BroadcastChannel in this runtime (single window)');
-    const ch = new BroadcastChannel('loto-collector-tabs');
-    const got = [];
-    ch.onmessage = (ev) => got.push(ev.data);
+    if (typeof tabLockActive === 'function' && !tabLockActive()) return record(N, true, 'single-window app (iOS) — no tab claim');
+    const KEY = 'loto_tab_claim';
+    let had = null; try { had = localStorage.getItem(KEY); } catch (e) {}
     try {
-      ch.postMessage({ t: 'hello', from: 'TEST-NEWER', since: Date.now() + 60000 });
-      await sleep(300);
-      const answered = got.some(m => m && m.t === 'live' && m.to === 'TEST-NEWER');
       savedEquipment = [mkEntry('Keep-101')]; saveAll(); await sleep(400);
-      ch.postMessage({ t: 'takeover', from: 'TEST-OTHER' });
-      await sleep(1200);
-      const released = got.some(m => m && m.t === 'released' && m.to === 'TEST-OTHER');
+      const v = JSON.stringify({ id: 'TEST-OTHER-TAB', at: new Date().toISOString() });
+      localStorage.setItem(KEY, v);
+      window.dispatchEvent(new StorageEvent('storage', { key: KEY, newValue: v }));
+      await sleep(200);
       const ov = document.getElementById('tabPausedOverlay');
-      const shown = !!ov && ov.style.display !== 'none';
+      const shown = !!ov && ov.style.display !== 'none' && /another tab/i.test(ov.textContent || '');
       savedEquipment.push(mkEntry('Stale-101')); saveAll(); await sleep(500);
       const stored = await rawIdbGet('metadata', 'saved_equipment');
       const wrote = Array.isArray(stored) && stored.some(e => e && e.equipName === 'Stale-101');
-      record(N, answered && released && shown && !wrote,
-        'answered a newer tab=' + answered + ', released on takeover=' + released + ', paused overlay=' + shown + ', paused tab still wrote=' + wrote);
+      record(N, shown && !wrote, 'paused overlay=' + shown + ', paused tab still wrote=' + wrote);
     } finally {
-      ch.close();
+      try { if (had === null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, had); } catch (e) {}
       try { _tabPaused = false; } catch (e) {}
+      if (typeof claimThisTab === 'function') claimThisTab();
       const o = document.getElementById('tabPausedOverlay'); if (o) o.remove();
     }
   }
@@ -3124,6 +3133,352 @@
     dropLoadBanners();
   }
 
+
+  // ======================================================================
+  // Build 95 — one test per finding of the 2026-09-27 review of build 94
+  // (the b94 fixes' own regressions: the unit-in-progress restore, the tab
+  // lock, marks, backup Replace, the emergency-copy warning, the phone header)
+  // ======================================================================
+  const wipOf = (name, id, extra) => Object.assign({ at: new Date().toISOString(), entryId: id, equipType: '', equipName: name, lotoId: '',
+    equipRoom: 'R1', equipBuilding: 'Main', template: '', tiedTo: '', tiedToName: '', notes: '', sources: [mkSrc('Electrical 480V')],
+    photos: {}, miscPhotos: [], sketch: null }, extra || {});
+  async function withUnreadable(keys, fn) {
+    const realGet = IDBObjectStore.prototype.get;
+    IDBObjectStore.prototype.get = function (k) {
+      if (keys === '*' || keys.includes(k)) throw new DOMException('Connection to Indexed Database server lost', 'UnknownError');
+      return realGet.apply(this, arguments);
+    };
+    try { return await fn(); } finally { IDBObjectStore.prototype.get = realGet; }
+  }
+  async function clearWipSlots() {
+    try { localStorage.removeItem('loto_current'); localStorage.removeItem('loto_current_alt'); localStorage.removeItem('loto_wip_superseded'); } catch (e) {}
+    await rawIdbDelete('metadata', 'current_wip').catch(() => {});
+    await rawIdbDelete('metadata', 'current_wip_alt').catch(() => {});
+    _wipUnread = false;
+  }
+
+  // T111 — b94 restored an unreadable unit-in-progress from its local copy but
+  // left the unreadable (older) copy in place: once the unit was saved, the
+  // next normal launch reopened that older copy as an EDIT of the saved unit —
+  // an export shipped it and Save & New overwrote the unit with it
+  async function t111_restoredUnitNeverComesBackAsItsOlderCopy() {
+    const N = 'T111 a unit restored from its local copy and then saved never comes back as its older stored copy';
+    await resetAppState(); await clearWipSlots();
+    const id = genUuid();
+    await rawIdbPut('metadata', 'current_wip', wipOf('Pump-111', id, { at: new Date(Date.now() - 120000).toISOString(), notes: 'OLD' }));
+    localStorage.setItem('loto_current', JSON.stringify(wipOf('Pump-111', id, { notes: 'NEW', sources: [mkSrc('Electrical 480V'), mkSrc('Natural Gas')] })));
+    await withUnreadable(['current_wip'], async () => { savedEquipment = []; await loadAll(); await sleep(300); });
+    const restored = document.getElementById('equipNotes').value === 'NEW';
+    performSaveAndNew(); await sleep(500);
+    // next launch: storage healthy again
+    const msgs = await withToasts(async () => { savedEquipment = []; await loadAll(); await sleep(300); });
+    const name = document.getElementById('equipName').value, edit = !!editingEntry;
+    const saved = savedEquipment.find(e => sameEntryId(e.id, id));
+    // …and when current_wip is STILL unreadable, no false "couldn't read" alarm for a unit that was saved
+    await clearWipSlots();
+    await rawIdbPut('metadata', 'current_wip', wipOf('Pump-111b', id, { at: new Date(Date.now() - 120000).toISOString() }));
+    localStorage.setItem('loto_current', JSON.stringify(wipOf('Pump-111b', id, { notes: 'NEW' })));
+    await withUnreadable(['current_wip'], async () => { savedEquipment = []; await loadAll(); await sleep(300); });
+    performSaveAndNew(); await sleep(500);
+    dropLoadBanners();
+    await withUnreadable(['current_wip'], async () => { savedEquipment = []; await loadAll(); await sleep(300); });
+    const falseAlarm = !!document.getElementById('wipReadBanner');
+    const ok = restored && name === '' && !edit && !!saved && saved.notes === 'NEW' && (saved.sources || []).length === 2 && !falseAlarm;
+    record(N, ok, 'launch 1 restored the newer copy=' + restored + '; after saving, next launch form="' + name + '" editing=' + edit +
+      ', saved notes=' + (saved && saved.notes) + ' sources=' + (saved && (saved.sources || []).length) + '; still-unreadable launch shows false banner=' + falseAlarm + ' ' + JSON.stringify(msgs));
+    await clearWipSlots(); dropLoadBanners();
+    savedEquipment = []; await loadAll(); await sleep(200);
+  }
+
+  // T112 — saveAll wrote this tab's in-memory list over the store: units
+  // another tab (or an older build still open) saved in the meantime were lost
+  async function t112_saveMergesUnitsAnotherWriterSaved() {
+    const N = 'T112 saving never overwrites units another tab saved in the meantime';
+    await resetAppState();
+    savedEquipment = [mkEntry('Mine-112')]; saveAll(); await sleep(500);
+    const stored = (await rawIdbGet('metadata', 'saved_equipment')) || [];
+    await rawIdbPut('metadata', 'saved_equipment', stored.concat([mkEntry('Other-112')]));
+    await rawIdbPut('metadata', 'saved_equipment_at', new Date(Date.now() + 5000).toISOString());
+    fillForm('New-112'); performSaveAndNew(); await sleep(800);
+    const names = (((await rawIdbGet('metadata', 'saved_equipment')) || []).map(e => e.equipName)).sort();
+    record(N, names.includes('Other-112') && names.includes('New-112') && names.includes('Mine-112'), 'stored after the save: ' + JSON.stringify(names));
+  }
+
+  // T113 — the b94 lock was decided once at launch: a tab that missed the
+  // other tab's message (suspended, blocked in a dialog) went on writing its
+  // stale list. Every write now checks the claim itself.
+  async function t113_aTabThatLostTheClaimWritesNothing() {
+    const N = 'T113 a tab whose claim another tab took (even with no message delivered) pauses and writes nothing';
+    await resetAppState();
+    if (typeof tabLockActive === 'function' && !tabLockActive()) return record(N, true, 'single-window app (iOS) — no tab claim');
+    const KEY = 'loto_tab_claim';
+    let had = null; try { had = localStorage.getItem(KEY); } catch (e) {}
+    try {
+      savedEquipment = [mkEntry('Keep-113')]; saveAll(); await sleep(400);
+      localStorage.setItem(KEY, JSON.stringify({ id: 'TEST-OTHER-TAB', at: new Date().toISOString() }));   // no event: it was missed
+      savedEquipment.push(mkEntry('Stale-113')); saveAll(); await sleep(500);
+      fillForm('Form-113'); autoSaveCurrent(); await sleep(300);
+      const stored = await rawIdbGet('metadata', 'saved_equipment');
+      const wrote = Array.isArray(stored) && stored.some(e => e && e.equipName === 'Stale-113');
+      const wip = await rawIdbGet('metadata', 'current_wip');
+      const wipWrote = !!wip && wip.equipName === 'Form-113';
+      const ov = document.getElementById('tabPausedOverlay');
+      const paused = !!ov && ov.style.display !== 'none';
+      record(N, !wrote && !wipWrote && paused, 'list written=' + wrote + ', unit-in-progress written=' + wipWrote + ', paused=' + paused);
+    } finally {
+      try { if (had === null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, had); } catch (e) {}
+      try { _tabPaused = false; } catch (e) {}
+      if (typeof claimThisTab === 'function') claimThisTab();
+      const o = document.getElementById('tabPausedOverlay'); if (o) o.remove();
+    }
+  }
+
+  // T114 — a tab paused during launch still resolved the unit-in-progress
+  // copies (deleted the alternate slot, rewrote current_wip) while the save of
+  // the "recovered draft" it made was a no-op — that unit was lost
+  async function t114_aPausedTabNeverTouchesTheUnitInProgressCopies() {
+    const N = 'T114 a tab paused at launch never rewrites or deletes the stored unit-in-progress copies';
+    await resetAppState(); await clearWipSlots();
+    await rawIdbPut('metadata', 'current_wip', wipOf('X-114', genUuid(), { at: new Date(Date.now() - 60000).toISOString() }));
+    await rawIdbPut('metadata', 'current_wip_alt', wipOf('Y-114', genUuid()));
+    try { _tabPaused = true; savedEquipment = []; await loadAll(); await sleep(400); }
+    finally { try { _tabPaused = false; } catch (e) {} const o = document.getElementById('tabPausedOverlay'); if (o) o.remove(); }
+    const cw = await rawIdbGet('metadata', 'current_wip'), ca = await rawIdbGet('metadata', 'current_wip_alt');
+    record(N, !!cw && cw.equipName === 'X-114' && !!ca && ca.equipName === 'Y-114', 'current_wip=' + (cw && cw.equipName) + ', current_wip_alt=' + (ca && ca.equipName));
+    await clearWipSlots(); dropLoadBanners();
+    savedEquipment = []; await loadAll(); await sleep(200);
+  }
+
+  // T115 — Import → "Replace the saved list" removed the unit open for edit but
+  // left the form editing it (the b94 delete fix didn't cover this path)
+  async function t115_backupReplaceClosesTheUnitItRemoves() {
+    const N = 'T115 Import → Replace closes the form when the unit open for edit is not in the backup';
+    await resetAppState();
+    fillForm('Open-115'); const E = saveEntry();
+    editSaved(savedEquipment.findIndex(e => e.id === E.id)); await sleep(100);
+    const file = new File([JSON.stringify({ version: 2, entries: [mkEntry('Other-115')] })], 'b.json', { type: 'application/json' });
+    await withDialogs({ confirm: true, choice: { 'backup-import': 'replace' } }, async () => {
+      handleBackupFile({ target: { files: [file] } });
+      await waitFor(() => savedEquipment.some(e => e.equipName === 'Other-115'), 8000, 'replace applied');
+      await sleep(200);
+    });
+    const closed = !editingEntry && document.getElementById('equipName').value === '';
+    record(N, closed && !savedEquipment.some(e => e.id === E.id), 'form closed=' + closed + ', form name="' + document.getElementById('equipName').value + '"');
+  }
+
+  // T116 — a unit SAVED TWICE (two rows, one id): deleting the copy that is
+  // NOT open for edit discarded the edit in progress on the other copy
+  async function t116_deletingTheOtherTwinKeepsTheEdit() {
+    const N = 'T116 deleting the other copy of a unit saved twice keeps the edit in progress';
+    await resetAppState();
+    const A = mkEntry('Twin-116'); const B = Object.assign(JSON.parse(JSON.stringify(A)), { notes: 'copy B' });
+    savedEquipment = [A, B]; saveAll();
+    editSaved(0); await sleep(100);
+    document.getElementById('equipNotes').value = 'edited-116';
+    const { log } = await withDialogs({ confirm: true }, async () => { deleteSaved(1); });
+    const kept = !!editingEntry && document.getElementById('equipNotes').value === 'edited-116' && document.getElementById('equipName').value === 'Twin-116';
+    record(N, kept && !log.some(m => /OPEN in the form/i.test(m)), 'edit kept=' + kept + ', confirm=' + JSON.stringify(log[0] || ''));
+  }
+
+  // T117 — Copy source / Link cleared the valve marks and the next message
+  // (same tick, one toast) hid the "marks cleared" warning
+  async function t117_marksClearedMessageIsTheOneShown() {
+    const N = 'T117 Copy source that clears valve marks says so in the message the tech sees';
+    await resetAppState();
+    savedEquipment = [mkEntry('Src-117', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), quantity: 1 })] })]; saveAll();
+    fillFormNoSources('Copy-117');
+    sources.push(Object.assign(mkSrc('CHW In/Out'), { deviceType: 'Butterfly', quantity: 2, collapsed: false }));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('c117'));
+    openValveMarkDialog('source_0'); await markDialogReady(); tapMark(0.3, 0.5); tapMark(0.7, 0.5); clickById('valveMarkSave');
+    showCopySourceDialog(0); applyCopySource(0, 0);
+    const shown = (document.getElementById('toast') || {}).textContent || '';
+    record(N, /valve mark/i.test(shown) && !((photos.source_0 || {}).marks || []).length, 'toast shows ' + JSON.stringify(shown));
+  }
+
+  // T118 — marks tapped on a source that later BECOMES an In/Out pair were kept
+  // (count unchanged) and exported in tap order — loto-web points the IN arrow
+  // at whichever valve was tapped first
+  async function t118_marksPlacedBeforeAnInOutChangeAreDropped() {
+    const N = 'T118 marks placed before a source became an In/Out pair are cleared, never exported as In/Out in tap order';
+    await resetAppState();
+    fillFormNoSources('IO-118');
+    sources.push(Object.assign(mkSrc('HHW In'), { deviceType: 'Ball Valve', quantity: 2, collapsed: false }));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('io118'));
+    openValveMarkDialog('source_0'); await markDialogReady(); tapMark(0.8, 0.5); tapMark(0.2, 0.5); clickById('valveMarkSave');
+    const before = ((photos.source_0 || {}).marks || []).length;
+    handleEnergySourceChange(0, 'HHW In/Out');
+    const after = ((photos.source_0 || {}).marks || []).length;
+    const exported = sourceMarksForExport({ sources: sources, photos: photos }, 0).length;
+    record(N, before === 2 && after === 0 && exported === 0, 'marks before=' + before + ', after the switch to HHW In/Out=' + after + ', exported=' + exported);
+  }
+
+  // T119 — b94's "the open form is today's work" also moved an open EDIT of an
+  // undated saved unit onto today's Information Sheet
+  async function t119_undatedUnitOpenForEditStaysUndated() {
+    const N = 'T119 an undated saved unit open for edit stays on the undated Information Sheet';
+    await resetAppState();
+    const U = mkEntry('Undated-119'); delete U.savedAt;
+    const D = mkEntry('Dated-119', { savedAt: new Date(2026, 8, 22, 10).toISOString() });
+    savedEquipment = [U, D]; saveAll();
+    editSaved(0); await sleep(100);
+    const { zip, confirms } = await runExport({ confirmResponse: true, dateFilter: 'all' });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const units = {};
+    for (const q of Object.keys(u.files).filter(x => /^info_sheets\/Information_Sheet_.*\.xlsx$/.test(x)).sort()) units[q.replace('info_sheets/', '')] = await sheetUnits(u.files[q]);
+    record(N, (units['Information_Sheet_undated.xlsx'] || []).includes('Undated-119'), JSON.stringify(units));
+  }
+
+  // T120 — with IndexedDB failing, the "emergency copy — export now" warning
+  // was a toast the unit-in-progress toast replaced 2 ms later
+  async function t120_emergencyCopyWarningStaysOnScreen() {
+    const N = 'T120 "showing the emergency copy — export now" stays on screen when the unit in progress can\'t be read either';
+    await resetAppState(); await clearWipSlots();
+    savedEquipment = [mkEntry('E-120')]; saveAll(); await sleep(500);
+    dropLoadBanners();
+    await withUnreadable('*', async () => { savedEquipment = []; await loadAll(); await sleep(300); });
+    const txt = Array.from(document.querySelectorAll('.container > div')).map(d => d.textContent || '').join(' | ');
+    const ok = /emergency copy/i.test(txt) && /export/i.test(txt);
+    record(N, ok, 'on-screen banners: ' + JSON.stringify(txt.slice(0, 300)));
+    await clearWipSlots(); dropLoadBanners();
+    savedEquipment = []; await loadAll(); await sleep(200); dropLoadBanners();
+  }
+
+  // T121 — on a phone the header (with the "⚠ Storage issue" chip and the
+  // photo badge) is no longer pinned: the warning must stay on screen
+  async function t121_storageWarningIsInTheBottomBar() {
+    const N = 'T121 a storage problem shows in the always-visible bottom bar (phones included)';
+    try {
+      setAutosaveStatus('error');
+      const el = document.getElementById('bottomAlert');
+      const shown = !!el && getComputedStyle(el).display !== 'none' && /storage/i.test(el.textContent || '');
+      setAutosaveStatus('saved');
+      const cleared = !el || getComputedStyle(el).display === 'none' || !/storage/i.test(el.textContent || '');
+      record(N, shown && cleared, 'shown on error=' + shown + ', cleared after a good save=' + cleared);
+    } finally { setAutosaveStatus('saved'); }
+  }
+
+  // T122 — escaping is by hand at every interpolation (b94 added ~80 calls):
+  // this guard renders every user-facing builder with markup in every field
+  // and fails if any of it becomes a live element (it passes on b94 — it is
+  // the net for the NEXT builder that forgets)
+  async function t122_noUserValueEverBecomesMarkup() {
+    const N = 'T122 no user value becomes live markup in any list, card or dialog (canary sweep)';
+    await resetAppState();
+    const C = '<i class="cnry">x</i>&"\'';
+    const leaks = [];
+    const check = (where) => { const n = document.querySelectorAll('.cnry').length; if (n) leaks.push(where + ' (' + n + ')'); };
+    window.__cnry122 = 0;
+    const evil = C + '<img src=x onerror="window.__cnry122=1">';
+    const srcC = () => Object.assign(mkSrc(C), { sourceId: genUuid(), energySource: C, deviceType: C, deviceId: C, location: C, detail: C, verification: C,
+      _customEnergy: true, _customDevice: true, _customLoc: true });
+    const A = mkEntry(evil, { room: C, building: C, sources: [srcC()] });
+    A.equipType = C; A.template = C; A.lotoId = C; A.notes = C; A.tiedToName = C;
+    savedEquipment = [A, mkEntry('Plain-122')]; saveAll();
+    try { savedFilter = 'all'; savedSearchTerm = ''; } catch (e) {}
+    renderSavedPanel(); check('saved list');
+    try { savedSearchTerm = C + 'zz'; renderSavedPanel(); check('search summary'); } finally { try { savedSearchTerm = ''; } catch (e) {} renderSavedPanel(); }
+    fillFormNoSources('Card-122');
+    const s = srcC(); s.collapsed = false;
+    s.linkedTo = { equipName: C, equipType: C, equipBuilding: C, equipRoom: C, sourceIndex: 0, sourceLabel: C, entryId: A.id, sourceId: '' };
+    sources.push(s); renderSources(); check('source card (open)');
+    sources[0].collapsed = true; renderSources(); check('source card (collapsed)');
+    showCopySourceDialog(0); check('copy source — units'); pickCopySourceEntry(0); check('copy source — sources'); closeCopySourceDialog();
+    showLinkDialog(0); setLinkScope('all'); check('link — units'); showLinkSourcePicker(0); check('link — sources');
+    if (typeof closeLinkDialog === 'function') closeLinkDialog();
+    showIncompleteWarning([C]); check('incomplete warning'); closeIncompleteWarning();
+    await withDialogs({ confirm: true }, async () => { try { duplicateSaved(0); await sleep(50); check('duplicate dialog'); } catch (e) {} });
+    const dd = document.getElementById('duplicateDialog'); if (dd) dd.remove();
+    try { showTemplatePrompt(C, [C]); check('template prompt'); } catch (e) {}
+    closeAllPrompts();
+    await sleep(150);
+    record(N, !leaks.length && !window.__cnry122, leaks.length ? 'markup leaked in: ' + leaks.join(', ') : 'no leaks; script ran=' + !!window.__cnry122);
+    savedEquipment = []; saveAll(); renderSavedPanel();
+  }
+
+  // T123 — build 95 renders user values through html`` (escape by default).
+  // The opposite mistake is now the visible one: a value escaped twice, or a
+  // piece of this code's own markup escaped, shows "&amp;" / "&mdash;" / "<b>"
+  // as text. Every converted builder is rendered with a value full of the
+  // characters that matter; each must show it VERBATIM and show no entity.
+  async function t123_everyBuilderShowsUserTextVerbatim() {
+    const N = 'T123 lists, cards and dialogs show user text verbatim — never as markup, never double-escaped';
+    await resetAppState();
+    const V = 'A&B <b>x</b> "q" \'z\' 5/8"';
+    const ENT = /&(?:amp|lt|gt|quot|#39|#\d+|#x[0-9a-f]+|mdash|middot|hellip|larr|rarr|times|nbsp);/i;
+    const bad = [];
+    const look = (where, root) => {
+      if (!root) { bad.push(where + ': not rendered'); return; }
+      const t = root.textContent || '';
+      if (!t.includes(V)) bad.push(where + ': value not shown verbatim');
+      const m = ENT.exec(t); if (m) bad.push(where + ': shows "' + m[0] + '" as text');
+      if (root.querySelector('b') && Array.from(root.querySelectorAll('b')).some(b => b.textContent === 'x')) bad.push(where + ': value became markup');
+    };
+    const srcV = () => Object.assign(mkSrc(V), { sourceId: genUuid(), energySource: V, deviceType: V, deviceId: V, location: V, detail: V, verification: V,
+      _customEnergy: true, _customDevice: true, _customLoc: true });
+    const A = mkEntry(V, { room: V, building: V, sources: [srcV()] });
+    A.equipType = V; A.template = V; A.lotoId = V; A.notes = V; A.tiedToName = V;
+    savedEquipment = [A, mkEntry('Plain-123')]; saveAll();
+    try { savedFilter = 'all'; savedSearchTerm = ''; } catch (e) {}
+    renderSavedPanel(); look('saved list', document.getElementById('savedPanelBody'));
+    fillFormNoSources('Card-123');
+    const s = srcV(); s.collapsed = true;
+    s.linkedTo = { equipName: V, equipType: V, equipBuilding: V, equipRoom: V, sourceIndex: 0, sourceLabel: V, entryId: A.id, sourceId: '' };
+    sources.push(s); renderSources(); look('source card (collapsed)', document.getElementById('sourcesContainer'));
+    sources[0].collapsed = false; renderSources(); look('source card (open)', document.getElementById('sourcesContainer'));
+    const inputs = ['src_energy_custom_0', 'src_device_custom_0', 'src_deviceId_0', 'src_loc_custom_0'];
+    inputs.forEach(id => { const el = document.getElementById(id); if (!el || el.value !== V) bad.push('input ' + id + ' = ' + JSON.stringify(el && el.value)); });
+    showCopySourceDialog(0); look('copy source — units', document.getElementById('copySourceOverlay'));
+    pickCopySourceEntry(0); look('copy source — sources', document.getElementById('copySourceOverlay')); closeCopySourceDialog();
+    showLinkDialog(0); setLinkScope('all'); look('link — units', document.getElementById('linkDialogOverlay'));
+    showLinkSourcePicker(0); look('link — sources', document.getElementById('linkDialogOverlay'));
+    if (typeof closeLinkDialog === 'function') closeLinkDialog();
+    showIncompleteWarning([V]); look('incomplete warning', document.getElementById('incompleteWarningOverlay')); closeIncompleteWarning();
+    await withDialogs({ confirm: true }, async () => { try { duplicateSaved(0); await sleep(50); } catch (e) {} });
+    look('duplicate dialog', document.getElementById('duplicateDialog'));
+    const dd = document.getElementById('duplicateDialog'); if (dd) dd.remove();
+    showTemplatePrompt(V, [V]); look('template prompt', document.getElementById('templatePromptOverlay'));
+    closeAllPrompts();
+    // an inline handler receives the value itself (jsArg)
+    let got = null; const real = window.applyTemplatePromptChoice;
+    try {
+      window.applyTemplatePromptChoice = (v) => { got = v; };
+      showTemplatePrompt(V, [V]);
+      const btn = document.querySelector('#templatePromptOverlay .btn-primary'); if (btn) btn.click();
+    } finally { window.applyTemplatePromptChoice = real; closeAllPrompts(); }
+    if (got !== V) bad.push('template button handed ' + JSON.stringify(got));
+    record(N, !bad.length, bad.length ? bad.join('; ') : 'verbatim everywhere; handler got the exact value');
+    savedEquipment = []; saveAll(); renderSavedPanel(); sources = []; renderSources();
+  }
+
+  // T124 — found by the build-95 fault campaign (seed 8034; the path exists
+  // since build 91): the launch could not read the entry store, the tech bulk-
+  // deleted units, and the localStorage write of the deleted ids failed. The
+  // next save merged the stored list back in — the deleted units returned with
+  // their photos already erased. This session's deletions now live in memory
+  // too.
+  async function t124_aDeleteSurvivesAFailedTombstoneWrite() {
+    const N = 'T124 a unit deleted while its deletion record cannot be written never comes back at the next save';
+    await resetAppState();
+    const A = mkEntry('Gone-124'), B = mkEntry('Stay-124');
+    savedEquipment = [A, B]; saveAll(); await sleep(500);
+    await withUnreadable(['saved_equipment'], async () => { savedEquipment = []; await loadAll(); await sleep(200); });
+    dropLoadBanners();
+    const si = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k, v) { if (k === 'loto_deleted_ids') { const e = new Error('QuotaExceededError (test)'); e.name = 'QuotaExceededError'; throw e; } return si.call(this, k, v); };
+    try {
+      await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.findIndex(e => e.id === A.id)); });
+    } finally { Storage.prototype.setItem = si; }
+    await sleep(600);
+    const stored = ((await rawIdbGet('metadata', 'saved_equipment')) || []).map(e => e.equipName);
+    const mem = savedEquipment.map(e => e.equipName);
+    record(N, !stored.includes('Gone-124') && !mem.includes('Gone-124') && stored.includes('Stay-124'),
+      'stored=' + JSON.stringify(stored) + ', on screen=' + JSON.stringify(mem));
+    _entryStoreUnread = false;
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -3176,7 +3531,13 @@
     t104_namesAndFieldsShowExactlyAsTyped, t105_copySourceThatLowersTheCountClearsMarks,
     t106_unsavedUnitWithoutPhotosIsOnTodaysSheet, t107_linkedSourceKeepsItsDetailCellClean,
     t108_saveMessageReadsCleanly, t109_csvKeepsALineBreakInsideItsCell,
-    t110_unreadableUnitInProgressUsesItsLocalCopyAndSaysSo];
+    t110_unreadableUnitInProgressUsesItsLocalCopyAndSaysSo,
+    t111_restoredUnitNeverComesBackAsItsOlderCopy, t112_saveMergesUnitsAnotherWriterSaved,
+    t113_aTabThatLostTheClaimWritesNothing, t114_aPausedTabNeverTouchesTheUnitInProgressCopies,
+    t115_backupReplaceClosesTheUnitItRemoves, t116_deletingTheOtherTwinKeepsTheEdit,
+    t117_marksClearedMessageIsTheOneShown, t118_marksPlacedBeforeAnInOutChangeAreDropped,
+    t119_undatedUnitOpenForEditStaysUndated, t120_emergencyCopyWarningStaysOnScreen,
+    t121_storageWarningIsInTheBottomBar, t122_noUserValueEverBecomesMarkup, t123_everyBuilderShowsUserTextVerbatim, t124_aDeleteSurvivesAFailedTombstoneWrite];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

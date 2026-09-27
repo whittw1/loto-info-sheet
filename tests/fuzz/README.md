@@ -1,4 +1,4 @@
-# Execution-based review kit (build 94, 2026-09-27)
+# Execution-based review kit (build 94, 2026-09-27; updated for build 95)
 
 Everything here RUNS the app instead of reading it — the method of the
 2026-09-27 review (ARCHITECTURE.md §6 "Build 94"). Nothing is part of the
@@ -21,10 +21,16 @@ no npm packages.
 | Upgrade chain b88 → b90 → working tree on a Simulator (installed over each other, data kept) | `./upgrade/run-upg.sh` |
 | Directed repros | `node directed.mjs scenarios/common.js scenarios/<name>.js` |
 | Offline PWA export (server killed after the service worker precached) | `node offline_test.mjs` |
-| Two tabs saving at once (web) | `node twotabs.mjs` |
+| Two tabs saving at once (web): the tab opened last holds the claim, the other writes nothing; "Use this tab instead" hands over; a tab opened while another writes photos waits (build 95) | `node twotabs.mjs` |
 | Header width on phones | `node layout_hdr.mjs [outDir]` |
 
 Oracles worth knowing: the harness compares every export with its OWN reading
 of the contract (`ownMarks`, the sheet's columns), not the app's helpers, so a
-bug in a helper can't hide on both sides. In fault mode only a **silent** loss
+bug in a helper can't hide on both sides. Build 95 changed the marks contract: more marks
+than devices ship none, and neither do marks placed before a source became an
+In/Out pair (`ref.marksFor`); the invariant `marks-order-unknown` flags any
+path that leaves such marks stored. Fault mode also fails the entry-list write
+itself (`writeEntryListMerged`, build 95's compare-and-set save — it no longer
+goes through `saveMetadataMany`), so the localStorage fallback path stays
+covered. In fault mode only a **silent** loss
 is a violation — a loss that came with a warning is recorded as info.

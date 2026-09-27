@@ -70,7 +70,9 @@
   let uploadTo = null;
   const realFns = {};
   function installFaults() {
-    for (const name of ['saveMetadata', 'saveMetadataMany', 'getMetadata', 'getMetadataMany', 'savePhotoToDB']) {
+    // build 95: the entry list is written by writeEntryListMerged (one
+    // read-write transaction), no longer through saveMetadataMany
+    for (const name of ['saveMetadata', 'saveMetadataMany', 'getMetadata', 'getMetadataMany', 'savePhotoToDB', 'writeEntryListMerged']) {
       const real = window[name]; if (typeof real !== 'function') continue;
       realFns[name] = real;
       const isRead = /^get/.test(name);
@@ -228,13 +230,18 @@
     }
     const ids = savedEquipment.map(e => String(e.id));
     if (new Set(ids).size !== ids.length) viol('duplicate-entry-id', ids.join(','));
+    // build 95: marks tapped before the source became an In/Out pair are in
+    // tap order, not In-first — every path must clear them
+    const pairNow = (s) => valveMarkSlots(s) === 2 && /In\/Out/i.test(s.energySource || '');
     sources.forEach((s, i) => {
       const r = photos['source_' + i];
       if (r && r.dbKey && cleanValveMarks(r.marks).length > valveMarkSlots(s)) viol('marks-exceed-quantity', 'form source ' + i + ' qty ' + s.quantity + ' marks ' + cleanValveMarks(r.marks).length);
+      if (r && r.dbKey && cleanValveMarks(r.marks).length && pairNow(s) && r.marksFor && !r.marksFor.inOut) viol('marks-order-unknown', 'form source ' + i + ' became ' + s.energySource + ' after its marks were tapped');
     });
     savedEquipment.forEach(e => (e.sources || []).forEach((s, i) => {
       const r = e.photos && e.photos['source_' + i];
       if (r && r.dbKey && cleanValveMarks(r.marks).length > valveMarkSlots(s)) viol('marks-exceed-quantity', 'saved "' + e.equipName + '" source ' + i);
+      if (r && r.dbKey && cleanValveMarks(r.marks).length && pairNow(s) && r.marksFor && !r.marksFor.inOut) viol('marks-order-unknown', 'saved "' + e.equipName + '" source ' + i);
     }));
     if (!editingEntry && currentEntryId && savedEquipment.some(e => sameEntryId(e.id, currentEntryId))) {
       viol('form-id-is-a-saved-entry-but-not-editing', 'currentEntryId ' + currentEntryId + ' belongs to a saved entry while editingEntry is null');
@@ -302,8 +309,12 @@
   // so a bug there can't hide by being on both sides of the comparison).
   const ownMarks = (ref, src) => {
     const qty = Math.max(1, Math.min(10, parseInt(src && src.quantity, 10) || 1));
-    const ok = (ref && Array.isArray(ref.marks) ? ref.marks : []).filter(m => m && isFinite(+m.x) && isFinite(+m.y) && +m.x >= 0 && +m.x <= 1 && +m.y >= 0 && +m.y <= 1);
-    return ok.slice(0, qty).map(m => ({ x: +m.x, y: +m.y }));
+    const ok = (ref && Array.isArray(ref.marks) ? ref.marks : []).filter(m => m && isFinite(+m.x) && isFinite(+m.y) && +m.x >= 0 && +m.x <= 1 && +m.y >= 0 && +m.y <= 1).slice(0, 10);
+    // build 95 contract: more marks than devices → none (which one left is
+    // unknown); an In/Out pair whose marks were tapped before it became one → none
+    if (ok.length > qty) return [];
+    if (qty === 2 && /In\/Out/i.test((src && src.energySource) || '') && ref && ref.marksFor && !ref.marksFor.inOut) return [];
+    return ok.map(m => ({ x: +m.x, y: +m.y }));
   };
   const ownMarksText = (marks) => marks.map(m => m.x.toFixed(3) + ',' + m.y.toFixed(3)).join('; ');
 
@@ -475,7 +486,7 @@
     for (const id of a.keys()) if (!b.has(id)) bad('relaunch-added-entry', a.get(id));
     if (formHasContent(before.form) && JSON.stringify(before.form) !== JSON.stringify(after.form)) bad('relaunch-changed-form', 'before ' + JSON.stringify(before.form) + ' || after ' + JSON.stringify(after.form));
     warnedSinceRelaunch = false;
-    document.querySelectorAll('.container > div[style*="rgba(200,40,40"]').forEach(x => x.remove());   // load banners
+    document.querySelectorAll('.container > div[style*="rgba(200,40,40"], .sticky-banner').forEach(x => x.remove());   // load banners (b95: .sticky-banner)
     return 'relaunch';
   }
 
@@ -598,10 +609,13 @@
     document.querySelectorAll('.dialog-overlay').forEach(o => { if (['exportOverlay', 'bulkDeleteOverlay', 'settingsOverlay'].includes(o.id)) o.style.display = 'none'; else o.remove(); });
     document.getElementById('equipType').value = ''; filterTemplateDropdown(''); document.getElementById('equipTemplate').value = '';
     for (const k of ['loto_seq_used', 'loto_saved', 'loto_saved_at', 'loto_saved_snapshot', 'loto_saved_snapshot_at', 'loto_deleted_ids',
-      'loto_current', 'loto_current_alt', 'loto_entry_count', 'photoSeqNext', 'loto_sketch_prefs']) { try { localStorage.removeItem(k); } catch (e) {} }
+      'loto_current', 'loto_current_alt', 'loto_entry_count', 'photoSeqNext', 'loto_sketch_prefs', 'loto_wip_superseded']) { try { localStorage.removeItem(k); } catch (e) {} }
     try { await deleteMetadata('current_wip_alt'); } catch (e) {}
     try { await deleteMetadata('deleted_ids'); } catch (e) {}
     try { await saveMetadata('photo_hash_index', {}); } catch (e) {}
+    // build 95: saveAll merges a list another writer stored since this tab's last read — the reset is not one
+    try { if (typeof _entryStoreAt !== 'undefined') _entryStoreAt = (await getMetadata('saved_equipment_at')) || null; } catch (e) {}
+    try { if (typeof _tombAdds !== 'undefined') { Object.keys(_tombAdds).forEach(k => delete _tombAdds[k]); _tombClears.clear(); } } catch (e) {}
     saveAll();
     const keys = await getAllPhotoKeys();
     await Promise.all(keys.map(k => deletePhotoFromDB(k)));
