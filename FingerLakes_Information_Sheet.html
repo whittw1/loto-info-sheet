@@ -417,6 +417,10 @@ if ('serviceWorker' in navigator) {
   .bottom-bar .source-count { font-size: 13px; color: var(--text-dim); }
   .bottom-bar .source-count strong { color: var(--text); }
   .bottom-spacer { height: 80px; }
+  .sticky-banner {
+    margin: 8px; padding: 10px 12px; border-radius: 8px; background: rgba(200,40,40,0.12);
+    border: 1px solid rgba(200,40,40,0.6); color: #c82828; font-size: 13px; font-weight: 700; line-height: 1.4;
+  }
 
   input[type="file"] { display: none; }
 
@@ -473,7 +477,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b94</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b95</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -673,15 +677,16 @@ if ('serviceWorker' in navigator) {
 </div>
 
 <div class="bottom-bar">
-  <div style="display:flex;flex-direction:column;gap:2px;">
+  <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto;margin-right:8px;">
     <div class="source-count">
       <strong id="sourceCountNum">0</strong> sources
     </div>
     <div id="storageIndicator" style="font-size:11px;color:var(--text-dim);display:none;">
       &#128190; <span id="storageUsed">0</span>% storage used
     </div>
+    <div id="bottomAlert" role="status" style="display:none;font-size:11px;font-weight:700;color:var(--danger, #d34141);cursor:pointer;"></div>
   </div>
-  <div style="display:flex; gap:8px;">
+  <div style="display:flex; gap:8px; flex:0 0 auto; white-space:nowrap;">
     <button class="btn btn-warning btn-sm" onclick="saveAndNew()">Save &amp; New &#9654;</button>
     <button class="btn btn-success btn-sm" onclick="showExportDialog()">&#128230; Export</button>
   </div>
@@ -1769,8 +1774,11 @@ function beginNewFormSession() { formSession++; }
 const _photoWrites = new Map();   // token → { kind, at }
 let _photoWriteSeq = 0;
 const PHOTO_WRITE_STALE_MS = 60000;   // a write this old is presumed dead — never block forever
-function startPhotoWrite(kind) { const t = ++_photoWriteSeq; _photoWrites.set(t, { kind, at: Date.now() }); return t; }
-function endPhotoWrite(t) { _photoWrites.delete(t); }
+function startPhotoWrite(kind) { const t = ++_photoWriteSeq; _photoWrites.set(t, { kind, at: Date.now() }); markTabBusy(); return t; }
+// The "still writing photos" flag another tab waits on stays up a moment after
+// the last write (build 95): what follows it — the autosave that attaches the
+// photos to the form — must land before that tab takes over.
+function endPhotoWrite(t) { _photoWrites.delete(t); if (!photoWritesBusy()) setTimeout(markTabBusy, 1500); }
 function photoWritesBusy() {
   const now = Date.now();
   for (const w of _photoWrites.values()) if (now - w.at < PHOTO_WRITE_STALE_MS) return true;
@@ -1799,6 +1807,31 @@ function refuseIfDuplicateCopying() {
 function escHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+// ---- Markup with every value escaped (build 95) -----------------------------
+// html`<b>${name}</b>` escapes EVERY interpolated value — text and attribute
+// alike; only raw(…) (markup this code built) and a nested html`` result go
+// in as they are. An array is joined the same way; null / undefined / false
+// print nothing. Builders that show user values use it, so a new field shows
+// as text even if nobody remembers to escape it — before, escaping was ~95
+// hand-placed escHtml() calls, and the next one forgotten would have brought
+// back the T104 bug (build 94) unnoticed. A mistake now shows as visible
+// escaped markup, never as live markup.
+// jsArg(v) is the ONE way to hand a value to an inline handler: a JS literal
+// (JSON), escaped for the attribute. Three idioms coexisted, one of them raw.
+class RawHtml { constructor(s) { this.s = s; } toString() { return this.s; } }
+function raw(s) { return s instanceof RawHtml ? s : new RawHtml(s == null ? '' : String(s)); }
+function htmlValue(v) {
+  if (v instanceof RawHtml) return v.s;
+  if (Array.isArray(v)) return v.map(htmlValue).join('');
+  if (v === false || v == null) return '';
+  return escHtml(v);
+}
+function html(strings, ...vals) {
+  let out = strings[0];
+  for (let i = 0; i < vals.length; i++) out += htmlValue(vals[i]) + strings[i + 1];
+  return new RawHtml(out);
+}
+function jsArg(v) { return new RawHtml(escHtml(JSON.stringify(v === undefined ? null : v))); }
 
 // Promise-based multi-choice dialog: resolves with the chosen choice's value,
 // or 'cancel' when dismissed. Used where OK/Cancel would be ambiguous — a
@@ -1820,8 +1853,9 @@ function askChoice(opts) {
     const box = document.createElement('div');
     box.className = 'dialog';
     box.style.maxWidth = '440px';
-    box.innerHTML = '<h3 style="margin:0 0 8px 0;">' + (opts.title || '') + '</h3>' +
-      '<div style="font-size:13px;color:var(--text-dim);margin:0 0 14px;line-height:1.45;max-height:50vh;overflow-y:auto;">' + (opts.html || '') + '</div>';
+    // title / html are markup the caller built (escaping its own values)
+    box.innerHTML = html`<h3 style="margin:0 0 8px 0;">${raw(opts.title || '')}</h3>` +
+      html`<div style="font-size:13px;color:var(--text-dim);margin:0 0 14px;line-height:1.45;max-height:50vh;overflow-y:auto;">${raw(opts.html || '')}</div>`;
     const col = document.createElement('div');
     col.style.cssText = 'display:flex;flex-direction:column;gap:8px;';
     (opts.choices || []).forEach(c => {
@@ -1838,8 +1872,8 @@ function askChoice(opts) {
   });
 }
 let miscPhotos = [];       // Current equipment's misc photos [{dbKey, thumbnail, fileType, timestamp}]
-// Another tab of the app is the live one: this tab writes nothing (build 94,
-// see tabLockInit).
+// Another tab of the app holds the claim: this tab writes nothing (build 94,
+// reworked in build 95 — see tabMayWrite).
 let _tabPaused = false;
 let savedEquipment = [];   // Accumulated saved equipment entries
 let editingEntry = null;   // Reference to the saved entry currently being edited (or null)
@@ -1909,8 +1943,7 @@ function updateCollectorTagHint() {
   const el = document.getElementById('collectorTagHint');
   if (!el) return;
   const dp = getDatePrefix();
-  el.innerHTML = 'Appears in photo filenames, e.g. <strong>' +
-    escHtml(dp + '_' + getCollectorTag()) + '_00001</strong>. This device\'s code is always added, so two devices can never produce the same filename. Use short initials (JW, MRK).';
+  el.innerHTML = html`Appears in photo filenames, e.g. <strong>${dp + '_' + getCollectorTag()}_00001</strong>. This device's code is always added, so two devices can never produce the same filename. Use short initials (JW, MRK).`;
 }
 
 function ensureDeviceId() {
@@ -2011,39 +2044,76 @@ function entryHospitalCode(entry) {
 // ============================================================================
 // INIT
 // ============================================================================
-// ---- One live copy of the app per device (build 94) --------------------------
+// ---- One live copy of the app per device (build 94, rebuilt in build 95) ----
 // Two tabs (or this page and the Finger Lakes copy) share ONE storage, and each
 // saved its own in-memory list over the other's: a unit saved in one tab was
-// gone as soon as the other tab saved (2026-09-27 review). A tab says hello at
-// launch; an older live tab answers and the new one pauses. "Use this tab
-// instead" pauses the other one (after it writes its form) and reloads this one
-// from storage. A paused tab writes nothing. (The iOS app is a single window.)
+// gone as soon as the other saved. The tab that opened LAST holds the claim in
+// localStorage, and EVERY write checks it synchronously (tabMayWrite): a tab
+// that no longer holds it — suspended in the background, blocked in a dialog,
+// restored from the back/forward cache, any message missed — writes nothing,
+// pauses, and offers "Use this tab instead" (a reload, which reads what the
+// other tab saved, then claims). Build 94 settled this once, by a handshake at
+// launch, and an older tab that answered late paused the up-to-date one and
+// kept writing its stale list. saveAll also merges a list another writer
+// stored in the meantime (see saveAll). The iOS app is one window: no claim.
 const TAB_ID = genUuid();
-const TAB_BOOT_AT = Date.now();
-let _tabChannel = null;
-let _tabTakeoverDone = null;
-function tabLockInit() {
-  if (typeof BroadcastChannel !== 'function') return;
-  try { _tabChannel = new BroadcastChannel('loto-collector-tabs'); } catch (e) { return; }
-  _tabChannel.onmessage = (ev) => {
-    const m = ev.data || {};
-    if (!m.from || m.from === TAB_ID) return;
-    if (m.t === 'hello' && !_tabPaused && TAB_BOOT_AT <= (m.since || 0)) {
-      _tabChannel.postMessage({ t: 'live', from: TAB_ID, to: m.from });
-    } else if (m.t === 'live' && m.to === TAB_ID && !_tabPaused) {
-      pauseThisTab(false);
-    } else if (m.t === 'takeover' && !_tabPaused) {
-      try { autoSaveCurrent(); } catch (e) {}   // hand the form over as it is now
-      pauseThisTab(true);
-      setTimeout(() => { try { _tabChannel.postMessage({ t: 'released', from: TAB_ID, to: m.from }); } catch (e) {} }, 500);
-    } else if (m.t === 'released' && m.to === TAB_ID && _tabTakeoverDone) {
-      _tabTakeoverDone();
-    }
-  };
-  _tabChannel.postMessage({ t: 'hello', from: TAB_ID, since: TAB_BOOT_AT });
+const TAB_CLAIM_KEY = 'loto_tab_claim';
+const TAB_BUSY_KEY = 'loto_tab_busy';   // this tab is still writing photos — don't take over yet
+let _tabReady = Promise.resolve();      // resolved once this tab holds the claim (loadAll waits for it)
+let _tabClaiming = false;
+function tabLockActive() {
+  return !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 }
-function pauseThisTab(takenOver) {
-  _tabPaused = true;
+function readTabJson(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { return null; } }
+function claimThisTab() {
+  if (!tabLockActive()) return;
+  try { localStorage.setItem(TAB_CLAIM_KEY, JSON.stringify({ id: TAB_ID, at: new Date().toISOString() })); } catch (e) {}
+}
+// May this tab write storage now? A free claim (first launch, cleared data) is taken.
+function tabMayWrite() {
+  if (_tabPaused) return false;
+  if (!tabLockActive()) return true;
+  if (_tabClaiming) return false;
+  const c = readTabJson(TAB_CLAIM_KEY);
+  if (!c || !c.id) { claimThisTab(); return true; }
+  if (c.id === TAB_ID) return true;
+  pauseThisTab();
+  return false;
+}
+// Another tab is still writing photos (Duplicate with photos, a capture being
+// stored): taking over now would pause it mid-copy and those photos could no
+// longer be saved into its form.
+function otherTabBusy() {
+  const b = readTabJson(TAB_BUSY_KEY);
+  return !!(b && b.id && b.id !== TAB_ID && Date.now() - (Date.parse(b.at) || 0) < PHOTO_WRITE_STALE_MS);
+}
+function markTabBusy() {
+  if (!tabLockActive()) return;
+  try {
+    if (photoWritesBusy()) localStorage.setItem(TAB_BUSY_KEY, JSON.stringify({ id: TAB_ID, at: new Date().toISOString() }));
+    else { const b = readTabJson(TAB_BUSY_KEY); if (b && b.id === TAB_ID) localStorage.removeItem(TAB_BUSY_KEY); }
+  } catch (e) {}
+}
+function tabLockInit() {
+  if (!tabLockActive()) return;
+  const recheck = () => { if (!_tabPaused && !_tabClaiming) tabMayWrite(); };
+  window.addEventListener('storage', (e) => { if (e.key === TAB_CLAIM_KEY || e.key === null) recheck(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') recheck(); });
+  window.addEventListener('pageshow', recheck);
+  _tabClaiming = true;
+  _tabReady = (async () => {
+    const t0 = Date.now();
+    let shown = false;
+    while (otherTabBusy() && Date.now() - t0 < PHOTO_WRITE_STALE_MS) {
+      if (!shown) { showTabOverlay('wait'); shown = true; }
+      await new Promise(r => setTimeout(r, 300));
+    }
+    if (shown) hideTabOverlay();
+    claimThisTab();
+    _tabClaiming = false;
+  })();
+}
+function showTabOverlay(kind) {
   let ov = document.getElementById('tabPausedOverlay');
   if (!ov) {
     ov = document.createElement('div');
@@ -2051,20 +2121,19 @@ function pauseThisTab(takenOver) {
     ov.style.cssText = 'position:fixed;inset:0;z-index:5000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);padding:16px;';
     document.body.appendChild(ov);
   }
-  ov.innerHTML = '<div class="dialog" style="max-width:380px;"><h3>&#9208; Open in another tab</h3><p>' +
-    (takenOver
-      ? 'The LOTO Collector was opened in another tab or window, so this one is paused &mdash; two copies would overwrite each other\'s saved work.'
-      : 'The LOTO Collector is already open in another tab or window. Use that one &mdash; two copies would overwrite each other\'s saved work.') +
-    '</p><div class="dialog-actions"><button class="btn btn-accent" onclick="takeOverThisTab()">Use this tab instead</button></div></div>';
+  ov.innerHTML = kind === 'wait'
+    ? '<div class="dialog" style="max-width:380px;"><h3>&#9203; One moment</h3><p>The LOTO Collector is still saving photos in another tab or window. This one opens as soon as it finishes.</p></div>'
+    : '<div class="dialog" style="max-width:380px;"><h3>&#9208; Open in another tab</h3><p>The LOTO Collector is open in another tab or window, so this one is paused &mdash; two copies would overwrite each other\'s saved work.</p>' +
+      '<div class="dialog-actions"><button class="btn btn-accent" onclick="takeOverThisTab()">Use this tab instead</button></div></div>';
   ov.style.display = 'flex';
 }
-function takeOverThisTab() {
-  let done = false;
-  const go = () => { if (done) return; done = true; location.reload(); };   // reload = read what the other tab saved
-  _tabTakeoverDone = go;
-  try { if (_tabChannel) _tabChannel.postMessage({ t: 'takeover', from: TAB_ID }); } catch (e) {}
-  setTimeout(go, _tabChannel ? 1500 : 0);
+function hideTabOverlay() { const ov = document.getElementById('tabPausedOverlay'); if (ov) ov.remove(); }
+function pauseThisTab() {
+  _tabPaused = true;
+  showTabOverlay('paused');
 }
+// Reload: read what the other tab saved, then claim (after its photo writes finish).
+function takeOverThisTab() { location.reload(); }
 
 function init() {
   // Mint / load the per-device id before anything else touches storage.
@@ -2108,14 +2177,18 @@ function init() {
     idbAvailable = false;
   });
 
-  const bootTimer = setTimeout(() => {
+  // The launch's safety timer starts once this tab holds the claim (build 95):
+  // waiting for another tab's photo writes first is not slow storage.
+  let bootTimer = null;
+  _tabReady.then(() => { bootTimer = setTimeout(onBootTimeout, 20000); });
+  function onBootTimeout() {
     if (_bootWipSettled) return;
     _bootLoadTimedOut = true;
     _wipUnread = true;          // protect the stored unit: autosave to the alternate slot
     _bootWipSettled = true;
     hideBootOverlay();
     showToast('\u26a0 Storage is slow \u2014 your saved units are still loading. Keep working; nothing will be overwritten.', true);
-  }, 20000);
+  }
   const settleBoot = () => {
     clearTimeout(bootTimer);
     if (!_bootWipSettled) { _wipUnread = true; _bootWipSettled = true; }   // loadAll failed before deciding
@@ -2134,7 +2207,9 @@ function init() {
     // left without thumbnails, then show the photo-integrity badge.
     // Orphan re-attach no longer runs here (build 89): at launch it can't tell
     // a lost photo from a discarded one — it is a reviewed, manual repair on
-    // the Photo Store Report screen.
+    // the Photo Store Report screen. A tab another tab took over during the
+    // launch changes nothing (build 95).
+    if (!tabMayWrite()) return;
     migratePhotosToFS()
       .then(() => cleanupFsTempFiles())
       .then(() => runPhotoKeyMigration().catch(e => console.error('photo key migration failed', e)))
@@ -2257,16 +2332,16 @@ function showTemplatePrompt(equipType, templates) {
   overlay.id = 'templatePromptOverlay';
   const buttons = templates.map(t => {
     const display = labels[t] || t;
-    return `<button class="btn btn-primary" onclick="applyTemplatePromptChoice(${escHtml(JSON.stringify(t))})" style="padding:12px;font-size:16px;text-align:left;">${escHtml(display)}</button>`;
-  }).join('');
+    return html`<button class="btn btn-primary" onclick="applyTemplatePromptChoice(${jsArg(t)})" style="padding:12px;font-size:16px;text-align:left;">${display}</button>`;
+  });
   // Customise the heading + lead-in copy too, so the Dishwasher prompt
   // doesn't say "Select Template" with "Electric/Steam" buttons (mismatched).
   const isLabelOverride = Object.keys(labels).length > 0;
-  const heading = isLabelOverride ? `${escHtml(equipType)} Type` : 'Select Template';
+  const heading = isLabelOverride ? html`${equipType} Type` : 'Select Template';
   const lead    = isLabelOverride
-    ? `What kind of <strong>${escHtml(equipType)}</strong>?`
-    : `Pick a template for <strong>${escHtml(equipType)}</strong>:`;
-  overlay.innerHTML = `
+    ? html`What kind of <strong>${equipType}</strong>?`
+    : html`Pick a template for <strong>${equipType}</strong>:`;
+  overlay.innerHTML = html`
     <div class="dialog" style="max-width:360px;">
       <h3 style="margin:0 0 6px 0;color:var(--accent);">${heading}</h3>
       <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">${lead}</p>
@@ -2349,7 +2424,7 @@ function showVoltageDialog(equipType) {
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.id = 'voltageOverlay';
-  overlay.innerHTML = `
+  overlay.innerHTML = html`
     <div class="dialog" style="max-width:320px;">
       <h3 style="margin:0 0 12px 0;color:var(--accent);">${config.title}</h3>
       <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">${config.description}</p>
@@ -4007,12 +4082,12 @@ function showTemplateConfirmDialog(templateVal) {
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.id = 'templateConfirmOverlay';
-  overlay.innerHTML = `
+  overlay.innerHTML = html`
     <div class="dialog" style="max-width:340px;">
       <h3 style="margin:0 0 12px 0;color:var(--accent);">Change Template?</h3>
       <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">Changing the template replaces the template's energy sources. Sources you've filled in or photographed are KEPT (ahead of the new template's) — remove any that don't apply.</p>
       <div style="display:flex;flex-direction:column;gap:10px;">
-        <button class="btn btn-primary" onclick="confirmTemplateChange(${escHtml(JSON.stringify(templateVal))})" style="padding:12px;font-size:15px;">Change Template</button>
+        <button class="btn btn-primary" onclick="confirmTemplateChange(${jsArg(templateVal)})" style="padding:12px;font-size:15px;">Change Template</button>
         <button class="btn" onclick="cancelTemplateChange()" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Cancel</button>
       </div>
     </div>
@@ -4228,12 +4303,12 @@ function promptForTemplateVoltage(template) {
   overlay.className = 'dialog-overlay';
   overlay.id = 'templateVoltageOverlay';
   const buttons = options.map(v =>
-    `<button class="btn btn-primary" onclick="applyTemplateVoltageChoice(${JSON.stringify(v).replace(/"/g, '&quot;')})" style="padding:12px;font-size:16px;">${v}</button>`
-  ).join('');
-  overlay.innerHTML = `
+    html`<button class="btn btn-primary" onclick="applyTemplateVoltageChoice(${jsArg(v)})" style="padding:12px;font-size:16px;">${v}</button>`
+  );
+  overlay.innerHTML = html`
     <div class="dialog" style="max-width:340px;">
       <h3 style="margin:0 0 6px 0;color:var(--accent);">Electrical Voltage</h3>
-      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">Pick the voltage for <strong>${escHtml(template)}</strong>:</p>
+      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">Pick the voltage for <strong>${template}</strong>:</p>
       <div style="display:flex;flex-direction:column;gap:10px;">
         ${buttons}
         <button class="btn" onclick="keepDefaultVoltage()" style="padding:10px;font-size:13px;background:transparent;color:var(--text-dim);">Keep Default</button>
@@ -4284,13 +4359,13 @@ function promptForElectricalCount(template, max) {
   overlay.className = 'dialog-overlay';
   overlay.id = 'electricalCountOverlay';
   overlay.onclick = (e) => { if (e.target === overlay) closeElectricalCountPrompt(); };  // dismiss = keep 1
-  let buttons = '';
-  for (let i = 1; i <= max; i++) buttons += `<button class="btn btn-primary" onclick="applyElectricalCountChoice(${i})" style="flex:1;padding:16px;font-size:20px;">${i}</button>`;
+  const buttons = [];
+  for (let i = 1; i <= max; i++) buttons.push(html`<button class="btn btn-primary" onclick="applyElectricalCountChoice(${i})" style="flex:1;padding:16px;font-size:20px;">${i}</button>`);
   const hint = max > 2 ? 'e.g. duplex / triplex / quadruplex units' : 'e.g. dual supply / return fans';
-  overlay.innerHTML = `
+  overlay.innerHTML = html`
     <div class="dialog" style="max-width:${max > 2 ? 420 : 340}px;">
       <h3 style="margin:0 0 6px 0;color:var(--accent);">Electrical Sources</h3>
-      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">How many electrical sources for <strong>${escHtml(template)}</strong>? (${hint})</p>
+      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">How many electrical sources for <strong>${template}</strong>? (${hint})</p>
       <div style="display:flex;gap:10px;">${buttons}</div>
     </div>
   `;
@@ -4809,12 +4884,12 @@ function photoSlotBadge(ref) {
   if (ref.dupOf) return b('rgba(0,0,0,0.7)', '#4ab86a', '&#10004; Duplicated');
   return b('rgba(0,0,0,0.7)', '#4ab86a', '&#10004; Captured');
 }
-function photoSlotInnerHtml(ref) {
+function photoSlotInnerHtml(ref, src) {
   if (!ref || !ref.dbKey) return PHOTO_SLOT_PLACEHOLDER;
   const img = ref.thumbnail
-    ? '<img src="' + escHtml(ref.thumbnail) + '">'
+    ? html`<img src="${ref.thumbnail}">`
     : '<span class="placeholder" style="color:var(--text);">&#128247;<br>Photo saved<br><span style="font-size:10px;">preview unavailable &mdash; tap to view</span></span>';
-  const n = cleanValveMarks(ref.marks).length;
+  const n = src ? fittingMarks(ref, src).length : cleanValveMarks(ref.marks).length;   // what the export ships
   const pin = n ? '<span class="mark-badge" title="Valve location marked">&#128205;' + (n > 1 ? ' ' + n : '') + '</span>' : '';
   return img + '<span class="retake-badge">Tap to retake</span>' + photoSlotBadge(ref) + pin;
 }
@@ -4825,7 +4900,8 @@ function paintPhotoSlot(slot) {
   if (!el) { if (/^source_\d+$/.test(slot)) renderSources(); return; }
   const ref = photos[slot];
   el.classList.toggle('has-photo', !!(ref && ref.dbKey));
-  el.innerHTML = photoSlotInnerHtml(ref);
+  const sm = /^source_(\d+)$/.exec(slot);
+  el.innerHTML = photoSlotInnerHtml(ref, sm ? sources[parseInt(sm[1], 10)] : null);
   const markBtn = document.getElementById('markbtn_' + slot);   // source cards: 📍 Mark needs a photo
   if (markBtn) markBtn.style.display = (ref && ref.dbKey) ? '' : 'none';
 }
@@ -4845,24 +4921,24 @@ function renderSources() {
       const photoData = photos[photoKey];
       const hasThumbnail = photoData && photoData.thumbnail;
       const hasPhotoNoThumb = photoData && photoData.dbKey && !photoData.thumbnail;
-      const autoBadge = src.auto ? '<span class="auto-badge">AUTO</span>' : '';
+      const autoBadge = src.auto ? raw('<span class="auto-badge">AUTO</span>') : '';
       const isFirst = i === 0;
       const isLast = i === sources.length - 1;
-      card.innerHTML = `
+      card.innerHTML = html`
         <div class="source-summary" onclick="expandSource(${i})">
           <span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
           <div class="source-summary-text">
-            <strong>${escHtml(src.energySource || 'Empty source')}</strong>${autoBadge}${src.valveState==='normally_closed' ? ' <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">NC</span>' : ''}${photoData && photoData.dbKey && cleanValveMarks(photoData.marks).length ? ' <span title="Valve location marked">&#128205;</span>' : ''}${src.linkedTo ? ' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>' : ''}
-            ${src.deviceType ? ' &mdash; ' + escHtml(src.deviceType) : ''}${src.deviceId ? ' <span style="color:#7eb8da;">(' + escHtml(src.deviceId) + ')</span>' : ''}
-            ${src.location ? ' &mdash; ' + escHtml(src.location) : ''}
-            ${src.detail ? ' <span style="color:var(--accent);font-weight:600;font-family:monospace;">(' + escHtml(src.detail) + ')</span>' : ''}
-            ${src.linkedTo ? `<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">→ ${escHtml(src.linkedTo.equipName)} / ${escHtml(src.linkedTo.sourceLabel)}</div>` : ''}
+            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${src.valveState==='normally_closed' ? raw(' <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">NC</span>') : ''}${photoData && photoData.dbKey && fittingMarks(photoData, src).length ? raw(' <span title="Valve location marked">&#128205;</span>') : ''}${src.linkedTo ? raw(' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>') : ''}
+            ${src.deviceType ? html` &mdash; ${src.deviceType}` : ''}${src.deviceId ? html` <span style="color:#7eb8da;">(${src.deviceId})</span>` : ''}
+            ${src.location ? html` &mdash; ${src.location}` : ''}
+            ${src.detail ? html` <span style="color:var(--accent);font-weight:600;font-family:monospace;">(${src.detail})</span>` : ''}
+            ${src.linkedTo ? html`<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">→ ${src.linkedTo.equipName} / ${src.linkedTo.sourceLabel}</div>` : ''}
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;margin-right:6px;" onclick="event.stopPropagation()">
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:${isFirst?'#555':'var(--text-dim)'};padding:2px 8px;font-size:11px;line-height:1;" onclick="moveSource(${i},-1)" ${isFirst?'disabled':''}>&#9650;</button>
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:${isLast?'#555':'var(--text-dim)'};padding:2px 8px;font-size:11px;line-height:1;" onclick="moveSource(${i},1)" ${isLast?'disabled':''}>&#9660;</button>
           </div>
-          ${hasThumbnail ? `<img class="source-summary-photo" src="${escHtml(photoData.thumbnail)}">` : (hasPhotoNoThumb ? '<span class="source-summary-photo" style="display:flex;align-items:center;justify-content:center;font-size:18px;" title="Photo saved (preview unavailable)">&#128247;</span>' : '')}
+          ${hasThumbnail ? html`<img class="source-summary-photo" src="${photoData.thumbnail}">` : (hasPhotoNoThumb ? raw('<span class="source-summary-photo" style="display:flex;align-items:center;justify-content:center;font-size:18px;" title="Photo saved (preview unavailable)">&#128247;</span>') : '')}
           <span class="edit-icon">Edit</span>
         </div>
       `;
@@ -4887,32 +4963,32 @@ function renderSources() {
       const hasPhotoRef = !!(photos['source_' + i] && photos['source_' + i].dbKey);
       const isNoPhoto = !hasPhotoRef && (isDuplicate || isLinked || (noPhotoFromKind && !photoAllowedForKind));
       const noPhotoMessage = isLinked
-        ? `🔗 Linked to ${escHtml(src.linkedTo.equipName)} &mdash; ${escHtml(src.linkedTo.sourceLabel)}`
+        ? html`🔗 Linked to ${src.linkedTo.equipName} &mdash; ${src.linkedTo.sourceLabel}`
         : isDuplicate
-        ? 'Duplicate &mdash; photo captured on another source'
+        ? raw('Duplicate &mdash; photo captured on another source')
         : sourceIsToggleable
         ? 'No photo on this source'
-        : 'No photo needed &mdash; uses main equipment photo';
+        : raw('No photo needed &mdash; uses main equipment photo');
       // Toggle button — only on toggleable sources that aren't duplicate/linked.
       const showPhotoToggle = sourceIsToggleable && !isDuplicate && !isLinked && !hasPhotoRef;
       const photoToggleBtn = showPhotoToggle
-        ? `<button class="btn btn-sm" style="padding:6px 12px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="togglePhotoSlot(${i})">${isNoPhoto ? '&#128247; Add photo for this source' : '&#10005; Hide photo slot'}</button>`
+        ? html`<button class="btn btn-sm" style="padding:6px 12px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="togglePhotoSlot(${i})">${raw(isNoPhoto ? '&#128247; Add photo for this source' : '&#10005; Hide photo slot')}</button>`
         : '';
-      const autoBadge = src.auto ? ' <span class="auto-badge">AUTO</span>' : '';
-      const linkedBanner = isLinked ? `
+      const autoBadge = src.auto ? raw(' <span class="auto-badge">AUTO</span>') : '';
+      const linkedBanner = isLinked ? html`
         <div style="background:rgba(74,144,217,0.15);border:1px solid var(--accent);border-radius:6px;padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
           <div style="font-size:13px;color:var(--text);">
-            🔗 <strong>Linked to:</strong> ${escHtml(src.linkedTo.equipName)}
-            <span style="color:var(--text-dim);"> &mdash; ${escHtml(src.linkedTo.sourceLabel)}</span>
-            ${src.linkedTo.equipBuilding || src.linkedTo.equipRoom ? `<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${escHtml(src.linkedTo.equipBuilding || '')}${src.linkedTo.equipBuilding && src.linkedTo.equipRoom ? ' / ' : ''}${escHtml(src.linkedTo.equipRoom || '')}</div>` : ''}
-            ${photos['source_' + i] && photos['source_' + i].dbKey ? `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">&#128247; This source's photo is kept and exported with it.</div>` : ''}
+            🔗 <strong>Linked to:</strong> ${src.linkedTo.equipName}
+            <span style="color:var(--text-dim);"> &mdash; ${src.linkedTo.sourceLabel}</span>
+            ${src.linkedTo.equipBuilding || src.linkedTo.equipRoom ? html`<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${src.linkedTo.equipBuilding || ''}${src.linkedTo.equipBuilding && src.linkedTo.equipRoom ? ' / ' : ''}${src.linkedTo.equipRoom || ''}</div>` : ''}
+            ${photos['source_' + i] && photos['source_' + i].dbKey ? html`<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">&#128247; This source's photo is kept and exported with it.</div>` : ''}
           </div>
           <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);flex-shrink:0;" onclick="unlinkSource(${i})">Unlink</button>
         </div>
       ` : '';
       const isFirstExp = i === 0;
       const isLastExp = i === sources.length - 1;
-      card.innerHTML = `
+      card.innerHTML = html`
         <div class="source-card-header">
           <h3><span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span> Energy Source #${i + 1}${autoBadge}</h3>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -4921,7 +4997,7 @@ function renderSources() {
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="showLinkDialog(${i})">${src.linkedTo ? '🔗 Linked' : 'Link'}</button>
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="showCopySourceDialog(${i})" title="Copy source config from a saved entry">Copy</button>
             <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="duplicateSource(${i})">Dup</button>
-            ${src.quantity >= 2 ? `<button class="btn btn-sm" style="background:var(--card);border:1px solid var(--accent);color:var(--accent);" onclick="splitSource(${i})" title="Pull one valve out as its own quantity-1 source (own photo + valve state)">Split 1</button>` : ''}
+            ${src.quantity >= 2 ? html`<button class="btn btn-sm" style="background:var(--card);border:1px solid var(--accent);color:var(--accent);" onclick="splitSource(${i})" title="Pull one valve out as its own quantity-1 source (own photo + valve state)">Split 1</button>` : ''}
             <button class="btn btn-danger btn-sm" onclick="removeSource(${i})">Remove</button>
             <button class="btn btn-outline btn-sm" onclick="collapseSource(${i})">Done</button>
           </div>
@@ -4933,33 +5009,33 @@ function renderSources() {
               <label>Energy Source</label>
               <select onchange="handleEnergySourceChange(${i},this.value)" id="src_energy_${i}">
                 <option value="">-- Select --</option>
-                ${DATA.energySources.map(s => `<option value="${s}" ${src.energySource===s&&!src._customEnergy?'selected':''}>${s}</option>`).join('')}
+                ${DATA.energySources.map(s => html`<option value="${s}" ${src.energySource===s&&!src._customEnergy?'selected':''}>${s}</option>`)}
                 <option value="** Custom Energy **" ${src._customEnergy?'selected':''}>Custom...</option>
               </select>
             </div>
-            ${src._customEnergy ? `<div class="form-group" id="customEnergyGroup_${i}">
+            ${src._customEnergy ? html`<div class="form-group" id="customEnergyGroup_${i}">
               <label>Custom Energy Source</label>
-              <input type="text" id="src_energy_custom_${i}" value="${escHtml(src.energySource||'')}" placeholder="Enter custom energy source"
+              <input type="text" id="src_energy_custom_${i}" value="${src.energySource||''}" placeholder="Enter custom energy source"
                 oninput="updateSourceCustomField(${i},'energySource',this.value)">
-            </div>` : `<div id="customEnergyGroup_${i}" style="display:none;"></div>`}
+            </div>` : html`<div id="customEnergyGroup_${i}" style="display:none;"></div>`}
             <div class="form-group">
               <label>Device Type</label>
               <select onchange="handleDeviceTypeChange(${i},this.value)" id="src_device_${i}">
                 <option value="">-- Select --</option>
-                ${getFilteredDevices(src.energySource).map(s => `<option value="${s}" ${src.deviceType===s&&!src._customDevice?'selected':''}>${s}</option>`).join('')}
-                ${src.deviceType && !src._customDevice && !getFilteredDevices(src.energySource).includes(src.deviceType) ? `<option value="${escHtml(src.deviceType)}" selected>${escHtml(src.deviceType)}</option>` : ''}
+                ${getFilteredDevices(src.energySource).map(s => html`<option value="${s}" ${src.deviceType===s&&!src._customDevice?'selected':''}>${s}</option>`)}
+                ${src.deviceType && !src._customDevice && !getFilteredDevices(src.energySource).includes(src.deviceType) ? html`<option value="${src.deviceType}" selected>${src.deviceType}</option>` : ''}
                 <option value="** Custom Device **" ${src._customDevice?'selected':''}>Custom...</option>
               </select>
             </div>
-            ${src._customDevice ? `<div class="form-group" id="customDeviceGroup_${i}">
+            ${src._customDevice ? html`<div class="form-group" id="customDeviceGroup_${i}">
               <label>Custom Device Type</label>
-              <input type="text" id="src_device_custom_${i}" value="${escHtml(src.deviceType||'')}" placeholder="Enter custom device type"
+              <input type="text" id="src_device_custom_${i}" value="${src.deviceType||''}" placeholder="Enter custom device type"
                 oninput="updateSourceCustomField(${i},'deviceType',this.value)">
-            </div>` : `<div id="customDeviceGroup_${i}" style="display:none;"></div>`}
+            </div>` : html`<div id="customDeviceGroup_${i}" style="display:none;"></div>`}
             <div class="form-group">
               <label>Device ID</label>
               <div class="scan-input-row">
-                <input type="text" id="src_deviceId_${i}" value="${escHtml(src.deviceId||'')}" placeholder="e.g. Pump 3, V-201"
+                <input type="text" id="src_deviceId_${i}" value="${src.deviceId||''}" placeholder="e.g. Pump 3, V-201"
                   oninput="updateSource(${i},'deviceId',this.value)">
                 <button type="button" class="scan-btn" onclick="scanTextToField('src_deviceId_${i}')" title="Scan label">&#128247;</button>
               </div>
@@ -4970,21 +5046,21 @@ function renderSources() {
                 <option value="">-- Select --</option>
                 ${DATA.locations.filter(s=>s!=='** Custom Location **').map(s => {
                   const sel = !src._customLoc && (src.location===s || (LOCATION_ID_PREFIXES.includes(s) && (locationIdInfo(src.location)||{}).prefix===s));
-                  return `<option value="${s}" ${sel?'selected':''}>${s}</option>`;
-                }).join('')}
+                  return html`<option value="${s}" ${sel?'selected':''}>${s}</option>`;
+                })}
                 <option value="** Custom Location **" ${src._customLoc?'selected':''}>Custom...</option>
               </select>
             </div>
-            ${(() => { const li = !src._customLoc ? locationIdInfo(src.location) : null; return li ? `<div class="form-group">
+            ${(() => { const li = !src._customLoc ? locationIdInfo(src.location) : null; return li ? html`<div class="form-group">
               <label>${li.prefix} ID</label>
-              <input type="text" id="src_locid_${i}" value="${escHtml(li.id)}" placeholder="${li.prefix==='MCC'?'e.g. 3, 3B':'e.g. A, LP-1'}"
+              <input type="text" id="src_locid_${i}" value="${li.id}" placeholder="${li.prefix==='MCC'?'e.g. 3, 3B':'e.g. A, LP-1'}"
                 oninput="updateLocationId(${i},this.value)">
             </div>` : ''; })()}
-            ${src._customLoc ? `<div class="form-group" id="customLocGroup_${i}">
+            ${src._customLoc ? html`<div class="form-group" id="customLocGroup_${i}">
               <label>Custom Location</label>
-              <input type="text" id="src_loc_custom_${i}" value="${escHtml(src.location||'')}" placeholder="Enter custom location"
+              <input type="text" id="src_loc_custom_${i}" value="${src.location||''}" placeholder="Enter custom location"
                 oninput="updateSourceCustomLoc(${i},this.value)">
-            </div>` : `<div id="customLocGroup_${i}" style="display:none;"></div>`}
+            </div>` : html`<div id="customLocGroup_${i}" style="display:none;"></div>`}
             ${(() => {
               const ov = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource);
               const useSimple = simpleVerifEnabled() && !src._classicVerif
@@ -4996,7 +5072,7 @@ function renderSources() {
                 const p = parseWaterVerification(src.verification);
                 const derived = src.verification || synthesizeWaterVerification(false, false, simpleVerifSuffix(src));
                 const boxStyle = 'display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:14px;cursor:pointer;';
-                return `<div class="form-group">
+                return html`<div class="form-group">
                   <label>Verification</label>
                   <label style="${boxStyle}">
                     <input type="checkbox" class="simple-verif-check" ${p.drain ? 'checked' : ''} onchange="updateSimpleVerif(${i},'drain',this.checked)">
@@ -5012,40 +5088,40 @@ function renderSources() {
                   </div>
                 </div>`;
               }
-              return `<div class="form-group">
+              return html`<div class="form-group">
               <label>Verification</label>
               <select onchange="updateSource(${i},'verification',this.value)" id="src_ver_${i}">
                 <option value="">-- Select --</option>
-                ${getFilteredVerifications(src.deviceType, src.energySource).map(s => `<option value="${s}" ${src.verification===s?'selected':''}>${s}</option>`).join('')}
-                ${src.verification && !getFilteredVerifications(src.deviceType, src.energySource).includes(src.verification) ? `<option value="${escHtml(src.verification)}" selected>${escHtml(src.verification)}</option>` : ''}
+                ${getFilteredVerifications(src.deviceType, src.energySource).map(s => html`<option value="${s}" ${src.verification===s?'selected':''}>${s}</option>`)}
+                ${src.verification && !getFilteredVerifications(src.deviceType, src.energySource).includes(src.verification) ? html`<option value="${src.verification}" selected>${src.verification}</option>` : ''}
               </select>
             </div>`;
             })()}
             <div class="form-group">
               <label>Valve State</label>
               <select onchange="updateSource(${i},'valveState',this.value)" id="src_valvestate_${i}">
-                ${DATA.valveStateOptions.map(o => `<option value="${o.value}" ${(src.valveState||'normal')===o.value?'selected':''}>${o.label}</option>`).join('')}
+                ${DATA.valveStateOptions.map(o => html`<option value="${o.value}" ${(src.valveState||'normal')===o.value?'selected':''}>${o.label}</option>`)}
               </select>
             </div>
             <div class="form-group">
               <label>Quantity</label>
               <select onchange="updateSource(${i},'quantity',parseInt(this.value))">
-                ${DATA.quantities.map(q => `<option value="${q}" ${src.quantity===q?'selected':''}>${q}</option>`).join('')}
+                ${DATA.quantities.map(q => html`<option value="${q}" ${src.quantity===q?'selected':''}>${q}</option>`)}
               </select>
             </div>
             <div class="form-group">
               <label>Duplicate</label>
               <select onchange="updateSource(${i},'duplicate',this.value)">
-                ${DATA.duplicateOptions.map(d => `<option value="${d}" ${src.duplicate===d?'selected':''}>${d}</option>`).join('')}
+                ${DATA.duplicateOptions.map(d => html`<option value="${d}" ${src.duplicate===d?'selected':''}>${d}</option>`)}
               </select>
             </div>
           </div>
-          ${isNoPhoto ? `<div style="padding:8px 0;color:var(--text-dim);font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span>${noPhotoMessage}</span>${photoToggleBtn}</div>` : `
+          ${isNoPhoto ? html`<div style="padding:8px 0;color:var(--text-dim);font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span>${noPhotoMessage}</span>${photoToggleBtn}</div>` : html`
           <div class="photo-section" style="display:flex;gap:16px;align-items:flex-start;">
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--text-label);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;">Source Photo</label>
               <div class="photo-capture ${photos['source_'+i] && photos['source_'+i].dbKey ?'has-photo':''}" onclick="takePhoto('source_${i}')" id="photo_source_${i}" style="position:relative;">
-                ${photoSlotInnerHtml(photos['source_'+i])}
+                ${raw(photoSlotInnerHtml(photos['source_'+i], src))}
               </div>
               <input type="file" accept="image/*" capture="environment" id="file_source_${i}" onchange="handlePhoto(this, 'source_${i}')">
               <div style="display:flex;gap:6px;margin-top:6px;">
@@ -5054,15 +5130,15 @@ function renderSources() {
                 <button type="button" id="markbtn_source_${i}" class="btn btn-sm" onclick="openValveMarkDialog('source_${i}')" title="Tap where the valve / device is in this photo" style="flex:1;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;${photos['source_'+i] && photos['source_'+i].dbKey ? '' : 'display:none;'}">&#128205; Mark</button>
               </div>
               ${photos['source_'+i] && photos['source_'+i].timestamp ?
-                `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;text-align:center;">
+                html`<div style="font-size:11px;color:var(--text-dim);margin-top:4px;text-align:center;">
                   &#128247; ${new Date(photos['source_'+i].timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}
                 </div>` : ''}
-              ${photoToggleBtn ? `<div style="margin-top:8px;text-align:center;">${photoToggleBtn}</div>` : ''}
+              ${photoToggleBtn ? html`<div style="margin-top:8px;text-align:center;">${photoToggleBtn}</div>` : ''}
             </div>
             <div style="flex:0 0 auto;">
               <label style="font-size:11px;font-weight:600;color:var(--text-label);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;">Detail</label>
               <div class="scan-input-row" style="width:160px;">
-                <input type="text" id="src_detail_${i}" value="${escHtml(src.detail||'')}" placeholder="LR, TL…"
+                <input type="text" id="src_detail_${i}" value="${src.detail||''}" placeholder="LR, TL…"
                   oninput="updateSource(${i},'detail',this.value)"
                   style="text-transform:uppercase;font-family:monospace;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-main);font-size:14px;text-align:center;">
                 <button type="button" class="scan-btn" onclick="scanTextToField('src_detail_${i}')" title="Scan label" style="width:38px;height:38px;font-size:16px;">&#128247;</button>
@@ -5088,11 +5164,13 @@ function updateSource(index, field, value) {
     if (!sources[index].location) sources[index].location = defaults.location;
     if (!sources[index].verification) sources[index].verification = defaults.verification;
     applyNoPhotoDefault(index);
+    const cleared = reconcileSourceMarks(index, true);
     renderSources();
-    showToast(`Auto-filled defaults for ${value}`);
+    showToast(`Auto-filled defaults for ${value}` + (cleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : ''), cleared);
     return;
   }
   if (field === 'energySource') {
+    reconcileSourceMarks(index);
     // Re-render to update verification dropdown based on energy source temperature variant
     renderSources();
     autoSaveCurrent();
@@ -5141,11 +5219,11 @@ function splitSource(index) {
   const prev = sources.slice();
   sources.splice(index + 1, 0, newSrc);
   rebindSourcePhotos(prev);    // photos follow their sources; the split valve starts empty
-  reconcileSourceMarks(index); // which of the marked valves left is unknown — re-mark
+  const marksCleared = reconcileSourceMarks(index, true); // which of the marked valves left is unknown — re-mark
 
   renderSources();
   autoSaveCurrent();
-  showToast('Split out 1 valve — set as Normally Closed. State & photograph it.');
+  showToast('Split out 1 valve — set as Normally Closed. State & photograph it.' + (marksCleared ? ' ' + MARKS_CLEARED_NOTE : ''), marksCleared);
   noteSourceLimit();
   setTimeout(() => {
     const cards = document.querySelectorAll('.source-card');
@@ -5220,9 +5298,12 @@ function handleEnergySourceChange(index, value) {
         sources[index]._autoQty2 = true;
       }
     } else if (sources[index]._autoQty2) {
-      if (sources[index].quantity === 2) { sources[index].quantity = 1; reconcileSourceMarks(index); }
+      if (sources[index].quantity === 2) sources[index].quantity = 1;
       delete sources[index]._autoQty2;
     }
+    // Fewer devices, or now an In/Out pair: the marks tapped before no longer
+    // say which valve is which (build 95 — marksFit).
+    reconcileSourceMarks(index);
     // Re-render to update device + verification dropdowns
     renderSources();
     autoSaveCurrent();
@@ -5249,6 +5330,7 @@ function handleDeviceTypeChange(index, value) {
 function updateSourceCustomField(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
+  if (field === 'energySource') reconcileSourceMarks(index);
   if (field === 'energySource' || field === 'deviceType') {
     // Re-render to update device/verification dropdowns for custom entries
     renderSources();
@@ -5350,12 +5432,12 @@ function showCopySourceDialog(targetSourceIndex) {
     const bldg = e.equipBuilding || '—';
     const room = e.equipRoom || '';
     const srcCount = (e.sources || []).length;
-    return `<button class="btn" style="text-align:left;padding:10px 12px;background:var(--card);border:1px solid var(--border);color:var(--text);display:block;width:100%;margin-bottom:6px;" onclick="pickCopySourceEntry(${i})">
-      <div style="font-weight:600;">${escHtml(e.equipName || '(unnamed)')}</div>
-      <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${escHtml(e.equipType || '')} &middot; ${escHtml(bldg)}${room ? ' / ' + escHtml(room) : ''} &middot; ${srcCount} source${srcCount !== 1 ? 's' : ''}</div>
+    return html`<button class="btn" style="text-align:left;padding:10px 12px;background:var(--card);border:1px solid var(--border);color:var(--text);display:block;width:100%;margin-bottom:6px;" onclick="pickCopySourceEntry(${i})">
+      <div style="font-weight:600;">${e.equipName || '(unnamed)'}</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${e.equipType || ''} &middot; ${bldg}${room ? ' / ' + room : ''} &middot; ${srcCount} source${srcCount !== 1 ? 's' : ''}</div>
     </button>`;
-  }).join('');
-  overlay.innerHTML = `
+  });
+  overlay.innerHTML = html`
     <div class="dialog" style="max-width:420px;max-height:85vh;display:flex;flex-direction:column;">
       <h3 style="margin:0 0 6px 0;color:var(--accent);">Copy Source</h3>
       <p style="margin:0 0 12px 0;color:var(--text-dim);font-size:13px;">Step 1 of 2 — pick the equipment to copy from:</p>
@@ -5383,15 +5465,15 @@ function pickCopySourceEntry(entryIndex) {
     const dev = s.deviceType || '—';
     const ver = s.verification || '—';
     const loc = s.location || '';
-    return `<button class="btn" style="text-align:left;padding:10px 12px;background:var(--card);border:1px solid var(--border);color:var(--text);display:block;width:100%;margin-bottom:6px;" onclick="applyCopySource(${entryIndex},${si})">
-      <div style="font-weight:600;">${si + 1}. ${escHtml(s.energySource || '(no source)')}</div>
-      <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${escHtml(dev)}${loc ? ' &middot; ' + escHtml(loc) : ''} &middot; ${escHtml(ver)}${s.detail ? ' <span style="color:var(--accent);">(' + escHtml(s.detail) + ')</span>' : ''}</div>
+    return html`<button class="btn" style="text-align:left;padding:10px 12px;background:var(--card);border:1px solid var(--border);color:var(--text);display:block;width:100%;margin-bottom:6px;" onclick="applyCopySource(${entryIndex},${si})">
+      <div style="font-weight:600;">${si + 1}. ${s.energySource || '(no source)'}</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${dev}${loc ? html` &middot; ${loc}` : ''} &middot; ${ver}${s.detail ? html` <span style="color:var(--accent);">(${s.detail})</span>` : ''}</div>
     </button>`;
-  }).join('');
-  overlay.innerHTML = `
+  });
+  overlay.innerHTML = html`
     <div class="dialog" style="max-width:420px;max-height:85vh;display:flex;flex-direction:column;">
       <h3 style="margin:0 0 6px 0;color:var(--accent);">Copy Source</h3>
-      <p style="margin:0 0 12px 0;color:var(--text-dim);font-size:13px;">Step 2 of 2 — pick which source of <strong>${escHtml(entry.equipName || '(unnamed)')}</strong> to copy into source #${targetIndex + 1}:</p>
+      <p style="margin:0 0 12px 0;color:var(--text-dim);font-size:13px;">Step 2 of 2 — pick which source of <strong>${entry.equipName || '(unnamed)'}</strong> to copy into source #${targetIndex + 1}:</p>
       <div style="overflow-y:auto;flex:1 1 auto;padding-right:4px;">${rows}</div>
       <div style="display:flex;gap:8px;margin-top:10px;">
         <button class="btn" onclick="showCopySourceDialog(${targetIndex})" style="flex:1;padding:8px;background:transparent;color:var(--text-dim);">&larr; Back</button>
@@ -5426,14 +5508,14 @@ function applyCopySource(entryIndex, sourceIndex) {
   // linkedTo (linking is per-source, per-entry). Photo-slot visibility
   // follows the copied energy kind, never hiding a photographed slot (build 91).
   applyNoPhotoDefault(targetIndex);
-  // The copied quantity may be lower than the valves marked in this source's
-  // photo: which mark left is unknown, so they are cleared — same rule as
-  // Split / the Quantity box (build 94; b93 missed this path).
-  reconcileSourceMarks(targetIndex);
+  // The copied devices may not fit the marks in this source's photo (fewer,
+  // or now an In/Out pair): they are cleared — same rule as Split / the
+  // Quantity box (build 94; b93 missed this path) — and the message says so.
+  const marksCleared = reconcileSourceMarks(targetIndex, true);
   closeCopySourceDialog();
   renderSources();
   autoSaveCurrent();
-  showToast(`Copied source #${sourceIndex + 1} from "${entry.equipName || '(unnamed)'}"`);
+  showToast(`Copied source #${sourceIndex + 1} from "${entry.equipName || '(unnamed)'}"` + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : ''), marksCleared);
 }
 
 function closeCopySourceDialog() {
@@ -5468,6 +5550,7 @@ function duplicateSource(index) {
     delete copy.hashWarning;
     delete copy.sourceConfirmed;
     delete copy.marks;             // a different device: mark it on the same photo
+    delete copy.marksFor;
     photos[`source_${index + 1}`] = copy;
   } else {
     delete photos[`source_${index + 1}`];
@@ -5523,36 +5606,36 @@ function renderLinkDialog() {
     candidates = candidates.filter(e => norm(e.equipBuilding) === curBldg);
   }
 
-  const scopeBtn = (val, label) => `
-    <button class="btn btn-sm" onclick="setLinkScope('${val}')" style="background:${pendingLinkScope===val?'var(--accent)':'var(--card)'};color:${pendingLinkScope===val?'white':'var(--text-dim)'};border:1px solid var(--border);">${label}</button>
+  const scopeBtn = (val, label) => html`
+    <button class="btn btn-sm" onclick="setLinkScope(${jsArg(val)})" style="background:${pendingLinkScope===val?'var(--accent)':'var(--card)'};color:${pendingLinkScope===val?'white':'var(--text-dim)'};border:1px solid var(--border);">${label}</button>
   `;
 
   let candidatesHtml = '';
   if (candidates.length === 0) {
     const scopeDesc = pendingLinkScope === 'room'
-      ? `room "${escHtml(currentBldg || '(none)')} / ${escHtml(currentRoom || '(none)')}"`
+      ? `room "${currentBldg || '(none)'} / ${currentRoom || '(none)'}"`
       : pendingLinkScope === 'building'
-      ? `building "${escHtml(currentBldg || '(none)')}"`
+      ? `building "${currentBldg || '(none)'}"`
       : 'all saved equipment';
-    candidatesHtml = `<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:13px;line-height:1.5;">No saved equipment found in ${scopeDesc}.<br>Try expanding the scope, or check that the building/room on both entries match.</div>`;
+    candidatesHtml = html`<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:13px;line-height:1.5;">No saved equipment found in ${scopeDesc}.<br>Try expanding the scope, or check that the building/room on both entries match.</div>`;
   } else {
     candidatesHtml = candidates.map((entry, ei) => {
       const origIndex = savedEquipment.indexOf(entry);
       const srcCount = (entry.sources || []).length;
-      return `
+      return html`
         <div style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px;cursor:pointer;" onclick="showLinkSourcePicker(${origIndex})">
-          <div style="font-weight:600;color:var(--text);">${escHtml(entry.equipName || '(unnamed)')}</div>
-          <div style="font-size:12px;color:var(--text-dim);margin-top:2px;">${escHtml(entry.equipType || '')} &middot; ${escHtml(entry.equipBuilding || '')}${entry.equipRoom ? ' / ' + escHtml(entry.equipRoom) : ''} &middot; ${srcCount} source${srcCount!==1?'s':''}</div>
+          <div style="font-weight:600;color:var(--text);">${entry.equipName || '(unnamed)'}</div>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:2px;">${entry.equipType || ''} &middot; ${entry.equipBuilding || ''}${entry.equipRoom ? ' / ' + entry.equipRoom : ''} &middot; ${srcCount} source${srcCount!==1?'s':''}</div>
         </div>
       `;
-    }).join('');
+    });
   }
 
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.id = 'linkDialogOverlay';
   overlay.style.display = 'flex';
-  overlay.innerHTML = `
+  overlay.innerHTML = html`
     <div class="dialog" style="max-width:520px;max-height:85vh;display:flex;flex-direction:column;">
       <h3 style="margin:0 0 8px 0;">🔗 Link to Shared Source</h3>
       <p style="margin:0 0 12px 0;color:var(--text-dim);font-size:13px;">Pick equipment whose isolation point this source shares (e.g., same valve feeds both).</p>
@@ -5592,7 +5675,7 @@ function showLinkSourcePicker(equipIndex) {
   const srcList = entry.sources || [];
   let srcHtml = '';
   if (srcList.length === 0) {
-    srcHtml = `<div style="padding:20px;text-align:center;color:var(--text-dim);">No sources on this equipment.</div>`;
+    srcHtml = html`<div style="padding:20px;text-align:center;color:var(--text-dim);">No sources on this equipment.</div>`;
   } else {
     srcHtml = srcList.map((s, si) => {
       const parts = [];
@@ -5601,23 +5684,23 @@ function showLinkSourcePicker(equipIndex) {
       if (s.deviceId) parts.push('(' + s.deviceId + ')');
       if (s.location) parts.push(s.location);
       if (s.detail) parts.push('[' + s.detail + ']');
-      return `
+      return html`
         <div style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:6px;cursor:pointer;" onclick="applyLink(${equipIndex},${si})">
           <div style="font-size:12px;color:var(--text-dim);">Source #${si+1}</div>
-          <div style="color:var(--text);font-size:14px;margin-top:2px;">${escHtml(parts.join(' — ') || '(empty source)')}</div>
+          <div style="color:var(--text);font-size:14px;margin-top:2px;">${parts.join(' — ') || '(empty source)'}</div>
         </div>
       `;
-    }).join('');
+    });
   }
 
   const newOverlay = document.createElement('div');
   newOverlay.className = 'dialog-overlay';
   newOverlay.id = 'linkDialogOverlay';
   newOverlay.style.display = 'flex';
-  newOverlay.innerHTML = `
+  newOverlay.innerHTML = html`
     <div class="dialog" style="max-width:520px;max-height:85vh;display:flex;flex-direction:column;">
-      <h3 style="margin:0 0 4px 0;">🔗 ${escHtml(entry.equipName || '(unnamed)')}</h3>
-      <p style="margin:0 0 12px 0;color:var(--text-dim);font-size:12px;">${escHtml(entry.equipType || '')} &middot; ${escHtml(entry.equipBuilding || '')}${entry.equipRoom ? ' / ' + escHtml(entry.equipRoom) : ''}</p>
+      <h3 style="margin:0 0 4px 0;">🔗 ${entry.equipName || '(unnamed)'}</h3>
+      <p style="margin:0 0 12px 0;color:var(--text-dim);font-size:12px;">${entry.equipType || ''} &middot; ${entry.equipBuilding || ''}${entry.equipRoom ? ' / ' + entry.equipRoom : ''}</p>
       <p style="margin:0 0 12px 0;color:var(--text-dim);font-size:13px;">Pick the source to link to:</p>
       <div style="overflow-y:auto;flex:1;min-height:100px;max-height:55vh;margin-bottom:12px;">
         ${srcHtml}
@@ -5663,8 +5746,8 @@ function applyLink(equipIndex, sourceIndex) {
   // with no In valve.
   if (tookEnergy && (parseInt(src.quantity, 10) || 1) !== (parseInt(mine.quantity, 10) || 1)) {
     mine.quantity = parseInt(src.quantity, 10) || 1;
-    reconcileSourceMarks(pendingLinkSourceIndex);
   }
+  const marksCleared = reconcileSourceMarks(pendingLinkSourceIndex, true);
   mine.userEdited = true;
   sources[pendingLinkSourceIndex].linkedTo = {
     equipName: entry.equipName || '',
@@ -5683,7 +5766,7 @@ function applyLink(equipIndex, sourceIndex) {
   closeLinkDialog();
   renderSources();
   autoSaveCurrent();
-  showToast(`Linked to ${entry.equipName}`);
+  showToast(`Linked to ${entry.equipName}` + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : ''), marksCleared);
 }
 
 function unlinkSource(index) {
@@ -5789,12 +5872,12 @@ function showReusePhotoPicker(slotId) {
   overlay.className = 'dialog-overlay';
   overlay.id = 'reusePickerOverlay';
   overlay.onclick = (e) => { if (e.target === overlay) closeReusePicker(); };
-  const grid = _reuseCandidates.map((p, idx) => `
-    <div onclick="reusePhotoInto('${slotId}', ${idx})" style="cursor:pointer;width:108px;text-align:center;">
-      <img src="${escHtml(p.thumbnail)}" style="width:108px;height:81px;object-fit:cover;border-radius:6px;border:1px solid var(--border);">
-      <div style="font-size:10px;color:var(--text-dim);margin-top:3px;line-height:1.2;word-break:break-word;">${escHtml(p.label)}</div>
-    </div>`).join('');
-  overlay.innerHTML = `
+  const grid = _reuseCandidates.map((p, idx) => html`
+    <div onclick="reusePhotoInto(${jsArg(slotId)}, ${idx})" style="cursor:pointer;width:108px;text-align:center;">
+      <img src="${p.thumbnail}" style="width:108px;height:81px;object-fit:cover;border-radius:6px;border:1px solid var(--border);">
+      <div style="font-size:10px;color:var(--text-dim);margin-top:3px;line-height:1.2;word-break:break-word;">${p.label}</div>
+    </div>`);
+  overlay.innerHTML = html`
     <div class="dialog" style="max-width:min(94vw,560px);max-height:82vh;display:flex;flex-direction:column;">
       <h3>&#8635; Reuse a Photo</h3>
       <p style="color:var(--text-dim);font-size:12px;margin:0 0 10px;">Tap a photo taken today to attach it here. It stays one shared photo (same file in the export), so use it when several sources appear in the same shot.</p>
@@ -5900,17 +5983,17 @@ function showPhotoDialog(slotId) {
     : '';
   const isSourceSlot = /^source_\d+$/.test(slotId);
   const markCount = cleanValveMarks(p.marks).length;
-  overlay.innerHTML = `
+  overlay.innerHTML = html`
     <div class="dialog" style="max-width:min(94vw,720px);">
       <div style="text-align:center;margin-bottom:10px;">
-        <img id="photoViewerImg" src="${escHtml(p.thumbnail || '')}"
+        <img id="photoViewerImg" src="${p.thumbnail || ''}"
           style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;border:1px solid var(--border);background:#000;">
         <div id="photoViewerNote" style="font-size:11px;color:var(--text-dim);margin-top:6px;">Loading full resolution\u2026</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:10px;">
-        ${isSourceSlot ? `<button class="btn btn-outline" onclick="openValveMarkDialog('${slotId}')" style="padding:12px;font-size:15px;">&#128205; ${markCount ? 'Move the valve mark' : 'Mark the valve location'}</button>` : ''}
-        <button class="btn btn-primary" onclick="retakePhoto('${slotId}')" style="padding:12px;font-size:15px;">Retake Photo</button>
-        <button class="btn btn-outline" onclick="closePhotoDialog(); browsePhoto('${slotId}');" style="padding:12px;font-size:15px;">&#128194; Choose from Library</button>
+        ${isSourceSlot ? html`<button class="btn btn-outline" onclick="openValveMarkDialog(${jsArg(slotId)})" style="padding:12px;font-size:15px;">&#128205; ${markCount ? 'Move the valve mark' : 'Mark the valve location'}</button>` : ''}
+        <button class="btn btn-primary" onclick="retakePhoto(${jsArg(slotId)})" style="padding:12px;font-size:15px;">Retake Photo</button>
+        <button class="btn btn-outline" onclick="closePhotoDialog(); browsePhoto(${jsArg(slotId)});" style="padding:12px;font-size:15px;">&#128194; Choose from Library</button>
         <button class="btn" onclick="closePhotoDialog()" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Close</button>
       </div>
     </div>
@@ -5941,11 +6024,11 @@ function showMiscPhotoViewer(index) {
   let objUrl = null;
   overlay._cleanup = () => { if (objUrl) { URL.revokeObjectURL(objUrl); objUrl = null; } };
   overlay.onclick = (e) => { if (e.target === overlay) closePhotoDialog(); };
-  overlay.innerHTML = `
+  overlay.innerHTML = html`
     <div class="dialog" style="max-width:min(94vw,720px);">
       <h3 style="margin:0 0 10px 0;">&#128247; Misc Photo ${index + 1}</h3>
       <div style="text-align:center;margin-bottom:10px;">
-        <img id="photoViewerImg" src="${escHtml(p.thumbnail || '')}"
+        <img id="photoViewerImg" src="${p.thumbnail || ''}"
           style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;border:1px solid var(--border);background:#000;">
         <div id="photoViewerNote" style="font-size:11px;color:var(--text-dim);margin-top:6px;">Loading full resolution\u2026</div>
       </div>
@@ -6016,21 +6099,41 @@ function valveMarkSlots(src) {
 function isInOutPair(src) {
   return !!src && valveMarkSlots(src) === 2 && /In\/Out/i.test(src.energySource || '');
 }
-// Marks are one per device (build 93). When a source's device count drops
-// below the marks it holds (Split, the Quantity box, an In/Out source changed
-// back), nobody can tell which mark belonged to the device that left — the
-// export used to keep the first-tapped ones, which could be the valve that was
-// split off. The marks are cleared (a NEW reference — see VALVE MARKS) and
-// the tech re-marks.
-function reconcileSourceMarks(index) {
+// Do a photo's marks still fit its source? Marks are one per device (build
+// 93): not when the source now has FEWER devices than marks — nobody can tell
+// which mark belonged to the device that left (the export used to keep the
+// first-tapped ones, which could be the valve split off). And not when the
+// source has BECOME an In/Out pair since they were tapped (build 95 —
+// ref.marksFor records the shape they were placed for): loto-web binds
+// mark[0] to the IN valve, and marks tapped for a plain source are in any
+// order, so the IN arrow could point at the OUT valve. ONE rule for every
+// path — the export reads it (sourceMarksForExport), and reconcileSourceMarks
+// clears what fails it after any change to a source's devices.
+function marksFit(ref, src) {
+  const n = cleanValveMarks(ref && ref.marks).length;
+  if (!n) return true;
+  if (n > valveMarkSlots(src)) return false;
+  return !(isInOutPair(src) && ref.marksFor && !ref.marksFor.inOut);
+}
+function marksShapeOf(src) { return { qty: valveMarkSlots(src), inOut: isInOutPair(src) }; }
+function fittingMarks(ref, src) {
+  return (ref && src && marksFit(ref, src)) ? cleanValveMarks(ref.marks).slice(0, valveMarkSlots(src)) : [];
+}
+const MARKS_CLEARED_NOTE = '\ud83d\udccd Valve marks cleared (the devices changed) \u2014 tap \ud83d\udccd Mark to place them again.';
+// Marks that no longer fit are cleared (a NEW reference — see VALVE MARKS)
+// and the tech re-marks. `quiet`: the caller puts MARKS_CLEARED_NOTE in its
+// own message (build 95: its success toast replaced this one in the same
+// tick, so the marks vanished without a word).
+function reconcileSourceMarks(index, quiet) {
   const slot = 'source_' + index, ref = photos[slot], src = sources[index];
   if (!ref || !src || !ref.dbKey) return false;
-  if (cleanValveMarks(ref.marks).length <= valveMarkSlots(src)) return false;
+  if (marksFit(ref, src)) return false;
   const next = Object.assign({}, ref);
   delete next.marks;
+  delete next.marksFor;
   photos[slot] = next;
   paintPhotoSlot(slot);
-  showToast('\ud83d\udccd Valve marks cleared \u2014 the device count changed. Tap \ud83d\udccd Mark to place them again.', true);
+  if (!quiet) showToast(MARKS_CLEARED_NOTE, true);
   return true;
 }
 // The marks an export ships for entry source i — none without its photo.
@@ -6038,7 +6141,7 @@ function sourceMarksForExport(entry, i) {
   const src = entry && entry.sources && entry.sources[i];
   const ref = entry && entry.photos && entry.photos['source_' + i];
   if (!src || !ref || !ref.dbKey) return [];
-  return cleanValveMarks(ref.marks).slice(0, valveMarkSlots(src));
+  return fittingMarks(ref, src);
 }
 function valveMarksText(marks) {
   return (marks || []).map(m => m.x.toFixed(3) + ',' + m.y.toFixed(3)).join('; ');
@@ -6111,7 +6214,7 @@ function valveMarkGroupFor(ref, draft) {
   sources.forEach((src, i) => {
     const r = photos['source_' + i];
     if (!same(r)) return;
-    const marks = (draft && r === draft.ref) ? draft.marks : cleanValveMarks(r.marks).slice(0, valveMarkSlots(src));
+    const marks = (draft && r === draft.ref) ? draft.marks : fittingMarks(r, src);
     marks.forEach((m, k) => items.push({ srcIndex: i, sub: k, mine: r === ref, mark: m, qty: valveMarkSlots(src) }));
   });
   return { items: items, layout: layoutValveMarks(items.map(t => t.mark)) };
@@ -6168,7 +6271,7 @@ function valveMarkShapeSvg(ov, w, h, label, color, opacity) {
   return '<g opacity="' + opacity + '">' +
     '<polygon points="' + pts.map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' ') + '" fill="' + color + '" stroke="#000" stroke-width="1"/>' +
     '<rect x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + bh.toFixed(1) + '" fill="' + color + '" stroke="#000" stroke-width="1"/>' +
-    '<text x="' + (bx + bw / 2).toFixed(1) + '" y="' + (by + bh / 2).toFixed(1) + '" font-size="' + fs.toFixed(1) + '" font-weight="700" text-anchor="middle" dominant-baseline="central" fill="#000" font-family="Arial, sans-serif">' + escHtml(label) + '</text>' +
+    '<text x="' + (bx + bw / 2).toFixed(1) + '" y="' + (by + bh / 2).toFixed(1) + '" font-size="' + fs.toFixed(1) + '" font-weight="700" text-anchor="middle" dominant-baseline="central" fill="#000" font-family="Arial, sans-serif">' + html`${label}` + '</text>' +
     '</g>';
 }
 
@@ -6190,22 +6293,22 @@ function openValveMarkDialog(slotId, opts) {
   closeValveMarkDialog();
   const session = formSession;
   const slots = valveMarkSlots(src);
-  let marks = cleanValveMarks(ref.marks).slice(0, slots);
+  let marks = fittingMarks(ref, src);
   const what = src.deviceType || 'valve / device';
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.id = 'valveMarkOverlay';
   overlay.style.padding = '10px';
   let objUrl = null;
-  overlay.innerHTML = `
+  overlay.innerHTML = html`
     <div class="dialog" style="max-width:min(96vw,760px);padding:14px 14px 12px;max-height:96vh;overflow-y:auto;">
-      <h3 style="margin:0 0 4px;font-size:17px;">&#128205; Where is the ${escHtml(what)}?</h3>
+      <h3 style="margin:0 0 4px;font-size:17px;">&#128205; Where is the ${what}?</h3>
       <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;line-height:1.4;">
-        Source #${idx + 1} &mdash; ${escHtml(src.energySource || 'energy source')}. ${isInOutPair(src) ? '<b>Tap the IN valve first, then the OUT valve.</b>' : slots > 1 ? 'Tap each of the ' + slots + ' devices in the photo.' : 'Tap it in the photo.'}
+        Source #${idx + 1} &mdash; ${src.energySource || 'energy source'}. ${isInOutPair(src) ? raw('<b>Tap the IN valve first, then the OUT valve.</b>') : slots > 1 ? 'Tap each of the ' + slots + ' devices in the photo.' : 'Tap it in the photo.'}
         The arrow on the LOTO procedure will point there.
       </div>
       <div id="valveMarkWrap" style="position:relative;margin:0 auto;cursor:crosshair;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;">
-        <img id="valveMarkImg" src="${escHtml(ref.thumbnail || '')}" draggable="false" alt="" style="display:block;width:100%;height:100%;border-radius:6px;background:#000;pointer-events:none;">
+        <img id="valveMarkImg" src="${ref.thumbnail || ''}" draggable="false" alt="" style="display:block;width:100%;height:100%;border-radius:6px;background:#000;pointer-events:none;">
         <svg id="valveMarkSvg" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible;"></svg>
       </div>
       <div id="valveMarkNote" style="font-size:11px;color:var(--text-dim);margin-top:6px;text-align:center;">Loading full resolution\u2026</div>
@@ -6314,9 +6417,11 @@ function saveValveMarks(ref, marks, session) {
   const slot = Object.keys(photos).find(k => /^source_\d+$/.test(k) && photos[k] === ref);
   if (!slot) { showToast('\u26a0 That photo changed while you were marking \u2014 mark not saved. Tap \ud83d\udccd Mark to place it again.', true); return false; }
   const clean = cleanValveMarks(marks);
-  if (JSON.stringify(clean) === JSON.stringify(cleanValveMarks(ref.marks))) return true;
+  const src = sources[parseInt(slot.slice(7), 10)];
+  const shape = marksShapeOf(src);
+  if (JSON.stringify(clean) === JSON.stringify(cleanValveMarks(ref.marks)) && JSON.stringify(ref.marksFor || null) === JSON.stringify(clean.length ? shape : null)) return true;
   const next = Object.assign({}, ref);
-  if (clean.length) next.marks = clean; else delete next.marks;
+  if (clean.length) { next.marks = clean; next.marksFor = shape; } else { delete next.marks; delete next.marksFor; }
   photos[slot] = next;
   paintPhotoSlot(slot);
   autoSaveCurrent();
@@ -6956,7 +7061,7 @@ function recordPhotoHash(hash, entryId, dbKey, isDup) {
     if (!owners.some(o => o && o.dbKey === dbKey)) {
       owners.push({ entryId: entryId, dbKey: dbKey, at: new Date().toISOString() });
       index[hash] = owners;
-      try { await saveMetadata('photo_hash_index', index); } catch (e) {}
+      if (tabMayWrite()) { try { await saveMetadata('photo_hash_index', index); } catch (e) {} }
     }
     return { collision: (isDup ? null : collision) };
   };
@@ -6982,10 +7087,7 @@ function showPhotoHashWarning(slotId, collision) {
   }
   const otherName = entryNameForId(collision && collision.entryId);
   banner.style.display = 'block';
-  banner.innerHTML = '&#9888; This photo is byte-identical to a photo on another entry' +
-    (otherName ? ' ("' + escHtml(otherName) + '")' : '') +
-    '. If that was intentional, delete it and use <b>Reuse Photo</b> instead so the share is recorded.' +
-    ' <button class="btn btn-outline btn-sm" style="margin-left:8px;" onclick="this.parentElement.style.display=\'none\'">Dismiss</button>';
+  banner.innerHTML = html`&#9888; This photo is byte-identical to a photo on another entry${otherName ? html` ("${otherName}")` : ''}. If that was intentional, delete it and use <b>Reuse Photo</b> instead so the share is recorded. <button class="btn btn-outline btn-sm" style="margin-left:8px;" onclick="this.parentElement.style.display='none'">Dismiss</button>`;
 }
 function clearPhotoHashWarning() {
   const banner = document.getElementById('hashWarnBanner');
@@ -7247,8 +7349,9 @@ async function showPhotoStoreReport() {
   if (!report) {
     body = '<p style="color:var(--text-dim);font-size:13px;">No migration report yet — it is produced automatically on the first launch after the photo-store fix.</p>';
   } else {
+    // title is this code's markup; every row is user text (names, rooms)
     const sec = (title, rows) => rows.length
-      ? '<div style="margin:10px 0 4px;font-weight:700;font-size:13px;">' + title + ' (' + rows.length + ')</div>' + rows.slice(0, 200).map(r => '<div style="font-size:11px;color:var(--text-dim);padding:2px 0;border-bottom:1px solid var(--border);word-break:break-all;">' + escHtml(r) + '</div>').join('') + (rows.length > 200 ? '<div style="font-size:11px;">…and ' + (rows.length - 200) + ' more</div>' : '')
+      ? html`<div style="margin:10px 0 4px;font-weight:700;font-size:13px;">${raw(title)} (${rows.length})</div>${rows.slice(0, 200).map(r => html`<div style="font-size:11px;color:var(--text-dim);padding:2px 0;border-bottom:1px solid var(--border);word-break:break-all;">${r}</div>`)}${rows.length > 200 ? html`<div style="font-size:11px;">…and ${rows.length - 200} more</div>` : ''}`
       : '';
     body =
       '<p style="font-size:12px;color:var(--text-dim);margin:0 0 8px;">Migration ran ' + new Date(report.finishedAt || report.startedAt).toLocaleString() + '. Originals were kept — nothing was deleted.</p>' +
@@ -7493,20 +7596,20 @@ function showReattachReview(candidates) {
     overlay.className = 'dialog-overlay';
     overlay.id = 'reattachReviewOverlay';
     overlay.style.display = 'flex';
-    const rows = candidates.map((c, i) => `
+    const rows = candidates.map((c, i) => html`
       <label style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
         <input type="checkbox" class="reattach-pick" data-i="${i}" checked style="width:20px;height:20px;flex:0 0 auto;">
         <div style="flex:0 0 96px;text-align:center;font-size:10px;color:var(--text-dim);">
-          ${c.cur && c.cur.thumbnail ? `<img src="${escHtml(c.cur.thumbnail)}" style="width:96px;height:72px;object-fit:cover;border-radius:6px;opacity:0.55;">` : '<div style="width:96px;height:72px;border:1px dashed var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;">no preview</div>'}
+          ${c.cur && c.cur.thumbnail ? html`<img src="${c.cur.thumbnail}" style="width:96px;height:72px;object-fit:cover;border-radius:6px;opacity:0.55;">` : raw('<div style="width:96px;height:72px;border:1px dashed var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;">no preview</div>')}
           <div>missing now</div>
         </div>
         <div style="flex:0 0 96px;text-align:center;font-size:10px;color:var(--text-dim);">
           <img id="reattachThumb${i}" style="width:96px;height:72px;object-fit:cover;border-radius:6px;background:#000;">
           <div>unattached photo</div>
         </div>
-        <div style="flex:1;font-size:12px;"><b>${escHtml(c.e.equipName || '(unnamed)')}</b><br>${escHtml(photoSlotLabel(c.slotKey))}<br><span style="color:var(--text-dim);">${escHtml([c.e.equipBuilding, c.e.equipRoom].filter(Boolean).join(' '))}</span>${c.alternatives ? `<br><span style="color:#e0a44a;">+${c.alternatives} older unattached shot(s) for this slot</span>` : ''}</div>
-      </label>`).join('');
-    overlay.innerHTML = `
+        <div style="flex:1;font-size:12px;"><b>${c.e.equipName || '(unnamed)'}</b><br>${photoSlotLabel(c.slotKey)}<br><span style="color:var(--text-dim);">${[c.e.equipBuilding, c.e.equipRoom].filter(Boolean).join(' ')}</span>${c.alternatives ? html`<br><span style="color:#e0a44a;">+${c.alternatives} older unattached shot(s) for this slot</span>` : ''}</div>
+      </label>`);
+    overlay.innerHTML = html`
       <div class="dialog" style="max-width:min(96vw,620px);max-height:86vh;display:flex;flex-direction:column;">
         <h3 style="margin:0 0 6px 0;">&#128279; Re-attach missing photos</h3>
         <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px;line-height:1.4;">Each row is a slot whose photo is MISSING from storage, next to an unattached photo taken for exactly that unit and slot. Uncheck any that are not the right photo. Nothing changes until you tap Re-attach.</p>
@@ -7599,12 +7702,7 @@ async function runPhotoAudit(scope) {
     collisions.push({ sha256: h, owners, recordedDup: unrecorded.length <= 1 });
   }
   const bad = collisions.filter(c => !c.recordedDup);
-  const bindingRows = bindingProblems.map(b =>
-    '<div style="display:flex;gap:10px;align-items:center;font-size:11px;padding:6px 0;border-bottom:1px solid var(--border);">' +
-    (b.thumb ? '<img src="' + escHtml(b.thumb) + '" style="width:64px;height:48px;object-fit:cover;border-radius:4px;flex:0 0 auto;">' : '') +
-    '<div style="flex:1;"><b style="color:#c82828;">&#9888; ' + escHtml(b.name) + ' &middot; ' + escHtml(b.label) + '</b><br><span style="color:var(--text-dim);">' + escHtml(b.problem) + ' &mdash; it is left OUT of exports until confirmed.</span></div>' +
-    '<button class="btn btn-outline btn-sm" style="flex:0 0 auto;" onclick="auditKeepSourcePhoto(\'' + b.entryId + '\',\'' + b.slotKey + '\',\'' + scope + '\')">Keep on this source</button></div>'
-  ).join('');
+  const bindingRows = bindingProblems.map(b => html`<div style="display:flex;gap:10px;align-items:center;font-size:11px;padding:6px 0;border-bottom:1px solid var(--border);">${b.thumb ? html`<img src="${b.thumb}" style="width:64px;height:48px;object-fit:cover;border-radius:4px;flex:0 0 auto;">` : ''}<div style="flex:1;"><b style="color:#c82828;">&#9888; ${b.name} &middot; ${b.label}</b><br><span style="color:var(--text-dim);">${b.problem} &mdash; it is left OUT of exports until confirmed.</span></div><button class="btn btn-outline btn-sm" style="flex:0 0 auto;" onclick="auditKeepSourcePhoto(${jsArg(b.entryId)},${jsArg(b.slotKey)},${jsArg(scope)})">Keep on this source</button></div>`).join('');
 
   const old = document.getElementById('photoAuditOverlay');
   if (old) old.remove();
@@ -7614,16 +7712,10 @@ async function runPhotoAudit(scope) {
   overlay.style.display = 'flex';
   overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
   const stat = (label, val, color) => '<div style="flex:1;min-width:110px;background:var(--input-bg);border-radius:8px;padding:10px;text-align:center;"><div style="font-size:20px;font-weight:700;' + (color ? 'color:' + color + ';' : '') + '">' + val + '</div><div style="font-size:11px;color:var(--text-dim);">' + label + '</div></div>';
-  const collisionRows = bad.map(c =>
-    '<div style="font-size:11px;padding:6px 0;border-bottom:1px solid var(--border);"><b style="color:#c82828;">&#9888; ' +
-    c.owners.map(o => escHtml(o.name + ' [' + o.slot + ']')).join('  vs  ') + '</b><br><span style="color:var(--text-dim);">' + c.sha256.slice(0, 16) + '…</span></div>'
-  ).join('');
-  const dupRows = collisions.filter(c => c.recordedDup).map(c =>
-    '<div style="font-size:11px;padding:4px 0;color:var(--text-dim);border-bottom:1px solid var(--border);">&#8635; recorded dup: ' +
-    c.owners.map(o => escHtml(o.name + ' [' + o.slot + ']')).join(' + ') + '</div>'
-  ).join('');
+  const collisionRows = bad.map(c => html`<div style="font-size:11px;padding:6px 0;border-bottom:1px solid var(--border);"><b style="color:#c82828;">&#9888; ${c.owners.map(o => o.name + ' [' + o.slot + ']').join('  vs  ')}</b><br><span style="color:var(--text-dim);">${c.sha256.slice(0, 16)}…</span></div>`).join('');
+  const dupRows = collisions.filter(c => c.recordedDup).map(c => html`<div style="font-size:11px;padding:4px 0;color:var(--text-dim);border-bottom:1px solid var(--border);">&#8635; recorded dup: ${c.owners.map(o => o.name + ' [' + o.slot + ']').join(' + ')}</div>`).join('');
   const scopeBtn = (val, label) =>
-    '<button class="btn btn-sm" onclick="runPhotoAudit(\'' + val + '\')" style="padding:5px 12px;font-size:12px;' +
+    '<button class="btn btn-sm" onclick="runPhotoAudit(' + jsArg(val) + ')" style="padding:5px 12px;font-size:12px;' +
     (scope === val
       ? 'background:var(--accent);color:#fff;border:1px solid var(--accent);'
       : 'background:var(--card);color:var(--text-dim);border:1px solid var(--border);') + '">' + label + '</button>';
@@ -7877,6 +7969,7 @@ async function runIntegrityCheck(verbose) {
   }
   _integrity = { total: uniq.length, missing: missingKeys.length };
   paintIntegrityBadge(uniq.length, missingKeys.length);
+  paintBottomAlert();
   if (verbose) {
     if (!uniq.length) { showToast('No photos to check yet.'); return _integrity; }
     if (!missingKeys.length) { alert('✅ All ' + uniq.length + ' photos are safe in device storage.'); return _integrity; }
@@ -8000,13 +8093,13 @@ function renderMiscPhotos() {
   const grid = document.getElementById('miscPhotoGrid');
   const btn = document.getElementById('addMiscPhotoBtn');
   if (!grid) return;
-  grid.innerHTML = miscPhotos.map((p, i) => `
+  grid.innerHTML = html`${miscPhotos.map((p, i) => html`
     <div style="position:relative;width:80px;">
-      <img src="${escHtml(p.thumbnail)}" onclick="showMiscPhotoViewer(${i})" title="Tap to view full size" style="width:80px;border-radius:6px;border:2px solid #333;cursor:pointer;">
+      <img src="${p.thumbnail}" onclick="showMiscPhotoViewer(${i})" title="Tap to view full size" style="width:80px;border-radius:6px;border:2px solid #333;cursor:pointer;">
       <span style="position:absolute;top:2px;left:4px;background:rgba(0,0,0,0.7);color:#fff;font-size:9px;padding:1px 5px;border-radius:3px;">Misc ${i+1}</span>
       <button onclick="removeMiscPhoto(${i})" style="position:absolute;top:2px;right:2px;background:rgba(200,40,40,0.9);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;line-height:18px;padding:0;">&#10005;</button>
     </div>
-  `).join('');
+  `)}`;
   btn.style.display = miscPhotos.length >= MAX_MISC_PHOTOS ? 'none' : '';
 }
 
@@ -8060,8 +8153,8 @@ function showIncompleteWarning(missing) {
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.id = 'incompleteWarningOverlay';
-  const items = missing.map(m => `<li style="margin-bottom:5px;">${escHtml(m)}</li>`).join('');
-  overlay.innerHTML = `
+  const items = missing.map(m => html`<li style="margin-bottom:5px;">${m}</li>`);
+  overlay.innerHTML = html`
     <div class="dialog" style="max-width:440px;">
       <h3 style="margin:0 0 6px 0;color:#d9a441;">&#9888; Incomplete entry</h3>
       <p style="margin:0 0 10px 0;color:var(--text-dim);font-size:14px;">
@@ -8334,9 +8427,9 @@ function renderSavedPanel() {
   if (visible.length === 0) {
     const parts = [];
     if (savedFilter !== 'all') parts.push(`"${savedFilter === 'today' ? 'Today' : 'Yesterday'}"`);
-    if (savedSearchTerm) parts.push(`search "${escHtml(savedSearchTerm)}"`);
+    if (savedSearchTerm) parts.push(`search "${savedSearchTerm}"`);
     const summary = parts.length ? parts.join(' + ') : 'the current filters';
-    body.innerHTML = `<div class="saved-empty">No entries match ${summary}. Clear filters to see the others.</div>`;
+    body.innerHTML = html`<div class="saved-empty">No entries match ${summary}. Clear filters to see the others.</div>`;
     return;
   }
 
@@ -8350,24 +8443,24 @@ function renderSavedPanel() {
     const savedTwice = entry.id && idCounts[entry.id] > 1;
     const photoSuspect = Object.values(entry.photos || {}).some(p => p && p.legacySuspect) ||
       (entry.miscPhotos || []).some(p => p && p.legacySuspect);
-    const twinBadge = savedTwice ? ' <span style="background:#b5451b;color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="This unit is saved twice with the same entry id (an edit saved after an app reload, before build 89). Export ships only the most recent copy. Delete the copy you don\'t want \u2014 its photos stay on the device.">&#9888; SAVED TWICE</span>' : '';
-    return `
+    const twinBadge = savedTwice ? raw(' <span style="background:#b5451b;color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="This unit is saved twice with the same entry id (an edit saved after an app reload, before build 89). Export ships only the most recent copy. Delete the copy you don\'t want \u2014 its photos stay on the device.">&#9888; SAVED TWICE</span>') : '';
+    return html`
     <div class="saved-item" style="${isEditing ? 'border:2px solid var(--accent);background:rgba(74,144,217,0.08);' : ''}">
       <div class="saved-item-info">
-        <div class="saved-item-name">${escHtml(entry.equipName)}${isEditing ? ' <span style="background:var(--accent);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">EDITING</span>' : ''}${photoSuspect ? ' <span style="background:rgba(200,40,40,0.92);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="This entry\'s photo was shared with other equipment in the old photo store — verify it shows THIS unit (Settings → Photo Store Report).">&#9888; PHOTO SUSPECT</span>' : ''}${twinBadge}</div>
+        <div class="saved-item-name">${entry.equipName}${isEditing ? raw(' <span style="background:var(--accent);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">EDITING</span>') : ''}${photoSuspect ? raw(' <span style="background:rgba(200,40,40,0.92);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="This entry\'s photo was shared with other equipment in the old photo store — verify it shows THIS unit (Settings → Photo Store Report).">&#9888; PHOTO SUSPECT</span>') : ''}${twinBadge}</div>
         <div class="saved-item-detail">
-          ${escHtml(entry.equipType || 'No type')} &#183; ${escHtml(entry.template || 'No template')}
+          ${entry.equipType || 'No type'} &#183; ${entry.template || 'No template'}
           &#183; ${entry.sources.length} source${entry.sources.length !== 1 ? 's' : ''}
           &#183; ${photoCount} &#128247;
-          &#183; ${(() => { const st = entryExportState(entry); return st === 'exported'
+          &#183; ${(() => { const st = entryExportState(entry); return raw(st === 'exported'
             ? '<span style="color:#4ab86a;font-weight:600;" title="Exported ' + new Date(entry.exportedAt).toLocaleString() + '">&#10003; exported</span>'
             : st === 'incomplete'
             ? '<span style="color:#e0553a;font-weight:700;" title="Exported ' + new Date(entry.exportIncompleteAt).toLocaleString() + ' WITHOUT some of its photos (missing or excluded) — not safe to delete">&#9888; exported incomplete</span>'
             : st === 'unproven'
             ? '<span style="color:#e0553a;font-weight:700;" title="Exported ' + new Date(entry.exportedAt).toLocaleString() + ' by an older build that left this unit\'s photos out — export it again before deleting">&#9888; export again (photos)</span>'
-            : '<span style="color:#e0a44a;font-weight:700;">&#9888; not exported</span>'; })()}
-          &#183; ${escHtml(entry.equipBuilding || '?')} ${escHtml(entry.equipRoom || '')}
-          &#183; ${escHtml(entry.timestamp)}
+            : '<span style="color:#e0a44a;font-weight:700;">&#9888; not exported</span>'); })()}
+          &#183; ${entry.equipBuilding || '?'} ${entry.equipRoom || ''}
+          &#183; ${entry.timestamp}
         </div>
       </div>
       <div class="saved-item-actions">
@@ -8376,7 +8469,7 @@ function renderSavedPanel() {
         <button class="btn btn-danger btn-sm" onclick="deleteSaved(${i})" style="padding:5px 10px;font-size:12px;">&#10005;</button>
       </div>
     </div>
-  `}).join('');
+  `}).join('');   // RawHtml items → one markup string
 }
 
 function toggleSavedPanel() {
@@ -8424,20 +8517,20 @@ function showExportLog() {
   const rows = log.length ? log.map(ev => {
     const when = new Date(ev.at).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
     if (ev.kind === 'backup') {
-      return `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
+      return html`<div style="padding:10px 0;border-bottom:1px solid var(--border);">
         <div style="font-weight:600;">&#128228; Backup &middot; ${when}</div>
-        <div style="font-size:12px;color:var(--text-dim);">${ev.entries} entr${ev.entries===1?'y':'ies'}${ev.filename?' &middot; '+escHtml(ev.filename):''}</div>
+        <div style="font-size:12px;color:var(--text-dim);">${ev.entries} entr${ev.entries===1?'y':'ies'}${ev.filename ? html` &middot; ${ev.filename}` : ''}</div>
       </div>`;
     }
     const fac = ev.facilityName || ev.facility || 'No facility';
     const seq = (ev.seqFirst && ev.seqLast) ? (ev.seqFirst===ev.seqLast ? ev.seqFirst : ev.seqFirst+'\u2013'+ev.seqLast) : '';
-    return `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
+    return html`<div style="padding:10px 0;border-bottom:1px solid var(--border);">
       <div style="font-weight:600;">&#128230; Export &middot; ${when}</div>
-      <div style="font-size:12px;color:var(--text-dim);">${escHtml(fac)} &middot; ${ev.entries} equipment &middot; ${ev.photos} photo${ev.photos===1?'':'s'}${ev.missingPhotos?' <span style="color:#e0553a;font-weight:600;">&middot; ⚠ '+ev.missingPhotos+' missing</span>':''}${seq?' &middot; '+seq:''}</div>
-      <div style="font-size:11px;color:var(--text-dim);">${ev.dateFilter && ev.dateFilter!=='all' ? 'date: '+escHtml(ev.dateFilter)+' &middot; ' : ''}${escHtml(ev.filename||'')}</div>
+      <div style="font-size:12px;color:var(--text-dim);">${fac} &middot; ${ev.entries} equipment &middot; ${ev.photos} photo${ev.photos===1?'':'s'}${ev.missingPhotos ? html` <span style="color:#e0553a;font-weight:600;">&middot; ⚠ ${ev.missingPhotos} missing</span>` : ''}${seq ? html` &middot; ${seq}` : ''}</div>
+      <div style="font-size:11px;color:var(--text-dim);">${ev.dateFilter && ev.dateFilter!=='all' ? html`date: ${ev.dateFilter} &middot; ` : ''}${ev.filename||''}</div>
     </div>`;
-  }).join('') : '<div style="padding:20px 0;text-align:center;color:var(--text-dim);">No exports or backups logged yet.</div>';
-  overlay.innerHTML = `
+  }) : raw('<div style="padding:20px 0;text-align:center;color:var(--text-dim);">No exports or backups logged yet.</div>');
+  overlay.innerHTML = html`
     <div class="dialog" style="max-width:460px;max-height:80vh;display:flex;flex-direction:column;">
       <h3>&#128203; Export &amp; Backup Log</h3>
       <p style="color:var(--text-dim);font-size:12px;margin:0 0 8px;">History on this device (most recent first, last 50).</p>
@@ -8506,8 +8599,25 @@ function deleteEntryPhotos(entry, keepReferencedBy) {
 
 // The unit on the form IS this saved entry (open for edit, or restored
 // mid-edit after a relaunch).
+// Is this saved row the unit open in the form? The row being EDITED is known
+// by identity (build 95): a unit saved twice has two rows under one id, and
+// deleting the copy NOT being edited discarded the edit in progress. By id
+// only when the edited row is no longer in the list, or for a form that
+// isn't an edit.
 function formHoldsEntry(entry) {
-  return !!entry && ((!!editingEntry && sameEntryId(editingEntry.id, entry.id)) || sameEntryId(currentEntryId, entry.id));
+  if (!entry) return false;
+  if (editingEntry && savedEquipment.includes(editingEntry)) return editingEntry === entry;
+  return (!!editingEntry && sameEntryId(editingEntry.id, entry.id)) || sameEntryId(currentEntryId, entry.id);
+}
+// Every path that takes saved rows out of the list (Delete, Bulk delete,
+// Import → Replace) closes the form FIRST when it holds one of them (build
+// 94 for the deletes; build 95 for Replace, which left the form editing a
+// unit that was gone — Save then re-created it dated today). Closed, the form
+// no longer holds their photos.
+function closeFormIfRemoving(rows) {
+  if (!(rows || []).some(formHoldsEntry)) return false;
+  clearForm(false);
+  return true;
 }
 function deleteSaved(index) {
   // Never delete under a photo that is still being written (build 91): a
@@ -8531,7 +8641,7 @@ function deleteSaved(index) {
     // existed \u2014 Clear then promised "the original saved entry will be
     // preserved" and Save re-created it dated today. Closed, it no longer
     // holds the photos, so they are deleted with the entry as usual.
-    if (open) clearForm(false);
+    closeFormIfRemoving([entry]);
     deleteEntryPhotos(entry, savedEquipment.filter((_, idx) => idx !== index));
     savedEquipment.splice(index, 1);
     tombstoneRemovedEntries([entry]);   // a later merge of stored copies must not bring it back
@@ -8650,7 +8760,7 @@ function confirmBulkDelete() {
   if (targets.length === 0) { closeBulkDeleteDialog(); return; }
   const set = new Set(targets);
   const remaining = savedEquipment.filter(e => !set.has(e));
-  if (targets.some(formHoldsEntry)) clearForm(false);      // the unit open for edit goes too (build 94)
+  closeFormIfRemoving(targets);                           // the unit open for edit goes too (build 94)
   targets.forEach(e => deleteEntryPhotos(e, remaining));   // background, reference-aware cleanup
   const removed = targets.length;
   savedEquipment = savedEquipment.filter(e => !set.has(e));
@@ -8779,9 +8889,9 @@ function showDuplicateDialog(index) {
   const overlay = document.createElement('div');
   overlay.id = 'duplicateDialog';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:1000;display:flex;align-items:center;justify-content:center;';
-  overlay.innerHTML = `
+  overlay.innerHTML = html`
     <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:320px;width:90%;text-align:center;">
-      <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">Duplicate "${escHtml(entry.equipName)}"</div>
+      <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">Duplicate "${entry.equipName}"</div>
       <div style="font-size:12px;color:var(--text-dim);margin-bottom:18px;">${photoCount} photo${photoCount !== 1 ? 's' : ''} available to copy</div>
       <button onclick="executeDuplicate(${index}, true)" style="width:100%;padding:12px;margin-bottom:8px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">
         With Photos
@@ -9264,12 +9374,13 @@ async function runCombinedExport() {
   // two equipment rows when it had a LOTO ID).
   let allEntries = getExportFilteredEntries();
   const formEntries = new WeakSet();
+  let newFormEntry = null;   // the open form when it is a NEW unit (not an edit of a saved one)
   const formEntry = snapshotFormEntry();
   if (formEntry) {
     const savedIdx = allEntries.findIndex(e => sameEntryId(e.id, formEntry.id));
     const isEdit = savedEquipment.some(e => sameEntryId(e.id, formEntry.id));
     if (savedIdx >= 0) { allEntries[savedIdx] = formEntry; formEntries.add(formEntry); }
-    else if (!isEdit && currentEntryPassesExportFilters()) { allEntries.push(formEntry); formEntries.add(formEntry); }
+    else if (!isEdit && currentEntryPassesExportFilters()) { allEntries.push(formEntry); formEntries.add(formEntry); newFormEntry = formEntry; }
   }
 
   // A unit saved TWICE under one id (the pre-b89 reload bug) ships once —
@@ -9312,8 +9423,7 @@ async function runCombinedExport() {
     const go = await askChoice({
       id: 'export-blank-energy', defaultValue: 'export',
       title: '&#9888; ' + blankEnergy.length + ' source' + (blankEnergy.length === 1 ? ' has' : 's have') + ' no Energy Source',
-      html: escHtml(blankEnergy.slice(0, 12).join('\n') + (blankEnergy.length > 12 ? '\n\u2026' : '')).replace(/\n/g, '<br>') +
-        '<br><br>They export as <b>Unknown</b> so the office sees them — fix them first if you can.',
+      html: html`${blankEnergy.slice(0, 12).map((l, k) => html`${k ? raw('<br>') : ''}${l}`)}${blankEnergy.length > 12 ? raw('<br>\u2026') : ''}<br><br>They export as <b>Unknown</b> so the office sees them — fix them first if you can.`,
       choices: [{ value: 'export', label: 'Export anyway', primary: true }, { value: 'cancel', label: 'Cancel' }]
     });
     if (go !== 'export') { showToast('Export cancelled', true); return; }
@@ -9326,8 +9436,7 @@ async function runCombinedExport() {
     const choice = await askChoice({
       id: 'seq-reuse', defaultValue: 'next',
       title: '⚠ Photo numbers already used',
-      html: 'This device already exported photos <b>' + escHtml(formatPhotoName(datePrefix, 1).replace(/_\d+$/, '_…')) + '</b> numbered up to <b>' + usedMax + '</b>. Starting at ' + startNum +
-        ' would give DIFFERENT photos the same filenames — downstream, one would overwrite the other.',
+      html: html`This device already exported photos <b>${formatPhotoName(datePrefix, 1).replace(/_\d+$/, '_…')}</b> numbered up to <b>${usedMax}</b>. Starting at ${startNum} would give DIFFERENT photos the same filenames — downstream, one would overwrite the other.`,
       choices: [
         { value: 'next', label: 'Start at ' + (usedMax + 1) + ' (recommended)', primary: true },
         { value: 'keep', label: 'Keep ' + startNum + ' — I\'m re-sending the exact same export' },
@@ -9590,10 +9699,13 @@ async function runCombinedExport() {
     const byName = new Map();
     const fixedDay = (dateFilter && /^\d{4}-\d{2}-\d{2}$/.test(dateFilter)) ? dateFilter : null;
     allEntries.forEach((entry, ei) => {
-      // The open form is TODAY's work — the export filter already counts it
-      // as today — even before its first photo gives it a date (build 94: it
-      // went on the undated sheet, which loto-web can't scope to a day).
-      const d = fixedDay || getEntryDate(entry) || (formEntries.has(entry) ? localDateStr(new Date()) : null);
+      // A NEW unit on the form is TODAY's work — the export filter already
+      // counts it as today — even before its first photo gives it a date
+      // (build 94: it went on the undated sheet, which loto-web can't scope
+      // to a day). An open EDIT of an undated saved unit stays undated (build
+      // 95: it moved to today's sheet, where loto-web could bind it to a
+      // same-named unit surveyed today).
+      const d = fixedDay || getEntryDate(entry) || (entry === newFormEntry ? localDateStr(new Date()) : null);
       const name = d ? 'Information_Sheet_' + getDateStamp(exportDateFrom(d)) + '.xlsx' : 'Information_Sheet_undated.xlsx';
       if (!byName.has(name)) { const g = { name: name, day: d || '', idx: [] }; byName.set(name, g); infoSheetGroups.push(g); }
       byName.get(name).idx.push(ei);
@@ -10029,12 +10141,16 @@ function handleBackupFile(event) {
 
       // A real three-way choice (build 89). The old OK/Cancel confirm made
       // CANCEL mean "REPLACE" — the button people press to back out.
+      const incoming = new Set();
+      entries.forEach(en => { if (en.id != null) incoming.add(String(en.id)); if (en.legacyId != null) incoming.add(String(en.legacyId)); });
+      const openRow = savedEquipment.find(e => formHoldsEntry(e) && !incoming.has(String(e.id)) && !(e.legacyId != null && incoming.has(String(e.legacyId))));
       const choice = await askChoice({
         id: 'backup-import', defaultValue: 'merge',
         title: '&#128229; Restore backup',
         html: 'This backup has <b>' + entries.length + '</b> entries; this device has <b>' + savedEquipment.length + '</b> saved.<br><br>' +
           '<b>Merge</b> adds the backup\'s entries this device doesn\'t have (matched by entry id).<br>' +
-          '<b>Replace</b> makes the saved list the backup\'s entries. Entries that are also on this device keep THIS device\'s version (its photos are newer than any backup); entries only on this device leave the list (their photos stay on the device).',
+          '<b>Replace</b> makes the saved list the backup\'s entries. Entries that are also on this device keep THIS device\'s version (its photos are newer than any backup); entries only on this device leave the list (their photos stay on the device).' +
+          (openRow ? html`<br><br>&#9888; <b>${openRow.equipName || 'The unit'}</b>, open in the form, is not in this backup &mdash; Replace closes the form and discards its unsaved changes.` : ''),
         choices: [
           { value: 'merge', label: 'Merge (recommended)', primary: true },
           { value: 'replace', label: 'Replace the saved list', danger: true },
@@ -10064,6 +10180,7 @@ function handleBackupFile(event) {
           next.push(pick);
         });
         const leaving = savedEquipment.filter(e => !next.includes(e));
+        closeFormIfRemoving(leaving);
         savedEquipment = next;
         clearTombstones(next.map(e => e.id));
         tombstoneRemovedEntries(leaving);   // a later merge of stored copies must not bring them back
@@ -10190,6 +10307,21 @@ function checkStorage() {
   }
 }
 
+// The storage and photo warnings, repeated in the always-visible bottom bar
+// (build 95): on a phone the header scrolls away (build 94), and the
+// "⚠ Storage issue" chip and the photo badge went with it — a failing save
+// then showed only a 2-second toast.
+let _autosaveError = false;
+function paintBottomAlert() {
+  const el = document.getElementById('bottomAlert');
+  if (!el) return;
+  const parts = [];
+  if (_autosaveError) parts.push('<span onclick="window.scrollTo(0, 0)">&#9888; Storage issue &mdash; export now</span>');
+  const miss = (_integrity && _integrity.missing) || 0;
+  if (miss > 0) parts.push('<span onclick="runIntegrityCheck(true)">&#9888; ' + miss + ' photo' + (miss === 1 ? '' : 's') + ' MISSING</span>');
+  el.innerHTML = parts.join(' &middot; ');
+  el.style.display = parts.length ? 'block' : 'none';
+}
 function setAutosaveStatus(kind) {
   const el = document.getElementById('autosaveStatus');
   if (!el) return;
@@ -10198,6 +10330,8 @@ function setAutosaveStatus(kind) {
   // autosave kept succeeding and showed "✓ Saved" over an entry list that was
   // living only in memory.
   if (kind === 'saved' && _entryListWriteFailed) kind = 'error';
+  if (kind === 'error') _autosaveError = true; else if (kind === 'saved') _autosaveError = false;
+  paintBottomAlert();
   if (kind === 'saving') {
     el.innerHTML = '&#128190; Saving…';
     el.style.color = 'var(--text-dim)';
@@ -10227,8 +10361,22 @@ let _wipUnread = false;
 // form is decided (or by the launch's safety timeout).
 let _bootWipSettled = false;
 let _bootLoadTimedOut = false;
+// A unit restored at launch from its LOCAL copy because the stored copy was
+// unreadable (build 94) continues in the alternate slot. Once it is safely
+// there, the main slot's copies up to the restored one are superseded
+// (WIP_SUPERSEDED_KEY): b94 left them, and after the unit was saved the next
+// launch reopened the OLDER copy as an edit of it — an export shipped that and
+// Save & New overwrote the unit with it (build 95).
+const WIP_SUPERSEDED_KEY = 'loto_wip_superseded';
+let _wipSupersedeOnSave = null;
+function noteWipWritten(toAlt) {
+  try {
+    if (toAlt && _wipSupersedeOnSave) { localStorage.setItem(WIP_SUPERSEDED_KEY, JSON.stringify(_wipSupersedeOnSave)); _wipSupersedeOnSave = null; }
+    else if (!toAlt) localStorage.removeItem(WIP_SUPERSEDED_KEY);   // the main slot holds the newest now
+  } catch (e) {}
+}
 function autoSaveCurrent() {
-  if (!_bootWipSettled || _tabPaused) return;
+  if (!_bootWipSettled || !tabMayWrite()) return;
   setAutosaveStatus('saving');
   const idbKey = _wipUnread ? 'current_wip_alt' : 'current_wip';
   const lsKey = _wipUnread ? 'loto_current_alt' : 'loto_current';
@@ -10251,14 +10399,17 @@ function autoSaveCurrent() {
       miscPhotos: miscPhotos,
       sketch: getSketchData()
     };
+    const toAlt = idbKey === 'current_wip_alt';
     saveMetadata(idbKey, state).then(() => {
       try { localStorage.removeItem(lsKey); } catch (e) {}   // IndexedDB has the newest now
+      noteWipWritten(toAlt);
       checkStorage();
       setAutosaveStatus('saved');
     }).catch(() => {
       // Fallback to localStorage if IDB fails (even after reconnecting)
       try {
         localStorage.setItem(lsKey, JSON.stringify(state));
+        noteWipWritten(toAlt);
         setAutosaveStatus('saved');
       } catch(e2) {
         setAutosaveStatus('error');
@@ -10276,10 +10427,21 @@ function autoSaveCurrent() {
 // one. A merge must never bring back an entry the user deleted, so deleting
 // (and a backup Replace) records the id; saving or importing that id again
 // clears it. Kept in localStorage, mirrored into IndexedDB on every save.
+// This session's own changes are ALSO kept in memory (build 95): when the
+// localStorage write failed (storage full), a delete was recorded nowhere, and
+// the next merge of a stored list — the first save after a launch that
+// couldn't read the store, or a list another writer stored — put the deleted
+// units back with their photos already erased. getTombstones() is the stored
+// map with this session's adds and clears applied; every save mirrors it into
+// IndexedDB (deleted_ids).
 const TOMBSTONE_KEY = 'loto_deleted_ids';
+const _tombAdds = {};            // id → when deleted, this session
+const _tombClears = new Set();   // ids saved / imported again this session
 function getTombstones() {
-  try { const t = JSON.parse(localStorage.getItem(TOMBSTONE_KEY) || '{}'); return (t && typeof t === 'object' && !Array.isArray(t)) ? t : {}; }
-  catch (e) { return {}; }
+  let t = {};
+  try { const p = JSON.parse(localStorage.getItem(TOMBSTONE_KEY) || '{}'); if (p && typeof p === 'object' && !Array.isArray(p)) t = p; } catch (e) {}
+  _tombClears.forEach(k => { delete t[k]; });
+  return Object.assign(t, _tombAdds);
 }
 function writeTombstones(t) {
   const keys = Object.keys(t);
@@ -10291,12 +10453,20 @@ function writeTombstones(t) {
 function tombstoneRemovedEntries(removed) {
   const still = new Set(savedEquipment.filter(e => e && e.id != null).map(e => String(e.id)));
   const t = getTombstones(); const at = new Date().toISOString(); let n = 0;
-  (removed || []).forEach(e => { if (e && e.id != null && e.id !== '' && !still.has(String(e.id))) { t[String(e.id)] = at; n++; } });
+  (removed || []).forEach(e => {
+    if (e && e.id != null && e.id !== '' && !still.has(String(e.id))) { const k = String(e.id); t[k] = at; _tombAdds[k] = at; _tombClears.delete(k); n++; }
+  });
   if (n) writeTombstones(t);
 }
 function clearTombstones(ids) {
   const t = getTombstones(); let changed = false;
-  (ids || []).forEach(id => { if (id != null && t[String(id)]) { delete t[String(id)]; changed = true; } });
+  (ids || []).forEach(id => {
+    if (id == null) return;
+    const k = String(id);
+    if (k in _tombAdds) { delete _tombAdds[k]; changed = true; }
+    _tombClears.add(k);
+    if (t[k]) { delete t[k]; changed = true; }
+  });
   if (changed) writeTombstones(t);
 }
 
@@ -10408,35 +10578,76 @@ function mergeEntryCopies(primary, others, tombstones) {
 // partial list over an intact one.
 let _entryStoreUnread = false;
 let _entryListWriteFailed = false;
-// A sticky banner while the saved-entry list can't be written anywhere
-// durable — a 2-second toast was the only signal before (build 91).
-function setStorageFailBanner(on, detail) {
-  let b = document.getElementById('storageFailBanner');
-  if (!on) { if (b) b.remove(); return; }
+// A warning that must stay on screen while it applies (build 95): there is
+// one toast, and a second message 2 ms later replaced the first — the
+// "showing the emergency copy — export now" warning among them. `html` is
+// markup this code builds (user values escaped by the caller).
+function showStickyBanner(id, html, dismissable) {
+  let b = document.getElementById(id);
   if (!b) {
     b = document.createElement('div');
-    b.id = 'storageFailBanner';
-    b.style.cssText = 'margin:8px;padding:10px 12px;border-radius:8px;background:rgba(200,40,40,0.12);border:1px solid rgba(200,40,40,0.6);color:#c82828;font-size:13px;font-weight:700;line-height:1.4;';
+    b.id = id;
+    b.className = 'sticky-banner';
     const container = document.querySelector('.container');
     if (container) container.insertBefore(b, container.firstChild); else document.body.insertBefore(b, document.body.firstChild);
   }
-  b.innerHTML = '&#9888; Saved entries could NOT be written to this device\'s storage' + (detail ? ' (' + escHtml(detail) + ')' : '') +
-    '. New work is at risk until this clears — Export + Backup NOW.';
+  b.innerHTML = html + (dismissable ? ' <button class="btn btn-outline btn-sm" style="margin-left:6px;" onclick="this.parentNode.remove()">Dismiss</button>' : '');
+  return b;
 }
-// Sticky note when the unit in progress couldn't be read at launch and no
-// readable copy exists (build 94) — a toast alone is gone in 2 seconds.
+function hideStickyBanner(id) { const b = document.getElementById(id); if (b) b.remove(); }
+// While the saved-entry list can't be written anywhere durable — a 2-second
+// toast was the only signal before (build 91).
+function setStorageFailBanner(on, detail) {
+  if (!on) { hideStickyBanner('storageFailBanner'); return; }
+  showStickyBanner('storageFailBanner', html`&#9888; Saved entries could NOT be written to this device's storage${detail ? html` (${detail})` : ''}. New work is at risk until this clears — Export + Backup NOW.`);
+}
+// The unit in progress couldn't be read at launch and no readable copy
+// exists (build 94) — a toast alone is gone in 2 seconds.
 function showWipReadBanner() {
   if (document.getElementById('wipReadBanner')) return;
-  const b = document.createElement('div');
-  b.id = 'wipReadBanner';
-  b.style.cssText = 'margin:8px;padding:10px 12px;border-radius:8px;background:rgba(200,40,40,0.12);border:1px solid rgba(200,40,40,0.6);color:#c82828;font-size:13px;font-weight:700;line-height:1.4;';
-  b.innerHTML = '&#9888; The unit you had in progress couldn\'t be read from this device\'s storage. Nothing was deleted &mdash; close and reopen the app to try again BEFORE re-entering it. ' +
-    '<button class="btn btn-outline btn-sm" style="margin-left:6px;" onclick="this.parentNode.remove()">Dismiss</button>';
-  const container = document.querySelector('.container');
-  if (container) container.insertBefore(b, container.firstChild); else document.body.insertBefore(b, document.body.firstChild);
+  showStickyBanner('wipReadBanner', '&#9888; The unit you had in progress couldn\'t be read from this device\'s storage. Nothing was deleted &mdash; close and reopen the app to try again BEFORE re-entering it.', true);
+}
+// Compare-and-set (build 95). The list is written in ONE read-write
+// transaction that first reads the store's stamp: when it isn't the one this
+// tab last read or wrote, another writer (another tab, an older build still
+// open) saved since, and its list is merged into memory before the write —
+// newer saves win per entry, deleted ids stay deleted. Each writer used to put
+// its own in-memory list over the other's, and units vanished. While the
+// launch couldn't read the store at all (_entryStoreUnread) the list is always
+// merged first; if it still can't be read, nothing is written over it.
+let _entryStoreAt = null;
+function writeEntryListMerged(at) {
+  return withPhotoDB(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('metadata', 'readwrite');
+    const s = tx.objectStore('metadata');
+    let merged = false;
+    const put = () => {
+      if (!tabMayWrite()) { tx.abort(); return; }   // the claim moved while this waited
+      s.put(savedEquipment, 'saved_equipment');
+      s.put(at, 'saved_equipment_at');
+      s.put(getTombstones(), 'deleted_ids');
+      _entryStoreAt = at;
+    };
+    const r = s.get('saved_equipment_at');
+    r.onsuccess = () => {
+      try {
+        const cur = r.result || null;
+        if (_entryStoreUnread || (cur && cur !== _entryStoreAt)) {
+          const r2 = s.get('saved_equipment');
+          r2.onsuccess = () => {
+            try { if (mergeStoredEntryList(r2.result)) merged = true; put(); }
+            catch (e) { try { tx.abort(); } catch (x) {} }
+          };
+        } else put();
+      } catch (e) { try { tx.abort(); } catch (x) {} }
+    };
+    tx.oncomplete = () => resolve(merged);
+    tx.onerror = () => reject(tx.error || new Error('IDB transaction error'));
+    tx.onabort = () => reject(tx.error || new Error('IDB transaction aborted'));
+  }));
 }
 function saveAll() {
-  if (_tabPaused) return;   // another tab is the live one — its list is the truth (build 94)
+  if (!tabMayWrite()) return;   // another tab holds the claim — its list is the truth (build 95)
   const at = new Date().toISOString();
   // An entry id must appear once. Duplicates are left in place (they're user
   // data) but reported — the saved panel badges them "SAVED TWICE".
@@ -10459,20 +10670,16 @@ function saveAll() {
       showToast('Storage error - export soon!', true);
     }
   };
-  const writePrimary = () => saveMetadataMany({ saved_equipment: savedEquipment, saved_equipment_at: at, deleted_ids: getTombstones() }).then(() => {
+  writeEntryListMerged(at).then(merged => {
     try { localStorage.removeItem('loto_saved'); localStorage.removeItem('loto_saved_at'); } catch (e) {}
+    if (_entryStoreUnread) { _entryStoreUnread = false; hideStickyBanner('entryStoreBanner'); }
     markOk();
     checkStorage();
-  });
-  if (_entryStoreUnread) {
-    getMetadataMany(['saved_equipment']).then(r => {
-      mergeUnreadEntryStore(r.saved_equipment);
-      _entryStoreUnread = false;
-      return writePrimary();
-    }).catch(() => writeFallback());   // still unreadable — don't write a partial list over it
-  } else {
-    writePrimary().catch(() => writeFallback());
-  }
+    if (merged) { writeEntrySnapshot(at); renderSavedPanel(); updateHeaderBadge(); }
+  }, () => { if (!_tabPaused) writeFallback(); });   // unreadable / unwritable — never a partial list over the store
+  writeEntrySnapshot(at);
+}
+function writeEntrySnapshot(at) {
   // Entry-retention guards (rule 8). IndexedDB inside the iOS WebView can be
   // silently evicted; if that ever happens again the app must NOT quietly boot
   // with an empty (or shorter) list and then overwrite the store on next save.
@@ -10505,18 +10712,20 @@ function saveAll() {
     console.warn('emergency snapshot not written', e);
   }
 }
-// Merge the entry list we couldn't read at launch back into memory: entries
-// memory lacks are added (unless the user deleted them this session); for
-// shared ids the newer save wins and a stripped copy gets its sketch and
-// photo thumbnails back.
-function mergeUnreadEntryStore(stored) {
-  if (!Array.isArray(stored) || !stored.length) return;
+// Merge a stored entry list into memory (the one the launch couldn't read, or
+// one another writer saved since — see writeEntryListMerged): entries memory
+// lacks are added (unless deleted — tombstones are shared), entries another
+// writer deleted leave, for shared ids the newer save wins, and a stripped
+// copy gets its sketch and photo thumbnails back. True when memory changed.
+function mergeStoredEntryList(stored) {
+  if (!Array.isArray(stored) || !stored.length) return false;
   const before = savedEquipment.length;
   const m = mergeEntryCopies(savedEquipment, [stored], getTombstones());
+  const changed = m.list.length !== before || m.added > 0 || m.updated > 0 || m.list.some((e, i) => e !== savedEquipment[i]);
   savedEquipment = m.list;
   savedEquipment.forEach(e => { if (e && e.id != null && typeof e.id !== 'string') e.id = String(e.id); });
-  if (editingEntry) editingEntry = savedEquipment.find(e => sameEntryId(e.id, editingEntry.id)) || editingEntry;
-  if (savedEquipment.length !== before || m.updated) { renderSavedPanel(); updateHeaderBadge(); }
+  if (editingEntry && !savedEquipment.includes(editingEntry)) editingEntry = savedEquipment.find(e => sameEntryId(e.id, editingEntry.id)) || editingEntry;
+  return changed;
 }
 
 // Background repair of photo refs: rebuild thumbnails the emergency snapshot
@@ -10625,6 +10834,7 @@ function keepWipAsRecoveredEntry(st) {
 }
 
 async function loadAll() {
+  await _tabReady;   // this tab holds the claim before it reads (build 95 — see tabLockInit)
   // ---- The saved entry list (build 91): every stored copy is MERGED —
   // IndexedDB, the localStorage fallback (written when an IndexedDB save
   // failed) and the emergency snapshot (written on every save). Picking ONE
@@ -10641,6 +10851,7 @@ async function loadAll() {
     idbAt = r.saved_equipment_at || null;
     idbTomb = r.deleted_ids || null;
     idbReadOk = true;
+    _entryStoreAt = idbAt;   // what this tab read — saveAll merges anything written after it
   } catch(e) { console.warn('IDB load saved_equipment failed:', e); }
   const lsStamp = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const lsList = readLsJson('loto_saved');              // written when an IndexedDB save failed
@@ -10674,7 +10885,8 @@ async function loadAll() {
   // Entry ids are strings from here on (build 91 — see sameEntryId).
   let idsNormalized = 0;
   savedEquipment.forEach(e => { if (e && e.id != null && typeof e.id !== 'string') { e.id = String(e.id); idsNormalized++; } });
-  if (!idbReadOk) _entryStoreUnread = true;   // saveAll will re-read + merge before writing
+  _entryStoreUnread = !idbReadOk;   // saveAll will re-read + merge before writing
+  if (idbReadOk) hideStickyBanner('entryStoreBanner');
   const recovered = merged.added + merged.updated;
   const primaryWasStored = haveIdb && (idbList || []).length > 0;
 
@@ -10685,24 +10897,34 @@ async function loadAll() {
     // entries: the store was evicted (build 93 — b90 said so; b91's merge
     // loaded the stripped copy silently, and the next save made the loss of
     // every sketch permanent). The copy is kept; the tech is told to export.
+    // These three stay on screen as banners too (build 95): the toast is
+    // shared, and the next message replaced it within milliseconds.
     console.warn('Entry store EMPTY/evicted — restored ' + savedEquipment.length + ' entries from the emergency copy');
-    showToast('\u26a0 Entry store was EMPTY \u2014 restored ' + savedEquipment.length + ' entr' + (savedEquipment.length === 1 ? 'y' : 'ies') + ' from the emergency copy (sketches could not be recovered). EXPORT NOW.', true);
-  } else if (!idbReadOk && savedEquipment.length) {
+    const msg = '\u26a0 Entry store was EMPTY \u2014 restored ' + savedEquipment.length + ' entr' + (savedEquipment.length === 1 ? 'y' : 'ies') + ' from the emergency copy (sketches could not be recovered). EXPORT NOW.';
+    showToast(msg, true);
+    showStickyBanner('entryRestoreBanner', html`${msg}`, true);
+  } else if (!idbReadOk) {
+    // Said even when the emergency copy is EMPTY (build 95): the list on
+    // screen is then blank while the units are still in the unread store.
     console.warn('Entry store could not be READ — showing the stored copies (' + savedEquipment.length + ' entries) without overwriting it');
-    showToast('⚠ Could not read the entry store — showing the emergency copy. Nothing was overwritten. Export now; restart the app if it persists.', true);
+    if (savedEquipment.length) {
+      showToast('⚠ Could not read the entry store — showing the emergency copy. Nothing was overwritten. Export now; restart the app if it persists.', true);
+      showStickyBanner('entryStoreBanner', '&#9888; Could not read the entry store &mdash; the saved list shows the emergency copy (sketches and photo previews may be missing). Nothing was overwritten. Export now; restart the app if this persists.', true);
+    } else {
+      showToast('⚠ Could not read the entry store — your saved units are not shown. Nothing was overwritten. Restart the app.', true);
+      showStickyBanner('entryStoreBanner', '&#9888; Could not read the entry store &mdash; your saved units are NOT shown (they were not deleted and nothing was overwritten). Close and reopen the app; if they are still missing, do not re-enter them &mdash; contact support.', true);
+    }
   } else if (idbReadOk && recovered > 0) {
     console.warn('Entry list: restored ' + recovered + ' entr' + (recovered === 1 ? 'y' : 'ies') + ' from backup copies the store lacked');
-    showToast('⚠ Restored ' + recovered + ' entr' + (recovered === 1 ? 'y' : 'ies') + ' that the last save could not write' + (primaryWasStored ? '' : ' (entry store was EMPTY)') + '. EXPORT NOW.', true);
+    const msg = '⚠ Restored ' + recovered + ' entr' + (recovered === 1 ? 'y' : 'ies') + ' that the last save could not write' + (primaryWasStored ? '' : ' (entry store was EMPTY)') + '. EXPORT NOW.';
+    showToast(msg, true);
+    showStickyBanner('entryRestoreBanner', html`${msg}`, true);
   }
   if (expectedCount > savedEquipment.length) {
     // Fewer entries than the last save wrote. Say so loudly and permanently —
     // entries must never just quietly vanish.
-    const banner = document.createElement('div');
-    banner.style.cssText = 'margin:8px;padding:10px 12px;border-radius:8px;background:rgba(200,40,40,0.12);border:1px solid rgba(200,40,40,0.6);color:#c82828;font-size:13px;font-weight:700;line-height:1.4;';
-    banner.innerHTML = '&#9888; Loaded ' + savedEquipment.length + ' of ' + expectedCount +
-      ' expected entries — device storage may have evicted data. Do NOT delete anything. Export + Backup immediately, then contact support.';
-    const container = document.querySelector('.container');
-    if (container) container.insertBefore(banner, container.firstChild);
+    showStickyBanner('entryCountBanner', '&#9888; Loaded ' + savedEquipment.length + ' of ' + expectedCount +
+      ' expected entries — device storage may have evicted data. Do NOT delete anything. Export + Backup immediately, then contact support.');
   }
 
   // Rename any legacy CA In / CA Out energy sources to "Compressed Air ..."
@@ -10722,10 +10944,24 @@ async function loadAll() {
   // current_wip can't be read, autosaves go to current_wip_alt, and the next
   // launch resolves the two — the newer is restored; an older unit with
   // content is kept as a saved "recovered draft" entry, never dropped.
+  // A tab that no longer holds the claim reads but WRITES NOTHING here (build
+  // 95): a tab paused during its launch deleted the alternate slot and
+  // rewrote current_wip while the save of the "recovered draft" it made was
+  // already a no-op — that unit was lost.
+  _wipSupersedeOnSave = null;
+  const mayWrite = tabMayWrite();
   let state = null, wipReadOk = true, alt = null;
   try { state = await getMetadata('current_wip'); } catch(e) { wipReadOk = false; console.warn('IDB load current_wip failed:', e); }
   try { alt = await getMetadata('current_wip_alt'); } catch(e) {}
-  const lsState = readLsJson('loto_current'), lsAlt = readLsJson('loto_current_alt');
+  let lsState = readLsJson('loto_current');
+  const lsAlt = readLsJson('loto_current_alt');
+  // Copies of the main slot an earlier launch already restored — the unit
+  // went on in the alternate slot — are not the unit in progress (build 95;
+  // see WIP_SUPERSEDED_KEY).
+  const sup = readLsJson(WIP_SUPERSEDED_KEY);
+  const superseded = (c) => !!(c && sup && sup.at && String(c.at || '') <= String(sup.at));
+  if (superseded(state)) state = null;
+  if (superseded(lsState)) lsState = null;
   const lsWon = !!lsState && newerWip(state, lsState) === lsState;
   state = newerWip(state, lsState);
   alt = newerWip(alt, lsAlt);
@@ -10736,19 +10972,23 @@ async function loadAll() {
       if (a && b) {
         const newer = (String(b.at || '') > String(a.at || '')) ? b : a;
         const older = newer === a ? b : a;
-        if (!sameEntryId(a.entryId, b.entryId) && keepWipAsRecoveredEntry(older)) {
+        if (mayWrite && !sameEntryId(a.entryId, b.entryId) && keepWipAsRecoveredEntry(older)) {
           if (idbReadOk) saveAll();
           showToast('⚠ Recovered an unsaved unit ("' + (String(older.equipName || '').trim() || 'unnamed') + '") from an earlier session — it is in the saved list. Check it.', true);
         }
         state = newer;
       } else {
-        state = a || b || state;
+        state = a || b || state || alt;
       }
-      deleteMetadata('current_wip_alt');
-      try { localStorage.removeItem('loto_current_alt'); } catch (e) {}
-      saveMetadata('current_wip', state).catch(() => {});
+      if (mayWrite) {
+        deleteMetadata('current_wip_alt');
+        try { localStorage.removeItem('loto_current_alt'); } catch (e) {}
+        saveMetadata('current_wip', state).then(() => {
+          try { localStorage.removeItem('loto_current'); localStorage.removeItem(WIP_SUPERSEDED_KEY); } catch (e) {}
+        }).catch(() => {});
+      }
     } else if (lsWon) {
-      saveMetadata('current_wip', state).then(() => { try { localStorage.removeItem('loto_current'); } catch (e) {} }).catch(() => {});
+      if (mayWrite) saveMetadata('current_wip', state).then(() => { try { localStorage.removeItem('loto_current'); localStorage.removeItem(WIP_SUPERSEDED_KEY); } catch (e) {} }).catch(() => {});
     }
   } else {
     // current_wip is unreadable: leave it alone (autosaves go to the alternate
@@ -10758,8 +10998,18 @@ async function loadAll() {
     // alternate slot — and SAY so (build 94: the form came up blank without a
     // word even with the local copy right there, and the unit resurfaced
     // launches later as a "Recovered draft").
+    // An earlier launch already restored this slot's newest copy and nothing
+    // was written to it since (a marker, no newer local copy): nothing in it
+    // is unread — no alarm (build 95: it repeated at every launch).
+    const slotSeen = !!sup && !lsState;
+    const fromLocal = !!lsState && newerWip(alt, lsState) === lsState;
     state = newerWip(alt, state);
-    if (state && wipHasContent(state)) {
+    if (slotSeen) {
+      // the unit (if any) continues from the alternate slot
+    } else if (state && wipHasContent(state)) {
+      // Once the restored unit is safely in the alternate slot, the main
+      // slot's older copies are marked superseded (noteWipWritten).
+      if (fromLocal && state.at) _wipSupersedeOnSave = { at: String(state.at), entryId: normEntryId(state.entryId) || null };
       showToast('⚠ Couldn\'t read the unit in progress from storage — restored it from this device\'s backup copy. Check it before saving.', true);
     } else {
       showWipReadBanner();
@@ -10909,7 +11159,7 @@ async function saveOrShareWeb(blob, filename, mimeType) {
   const sizeMB = (blob.size / 1048576).toFixed(1);
   const go = await askChoice({
     id: 'web-save', defaultValue: 'save',
-    title: '&#128190; Save ' + escHtml(filename),
+    title: html`&#128190; Save ${filename}`,
     html: 'The file is ready (' + sizeMB + ' MB). Tap <b>Save</b>, then keep it in Files / Downloads.',
     choices: [{ value: 'save', label: 'Save', primary: true }, { value: 'cancel', label: 'Cancel' }]
   });
@@ -10936,7 +11186,7 @@ async function saveOrShareWeb(blob, filename, mimeType) {
   const ok = await askChoice({
     id: 'web-save-confirm', defaultValue: 'no',
     title: 'Did the file save?',
-    html: 'Check that <b>' + escHtml(filename) + '</b> is in your Files / Downloads. Entries are marked exported ONLY if it saved.',
+    html: html`Check that <b>${filename}</b> is in your Files / Downloads. Entries are marked exported ONLY if it saved.`,
     choices: [{ value: 'yes', label: 'Yes — it saved', primary: true }, { value: 'no', label: 'No / not sure' }]
   });
   return ok === 'yes' ? { saved: true, native: false } : { saved: false, native: false, unconfirmed: true };
