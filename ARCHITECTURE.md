@@ -1,6 +1,6 @@
 # LOTO Field Collector — Architecture Reference
 
-**Date:** 2026-09-26 (rev 19 — **build 93 fixes the 2026-09-26 review of build 92** — see §6 "Build 93": delete no longer trusts an old export stamp on the pre-UUID (numeric-id) June entries, whose photos builds 83–88 never exported (b91 made delete really erase them); Duplicate / Dup / Split no longer copy a Device ID or the LOTO ID; nothing autosaves before the launch restore (the blank launch form used to overwrite the unit in progress); In/Out marks ask for the IN valve first; a lower device count clears the source's marks; dialogs fit the screen (Settings has Close/Cancel); a water check never survives a switch to Electrical; JSZip/ExcelJS are bundled (`vendor/`) — the iOS app has no service worker; an evicted entry store is announced again; an "All dates" export writes one Information Sheet per survey date; a blank Energy Source is flagged and exports as "Unknown"; Condensate Pump loses the HHW pump template's HHW In; the template-change keep rule matches its promise (and keeps the Generator's voltage source); custom photo sizes are clamped. loto-web (separate deploy): re-import pairs sheet rows with sources by identity, not position; exact cross-date names before fuzzy matches. Suite: 104 tests / 109 results. Prior: rev 18 — **build 92 adds VALVE MARKS**: right after each source photo the tech taps where the valve / breaker is; the tap rides on that photo's reference and goes out in the Information Sheet XLSX (col 12 "Valve Mark"), `entries.json` (`photoMarks`) and the CSV, and loto-web starts that source's ID box + arrow on it instead of a preset corner — see §6 "Build 92". Placement is ONE rule shared number-for-number with loto-web (`layoutValveMarks`), so two valves in one shot never get stacked boxes. Suite: 90 tests (8 new, each first proven to fail on build 91); 95/95 in web, native-mock and inside the app on the Simulator. Prior: rev 17 — **build 91 fixes the 15 defects of the 2026-09-25 max-effort review, plus Cooling Tower** — see §6 "Build 91". The two that mattered most on the iPad: pre-UUID entries (June Atlanta Main Campus, **numeric ids**) could never export a photo (a number-vs-string owner compare), and build 89 had silently moved the filename it looks for when reading those entries' photos — both fixed together (no file is moved). The entry list is now MERGED at load from every stored copy (IndexedDB, the localStorage fallback, the emergency snapshot) with deleted-id tombstones, which closes three ways the build-89 failed-read guard could still be bypassed or entries saved during a storage outage lost. The XLSX Information Sheet (the office import path) now carries **Valve State** (col 11); the web build never reports an unconfirmed download as saved; the web purge runs once per device. Suite: 82 tests (20 new — 19 each first proven to fail on build 90, plus a guard for the new load-time merge, T78); 87/87 in web, native-mock and inside the app on the Simulator. Prior: rev 16 — **build 90 = build 89 + one fix found while re-testing it**: the header photo-integrity badge now refreshes after a delete, bulk delete, backup import, clear, source removal or duplicate (it used to keep counting — or flagging MISSING — photos no longer referenced; T58). **The regression suite now runs inside the real iOS app**: `tests/run-sim-suite.sh` builds a throwaway copy of `ios/` with `tests/sim-harness.js` in its bundle (never the project's own bundle, which is what Xcode archives), reinstalls it fresh on a dedicated "LOTO Test iPad" Simulator and runs the suite against the real WKWebView and the real Capacitor Filesystem plugin — 62/62 there, and 62/62 in both desktop modes. The runner's guard was widened for this and only this: inside the app it runs only with `{iosSimulator:true}`, only when the app container is under `CoreSimulator` (never a device), and only on an empty install. §2: iOS 90 (committed, synced, in Xcode; archive pending); web still 86 with 90 staged. Prior: rev 15 — **build 89 fixes all 28 photo-integrity defects the 2026-09-24 review found** — see §6 "Photo-integrity fixes — build 89", which replaces rev 14's open-defects list. Source photos now follow their source *object* (no more index-keyed misattachment on template / type / electrical-count changes); every async photo writer is bound to its form session and Save & New / Edit / Duplicate / Clear / Export / Backup wait for it; one form identity (Save & New replaces-or-appends BY ID — a reload mid-edit can no longer save a second copy); orphan re-attach is a reviewed, missing-slots-only repair instead of a launch-time guess; filesystem writes are atomic and size-verified, IndexedDB reconnects, and the newest copy of the entry list wins at load. Every fix has a regression test written first and proven to FAIL on build 88: the suite is now 61 tests and passes 61/61 in web mode AND with the whole suite run against a mock native filesystem (`runPhotoRegressionSuite({nativeMock:true})`), and it refuses to run anywhere real data could live. Photo filenames now always carry the device code (`0924_JW-a1b2_00001`, §7); linked sources keep and export their photo, with entry + source ids on `linkedTo` (§10). §2: iOS is at 89 (archive pending); the web (`main`) is still 86 with 89 staged. Prior: rev 14 — documented the review (its open-defects list is now §6's build-89 fixes table). A max-effort code review of build 88 (nine finder angles, every candidate independently verified, plus a gap sweep) found 28 photo-integrity defects — 20 confirmed, 4 plausible, 4 unverified, none refuted, none yet fixed — documented by root cause: index-keyed source photos (template/type changes silently misattach or drop photos), three unguarded async photo writers, split form identity, launch-time orphan re-attach, and unverified storage writes; plus field rules until fixed. §6 also gains what a stored photo is (no EXIF survives the canvas) and the deferred off-app backup design, and **the regression-suite instruction now carries a hard warning: its reset erases real data, so never run it where field data lives.** §2 records which build each channel carries — the web (`main`) is on build 86 and still has the photo-destroying retake-delete. §3 adds `tests/` and the public-repo rule; §9 documents promoting builds to the web via the `loto-main-web` worktree; new §13 points to the recovery tooling and the Lumix frame-number rule. Prior: rev 13 — builds 83–88, the photo-store rebuild and its aftermath. **§6 is the section to read.** Build 83 re-keyed the photo store on entry UUIDs after name-derived keys corrupted ~1,100 photo slots across five VA facilities, adding migration/quarantine, a hard export duplicate gate, capture-time hash warnings, Photo Audit and entry-retention guards. Builds 84–88 then fixed what 83 got wrong or left rough: 84 made the migration done-flag conditional on the stores being readable; 85 scoped and chunked the quarantine export; 86 scoped Photo Audit to today's work; **87 removed the retake/misc-removal deletes that were destroying live photos**, added the in-flight capture guard and `reattachOrphanedPhotos()`; 88 gave duplicated sources their own `sourceId` and recorded the copied photo as a `{dupOf}`. The regression suite is now 12 tests and is the gate on any photo-path change. §10 gains the office `Information_Sheet_MMDDYY.xlsx` field-app layout spec — geometry, the bare-reference photo rule, the `photo_detail` `String(20)` position-marker trap — and the cross-date survey problem that stranded 71 Atlanta photos. §8 versioning and §11 code map refreshed to build 88 / cache v7.84. Prior: build 79: simplified verification — water sources get Drain/Gauge checkboxes synthesizing the same canonical strings, electrical defaults to Controls, Settings toggle reverts to classic pickers (§5.4c). Prior: rev 10 — builds 74–77: durable photo storage + integrity. §6 rewritten: full-res photos now write to the **native filesystem** (Capacitor Filesystem, `DATA/loto_photos/`) with IndexedDB/localStorage as fallbacks, after iOS storage eviction silently lost 74 photos on 2026-08-04; capture-time save verification, export integrity guard, header integrity badge, collision-proof photo keys. §7: local-day date semantics + filtered-day export stamps; reuse-a-photo share model with export dedup; per-entry `exportedAt`/`exportId` stamps. §5.5: export-status badges + delete guards with "Export these first" escape hatch. New template: Unit Heater - Natural Gas. Prior: rev 9 — §5 registry inventory expanded. Named the equipment-side registries the doc had glossed over (`EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT`, `EQUIPMENT_PROMPT_FOR_TEMPLATE`, `EQUIPMENT_DIAGRAM_OVERRIDE`, `CONDENSATE_AUTO_EQUIP`, `CUSTOM_EQUIP_KEYWORD_TEMPLATE`) plus a new "Other registries (misc but load-bearing)" bullet block covering `SOURCE_DEFAULTS`, `ENERGY_DEVICE_MAP`, `ENERGY_KEYWORD_TEMP`, `ENERGY_LABEL_PREFIX/COLORS`, `PHOTO_DEFAULTS`, `SKETCH_DIAGRAMS`, `SAVED_FILTERS`, `HOSPITALS`. Prior revs: rev 8 = ingester live; rev 7 = data-entry UX pass; rev 6 = ZIP restructure.)
+**Date:** 2026-09-27 (rev 20 — **build 94 fixes the 2026-09-27 execution-based review of build 93** — see §6 "Build 94". This review RAN the app instead of reading it: a seeded random-action fuzzer with data-safety oracles (also under storage faults and inside the app on the Simulator), every export fed to loto-web's real importer, a b88→b90→current upgrade chain on a Simulator, offline / two-tab / phone-width checks — kit in `tests/fuzz/`. Fixed: deleting the unit open for edit now closes the form (Clear used to promise the deleted original was preserved); a second tab of the web app pauses instead of saving over the other tab's list; a link to an In/Out pair takes its device count; the header wraps on a phone; names and source fields are escaped everywhere (a name could run script; an inch-mark Device ID was cut short); Copy source clears marks when the count drops; the unsaved open unit goes on today's sheet; a linked source's Detail cell is clean — the link has its own XLSX column 13 "Linked To"; the save message reads cleanly; CSV quotes line breaks; an unreadable unit-in-progress is restored from its local copy with a warning. loto-web: a unit with no building/room binds to the block with no location; legacy "LINKED →" prefixes are stripped. Suite: 115 tests / 120 results. Prior: rev 19 — **build 93 fixes the 2026-09-26 review of build 92** — see §6 "Build 93": delete no longer trusts an old export stamp on the pre-UUID (numeric-id) June entries, whose photos builds 83–88 never exported (b91 made delete really erase them); Duplicate / Dup / Split no longer copy a Device ID or the LOTO ID; nothing autosaves before the launch restore (the blank launch form used to overwrite the unit in progress); In/Out marks ask for the IN valve first; a lower device count clears the source's marks; dialogs fit the screen (Settings has Close/Cancel); a water check never survives a switch to Electrical; JSZip/ExcelJS are bundled (`vendor/`) — the iOS app has no service worker; an evicted entry store is announced again; an "All dates" export writes one Information Sheet per survey date; a blank Energy Source is flagged and exports as "Unknown"; Condensate Pump loses the HHW pump template's HHW In; the template-change keep rule matches its promise (and keeps the Generator's voltage source); custom photo sizes are clamped. loto-web (separate deploy): re-import pairs sheet rows with sources by identity, not position; exact cross-date names before fuzzy matches. Suite: 104 tests / 109 results. Prior: rev 18 — **build 92 adds VALVE MARKS**: right after each source photo the tech taps where the valve / breaker is; the tap rides on that photo's reference and goes out in the Information Sheet XLSX (col 12 "Valve Mark"), `entries.json` (`photoMarks`) and the CSV, and loto-web starts that source's ID box + arrow on it instead of a preset corner — see §6 "Build 92". Placement is ONE rule shared number-for-number with loto-web (`layoutValveMarks`), so two valves in one shot never get stacked boxes. Suite: 90 tests (8 new, each first proven to fail on build 91); 95/95 in web, native-mock and inside the app on the Simulator. Prior: rev 17 — **build 91 fixes the 15 defects of the 2026-09-25 max-effort review, plus Cooling Tower** — see §6 "Build 91". The two that mattered most on the iPad: pre-UUID entries (June Atlanta Main Campus, **numeric ids**) could never export a photo (a number-vs-string owner compare), and build 89 had silently moved the filename it looks for when reading those entries' photos — both fixed together (no file is moved). The entry list is now MERGED at load from every stored copy (IndexedDB, the localStorage fallback, the emergency snapshot) with deleted-id tombstones, which closes three ways the build-89 failed-read guard could still be bypassed or entries saved during a storage outage lost. The XLSX Information Sheet (the office import path) now carries **Valve State** (col 11); the web build never reports an unconfirmed download as saved; the web purge runs once per device. Suite: 82 tests (20 new — 19 each first proven to fail on build 90, plus a guard for the new load-time merge, T78); 87/87 in web, native-mock and inside the app on the Simulator. Prior: rev 16 — **build 90 = build 89 + one fix found while re-testing it**: the header photo-integrity badge now refreshes after a delete, bulk delete, backup import, clear, source removal or duplicate (it used to keep counting — or flagging MISSING — photos no longer referenced; T58). **The regression suite now runs inside the real iOS app**: `tests/run-sim-suite.sh` builds a throwaway copy of `ios/` with `tests/sim-harness.js` in its bundle (never the project's own bundle, which is what Xcode archives), reinstalls it fresh on a dedicated "LOTO Test iPad" Simulator and runs the suite against the real WKWebView and the real Capacitor Filesystem plugin — 62/62 there, and 62/62 in both desktop modes. The runner's guard was widened for this and only this: inside the app it runs only with `{iosSimulator:true}`, only when the app container is under `CoreSimulator` (never a device), and only on an empty install. §2: iOS 90 (committed, synced, in Xcode; archive pending); web still 86 with 90 staged. Prior: rev 15 — **build 89 fixes all 28 photo-integrity defects the 2026-09-24 review found** — see §6 "Photo-integrity fixes — build 89", which replaces rev 14's open-defects list. Source photos now follow their source *object* (no more index-keyed misattachment on template / type / electrical-count changes); every async photo writer is bound to its form session and Save & New / Edit / Duplicate / Clear / Export / Backup wait for it; one form identity (Save & New replaces-or-appends BY ID — a reload mid-edit can no longer save a second copy); orphan re-attach is a reviewed, missing-slots-only repair instead of a launch-time guess; filesystem writes are atomic and size-verified, IndexedDB reconnects, and the newest copy of the entry list wins at load. Every fix has a regression test written first and proven to FAIL on build 88: the suite is now 61 tests and passes 61/61 in web mode AND with the whole suite run against a mock native filesystem (`runPhotoRegressionSuite({nativeMock:true})`), and it refuses to run anywhere real data could live. Photo filenames now always carry the device code (`0924_JW-a1b2_00001`, §7); linked sources keep and export their photo, with entry + source ids on `linkedTo` (§10). §2: iOS is at 89 (archive pending); the web (`main`) is still 86 with 89 staged. Prior: rev 14 — documented the review (its open-defects list is now §6's build-89 fixes table). A max-effort code review of build 88 (nine finder angles, every candidate independently verified, plus a gap sweep) found 28 photo-integrity defects — 20 confirmed, 4 plausible, 4 unverified, none refuted, none yet fixed — documented by root cause: index-keyed source photos (template/type changes silently misattach or drop photos), three unguarded async photo writers, split form identity, launch-time orphan re-attach, and unverified storage writes; plus field rules until fixed. §6 also gains what a stored photo is (no EXIF survives the canvas) and the deferred off-app backup design, and **the regression-suite instruction now carries a hard warning: its reset erases real data, so never run it where field data lives.** §2 records which build each channel carries — the web (`main`) is on build 86 and still has the photo-destroying retake-delete. §3 adds `tests/` and the public-repo rule; §9 documents promoting builds to the web via the `loto-main-web` worktree; new §13 points to the recovery tooling and the Lumix frame-number rule. Prior: rev 13 — builds 83–88, the photo-store rebuild and its aftermath. **§6 is the section to read.** Build 83 re-keyed the photo store on entry UUIDs after name-derived keys corrupted ~1,100 photo slots across five VA facilities, adding migration/quarantine, a hard export duplicate gate, capture-time hash warnings, Photo Audit and entry-retention guards. Builds 84–88 then fixed what 83 got wrong or left rough: 84 made the migration done-flag conditional on the stores being readable; 85 scoped and chunked the quarantine export; 86 scoped Photo Audit to today's work; **87 removed the retake/misc-removal deletes that were destroying live photos**, added the in-flight capture guard and `reattachOrphanedPhotos()`; 88 gave duplicated sources their own `sourceId` and recorded the copied photo as a `{dupOf}`. The regression suite is now 12 tests and is the gate on any photo-path change. §10 gains the office `Information_Sheet_MMDDYY.xlsx` field-app layout spec — geometry, the bare-reference photo rule, the `photo_detail` `String(20)` position-marker trap — and the cross-date survey problem that stranded 71 Atlanta photos. §8 versioning and §11 code map refreshed to build 88 / cache v7.84. Prior: build 79: simplified verification — water sources get Drain/Gauge checkboxes synthesizing the same canonical strings, electrical defaults to Controls, Settings toggle reverts to classic pickers (§5.4c). Prior: rev 10 — builds 74–77: durable photo storage + integrity. §6 rewritten: full-res photos now write to the **native filesystem** (Capacitor Filesystem, `DATA/loto_photos/`) with IndexedDB/localStorage as fallbacks, after iOS storage eviction silently lost 74 photos on 2026-08-04; capture-time save verification, export integrity guard, header integrity badge, collision-proof photo keys. §7: local-day date semantics + filtered-day export stamps; reuse-a-photo share model with export dedup; per-entry `exportedAt`/`exportId` stamps. §5.5: export-status badges + delete guards with "Export these first" escape hatch. New template: Unit Heater - Natural Gas. Prior: rev 9 — §5 registry inventory expanded. Named the equipment-side registries the doc had glossed over (`EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT`, `EQUIPMENT_PROMPT_FOR_TEMPLATE`, `EQUIPMENT_DIAGRAM_OVERRIDE`, `CONDENSATE_AUTO_EQUIP`, `CUSTOM_EQUIP_KEYWORD_TEMPLATE`) plus a new "Other registries (misc but load-bearing)" bullet block covering `SOURCE_DEFAULTS`, `ENERGY_DEVICE_MAP`, `ENERGY_KEYWORD_TEMP`, `ENERGY_LABEL_PREFIX/COLORS`, `PHOTO_DEFAULTS`, `SKETCH_DIAGRAMS`, `SAVED_FILTERS`, `HOSPITALS`. Prior revs: rev 8 = ingester live; rev 7 = data-entry UX pass; rev 6 = ZIP restructure.)
 **Repo:** [github.com/whittw1/loto-info-sheet](https://github.com/whittw1/loto-info-sheet)
 **Prior standalone doc:** `LOTO_Integration_Architecture.md` in `~/Desktop/Claude Apps/LOTO Information Sheet App/` (April 2026, pre-iOS work — kept for reference, superseded by this file).
 
@@ -27,12 +27,12 @@ The exported ZIP / JSON is the interop surface: downstream systems (see [`loto-w
 
 Both HTML files must be updated in lockstep — `FingerLakes_Information_Sheet.html` is `cp`'d from `index.html` on every commit.
 
-### Which build each channel carries (checked 2026-09-25)
+### Which build each channel carries (checked 2026-09-27)
 
 | Channel | Source branch | Build | Photo-safety status |
 |---|---|---|---|
-| iOS / TestFlight | `ios-testflight-scaffold` | **91** (cache v7.87) — committed, pushed, synced; archive from Xcode | Build 90 was installed on the iPad before the 2026-09-25 review: it cannot export photos of the numeric-id (June) entries and cannot find their photo files — **nothing was deleted** (no b90 path can delete those files). Build 91 fixes both. Confirm the device header reads `b91`. |
-| Azure SWA + GitHub Pages (web) | `main` | **90** deployed 2026-09-25 (`52574d9`) — the b83 retake-delete is gone; **91** follows once tested (§9) | Promote 91: it carries the web-only fixes (unconfirmed downloads are never stamped exported; the service-worker purge no longer runs on every cold start, which left the web app unable to open offline). |
+| iOS / TestFlight | `ios-testflight-scaffold` | **94** (cache v7.90) — committed, pushed, synced; archive from Xcode | 92 and 93 were uploaded to TestFlight; the iPad was last known on **90**. Installing 94 over 90 is exactly the path the upgrade chain (`tests/fuzz/upgrade/`, b88 → b90 → 94 installed over each other on a Simulator) verified: every unit and every photo byte intact, the June numeric-id photos readable again ("✓ N photos safe"), the June units flagged "⚠ export again (photos)" until one export by this build ships them. **Export before deleting anything.** |
+| Azure SWA + GitHub Pages (web) | `main` | **94** — promoted 2026-09-27 (§9) | Same code; web-only fixes that matter there: the two-tab lock and the offline export (verified with the server killed after the service worker precached). |
 
 **The web build is used in the field** — Bath VAMC (April 2026) was collected entirely on it — so a crew may be on either channel. Treat the two as one release: never leave `main` behind a photo-safety fix. To check what a channel carries: `git show origin/main:index.html | grep -o 'b[0-9]*</span>'`, or read the header on the device.
 
@@ -42,7 +42,7 @@ Both HTML files must be updated in lockstep — `FingerLakes_Information_Sheet.h
 
 ```
 loto-info-sheet/                              (the GitHub repo)
-├── index.html                                (~9,200 lines — the whole app)
+├── index.html                                (~11,100 lines — the whole app)
 ├── FingerLakes_Information_Sheet.html        (byte-identical mirror of index.html)
 ├── sw.js                                     (service worker — network-first cache)
 ├── manifest.json                             (PWA manifest, main)
@@ -55,9 +55,13 @@ loto-info-sheet/                              (the GitHub repo)
 ├── TODO.md                                   (deferred work)
 ├── IOS_RELEASE_SETUP.md                      (fastlane + GitHub Action prereqs)
 ├── tests/
-│   ├── photo-regression.js                   (photo-store regression suite, 104 tests — runs in a browser or inside the app on a Simulator — §6)
+│   ├── photo-regression.js                   (photo-store regression suite, 115 tests — runs in a browser or inside the app on a Simulator — §6)
 │   ├── sim-harness.js                        (loads the suite into a throwaway SIMULATOR build; inert without its trigger file)
 │   ├── run-sim-suite.sh                      (one command: sync → throwaway ios/ copy + harness → fresh install on "LOTO Test iPad" → run → report)
+│   ├── fuzz-harness.js                       (random-action fuzzer with data-safety oracles — build 94 review, §6; refuses real data)
+│   ├── sim-fuzz-harness.js                   (runs the fuzzer inside a throwaway Simulator build; inert without its trigger file)
+│   └── fuzz/                                 (the execution-based review kit — README: headless driver, suite runner, loto-web
+│                                              differential, Simulator fuzz, b88→b90→current upgrade chain, offline / two-tab / phone checks)
 │   ├── production_store_scan.py              (read-only quarantine classifier over export bundles)
 │   └── production-scan/                      (GITIGNORED — facility-identifying output; never commit)
 ├── .github/workflows/
@@ -938,6 +942,76 @@ runs at launch.
 
 ---
 
+### Build 94 — the 2026-09-27 execution-based review (10 findings + 2 known)
+
+The fourth review **ran the app instead of reading it** (kit in `tests/fuzz/`,
+see its README):
+
+- **Random stateful fuzzing** — `tests/fuzz-harness.js` drives the real app
+  functions with seeded random actions (type/template changes, sources, captures
+  — some not awaited — valve marks, links, copy/dup/split, Save & New, edit,
+  duplicate, delete, bulk delete, export, relaunch, backgrounding, sketches) and
+  checks data-safety invariants after every step: no reference without bytes, no
+  stale source refs, no duplicate ids, marks ≤ quantity, and on every export the
+  photo files' SHA-256 against the stored bytes, `entries.json` against memory,
+  the XLSX cell by cell and the CSV; every relaunch must round-trip the saved list
+  and the form. A storage-fault mode fails IndexedDB / localStorage reads and
+  writes at random — then the only violation is a **silent** loss.
+  `tests/fuzz/fuzz_driver.mjs` runs it in parallel headless Chrome workers (no
+  npm dependencies); `tests/fuzz/run-sim-fuzz.sh` runs it inside the app on the
+  Simulator (real WKWebView + native files). On build 93: 30,600 actions in 630
+  sequences, ~1,600 exports, ~1,800 relaunches.
+- **Differential** — every export the fuzzer made is imported by loto-web's REAL
+  Information Sheet importer into a throwaway database and compared field by
+  field with `entries.json`, then imported again (must change nothing):
+  `tests/fuzz/fuzz_diff.py` (709 ZIPs, 909 units, 3,378 sources on build 93).
+- **Upgrade chain on a Simulator** — `tests/fuzz/upgrade/run-upg.sh` installs
+  build 88, 90 and the build under test OVER each other (the data container
+  survives, like a TestFlight update) with June-style numeric-id units, and
+  checks every unit and every photo byte after the last install.
+- Offline (the web server killed after the service worker precached), two tabs,
+  and phone widths (`offline_test.mjs`, `twotabs.mjs`, `layout_hdr.mjs`).
+
+Each fix has a test written first and proven to FAIL on build 93 (T100–T110).
+
+| Finding | Fix | Test |
+|---|---|---|
+| **✕ on the row marked EDITING** deleted the unit but the form kept editing it: Clear then promised "the original saved entry will be preserved" (false — confirming lost the unit) and Save re-created it dated TODAY (an older unit moved to today's sheet) | `formHoldsEntry()`: the delete confirm (and the Bulk Delete summary) say the unit is OPEN in the form; confirming closes the form first (`clearForm(false)`), so its photos go with the entry as usual | T100 |
+| **Two tabs** of the web app (or the Finger Lakes page next to it) share one storage and each saved its own list over the other's — a unit saved in one tab vanished when the other saved | one live copy per device (`tabLockInit`, `BroadcastChannel('loto-collector-tabs')`): a newer tab says hello, an older live one answers, the newer pauses; "Use this tab instead" pauses the other (it autosaves first) and reloads this one; a paused tab's `saveAll` / `autoSaveCurrent` write nothing. The iOS app is one window — no effect there | T101 |
+| A link (b93 fills a blank source from its target) took "HHW In/Out" but not its device count — exported ×1; loto-web made one water-out point and no In valve | when the energy source comes from the link, so does the quantity (marks reconciled) | T102 |
+| On an iPhone the header's six buttons ran off the right edge (Import / Backup / Log / Export only by scrolling sideways) | the header and its buttons wrap; ≤ 600 px the header is not sticky and the buttons are smaller | T103 |
+| Unit names and source fields were written into the page as HTML: "Fan <B> & C" showed "Fan  & C", a name with `<img onerror>` RAN SCRIPT (a crafted backup file could do it), and a Device ID with an inch mark (`6" gate`) was cut to `6` in its box — the known "inch-mark truncation" | `escHtml()` on every user value in HTML: saved list, source cards (text and input values), copy / link / duplicate / template dialogs, reuse picker, Photo Store Report, Photo Audit, incomplete-entry list, search summary, export log, collector-tag hint; thumbnails in `src=` too | T104 |
+| Copy source changed the device count but kept every valve mark (b93's marks rule missed this path) | `applyCopySource` → `reconcileSourceMarks` | T105 |
+| An unsaved unit with no photos counted as today's in the export filter but went on `Information_Sheet_undated.xlsx` (no date for loto-web to scope by) | the per-date grouping dates the open form today | T106 |
+| A linked source's Detail cell (col 7) carried `LINKED → X Src#2 \| L`; loto-web stored it as the photo detail — the arrow side (L/R/T/B) was lost and the shared-ID key polluted | col 7 is the source's own detail only; the link has its own column 13 **"Linked To"** (`<unit> / Source #N (<label>)`), past the 12 columns loto-web reads | T107 |
+| The Save & New message read `&#10004; Saved "X" "" 5 total` (the toast shows text, not HTML); the same mangled characters (`"·`, `""`) showed in every saved-list row and two source messages | plain characters | T108 |
+| KNOWN (b92 review): a value with a line break (notes) wasn't quoted in the CSV — every source row of that unit split in two | `quote()` quotes `\r` / `\n` too | T109 |
+| KNOWN (b92 review): an unreadable stored unit-in-progress brought the form up blank without a word — even with a newer local copy on the device — and the unit reappeared launches later as a "Recovered draft" | the newest READABLE copy (the localStorage copy, or the alternate slot) is restored with a warning; with none, a sticky banner says nothing was deleted and to reopen the app before re-entering it | T110 |
+
+loto-web (deployed with this build): a unit with **no building and no room**
+binds to the block with no location (`infosheet_parser._loc_matches` — it could
+never be told apart from a same-named located unit and its block was skipped);
+a legacy `LINKED → … Src#N |` prefix is stripped from the Detail cell on import
+(`clean_photo_detail`, sheets from builds ≤ 93); the new 13th column is simply
+not read. `scripts/smoke_valve_marks.py` part 6 covers all three (two of its
+checks fail on the previous loto-web code), and it imports the Simulator run's
+real build-94 sheet (`--xlsx …/t79_Information_Sheet.xlsx`) cleanly.
+
+**Verified on build 94:** **115 tests (120 results) — 120/120** in web,
+`{nativeMock:true}` and inside the app on the Simulator (the 11 new ones all
+failed on build 93). The fuzzer (with the XLSX oracle now also checking col 7
+and col 13, and the CSV without its old line-break exemption): 23,580 actions in
+471 sequences — no-fault, 10 % and 5 % storage faults, 100-step runs, 1,000
+actions inside the app, and every seed that tripped build 93 replayed —
+**0 violations** (every storage-fault loss now comes with a warning).
+Differential: 481 exports → 639 units / 2,468 sources, every field loto-web
+imports matches, a re-import changes nothing. Upgrade chain b88 → b90 → 94: all
+34 photos byte-identical, no file removed, "✓ 34 photos safe", the unsaved form
+restored, the June units "⚠ export again (photos)" until the All-dates export,
+which shipped all 34 (0 missing / unsafe / mismatched). Offline export with the
+server down, two tabs (the second pauses; "Use this tab instead" hands over; no
+unit lost) and the header at 390 / 430 px: all pass.
+
 ### Build 93 — the 2026-09-26 review (15 findings)
 
 A third max-effort review (10 finder angles, 6 verifier batches, a gap sweep) of
@@ -1199,10 +1273,14 @@ One row per (equipment, source) pair. The equipment metadata repeats across all 
 Hospital Code, Equipment Type, Equipment Name, LOTO ID, Room, Building,
 Template, Tied To, Tied To Equipment Name, Notes, Source #, Energy Source,
 Device Type, Device ID, Quantity, Location, Duplicate, Verification,
-Photo Filename, Detail, Linked To, Main Photo Filename,
+Valve State, Photo Filename, Detail, Linked To, Main Photo Filename,
 DataPlate Photo Filename, EE Photo Filename, Diagram Filename,
-Misc Photo Filenames
+Misc Photo Filenames, Valve Marks
 ```
+
+A value containing a comma, a double quote **or a line break** is quoted
+(`"…"`, quotes doubled). Line breaks weren't until build 94 — a note with one
+split every source row of its unit in two.
 
 The `Hospital Code` column (first) carries the entry's `hospitalCode`,
 falling back to the current facility setting for entries saved before a
@@ -1220,7 +1298,15 @@ fractions (`x,y; x,y` for several), same text as the XLSX's col 12.
 
 ### XLSX Information Sheet
 
-Professional formatted `.xlsx` mirroring the paper "LOTO Information Sheet" form used by field crews. Header rows for the equipment metadata, a 10-row source table (padded with blanks if fewer than 10 sources), photo filename references in the detail cell, page numbering, and linked-source markers. Styled per-cell via ExcelJS.
+Professional formatted `.xlsx` mirroring the paper "LOTO Information Sheet" form used by field crews. Header rows for the equipment metadata, a 10-row source table (padded with blanks if fewer than 10 sources), photo filename references, page numbering, and linked-source markers. Styled per-cell via ExcelJS. One sheet per survey date (build 93); the unsaved open unit counts as today's even before its first photo (build 94).
+
+**Detail + Linked To (build 94):** column 7 of a source row is the source's own
+detail and nothing else — loto-web stores it as `photo_detail`, a POSITION MARKER
+(§10). Linked sources used to get `LINKED → <unit> Src#N | <detail>` there; the
+link now has its own **column 13, header `Linked To`**, value
+`<unit> / Source #N (<source label>)` — past the 12 columns the office importer
+reads, so nothing downstream changes. The CSV's `Linked To` and `entries.json`'s
+`linkedTo` are unchanged.
 
 **Valve Mark (build 92):** column 12 of every source row — header `Valve Mark`,
 value `x,y` photo fractions where the tech tapped the valve (`x,y; x,y` for a
@@ -1313,7 +1399,7 @@ Required by Apple even though the app only uses `<input type="file" capture="env
 ### Versioning
 
 - `MARKETING_VERSION` — user-facing (currently `1.4`); bump for user-visible releases
-- `CURRENT_PROJECT_VERSION` — build number (currently **90**); **must be strictly increasing** for the same `MARKETING_VERSION` or Apple rejects the upload. Bumped by +1 on every commit that goes to TestFlight. Both Debug + Release entries in `project.pbxproj` must match.
+- `CURRENT_PROJECT_VERSION` — build number (currently **94**); **must be strictly increasing** for the same `MARKETING_VERSION` or Apple rejects the upload. Bumped by +1 on every commit that goes to TestFlight. Both Debug + Release entries in `project.pbxproj` must match.
 
 ### Service worker cache
 
@@ -1322,7 +1408,7 @@ an error page or a Wi-Fi captive portal never replaces the cached app — and fa
 back to the cached `index.html` for navigations offline). It precaches the app,
 JSZip **and ExcelJS** (build 91). It does not run inside the iOS app (no
 App-Bound Domains). **`CACHE_NAME` must be bumped every time cached files
-change.** Currently `loto-collector-v7.87` (build 91 ↔ v7.87).
+change.** Currently `loto-collector-v7.90` (build 94 ↔ v7.90).
 
 The page's inline purge (unregister every worker, clear every cache, reload)
 now runs **once per device** (`localStorage.sw_purged_v1`) and never offline
@@ -1529,7 +1615,12 @@ forms; verified against `loto-web/app/routers/import_data.py`.
   fallback, disambiguated by building + room) and the sheet's date — taken from
   the first 6-digit run in the **filename** — must equal `equip.assessment_date`.
   Use the inventory's exact wording (`*_LOTO_Inventory.xlsx`) or a block binds to
-  nothing.
+  nothing. A unit with **no building and no room** matches the block with no
+  location (loto-web `_loc_matches`, 2026-09-27 — it used to be unmatchable next
+  to a same-named located unit).
+- **Column 13 `Linked To` (build 94)** is past what the importer reads. Sheets
+  from builds ≤ 93 carry the link in col 7 (`LINKED → X Src#N | L`); loto-web
+  strips that prefix on import (`clean_photo_detail`).
 
 > **Cross-date surveys (found + fixed 2026-08-21).** Crews routinely *start* a unit
 > one day and *photograph* it the next, so the same unit appears in two sheets —
@@ -1562,73 +1653,75 @@ For iOS: 1 is a natural fit because the share sheet is the standard iOS pattern.
 
 ## 11. Where things live in code (spot check)
 
-Approximate line numbers (may drift as edits accumulate):
+Approximate line numbers (may drift as edits accumulate) — refreshed for build 94:
 
 | Concern | index.html line |
 |---|---|
-| Global mutable state (`sources`, `photos`, `currentEntryId`, `savedEquipment`, `editingEntry`, `lastAutoFilledEquipName`) | 1663 |
-| `DATA.equipmentTypes`, `energySources`, `deviceTypes`, `locations`, `verificationTypes`, `templates` | 997 |
-| `EQUIPMENT_AUTO_SOURCES` | 1591 |
-| `EQUIPMENT_TEMPLATE_MAP` | 2250 |
-| `TEMPLATE_AUTO_SOURCES` | 4165 |
-| `TEMPLATE_VOLTAGE_OVERRIDES` / `SKIPS_VOLTAGE_PROMPT` | 3993 / 3982 |
+| Global mutable state (`sources`, `photos`, `currentEntryId`, `savedEquipment`, `editingEntry`, `lastAutoFilledEquipName`) | 1727 |
+| `DATA.equipmentTypes`, `energySources`, `deviceTypes`, `locations`, `verificationTypes`, `templates` | 1051 |
+| `EQUIPMENT_AUTO_SOURCES` | 1655 |
+| `EQUIPMENT_TEMPLATE_MAP` | 2425 |
+| `TEMPLATE_AUTO_SOURCES` | 4345 |
+| `TEMPLATE_VOLTAGE_OVERRIDES` / `TEMPLATE_SKIPS_VOLTAGE_PROMPT` | 4173 / 4162 |
 | `SOURCE_KINDS_WITH_PHOTO_TOGGLE` / `EQUIPMENT_ALLOW_PHOTO_FOR_SOURCE` | ~1438 |
-| `applyTemplate()` — keeps photographed sources (build 89) | 3863 |
-| `equipTypeChanged()` — keeps photographed sources (build 89) | 1994 |
-| `handleEquipTypeChange()` (auto-fill Equipment ID/Name) | 4402 |
-| `applyElectricalCountChoice()` — never removes a photographed source (build 89) | 4128 |
-| **Source photos follow their source (build 89):** `rebindSourcePhotos` / `sourcesWithPhotos` / `dropStaleSourceRefs` / `noteSourceLimit` + `MAX_XLSX_SOURCES` | 4566 / 4574 / 4582 / 4589 |
-| Photo slot rendering by stored key (build 89): `photoSlotBadge` / `photoSlotInnerHtml` / `paintPhotoSlot` / `paintEquipPhotoSlots` | 4618 / 4627 / 4636 / 4643 |
-| `renderSources()` (source cards, photo slot toggle) | 4645 |
-| `splitSource` / `removeSource` / `duplicateSource` / `moveSource` — all via `rebindSourcePhotos` | 4926 / 5086 / 5206 / 5241 |
-| `applyLink()` — keeps the photo; `linkedTo.entryId` / `sourceId` (build 89) | 5394 |
-| `showCopySourceDialog` / `pickCopySourceEntry` / `applyCopySource` — Copy Source per-card action (§5.5) | 5104 / 5138 / 5172 |
-| `performSaveAndNew()` — canonical entry shape; replace-or-append BY ID (build 89) | 7439 |
-| `formHasData()` — what counts as unsaved form data (photos alone count) | 7413 |
-| `clearForm()` — new form session; sketch cleared before the autosave | 7514 |
-| `isSavedToday` / `isSavedYesterday` / `setSavedFilter` / `setSavedSearch` / `matchesSavedSearch` — saved-panel filter + search predicates (§5.5) | 7572 – 7588 |
-| `renderSavedPanel()` (saved list + filter bar + search + SAVED TWICE / exported-incomplete badges) | 7615 |
-| `editSaved()` / `duplicateSaved()` / `executeDuplicate()` — session-bound (build 89) | 7940 / 8035 / 8072 |
-| `runCombinedExport()` — ZIP export (PASS 2B builds `entries.json`; `manifest.json` + `FieldExport_…` filename near the end) | 8508 |
-| Export helpers (build 89): `snapshotFormEntry` / `entryRecency` / `getSeqUsed` / `reservePhotoSeq` | 8461 / 8487 / 8491 / 8497 |
-| `resolveExportPhoto()` — owned-keys-only, source-binding check, hash-verified reads, sha256 manifest records (inside `runCombinedExport`) | 8630 |
+| `applyTemplate()` — keeps photographed sources (build 89) | 4037 |
+| `equipTypeChanged()` — keeps photographed sources (build 89) | 2158 |
+| `handleEquipTypeChange()` (auto-fill Equipment ID/Name) | 4587 |
+| `applyElectricalCountChoice()` — never removes a photographed source (build 89) | 4308 |
+| **Source photos follow their source (build 89):** `rebindSourcePhotos` / `sourcesWithPhotos` / `dropStaleSourceRefs` / `noteSourceLimit` + `MAX_XLSX_SOURCES` | 4751 / 4759 / 4767 / 4774 |
+| Photo slot rendering by stored key (build 89): `photoSlotBadge` / `photoSlotInnerHtml` / `paintPhotoSlot` / `paintEquipPhotoSlots` | 4803 / 4812 / 4823 / 4832 |
+| `renderSources()` (source cards, photo slot toggle) | 4834 |
+| `splitSource` / `removeSource` / `duplicateSource` / `moveSource` — all via `rebindSourcePhotos` | 5121 / 5317 / 5444 / 5481 |
+| `applyLink()` — keeps the photo; `linkedTo.entryId` / `sourceId` (build 89) | 5634 |
+| `showCopySourceDialog` / `pickCopySourceEntry` / `applyCopySource` — Copy Source per-card action (§5.5) | 5336 / 5370 / 5404 |
+| `performSaveAndNew()` — canonical entry shape; replace-or-append BY ID (build 89) | 8115 |
+| `formHasData()` — what counts as unsaved form data (photos alone count) | 8089 |
+| `clearForm()` — new form session; sketch cleared before the autosave | 8191 |
+| `isSavedToday` / `isSavedYesterday` / `setSavedFilter` / `setSavedSearch` / `matchesSavedSearch` — saved-panel filter + search predicates (§5.5) | 8250 – 8266 |
+| `renderSavedPanel()` (saved list + filter bar + search + SAVED TWICE / exported-incomplete badges) | 8293 |
+| `editSaved()` / `duplicateSaved()` / `executeDuplicate()` — session-bound (build 89) | 8666 / 8762 / 8799 |
+| `runCombinedExport()` — ZIP export (PASS 2B builds `entries.json`; `manifest.json` + `FieldExport_…` filename near the end) | 9245 |
+| Export helpers (build 89): `snapshotFormEntry` / `entryRecency` / `getSeqUsed` / `reservePhotoSeq` | 9198 / 9224 / 9228 / 9234 |
+| `resolveExportPhoto()` — owned-keys-only, source-binding check, hash-verified reads, sha256 manifest records (inside `runCombinedExport`) | 9385 |
 | Export gates inside `runCombinedExport`: missing bytes, hash mismatches, `unsafeRefs` acknowledgement, and the hard **duplicate gate** | 8989 – ~9060 |
-| `saveBackup()` — JSON backup (v2 envelope) | 9135 |
-| `handleBackupFile()` — Merge / Replace / Cancel (build 89) | 9198 |
-| `normaliseEntry()` — backup import (spread-preserves identity fields; validates ids) | 9287 |
-| `setAutosaveStatus()` / `autoSaveCurrent()` — autosave indicator + save (§5.5) | 9370 / 9391 |
-| `saveAll()` — stamped writes, merge-before-write after an unread launch (build 89) | 9444 |
-| `mergeUnreadEntryStore` / `entryListStamp` / `firstCopyIsNewer` / `repairPhotoRefs` | 9503 / 9522 / 9532 / 9542 |
-| `loadAll()` — newest copy wins; no snapshot write-back after a failed read; re-derives `editingEntry` | 9613 |
-| `saveOrShare()` — unified file save helper (chunked native write, build 89) | 9830 |
-| **Form sessions + in-flight photo writes (build 89):** `formSession` / `beginNewFormSession` / `startPhotoWrite` / `photoWritesBusy` / `refuseIfPhotoWritesBusy` | 1694 / 1695 / 1699 / 1701 / 1706 |
-| `askChoice()` — promise-based multi-choice dialog (tests answer via `window.__askChoiceAuto`) / `escHtml` | 1721 / 1713 |
-| `isValidEntryId` / `ENTRY_ID_PATTERN` — UUID or numeric pre-UUID owner ids | 1683 |
-| **IndexedDB layer (build 89):** `openPhotoDB` / `withPhotoDB` (reconnect + retry) / `idbTx` / `getAllPhotoKeysStrict` | 5710 / 5761 / 5774 / 5918 |
-| **Photo key core (§6):** `PHOTO_KEY_RE` / `photoStoreKey` / `parsePhotoKey` / `photoKeyOwnedBy` / `slotTokenForSource` / `slotTokenFor` / `mintMiscSlotToken` | 5948 / 5949 / 5954 / 5958 / 5967 / 5981 / 6034 |
-| Source-binding check + human confirmation: `isRecordedDup` / `sourcePhotoBindingProblem` / `confirmSourcePhoto` / `auditKeepSourcePhoto` | 5997 / 6003 / 6017 / 6889 |
-| Reversible FS filename encoding (§6): `photoFsRelPath` / `photoKeyFromFsName` | 6060 / 6066 |
-| **Durable photo storage (§6):** `fsWritePhoto` (atomic) / `cleanupFsTempFiles` / `storePhotoBytes` / `loadPhotoBytes` (hash-verified) | 6088 / 6132 / 6151 / 6179 |
-| Hashing (§6): `sha256HexJS` / `sha256HexOfBytes` / `recordPhotoHash` (serialized) / `showPhotoHashWarning` | 6239 / 6273 / 6293 / 6316 |
-| Presence sets: `fsPresentKeySet` (null on failure) / `presentPhotoKeySet` (`.incomplete`) / `migratePhotosToFS` | 6342 / 6366 / 6388 |
-| **Migration + quarantine + repair (§6):** `PHOTO_KEY_MIGRATION_FLAG` / `migrationRev` / `runPhotoKeyMigration` / `showPhotoStoreReport` / `collectMigrationSourceKeys` / `exportQuarantineZip` | 6432 / 6442 / 6447 / 6580 / 6623 / 6648 |
-| Re-attach (reviewed, missing-only): `thumbnailFromBytes` / `findReattachCandidates` / `applyReattach` / `reattachOrphanedPhotos` / `showReattachReview` | 6712 / 6739 / 6789 / 6811 / 6827 |
-| `runPhotoAudit()` — incl. "photos on the wrong source" | 6893 |
-| `renderCapture()` — resize / encode / thumbnail; refuses a blank canvas | 7002 |
-| `handlePhoto()` — capture pipeline: session + source-object binding, id-owned key, saving → saved/failed, hash warning | 7035 |
-| Integrity: `allReferencedPhotoKeys` / `runIntegrityCheck` / `updateIntegrityBadge` | 7169 / 7198 / 7229 |
-| `handleMiscPhoto()` / `removeMiscPhoto()` (reference only, never bytes) | 7247 / 7317 |
-| Reuse-a-Photo (§7): `collectTodaysPhotos` / `showReusePhotoPicker` / `reusePhotoInto` | 5498 / 5518 / 5553 |
-| Local-day date helpers (§7, build 74): `localDateStr` / `exportDateFrom` | 8253 / 8261 |
-| Reference-aware photo deletion — **the only path that removes bytes**: `deleteEntryPhotos` (never while another row or the form has the id) | 7787 |
-| Delete guards (§5.5, build 77): `deleteSaved` / `updateBulkDeleteSummary` / `exportBeforeBulkDelete` | 7809 / 7872 / 7904 |
-| `scanTextToField()` — camera + OCR helper | 9941 |
-| `init()` — startup: `ensureDeviceId()`, `updateFacilityBadge()`, dropdowns, the photo startup chain | 1925 |
-| `genUuid()` / `ensureDeviceId()` / `ensureSourceId()` — stable UUID + device id (§1b/1c) | 1783 / 1827 / 1846 |
-| `getCollectorTag()` — `TAG-dev4` (build 89) | 1804 |
-| `HOSPITALS` roster + `getHospitalCode()` / `setHospitalCode()` / `entryHospitalCode()` (§2) | 1860 |
-| `updateFacilityBadge()` — header facility chip | 860 |
+| `saveBackup()` — JSON backup (v2 envelope) | 9946 |
+| `handleBackupFile()` — Merge / Replace / Cancel (build 89) | 10012 |
+| `normaliseEntry()` — backup import (spread-preserves identity fields; validates ids) | 10106 |
+| `setAutosaveStatus()` / `autoSaveCurrent()` — autosave indicator + save (§5.5) | 10193 / 10230 |
+| `saveAll()` — stamped writes, merge-before-write after an unread launch (build 89) | 10438 |
+| `mergeUnreadEntryStore` / `entryListStamp` / `firstCopyIsNewer` / `repairPhotoRefs` | 10512 / 10306 / — / 10526 |
+| `loadAll()` — newest copy wins; no snapshot write-back after a failed read; re-derives `editingEntry` | 10627 |
+| `saveOrShare()` — unified file save helper (chunked native write, build 89) | 10945 |
+| **Form sessions + in-flight photo writes (build 89):** `formSession` / `beginNewFormSession` / `startPhotoWrite` / `photoWritesBusy` / `refuseIfPhotoWritesBusy` | 1767 / 1768 / 1772 / 1774 / 1779 |
+| `askChoice()` — promise-based multi-choice dialog (tests answer via `window.__askChoiceAuto`) / `escHtml` | 1807 / 1799 |
+| `isValidEntryId` / `ENTRY_ID_PATTERN` — UUID or numeric pre-UUID owner ids | 1748 / 1746 |
+| **IndexedDB layer (build 89):** `openPhotoDB` / `withPhotoDB` (reconnect + retry) / `idbTx` / `getAllPhotoKeysStrict` | 6337 / 6388 / 6401 / 6545 |
+| **Photo key core (§6):** `PHOTO_KEY_RE` / `photoStoreKey` / `parsePhotoKey` / `photoKeyOwnedBy` / `slotTokenForSource` / `slotTokenFor` / `mintMiscSlotToken` | 6575 / 6576 / 6581 / 6585 / 6594 / 6608 / 6661 |
+| Source-binding check + human confirmation: `isRecordedDup` / `sourcePhotoBindingProblem` / `confirmSourcePhoto` / `auditKeepSourcePhoto` | 6624 / 6630 / 6644 / 7550 |
+| Reversible FS filename encoding (§6): `photoFsRelPath` / `photoKeyFromFsName` | 6687 / 6693 |
+| **Durable photo storage (§6):** `fsWritePhoto` (atomic) / `cleanupFsTempFiles` / `storePhotoBytes` / `loadPhotoBytes` (hash-verified) | 6738 / 6789 / 6808 / 6836 |
+| Hashing (§6): `sha256HexJS` / `sha256HexOfBytes` / `recordPhotoHash` (serialized) / `showPhotoHashWarning` | 6896 / 6930 / 6950 / 6973 |
+| Presence sets: `fsPresentKeySet` (null on failure) / `presentPhotoKeySet` (`.incomplete`) / `migratePhotosToFS` | 6999 / 7023 / 7045 |
+| **Migration + quarantine + repair (§6):** `PHOTO_KEY_MIGRATION_FLAG` / `migrationRev` / `runPhotoKeyMigration` / `showPhotoStoreReport` / `collectMigrationSourceKeys` / `exportQuarantineZip` | 7089 / 7099 / 7104 / 7237 / 7280 / 7305 |
+| Re-attach (reviewed, missing-only): `thumbnailFromBytes` / `findReattachCandidates` / `applyReattach` / `reattachOrphanedPhotos` / `showReattachReview` | 7372 / 7399 / 7449 / 7472 / 7488 |
+| `runPhotoAudit()` — incl. "photos on the wrong source" | 7554 |
+| `renderCapture()` — resize / encode / thumbnail; refuses a blank canvas | 7663 |
+| `handlePhoto()` — capture pipeline: session + source-object binding, id-owned key, saving → saved/failed, hash warning | 7696 |
+| Integrity: `allReferencedPhotoKeys` / `runIntegrityCheck` / `updateIntegrityBadge` | 7837 / 7866 / 7897 |
+| `handleMiscPhoto()` / `removeMiscPhoto()` (reference only, never bytes) | 7917 / 7988 |
+| Reuse-a-Photo (§7): `collectTodaysPhotos` / `showReusePhotoPicker` / `reusePhotoInto` | 5763 / 5783 / 5819 |
+| Local-day date helpers (§7, build 74): `localDateStr` / `exportDateFrom` | 8990 / 8998 |
+| Reference-aware photo deletion — **the only path that removes bytes**: `deleteEntryPhotos` (never while another row or the form has the id) | 8485 |
+| Delete guards (§5.5, build 77): `deleteSaved` / `updateBulkDeleteSummary` / `exportBeforeBulkDelete` | 8512 / 8593 / 8626 |
+| `scanTextToField()` — camera + OCR helper | 11045 |
+| `init()` — startup: `ensureDeviceId()`, `updateFacilityBadge()`, dropdowns, the photo startup chain | 2069 |
+| `genUuid()` / `ensureDeviceId()` / `ensureSourceId()` — stable UUID + device id (§1b/1c) | 1872 / 1916 / 1935 |
+| `getCollectorTag()` — `TAG-dev4` (build 89) | 1893 |
+| `HOSPITALS` roster + `getHospitalCode()` / `setHospitalCode()` / `entryHospitalCode()` (§2) | 1949 / 1959 / 1962 / 2007 |
+| `updateFacilityBadge()` — header facility chip | 904 |
 | Settings modal (`showSettings` / `savePhotoSettings` — photo + facility) | ~700 |
+| **Build 94:** `formHoldsEntry` (delete closes the form holding the unit) / `tabLockInit` · `pauseThisTab` · `takeOverThisTab` (one live tab) / `showWipReadBanner` / `quote` (CSV, line breaks) | 8509 / 2025 · 2045 · 2061 / 10428 / 10146 |
+| `reconcileSourceMarks` — marks vs device count (Split, Quantity, Copy source, a link) / `escHtml` — every user value that goes into HTML | 6025 / 1799 |
 
 ---
 

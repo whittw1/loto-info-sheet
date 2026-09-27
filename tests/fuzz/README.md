@@ -1,0 +1,30 @@
+# Execution-based review kit (build 94, 2026-09-27)
+
+Everything here RUNS the app instead of reading it — the method of the
+2026-09-27 review (ARCHITECTURE.md §6 "Build 94"). Nothing is part of the
+shipped bundle. Every script refuses real data: fresh headless-Chrome profiles,
+throwaway Simulator builds and installs, and the harnesses' own guards (web:
+localhost only and an empty store; in the app: the iOS Simulator only, on an
+empty install).
+
+The web runs need the app served at http://localhost:8741 (preview
+`loto-testflight`). Google Chrome, Node 22+ (built-in WebSocket) and Python 3;
+no npm packages.
+
+| What | How |
+|---|---|
+| Regression suite (tests/photo-regression.js), headless | `node run_suite.mjs` · `NATIVE_MOCK=1 node run_suite.mjs` · `ONLY=t100,t101 VERBOSE=1 node run_suite.mjs` |
+| Random stateful fuzzer with data-safety oracles (`../fuzz-harness.js`) | `node fuzz_driver.mjs <workers> <firstSeed> <seedsPerWorker> <steps> <faultRate> <out.json> [http://127.0.0.1:8748]` |
+| Replay seeds with full traces | `SEEDS=1014,7153 KEEP=1 node fuzz_driver.mjs 2 0 0 40 0 replay.json` |
+| Collector export → loto-web's real importer (differential) | `python3 fuzz_receiver.py <zipdir>` while fuzzing with the upload URL, then `python3 fuzz_diff.py <zipdir>` (loto-web checkout: `$LOTO_WEB`, else a sibling of this repo) |
+| The fuzzer inside the iOS app (WKWebView + native files) | `OPTS='{"seeds":[1,2,3],"steps":40}' WORK=$(mktemp -d) ./run-sim-fuzz.sh` |
+| Upgrade chain b88 → b90 → working tree on a Simulator (installed over each other, data kept) | `./upgrade/run-upg.sh` |
+| Directed repros | `node directed.mjs scenarios/common.js scenarios/<name>.js` |
+| Offline PWA export (server killed after the service worker precached) | `node offline_test.mjs` |
+| Two tabs saving at once (web) | `node twotabs.mjs` |
+| Header width on phones | `node layout_hdr.mjs [outDir]` |
+
+Oracles worth knowing: the harness compares every export with its OWN reading
+of the contract (`ownMarks`, the sheet's columns), not the app's helpers, so a
+bug in a helper can't hide on both sides. In fault mode only a **silent** loss
+is a violation — a loss that came with a warning is recorded as info.

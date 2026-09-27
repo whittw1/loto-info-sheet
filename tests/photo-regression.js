@@ -25,6 +25,11 @@
 //           marks, marks vs quantity, Settings on small screens, stale water
 //           checks, bundled libraries, evicted store, per-date sheets, blank
 //           energy sources, Condensate Pump, template keep rule, photo size)
+//   T100–T110 build 94: one per finding of the 2026-09-27 execution-based
+//           review (deleting the unit open for edit, two tabs, In/Out link
+//           count, phone header, names as HTML, copy-source marks, undated
+//           open unit, linked Detail cell, save message) + the two known items
+//           it re-found (CSV line breaks, unreadable unit-in-progress)
 // Results land in window.__PHOTO_TEST_RESULTS and the console.
 // ============================================================================
 (function () {
@@ -2841,6 +2846,284 @@
     }
   }
 
+
+  // ======================================================================
+  // Build 94 — one test per finding of the 2026-09-27 execution-based review
+  // (random-action fuzzer, export → loto-web differential, Simulator, two tabs,
+  // phone widths) plus the two known items it re-found (CSV line breaks, an
+  // unreadable unit-in-progress). Each failed on build 93.
+  // ======================================================================
+
+  // A CSV parser that honours quoted cells (line breaks inside quotes stay in the cell).
+  function parseCsvRows(text) {
+    const rows = []; let row = [], cur = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) { if (c === '"' && text[i + 1] === '"') { cur += '"'; i++; } else if (c === '"') q = false; else cur += c; }
+      else if (c === '"') q = true;
+      else if (c === ',') { row.push(cur); cur = ''; }
+      else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+      else if (c === '\r') { /* CRLF */ }
+      else cur += c;
+    }
+    if (cur || row.length) { row.push(cur); rows.push(row); }
+    return rows.filter(r => r.length > 1 || r[0]);
+  }
+  // The cells (1..13) of unit `name`'s source #n data row on an Information Sheet, plus its label row.
+  async function sheetSourceRow(bytes, name, n) {
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(bytes);
+    let inUnit = false, prevHeader = false, want = false, out = null, label = null;
+    wb.worksheets[0].eachRow(row => {
+      const cells = []; for (let c = 1; c <= 13; c++) { const v = row.getCell(c).value; cells.push(v == null ? '' : String(v)); }
+      const a = cells[0];
+      if (want && out === null) { out = cells; want = false; }
+      if (prevHeader) inUnit = a === name;
+      prevHeader = a === 'Equipment ID/Name';
+      if (inUnit && out === null && a === 'Energy Source #' + n) { want = true; label = cells; }
+    });
+    return { row: out, label };
+  }
+
+  // T100 — the ✕ on the row marked EDITING deleted the unit but the form kept
+  // editing it: Clear then promised "the original saved entry will be
+  // preserved" (it wasn't), and Save re-created it dated today
+  async function t100_deletingTheUnitOpenForEditClosesTheForm() {
+    const N = 'T100 deleting the unit that is open for edit says so and closes the form (single + bulk delete)';
+    await resetAppState();
+    fillForm('Edit-100');
+    await captureInto('source_0', await makePhotoFile('e100'));
+    const E = saveEntry();
+    editSaved(savedEquipment.findIndex(e => e.id === E.id)); await sleep(100);
+    const { log } = await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.findIndex(e => e.id === E.id)); });
+    const warned = log.some(m => /open (in the form|for edit)/i.test(m));
+    const closed = !editingEntry && !sameEntryId(currentEntryId, E.id) && document.getElementById('equipName').value === '';
+    let clearPrompt = null;
+    await withDialogs({ confirm: (m) => { clearPrompt = m; return false; } }, async () => { clearForm(true); });
+    // bulk delete while the unit is open
+    fillForm('Edit-100b'); const F = saveEntry();
+    editSaved(savedEquipment.findIndex(e => e.id === F.id)); await sleep(100);
+    showBulkDeleteDialog();
+    document.getElementById('bulkDeleteDateFilter').value = 'all';
+    document.getElementById('bulkDeleteConfirmInput').value = 'DELETE';
+    updateBulkDeleteSummary();
+    const said = ((document.getElementById('bulkDeleteSummary') || {}).textContent || '') + ' ' + ((document.getElementById('bulkDeleteWarn') || {}).textContent || '');
+    confirmBulkDelete();
+    const bulkClosed = !editingEntry && !sameEntryId(currentEntryId, F.id) && document.getElementById('equipName').value === '';
+    record(N, warned && closed && !clearPrompt && /open in the form/i.test(said) && bulkClosed,
+      'delete warned it is open=' + warned + ', form closed=' + closed + ', later Clear prompt=' + JSON.stringify(clearPrompt) +
+      ', bulk summary says open=' + /open in the form/i.test(said) + ', bulk closed the form=' + bulkClosed);
+  }
+
+  // T101 — two tabs of the web app share one storage and each wrote its own
+  // list over the other's: a unit saved in one tab vanished when the other saved
+  async function t101_aSecondTabPausesInsteadOfOverwriting() {
+    const N = 'T101 another tab of the app takes over → this one pauses and writes nothing (no lost saves)';
+    await resetAppState();
+    if (typeof BroadcastChannel !== 'function') return record(N, true, 'no BroadcastChannel in this runtime (single window)');
+    const ch = new BroadcastChannel('loto-collector-tabs');
+    const got = [];
+    ch.onmessage = (ev) => got.push(ev.data);
+    try {
+      ch.postMessage({ t: 'hello', from: 'TEST-NEWER', since: Date.now() + 60000 });
+      await sleep(300);
+      const answered = got.some(m => m && m.t === 'live' && m.to === 'TEST-NEWER');
+      savedEquipment = [mkEntry('Keep-101')]; saveAll(); await sleep(400);
+      ch.postMessage({ t: 'takeover', from: 'TEST-OTHER' });
+      await sleep(1200);
+      const released = got.some(m => m && m.t === 'released' && m.to === 'TEST-OTHER');
+      const ov = document.getElementById('tabPausedOverlay');
+      const shown = !!ov && ov.style.display !== 'none';
+      savedEquipment.push(mkEntry('Stale-101')); saveAll(); await sleep(500);
+      const stored = await rawIdbGet('metadata', 'saved_equipment');
+      const wrote = Array.isArray(stored) && stored.some(e => e && e.equipName === 'Stale-101');
+      record(N, answered && released && shown && !wrote,
+        'answered a newer tab=' + answered + ', released on takeover=' + released + ', paused overlay=' + shown + ', paused tab still wrote=' + wrote);
+    } finally {
+      ch.close();
+      try { _tabPaused = false; } catch (e) {}
+      const o = document.getElementById('tabPausedOverlay'); if (o) o.remove();
+    }
+  }
+
+  // T102 — a link fills a blank source from the shared point (b93), but took
+  // "HHW In/Out" without its device count: exported ×1, loto-web made one
+  // water-out point and no In valve
+  async function t102_linkToAnInOutPairTakesItsDeviceCount() {
+    const N = 'T102 linking a blank source to an In/Out pair takes the pair\'s device count (2)';
+    await resetAppState();
+    const T = mkEntry('Pair-102', { sources: [Object.assign(mkSrc('HHW In/Out'), { sourceId: genUuid(), deviceType: 'Ball Valve', quantity: 2, verification: 'Temp Only - Hot' })] });
+    savedEquipment = [T]; saveAll();
+    fillFormNoSources('Link-102'); addSource();
+    pendingLinkSourceIndex = 0; applyLink(0, 0);
+    record(N, sources[0].energySource === 'HHW In/Out' && sources[0].quantity === 2, 'energy="' + sources[0].energySource + '", quantity=' + sources[0].quantity);
+  }
+
+  // T103 — on an iPhone the header's six buttons ran off the right edge
+  // (Import / Backup / Log / Export unreachable without sideways scrolling)
+  async function t103_headerFitsAPhoneScreen() {
+    const N = 'T103 the header fits a 375-px phone screen (every button on screen, no sideways scroll)';
+    const hdr = document.querySelector('.header');
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;left:0;top:0;width:375px;visibility:hidden;z-index:-1;';
+    const clone = hdr.cloneNode(true);
+    clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+    clone.style.position = 'static';
+    box.appendChild(clone); document.body.appendChild(box);
+    try {
+      const right = box.getBoundingClientRect().right;
+      const btns = [...clone.querySelectorAll('.header-actions button')];
+      const off = btns.filter(b => b.getBoundingClientRect().right > right + 0.5).map(b => b.textContent.trim());
+      const w = clone.scrollWidth;
+      record(N, btns.length >= 6 && !off.length && w <= 375.5, 'off-screen buttons: ' + (off.join(', ') || 'none') + ', header content ' + w + 'px wide');
+    } finally { box.remove(); }
+  }
+
+  // T104 — names and source fields went into the page as HTML: "Fan <B> & C"
+  // showed "Fan  & C", a name with <img onerror> ran script, and a Device ID
+  // with an inch mark (6" gate) was cut to 6 in its box
+  async function t104_namesAndFieldsShowExactlyAsTyped() {
+    const N = 'T104 names and source fields show exactly as typed (no HTML, no script, inch marks kept)';
+    await resetAppState();
+    window.__xss104 = 0;
+    const evil = 'Pump <img src=x onerror="window.__xss104=1">';
+    const A = mkEntry('Fan <B> & C', { room: 'Rm <b>2</b>', sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Breaker', deviceId: '6" gate', location: 'Panel <b2>' })] });
+    const B = mkEntry(evil);
+    savedEquipment = [A, B]; saveAll();
+    try { savedFilter = 'all'; savedSearchTerm = ''; } catch (e) {}
+    renderSavedPanel(); await sleep(200);
+    const listed = [...document.querySelectorAll('.saved-item-name')].map(el => el.textContent);
+    const listOk = listed.some(t => t.indexOf('Fan <B> & C') === 0) && listed.some(t => t.indexOf(evil) === 0);
+    fillFormNoSources('Card-104');
+    sources.push(Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Breaker', deviceId: '6" gate', location: 'Panel <b2>', collapsed: false }));
+    renderSources();
+    const idBox = document.getElementById('src_deviceId_0');
+    const boxOk = !!idBox && idBox.value === '6" gate';
+    sources[0].collapsed = true; renderSources();
+    const cardTxt = (document.querySelector('.source-card') || {}).textContent || '';
+    const cardOk = cardTxt.indexOf('(6" gate)') >= 0 && cardTxt.indexOf('Panel <b2>') >= 0;
+    showCopySourceDialog(0);
+    const copyTxt = (document.getElementById('copySourceOverlay') || {}).textContent || '';
+    closeCopySourceDialog();
+    showLinkDialog(0); setLinkScope('all');          // the default scope is the form's own room
+    const linkOv = document.getElementById('linkDialogOverlay');
+    const linkTxt = (linkOv || {}).textContent || '';
+    if (typeof closeLinkDialog === 'function') closeLinkDialog(); else if (linkOv) linkOv.remove();
+    await sleep(200);
+    const ok = listOk && boxOk && cardOk && copyTxt.indexOf('Fan <B> & C') >= 0 && linkTxt.indexOf('Fan <B> & C') >= 0 && !window.__xss104;
+    record(N, ok, 'saved list=' + JSON.stringify(listed.map(t => t.slice(0, 40))) + ', Device ID box=' + JSON.stringify(idBox && idBox.value) +
+      ', card shows tag+location=' + cardOk + ', copy dialog name=' + (copyTxt.indexOf('Fan <B> & C') >= 0) + ', link dialog name=' + (linkTxt.indexOf('Fan <B> & C') >= 0) + ', script ran=' + !!window.__xss104);
+    savedEquipment = []; saveAll(); renderSavedPanel();
+  }
+
+  // T105 — Copy source changes the device count but kept every valve mark
+  // (the b93 marks-vs-quantity rule missed this path)
+  async function t105_copySourceThatLowersTheCountClearsMarks() {
+    const N = 'T105 Copy source that lowers the device count clears the valve marks (like Split / Quantity)';
+    await resetAppState();
+    const S = mkEntry('Src-105', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Breaker', quantity: 1 })] });
+    savedEquipment = [S]; saveAll();
+    fillFormNoSources('Copy-105');
+    sources.push(Object.assign(mkSrc('CHW In/Out'), { deviceType: 'Butterfly', quantity: 2, collapsed: false }));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('c105'));
+    openValveMarkDialog('source_0'); await markDialogReady(); tapMark(0.3, 0.5); tapMark(0.7, 0.5); clickById('valveMarkSave');
+    const before = ((photos.source_0 || {}).marks || []).length;
+    showCopySourceDialog(0); applyCopySource(0, 0);
+    const after = ((photos.source_0 || {}).marks || []).length;
+    record(N, before === 2 && sources[0].quantity === 1 && after === 0, 'marks before=' + before + ', quantity after the copy=' + sources[0].quantity + ', marks after=' + after);
+  }
+
+  // T106 — an unsaved unit with no photos counts as today's work in the export
+  // filter but went on Information_Sheet_undated.xlsx (no date for loto-web)
+  async function t106_unsavedUnitWithoutPhotosIsOnTodaysSheet() {
+    const N = 'T106 an unsaved unit with no photos goes on TODAY\'s Information Sheet in an "All dates" export';
+    await resetAppState();
+    savedEquipment = [mkEntry('Old-106', { savedAt: new Date(2026, 8, 22, 10).toISOString() })]; saveAll();
+    fillForm('Open-106');
+    const { zip, confirms } = await runExport({ confirmResponse: true, dateFilter: 'all' });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const units = {};
+    for (const q of Object.keys(u.files).filter(x => /^info_sheets\/Information_Sheet_.*\.xlsx$/.test(x)).sort()) units[q.replace('info_sheets/', '')] = await sheetUnits(u.files[q]);
+    const today = 'Information_Sheet_' + getDateStamp(new Date()) + '.xlsx';
+    record(N, (units[today] || []).includes('Open-106') && !units['Information_Sheet_undated.xlsx'], JSON.stringify(units));
+  }
+
+  // T107 — a linked source's Detail cell carried "LINKED → <unit> Src#N | L";
+  // loto-web stored that as the photo detail (arrow side lost, shared-ID key
+  // polluted). The link now has its own column the office importer ignores.
+  async function t107_linkedSourceKeepsItsDetailCellClean() {
+    const N = 'T107 a linked source\'s Detail cell holds only its detail; the link is in a "Linked To" column';
+    await resetAppState();
+    const T = mkEntry('MCC-107', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Breaker', deviceId: 'MCC-2A #7' })] });
+    savedEquipment = [T]; saveAll();
+    fillFormNoSources('Fan-107'); addSource();
+    pendingLinkSourceIndex = 0; applyLink(0, 0);
+    sources[0].detail = 'L'; renderSources();
+    saveEntry();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const xp = Object.keys(u.files).find(q => /Information_Sheet_.*\.xlsx$/.test(q));
+    const { row, label } = await sheetSourceRow(u.files[xp], 'Fan-107', 1);
+    const ok = !!row && row[6] === 'L' && /MCC-107/.test(row[12]) && !!label && label[12] === 'Linked To';
+    record(N, ok, 'Detail cell=' + JSON.stringify(row && row[6]) + ', col 13=' + JSON.stringify(row && row[12]) + ', col 13 label=' + JSON.stringify(label && label[12]));
+  }
+
+  // T108 — the Save & New message read '&#10004; Saved "X" "" 5 total'
+  async function t108_saveMessageReadsCleanly() {
+    const N = 'T108 the Save & New message reads cleanly (no "&#10004;", no stray quotes)';
+    await resetAppState();
+    fillForm('Toast-108');
+    performSaveAndNew();
+    const shown = (document.getElementById('toast') || {}).textContent || '';
+    record(N, /Toast-108/.test(shown) && !/&#|&[a-z]+;|""/.test(shown), 'toast shows ' + JSON.stringify(shown));
+  }
+
+  // T109 — KNOWN since the b92 review: a value with a line break (notes) wasn't
+  // quoted in the CSV, so every source row of that unit split in two
+  async function t109_csvKeepsALineBreakInsideItsCell() {
+    const N = 'T109 a note with a line break stays inside its CSV cell (rows don\'t split)';
+    await resetAppState();
+    const A = mkEntry('Note-109', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid() }), Object.assign(mkSrc('Natural Gas'), { sourceId: genUuid() })] });
+    A.notes = 'Line 1\nLine 2\r\nLine 3';
+    savedEquipment = [A]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const cp = Object.keys(u.files).find(q => /\.csv$/.test(q));
+    const rows = parseCsvRows(new TextDecoder().decode(u.files[cp]));
+    const widths = Array.from(new Set(rows.map(r => r.length)));
+    record(N, rows.length === 3 && widths.length === 1 && /Line 2/.test((rows[1] || [])[9] || ''), 'CSV rows=' + rows.length + ' (want 3), widths=' + widths.join(','));
+  }
+
+  // T110 — KNOWN since the b92 review: when the stored unit-in-progress can't
+  // be read at launch the form came up blank with no word — even when this
+  // device held a newer local copy of it — and the unit reappeared launches
+  // later as a "Recovered draft"
+  async function t110_unreadableUnitInProgressUsesItsLocalCopyAndSaysSo() {
+    const N = 'T110 an unreadable unit-in-progress comes back from its local copy, with a warning';
+    await resetAppState();
+    const id = genUuid();
+    const older = { at: new Date(Date.now() - 60000).toISOString(), entryId: id, equipType: '', equipName: 'Old-110', lotoId: '', equipRoom: 'R1', equipBuilding: 'Main',
+      template: '', tiedTo: '', tiedToName: '', notes: '', sources: [mkSrc('Electrical 480V')], photos: {}, miscPhotos: [], sketch: null };
+    await rawIdbPut('metadata', 'current_wip', older);
+    try { localStorage.setItem('loto_current', JSON.stringify(Object.assign({}, older, { at: new Date().toISOString(), equipName: 'Draft-110' }))); } catch (e) {}
+    const realGet = IDBObjectStore.prototype.get;
+    IDBObjectStore.prototype.get = function (k) {
+      if (k === 'current_wip') throw new DOMException('Connection to Indexed Database server lost', 'UnknownError');
+      return realGet.apply(this, arguments);
+    };
+    let msgs = [];
+    try { msgs = await withToasts(async () => { savedEquipment = []; await loadAll(); await sleep(300); }); }
+    finally { IDBObjectStore.prototype.get = realGet; }
+    const name = document.getElementById('equipName').value;
+    const warned = msgs.some(m => /couldn.t read|could not read/i.test(m));
+    savedEquipment = []; await loadAll(); await sleep(300);     // next launch reads normally
+    record(N, name === 'Draft-110' && warned, 'form at launch="' + name + '", warned=' + warned + ' ' + JSON.stringify(msgs));
+    dropLoadBanners();
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -2887,7 +3170,13 @@
     t92_waterCheckNeverStaysOnAnElectricalSource, t93_exportLibrariesAreBundled,
     t94_evictedStoreIsAnnounced, t95_allDatesExportWritesOneSheetPerSurveyDate,
     t96_blankEnergySourceIsFlaggedAndKept, t97_condensatePumpHasNoHhwSupply,
-    t98_templateChangeKeepsWhatItPromises, t99_customPhotoSizeIsClamped];
+    t98_templateChangeKeepsWhatItPromises, t99_customPhotoSizeIsClamped,
+    t100_deletingTheUnitOpenForEditClosesTheForm, t101_aSecondTabPausesInsteadOfOverwriting,
+    t102_linkToAnInOutPairTakesItsDeviceCount, t103_headerFitsAPhoneScreen,
+    t104_namesAndFieldsShowExactlyAsTyped, t105_copySourceThatLowersTheCountClearsMarks,
+    t106_unsavedUnitWithoutPhotosIsOnTodaysSheet, t107_linkedSourceKeepsItsDetailCellClean,
+    t108_saveMessageReadsCleanly, t109_csvKeepsALineBreakInsideItsCell,
+    t110_unreadableUnitInProgressUsesItsLocalCopyAndSaysSo];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
