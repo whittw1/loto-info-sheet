@@ -988,7 +988,7 @@ Each fix has a test written first and proven to FAIL on build 93 (T100–T110).
 | KNOWN (b92 review): a value with a line break (notes) wasn't quoted in the CSV — every source row of that unit split in two | `quote()` quotes `\r` / `\n` too | T109 |
 | KNOWN (b92 review): an unreadable stored unit-in-progress brought the form up blank without a word — even with a newer local copy on the device — and the unit reappeared launches later as a "Recovered draft" | the newest READABLE copy (the localStorage copy, or the alternate slot) is restored with a warning; with none, a sticky banner says nothing was deleted and to reopen the app before re-entering it | T110 |
 
-loto-web (deployed with this build): a unit with **no building and no room**
+loto-web (deployed with this build — 2026-09-27, Kudu deployment `61eefb45`): a unit with **no building and no room**
 binds to the block with no location (`infosheet_parser._loc_matches` — it could
 never be told apart from a same-named located unit and its block was skipped);
 a legacy `LINKED → … Src#N |` prefix is stripped from the Detail cell on import
@@ -1436,16 +1436,16 @@ Capacitor/iOS tree.
 Promotion worktree: `~/Desktop/Claude Apps/loto-main-web` — a `git worktree` of this
 repo on branch `main-promotion`, tracking `origin/main`.
 
-1. Copy `index.html`, `FingerLakes_Information_Sheet.html`, `sw.js`, `manifest.json` and
-   `manifest_fl.json` from the scaffold checkout into the worktree.
-2. `git add` **those five files only** — never `git add -A`: untracked test harnesses
+1. Copy `index.html`, `FingerLakes_Information_Sheet.html`, `sw.js`, `manifest.json`,
+   `manifest_fl.json` and (since build 93) `vendor/*.js` from the scaffold checkout into
+   the worktree.
+2. `git add` **those files only** — never `git add -A`: untracked test harnesses
    (e.g. `tests/photo-regression.js` copied in for verification) must not ship to a
    public static site.
 3. `git commit`, then `git push origin main-promotion:main`. Azure deploys automatically.
 
-> **As of 2026-09-24 build 90 is staged in the worktree (not yet committed).** From
-> `~/Desktop/Claude Apps/loto-main-web`: `git commit -m "Build 90 (cache v7.86)"`, then
-> `git push origin main-promotion:main`.
+> **Build 94 promoted 2026-09-27 (`f8ee3e7`)** — Azure and GitHub Pages both serve
+> `b94` / cache v7.90 with `vendor/` (checked after the push).
 
 Existing web users migrate in place on their next load: the IndexedDB schema
 (`loto_photos_v3`, version 2) is unchanged and the one-time photo-key migration (§6)
