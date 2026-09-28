@@ -477,7 +477,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b95</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b96</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -2111,7 +2111,30 @@ function tabLockInit() {
     if (shown) hideTabOverlay();
     claimThisTab();
     _tabClaiming = false;
+    pauseLegacyTabs();
   })();
+}
+// A build 94 tab still open when a newer build reaches the web knows only its
+// BroadcastChannel messages, never the claim (build 96): each launch tells it
+// to pause, and a build 94 tab's own launch "hello" is answered so that it
+// pauses too. Build 95 posted nothing, and such a tab kept writing its stale
+// list over the store. As it pauses it autosaves its form; when it says so
+// ("released"), this tab writes its own form back over that.
+let _legacyTabChannel = null;
+function pauseLegacyTabs() {
+  if (typeof BroadcastChannel !== 'function') return;
+  try {
+    if (!_legacyTabChannel) {
+      _legacyTabChannel = new BroadcastChannel('loto-collector-tabs');
+      _legacyTabChannel.onmessage = (ev) => {
+        const m = ev.data || {};
+        if (!m.from || m.from === TAB_ID || _tabPaused || _tabClaiming) return;
+        if (m.t === 'hello' && tabMayWrite()) _legacyTabChannel.postMessage({ t: 'live', from: TAB_ID, to: m.from });
+        else if (m.t === 'released' && m.to === TAB_ID && tabMayWrite()) autoSaveCurrent();
+      };
+    }
+    _legacyTabChannel.postMessage({ t: 'takeover', from: TAB_ID });
+  } catch (e) {}
 }
 function showTabOverlay(kind) {
   let ov = document.getElementById('tabPausedOverlay');
@@ -8290,6 +8313,7 @@ function clearForm(confirm_first = true) {
         : 'Clear current form? Unsaved data will be lost.';
       if (!confirm(msg)) return;
     }
+    if (!tabMayWrite()) return;   // another tab took over while the dialog was open (build 96)
   }
   beginNewFormSession();   // any photo still saving can no longer attach here
   editingEntry = null;
@@ -8322,7 +8346,7 @@ function clearForm(confirm_first = true) {
   clearSketchState();
   renderSources();
   renderMiscPhotos();
-  try { localStorage.removeItem('loto_current'); } catch (e) {}
+  if (tabMayWrite()) { try { localStorage.removeItem('loto_current'); } catch (e) {} }   // it may be the live tab's copy (build 96)
   autoSaveCurrent();
   updateIntegrityBadge();
   window.scrollTo(0, 0);
@@ -8637,6 +8661,11 @@ function deleteSaved(index) {
   const open = formHoldsEntry(entry);
   const openNote = open ? '\n\nIt is OPEN in the form \u2014 the form closes and its unsaved changes are discarded too.' : '';
   if (confirm(`Delete "${name}" from saved list?${expNote}${openNote}`)) {
+    // Another tab may have taken over while the dialog was open (a native
+    // dialog holds back the storage event): it lists this unit, so nothing is
+    // erased or recorded here (build 96 — the photos were deleted and the unit
+    // tombstoned before saveAll's first check).
+    if (!tabMayWrite()) return;
     // Close the form FIRST (build 94): it kept editing a unit that no longer
     // existed \u2014 Clear then promised "the original saved entry will be
     // preserved" and Save re-created it dated today. Closed, it no longer
@@ -8756,6 +8785,7 @@ function confirmBulkDelete() {
   if (refuseIfPhotoWritesBusy('delete')) return;
   const input = document.getElementById('bulkDeleteConfirmInput');
   if (!input || input.value.trim().toUpperCase() !== 'DELETE') { showToast('Type DELETE to confirm', true); return; }
+  if (!tabMayWrite()) { closeBulkDeleteDialog(); return; }   // another tab took over while the dialog was open (build 96)
   const targets = getBulkDeleteTargets();
   if (targets.length === 0) { closeBulkDeleteDialog(); return; }
   const set = new Set(targets);
@@ -10158,6 +10188,7 @@ function handleBackupFile(event) {
         ]
       });
       if (choice !== 'merge' && choice !== 'replace') { showToast('Import cancelled — nothing changed'); return; }
+      if (!tabMayWrite()) return;   // another tab took over while the dialog was open (build 96)
 
       if (choice === 'replace') {
         // Never sever or roll back photo links: an entry that also exists on
@@ -10361,6 +10392,32 @@ let _wipUnread = false;
 // form is decided (or by the launch's safety timeout).
 let _bootWipSettled = false;
 let _bootLoadTimedOut = false;
+const PAGE_LOADED_AT = new Date().toISOString();   // autosaves stamped since are this session's own
+// The copy a launch restored becomes the main slot's; the alternate slot is
+// emptied once that write has landed (build 96: it was emptied first, so a
+// failed write left the unit in memory only) — and never while it is unread.
+function settleWipSlots(st, altUnread) {
+  if (!tabMayWrite()) return;
+  saveMetadata('current_wip', st).then(() => {
+    if (!tabMayWrite()) return;
+    try { localStorage.removeItem('loto_current'); } catch (e) {}
+    if (altUnread) return;   // the unread alternate copy — and the marker guarding it — wait for the next launch
+    try { localStorage.removeItem(WIP_SUPERSEDED_KEY); } catch (e) {}
+    deleteMetadata('current_wip_alt');
+    try { localStorage.removeItem('loto_current_alt'); } catch (e) {}
+  }).catch(() => {});
+}
+// A slot whose unit is now safely in the saved list is emptied (build 96).
+function emptyWipSlot(which, idbToo = true) {
+  if (!tabMayWrite()) return;
+  if (which === 'main') {
+    if (idbToo) deleteMetadata('current_wip');
+    try { localStorage.removeItem('loto_current'); localStorage.removeItem(WIP_SUPERSEDED_KEY); } catch (e) {}
+  } else {
+    if (idbToo) deleteMetadata('current_wip_alt');
+    try { localStorage.removeItem('loto_current_alt'); } catch (e) {}
+  }
+}
 // A unit restored at launch from its LOCAL copy because the stored copy was
 // unreadable (build 94) continues in the alternate slot. Once it is safely
 // there, the main slot's copies up to the restored one are superseded
@@ -10369,10 +10426,14 @@ let _bootLoadTimedOut = false;
 // Save & New overwrote the unit with it (build 95).
 const WIP_SUPERSEDED_KEY = 'loto_wip_superseded';
 let _wipSupersedeOnSave = null;
+// While the alternate slot couldn't be read this launch, the form autosaves to
+// the main slot but the marker stays (build 96): the unread copy may be the
+// newest, and a later launch that can read neither slot must still know it.
+let _wipKeepMarker = false;
 function noteWipWritten(toAlt) {
   try {
     if (toAlt && _wipSupersedeOnSave) { localStorage.setItem(WIP_SUPERSEDED_KEY, JSON.stringify(_wipSupersedeOnSave)); _wipSupersedeOnSave = null; }
-    else if (!toAlt) localStorage.removeItem(WIP_SUPERSEDED_KEY);   // the main slot holds the newest now
+    else if (!toAlt && !_wipKeepMarker) localStorage.removeItem(WIP_SUPERSEDED_KEY);   // the main slot holds the newest now
   } catch (e) {}
 }
 function autoSaveCurrent() {
@@ -10427,47 +10488,85 @@ function autoSaveCurrent() {
 // one. A merge must never bring back an entry the user deleted, so deleting
 // (and a backup Replace) records the id; saving or importing that id again
 // clears it. Kept in localStorage, mirrored into IndexedDB on every save.
-// This session's own changes are ALSO kept in memory (build 95): when the
-// localStorage write failed (storage full), a delete was recorded nowhere, and
-// the next merge of a stored list — the first save after a launch that
-// couldn't read the store, or a list another writer stored — put the deleted
-// units back with their photos already erased. getTombstones() is the stored
-// map with this session's adds and clears applied; every save mirrors it into
-// IndexedDB (deleted_ids).
+// Every delete and every re-save / re-import of a deleted id is an EVENT with
+// its time, and the later one wins — gathered from every place it may have
+// been recorded (build 96): localStorage (loto_deleted_ids / loto_restored_ids),
+// the IndexedDB mirror each list save writes (deleted_ids / restored_ids), the
+// localStorage fallback list, and this session's memory. Build 95 kept this
+// session's deletes in memory (a delete whose localStorage write failed was
+// recorded nowhere) but never read the mirror back: after a relaunch that
+// couldn't read the store, the first save merged the frozen emergency copy
+// back in and the unit returned for good, its photos already erased. And its
+// "saved again this session" list had no times, so it also hid a later
+// delete made by another (older) tab. loto_deleted_ids keeps holding only the
+// ids that ARE deleted (what builds up to 95 read).
 const TOMBSTONE_KEY = 'loto_deleted_ids';
-const _tombAdds = {};            // id → when deleted, this session
-const _tombClears = new Set();   // ids saved / imported again this session
-function getTombstones() {
-  let t = {};
-  try { const p = JSON.parse(localStorage.getItem(TOMBSTONE_KEY) || '{}'); if (p && typeof p === 'object' && !Array.isArray(p)) t = p; } catch (e) {}
-  _tombClears.forEach(k => { delete t[k]; });
-  return Object.assign(t, _tombAdds);
+const RESTORED_KEY = 'loto_restored_ids';
+const _tombAdds = {};       // this session's deletes: id → when
+const _tombRestores = {};   // this session's re-saves / re-imports of deleted ids: id → when
+let _mirrorDel = {}, _mirrorRes = {};   // what the IndexedDB mirror / fallback held, as last read
+// What a fresh launch starts with (the tests simulate a relaunch with it).
+function resetTombstoneMemory() {
+  for (const k of Object.keys(_tombAdds)) delete _tombAdds[k];
+  for (const k of Object.keys(_tombRestores)) delete _tombRestores[k];
+  _mirrorDel = {}; _mirrorRes = {};
 }
-function writeTombstones(t) {
+function readLsMap(key) { const m = readLsJson(key); return (m && typeof m === 'object' && !Array.isArray(m)) ? m : {}; }
+// Merge {id: when} maps keeping the later time; a value without a time (older
+// builds) counts as earlier than any event.
+function laterInto(dst, src) {
+  if (!src || typeof src !== 'object' || Array.isArray(src)) return dst;
+  for (const k of Object.keys(src)) { const v = typeof src[k] === 'string' ? src[k] : '0'; if (!dst[k] || v > dst[k]) dst[k] = v; }
+  return dst;
+}
+function absorbTombstoneMirror(del, res) { laterInto(_mirrorDel, del); laterInto(_mirrorRes, res); }
+function tombstoneEvents() {
+  return {
+    del: laterInto(laterInto(laterInto({}, _mirrorDel), readLsMap(TOMBSTONE_KEY)), _tombAdds),
+    res: laterInto(laterInto(laterInto({}, _mirrorRes), readLsMap(RESTORED_KEY)), _tombRestores)
+  };
+}
+// The ids deleted later than any re-save (every merge drops them): id → when.
+function getTombstones() {
+  const { del, res } = tombstoneEvents(); const t = {};
+  for (const k of Object.keys(del)) if (!(res[k] && res[k] >= del[k])) t[k] = del[k];
+  return t;
+}
+// Re-saves worth remembering: those that overrule a known delete.
+function getRestores() {
+  const { del, res } = tombstoneEvents(); const r = {};
+  for (const k of Object.keys(res)) if (del[k]) r[k] = res[k];
+  return r;
+}
+function writeCapped(key, t) {
   const keys = Object.keys(t);
   if (keys.length > 5000) keys.sort((a, b) => String(t[a]).localeCompare(String(t[b]))).slice(0, keys.length - 5000).forEach(k => delete t[k]);
-  try { localStorage.setItem(TOMBSTONE_KEY, JSON.stringify(t)); } catch (e) {}
+  try { localStorage.setItem(key, JSON.stringify(t)); return true; } catch (e) { return false; }
 }
+function writeTombstones(t) { return writeCapped(TOMBSTONE_KEY, t); }
 // Tombstone the ids of removed entries that no longer appear in the list —
 // a unit saved twice under one id keeps its other copy.
 function tombstoneRemovedEntries(removed) {
   const still = new Set(savedEquipment.filter(e => e && e.id != null).map(e => String(e.id)));
   const t = getTombstones(); const at = new Date().toISOString(); let n = 0;
   (removed || []).forEach(e => {
-    if (e && e.id != null && e.id !== '' && !still.has(String(e.id))) { const k = String(e.id); t[k] = at; _tombAdds[k] = at; _tombClears.delete(k); n++; }
+    if (e && e.id != null && e.id !== '' && !still.has(String(e.id))) { const k = String(e.id); t[k] = at; _tombAdds[k] = at; delete _tombRestores[k]; n++; }
   });
   if (n) writeTombstones(t);
 }
+// An id saved or imported again: recorded as a re-save when some store knows
+// a delete for it — or when the store couldn't be read this session (its
+// mirror may hold one).
 function clearTombstones(ids) {
-  const t = getTombstones(); let changed = false;
+  const known = getTombstones(), t = Object.assign({}, known), r = readLsMap(RESTORED_KEY);
+  const at = new Date().toISOString(); let changed = false;
   (ids || []).forEach(id => {
-    if (id == null) return;
+    if (id == null || id === '') return;
     const k = String(id);
-    if (k in _tombAdds) { delete _tombAdds[k]; changed = true; }
-    _tombClears.add(k);
-    if (t[k]) { delete t[k]; changed = true; }
+    if (!known[k] && !_entryStoreUnread) return;
+    _tombRestores[k] = at; delete _tombAdds[k]; r[k] = at; delete t[k]; changed = true;
   });
-  if (changed) writeTombstones(t);
+  if (changed) { writeTombstones(t); writeCapped(RESTORED_KEY, r); }
 }
 
 // ---- Merging copies of the entry list (build 91) ---------------------------
@@ -10615,39 +10714,55 @@ function showWipReadBanner() {
 // its own in-memory list over the other's, and units vanished. While the
 // launch couldn't read the store at all (_entryStoreUnread) the list is always
 // merged first; if it still can't be read, nothing is written over it.
+// withPhotoDB runs the op again after a failed commit, so the op is safe to
+// repeat (build 96): the stamp becomes this write's only once the transaction
+// COMMITS (recorded earlier, a retry after a failed commit "saw another
+// writer" and merged the tab's own older list back — a deleted copy of a unit
+// saved twice returned); `st` carries what an attempt merged across the
+// retry; and an abort because the claim moved resolves ({paused}) instead of
+// being retried like a storage fault.
 let _entryStoreAt = null;
-function writeEntryListMerged(at) {
+function writeEntryListMerged(at, st) {
+  st = st || { merged: false, paused: false };
   return withPhotoDB(db => new Promise((resolve, reject) => {
     const tx = db.transaction('metadata', 'readwrite');
     const s = tx.objectStore('metadata');
-    let merged = false;
     const put = () => {
-      if (!tabMayWrite()) { tx.abort(); return; }   // the claim moved while this waited
+      if (!tabMayWrite()) { st.paused = true; tx.abort(); return; }   // the claim moved while this waited
       s.put(savedEquipment, 'saved_equipment');
       s.put(at, 'saved_equipment_at');
       s.put(getTombstones(), 'deleted_ids');
-      _entryStoreAt = at;
+      s.put(getRestores(), 'restored_ids');
     };
     const r = s.get('saved_equipment_at');
     r.onsuccess = () => {
       try {
         const cur = r.result || null;
         if (_entryStoreUnread || (cur && cur !== _entryStoreAt)) {
-          const r2 = s.get('saved_equipment');
-          r2.onsuccess = () => {
-            try { if (mergeStoredEntryList(r2.result)) merged = true; put(); }
-            catch (e) { try { tx.abort(); } catch (x) {} }
+          const rl = s.get('saved_equipment'), rd = s.get('deleted_ids'), rr = s.get('restored_ids');
+          rr.onsuccess = () => {
+            try {
+              absorbTombstoneMirror(rd.result, rr.result);   // another writer's deletes (and this one's from an earlier session)
+              if (mergeStoredEntryList(rl.result)) st.merged = true;
+              _entryStoreUnread = false;   // the stored list is in memory now, whatever the commit does (b94 cleared it here too)
+              _entryStoreAt = cur;         // … as of this stamp: a retry must not merge it again
+              put();
+            } catch (e) { try { tx.abort(); } catch (x) {} }
           };
         } else put();
       } catch (e) { try { tx.abort(); } catch (x) {} }
     };
-    tx.oncomplete = () => resolve(merged);
+    tx.oncomplete = () => { _entryStoreAt = at; resolve(st); };
     tx.onerror = () => reject(tx.error || new Error('IDB transaction error'));
-    tx.onabort = () => reject(tx.error || new Error('IDB transaction aborted'));
+    tx.onabort = () => { if (st.paused) resolve(st); else reject(tx.error || new Error('IDB transaction aborted')); };
   }));
 }
+// Resolves true once the list is stored durably (IndexedDB, or its
+// localStorage fallback) — false when this tab may not write or nothing could
+// be written (build 96: loadAll settles the unit-in-progress slots only after
+// a recovered unit is safely in the list).
 function saveAll() {
-  if (!tabMayWrite()) return;   // another tab holds the claim — its list is the truth (build 95)
+  if (!tabMayWrite()) return Promise.resolve(false);   // another tab holds the claim — its list is the truth (build 95)
   const at = new Date().toISOString();
   // An entry id must appear once. Duplicates are left in place (they're user
   // data) but reported — the saved panel badges them "SAVED TWICE".
@@ -10656,11 +10771,15 @@ function saveAll() {
   if (dups.size) console.warn('saveAll: ' + dups.size + ' entry id(s) appear more than once', [...dups]);
 
   const markOk = () => { if (_entryListWriteFailed) { _entryListWriteFailed = false; setStorageFailBanner(false); setAutosaveStatus('saved'); } };
+  // The fallback carries the deletes too, in the same write (build 96): when
+  // the deleted-ids write failed and only this copy took, the unit came back
+  // at the next launch with its photos already erased — silently.
   const writeFallback = () => {
     try {
-      localStorage.setItem('loto_saved', JSON.stringify(savedEquipment));
+      localStorage.setItem('loto_saved', JSON.stringify({ list: savedEquipment, deleted: getTombstones(), restored: getRestores() }));
       localStorage.setItem('loto_saved_at', at);
       markOk();
+      return true;
     } catch (e) {
       // A stale fallback copy only competes with the snapshot for the quota.
       try { localStorage.removeItem('loto_saved'); localStorage.removeItem('loto_saved_at'); } catch (e2) {}
@@ -10668,16 +10787,34 @@ function saveAll() {
       setStorageFailBanner(true, 'storage full or unavailable');
       setAutosaveStatus('error');
       showToast('Storage error - export soon!', true);
+      return false;
     }
   };
-  writeEntryListMerged(at).then(merged => {
+  const st = { merged: false, paused: false };
+  const wasUnread = _entryStoreUnread;
+  writeEntrySnapshot(at);
+  // After a merge — or the first save after a launch that couldn't read the
+  // store — the emergency copy and the entry count are rewritten from the
+  // merged list (build 96: the count stayed at the launch's maximum, and the
+  // next launch said "device storage may have evicted data").
+  const refreshAfterMerge = () => {
+    if (st.merged || (wasUnread && !_entryStoreUnread)) writeEntrySnapshot(at);
+    if (st.merged) { renderSavedPanel(); updateHeaderBadge(); }
+    if (wasUnread && !_entryStoreUnread) hideStickyBanner('entryStoreBanner');
+  };
+  return writeEntryListMerged(at, st).then(() => {
+    if (st.paused) return false;   // the claim moved: this tab writes nothing
     try { localStorage.removeItem('loto_saved'); localStorage.removeItem('loto_saved_at'); } catch (e) {}
-    if (_entryStoreUnread) { _entryStoreUnread = false; hideStickyBanner('entryStoreBanner'); }
     markOk();
     checkStorage();
-    if (merged) { writeEntrySnapshot(at); renderSavedPanel(); updateHeaderBadge(); }
-  }, () => { if (!_tabPaused) writeFallback(); });   // unreadable / unwritable — never a partial list over the store
-  writeEntrySnapshot(at);
+    refreshAfterMerge();
+    return true;
+  }, () => {
+    if (_tabPaused || st.paused) return false;
+    const ok = writeFallback();   // unreadable / unwritable — never a partial list over the store
+    refreshAfterMerge();
+    return ok;
+  });
 }
 function writeEntrySnapshot(at) {
   // Entry-retention guards (rule 8). IndexedDB inside the iOS WebView can be
@@ -10844,25 +10981,42 @@ async function loadAll() {
   // which was ignored unless the store came up completely EMPTY — then the
   // next save overwrote it. Deleted ids are tombstoned so nothing deleted
   // comes back.
-  let idbList, idbAt = null, idbTomb = null, idbReadOk = false;
+  let idbList, idbAt = null, idbReadOk = false;
   try {
-    const r = await getMetadataMany(['saved_equipment', 'saved_equipment_at', 'deleted_ids']);
+    const r = await getMetadataMany(['saved_equipment', 'saved_equipment_at', 'deleted_ids', 'restored_ids']);
     idbList = r.saved_equipment;
     idbAt = r.saved_equipment_at || null;
-    idbTomb = r.deleted_ids || null;
+    absorbTombstoneMirror(r.deleted_ids, r.restored_ids);   // deletes whose localStorage record failed (build 96)
     idbReadOk = true;
-    _entryStoreAt = idbAt;   // what this tab read — saveAll merges anything written after it
+    // What this tab read — saveAll merges anything written after it. (A save
+    // made while a slow launch was still reading has committed a newer stamp.)
+    if (!_entryStoreAt || (idbAt && idbAt > _entryStoreAt)) _entryStoreAt = idbAt;
   } catch(e) { console.warn('IDB load saved_equipment failed:', e); }
   const lsStamp = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
-  const lsList = readLsJson('loto_saved');              // written when an IndexedDB save failed
+  // Written when an IndexedDB save failed: { list, deleted, restored } since
+  // build 96 (the deletes travel with the list), a bare list before.
+  const lsRaw = readLsJson('loto_saved');
+  const lsList = Array.isArray(lsRaw) ? lsRaw : (lsRaw && Array.isArray(lsRaw.list) ? lsRaw.list : null);
+  if (lsRaw && !Array.isArray(lsRaw)) absorbTombstoneMirror(lsRaw.deleted, lsRaw.restored);
   const snapList = readLsJson('loto_saved_snapshot');   // written on every save (stripped)
   const copies = [
     { list: idbList, at: idbAt },
     { list: lsList, at: lsStamp('loto_saved_at') },
     { list: snapList, at: lsStamp('loto_saved_snapshot_at') },
   ].filter(c => Array.isArray(c.list));
-  let tomb = getTombstones();
-  if (!Object.keys(tomb).length && idbTomb && typeof idbTomb === 'object') { tomb = idbTomb; writeTombstones(Object.assign({}, idbTomb)); }
+  const tomb = getTombstones();
+  // localStorage catches up with deletes only the mirror held (builds up to 95
+  // read only localStorage).
+  const lsTomb = readLsMap(TOMBSTONE_KEY);
+  if (tabMayWrite() && Object.keys(tomb).some(k => lsTomb[k] !== tomb[k])) writeTombstones(Object.assign({}, tomb));
+  // A launch that finishes after the 20 s timeout (build 96): the tech has been
+  // working meanwhile, and the units saved in that window are in memory in
+  // full (on disk perhaps only in the stripped emergency copy, whose merge
+  // took their sketches and said "Restored … EXPORT NOW"). They are merged in,
+  // not replaced, and are not "recovered".
+  const lateMem = (_bootLoadTimedOut && savedEquipment.length) ? savedEquipment.slice() : null;
+  const lateIds = new Set((lateMem || []).filter(e => e && e.id != null && e.id !== '').map(e => String(e.id)));
+  const notLate = (list) => lateIds.size ? list.filter(e => !(e && e.id != null && lateIds.has(String(e.id)))) : list;
   const haveIdb = Array.isArray(idbList);
   const primaryCopy = copies[0] || { list: [], at: null };
   const stampOf = (c) => c.at || entryListStamp(c.list);
@@ -10877,11 +11031,11 @@ async function loadAll() {
   const pStamp = stampOf(primaryCopy);
   const primaryEmpty = !(primaryCopy.list || []).length;
   const others = copies.filter(c => c !== primaryCopy && !(pStamp && stampOf(c) && stampOf(c) < pStamp)).map(c => ({
-    list: c.list,
+    list: notLate(c.list),
     allowAdd: primaryEmpty || c.list === lsList || !!(primaryCopy.at && c.at && c.at >= primaryCopy.at)
   }));
   const merged = mergeEntryCopies(primaryCopy.list, others, tomb);
-  savedEquipment = merged.list;
+  savedEquipment = lateMem ? mergeEntryCopies(merged.list, [{ list: lateMem, allowAdd: true }], tomb).list : merged.list;
   // Entry ids are strings from here on (build 91 — see sameEntryId).
   let idsNormalized = 0;
   savedEquipment.forEach(e => { if (e && e.id != null && typeof e.id !== 'string') { e.id = String(e.id); idsNormalized++; } });
@@ -10937,7 +11091,7 @@ async function loadAll() {
   // guarded) and only when the store was actually read (build 91: the two
   // launch migrations used to write saved_equipment directly, which put the
   // stripped emergency snapshot over an intact store after a failed read).
-  if (idbReadOk && (recovered > 0 || idsNormalized > 0 || migration.changedSources > 0 || Array.isArray(lsList))) saveAll();
+  if (idbReadOk && (recovered > 0 || idsNormalized > 0 || migration.changedSources > 0 || Array.isArray(lsList) || lateMem)) saveAll();
 
   // ---- The form autosave (build 91). Its own failed read must not be
   // overwritten by the blank form this launch will autosave: while
@@ -10945,50 +11099,111 @@ async function loadAll() {
   // launch resolves the two — the newer is restored; an older unit with
   // content is kept as a saved "recovered draft" entry, never dropped.
   // A tab that no longer holds the claim reads but WRITES NOTHING here (build
-  // 95): a tab paused during its launch deleted the alternate slot and
-  // rewrote current_wip while the save of the "recovered draft" it made was
-  // already a no-op — that unit was lost.
+  // 95) — decided once the reads are done (build 96: the claim can move while
+  // they wait, and a tab paused during them still deleted the alternate slot
+  // and rewrote current_wip while its "recovered draft" save was refused —
+  // that unit was lost). A slot is emptied of an older unit only once that
+  // unit is safely in the saved list (build 96).
   _wipSupersedeOnSave = null;
-  const mayWrite = tabMayWrite();
-  let state = null, wipReadOk = true, alt = null;
+  let state = null, wipReadOk = true, alt = null, altReadOk = true;
+  _wipKeepMarker = false;
   try { state = await getMetadata('current_wip'); } catch(e) { wipReadOk = false; console.warn('IDB load current_wip failed:', e); }
-  try { alt = await getMetadata('current_wip_alt'); } catch(e) {}
+  try { alt = await getMetadata('current_wip_alt'); } catch(e) { altReadOk = false; console.warn('IDB load current_wip_alt failed:', e); }
   let lsState = readLsJson('loto_current');
-  const lsAlt = readLsJson('loto_current_alt');
+  let lsAlt = readLsJson('loto_current_alt');
+  const altPresent = !!(alt || lsAlt);
   // Copies of the main slot an earlier launch already restored — the unit
   // went on in the alternate slot — are not the unit in progress (build 95;
   // see WIP_SUPERSEDED_KEY).
   const sup = readLsJson(WIP_SUPERSEDED_KEY);
   const superseded = (c) => !!(c && sup && sup.at && String(c.at || '') <= String(sup.at));
-  if (superseded(state)) state = null;
-  if (superseded(lsState)) lsState = null;
+  // Nor is a copy of a SAVED unit written before that unit's last save (build
+  // 96): the marker covered one path only, and such a copy still reopened as
+  // an edit of the unit — Save & New or an export then put the older version
+  // over the newer save. Nor a copy of a unit DELETED after it was written
+  // (build 96, found by its fault campaign): it came back as a "recovered
+  // draft" pointing at the photos the delete had erased. A time in the future
+  // (a clock that was off) decides nothing.
+  const nowIso = new Date().toISOString();
+  const tombs = getTombstones();
+  const staleCopy = (c) => {
+    if (!c || !c.at || c.entryId == null) return false;
+    const e = savedEquipment.find(x => sameEntryId(x.id, c.entryId));
+    const r = e ? entryRecency(e) : (tombs[String(c.entryId)] || '');
+    return !!r && r > String(c.at) && r <= nowIso;
+  };
+  if (superseded(state) || staleCopy(state)) state = null;
+  if (superseded(lsState) || staleCopy(lsState)) lsState = null;
+  if (staleCopy(alt)) alt = null;
+  if (staleCopy(lsAlt)) lsAlt = null;
   const lsWon = !!lsState && newerWip(state, lsState) === lsState;
   state = newerWip(state, lsState);
   alt = newerWip(alt, lsAlt);
+  const mayWrite = tabMayWrite();
+  const unitName = (c) => String((c && c.equipName) || '').trim() || 'unnamed';
   _wipUnread = !wipReadOk;
-  if (wipReadOk) {
-    if (alt || lsAlt) {
+  _wipKeepMarker = !altReadOk;
+  if (_bootLoadTimedOut) {
+    // The form has been the tech's since the 20 s timeout (build 93) and its
+    // autosaves go to the alternate slot: nothing is restored over it (build
+    // 96 — the guard meant for this could never be true, and a late load
+    // restored the stored unit over the form in use). A stored unit with
+    // content is kept as a recovered draft; its slot is emptied once that is
+    // saved.
+    // A copy of the unit open in the form (the tech reopened it meanwhile) is
+    // that unit; the alternate slot's copies from this session are the form's own.
+    const isOpenUnit = (c) => !!c && !!currentEntryId && sameEntryId(c.entryId, currentEntryId);
+    const fromMain = isOpenUnit(state) ? null : state;
+    const fromAlt = (isOpenUnit(alt) || String((alt && alt.at) || '') >= PAGE_LOADED_AT) ? null : alt;
+    const kept = [];
+    let editLeft = null;
+    if (mayWrite) {
+      for (const c of [fromMain, fromAlt]) {
+        if (!c || !wipHasContent(c)) continue;
+        if (keepWipAsRecoveredEntry(c)) kept.push(c);
+        else if (c === fromMain) editLeft = c;   // an unsaved edit of a saved unit stays in its slot
+      }
+    }
+    if (kept.length) {
+      showToast('⚠ Recovered ' + kept.map(c => '"' + unitName(c) + '"').join(' and ') + ' from an earlier session — in the saved list. Check ' + (kept.length === 1 ? 'it' : 'them') + '.', true);
+      saveAll().then(ok => {
+        if (!ok || !kept.includes(fromMain)) return;
+        if (wipReadOk) emptyWipSlot('main');
+        else if (tabMayWrite()) { try { localStorage.removeItem('loto_current'); } catch (e) {} }
+      });
+    }
+    if (editLeft) showStickyBanner('wipEditBanner', html`&#9888; Unsaved edits to <b>${unitName(editLeft)}</b> from an earlier session were not reopened &mdash; the form was already in use. The saved unit is unchanged. Finish or clear this form, then reopen the app to get those edits back (don't edit that unit before then).`, true);
+    state = null;
+    _wipUnread = true;
+  } else if (wipReadOk) {
+    if (altPresent) {
       const a = wipHasContent(state) ? state : null, b = wipHasContent(alt) ? alt : null;
+      let deferred = false;
       if (a && b) {
         const newer = (String(b.at || '') > String(a.at || '')) ? b : a;
         const older = newer === a ? b : a;
-        if (mayWrite && !sameEntryId(a.entryId, b.entryId) && keepWipAsRecoveredEntry(older)) {
-          if (idbReadOk) saveAll();
-          showToast('⚠ Recovered an unsaved unit ("' + (String(older.equipName || '').trim() || 'unnamed') + '") from an earlier session — it is in the saved list. Check it.', true);
-        }
         state = newer;
+        if (mayWrite && !sameEntryId(a.entryId, b.entryId) && keepWipAsRecoveredEntry(older)) {
+          // Until the older unit is safely in the list, its slot is left as it
+          // is and the form autosaves to the slot the newer one came from.
+          deferred = true;
+          _wipUnread = newer === b;
+          showToast('⚠ Recovered an unsaved unit ("' + unitName(older) + '") from an earlier session — it is in the saved list. Check it.', true);
+          saveAll().then(ok => { if (!ok) return; if (older === a) emptyWipSlot('main'); else emptyWipSlot('alt', altReadOk); });
+        }
       } else {
         state = a || b || state || alt;
       }
-      if (mayWrite) {
-        deleteMetadata('current_wip_alt');
-        try { localStorage.removeItem('loto_current_alt'); } catch (e) {}
-        saveMetadata('current_wip', state).then(() => {
-          try { localStorage.removeItem('loto_current'); localStorage.removeItem(WIP_SUPERSEDED_KEY); } catch (e) {}
-        }).catch(() => {});
-      }
+      if (mayWrite && !deferred) settleWipSlots(state, !altReadOk);
     } else if (lsWon) {
-      if (mayWrite) saveMetadata('current_wip', state).then(() => { try { localStorage.removeItem('loto_current'); localStorage.removeItem(WIP_SUPERSEDED_KEY); } catch (e) {} }).catch(() => {});
+      if (mayWrite) settleWipSlots(state, !altReadOk);
+    }
+    if (!altReadOk) {
+      // The alternate slot — where a unit goes on after a launch that couldn't
+      // read this one — couldn't be read (build 96: silently, before). It is
+      // left alone; autosaves go to the main slot.
+      if (state && wipHasContent(state)) showToast('⚠ Part of the stored work in progress couldn\'t be read — nothing was deleted. If a unit is missing, reopen the app before re-entering it.', true);
+      else { showWipReadBanner(); showToast('⚠ Couldn\'t read the unit in progress — nothing was deleted. Reopen the app before re-entering it.', true); }
     }
   } else {
     // current_wip is unreadable: leave it alone (autosaves go to the alternate
@@ -11000,11 +11215,14 @@ async function loadAll() {
     // launches later as a "Recovered draft").
     // An earlier launch already restored this slot's newest copy and nothing
     // was written to it since (a marker, no newer local copy): nothing in it
-    // is unread — no alarm (build 95: it repeated at every launch).
+    // is unread — no alarm (build 95: it repeated at every launch) — provided
+    // the alternate slot, where the unit went on, WAS read (build 96: when it
+    // couldn't be, the launch said nothing and its own autosave wrote the
+    // blank form over the unit there).
     const slotSeen = !!sup && !lsState;
     const fromLocal = !!lsState && newerWip(alt, lsState) === lsState;
     state = newerWip(alt, state);
-    if (slotSeen) {
+    if (slotSeen && altReadOk) {
       // the unit (if any) continues from the alternate slot
     } else if (state && wipHasContent(state)) {
       // Once the restored unit is safely in the alternate slot, the main
@@ -11012,23 +11230,15 @@ async function loadAll() {
       if (fromLocal && state.at) _wipSupersedeOnSave = { at: String(state.at), entryId: normEntryId(state.entryId) || null };
       showToast('⚠ Couldn\'t read the unit in progress from storage — restored it from this device\'s backup copy. Check it before saving.', true);
     } else {
+      // Neither slot could be read. With the marker, the main slot holds only
+      // superseded copies: this launch autosaves THERE, and the unread
+      // alternate copy is kept for the next launch.
+      if (slotSeen) _wipUnread = false;
       showWipReadBanner();
       showToast('⚠ Couldn\'t read the unit in progress — nothing was deleted. Reopen the app before re-entering it.', true);
     }
   }
 
-  if (_bootLoadTimedOut && !_bootWipSettled) {
-    // The launch took so long that the form was handed to the tech first
-    // (build 93): what they are doing autosaves to the alternate slot. It is
-    // not overwritten — a stored unit with content is kept as a recovered
-    // draft (a saved entry) instead.
-    if (state && wipHasContent(state) && keepWipAsRecoveredEntry(state)) {
-      if (idbReadOk) saveAll();
-      showToast('\u26a0 Recovered an unsaved unit ("' + (String(state.equipName || '').trim() || 'unnamed') + '") \u2014 it is in the saved list. Check it.', true);
-    }
-    state = null;
-    _wipUnread = true;
-  }
   if (state) {
     currentEntryId = normEntryId(state.entryId) || null;   // rebind restored photos to their entry id
     // Re-derive "editing": the open form is an edit when a saved entry has its
@@ -11106,6 +11316,7 @@ async function loadAll() {
 
 function clearAllData() {
   if (confirm('Delete ALL saved equipment and clear the form? This cannot be undone.')) {
+    if (!tabMayWrite()) return;   // another tab took over while the dialog was open (build 96)
     // Clear IndexedDB metadata store
     clearMetadataStore();
 

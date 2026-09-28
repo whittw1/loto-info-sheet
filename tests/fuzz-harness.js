@@ -84,6 +84,19 @@
         return real.apply(this, arguments);
       };
     }
+    // build 96: the list write's COMMIT fails too (a quota error at commit, or
+    // WebKit dropping the connection) — after every put was issued, so
+    // withPhotoDB's retry of writeEntryListMerged is exercised
+    const rp = IDBObjectStore.prototype.put;
+    realFns.idbPut = rp;
+    IDBObjectStore.prototype.put = function (v, k) {
+      const req = rp.apply(this, arguments);
+      if (faultsOn && k === 'deleted_ids' && R() < faultP / 2) {
+        trace.push('  FAULT commit(saved_equipment)');
+        try { this.transaction.abort(); } catch (e) {}
+      }
+      return req;
+    };
     const si = Storage.prototype.setItem;
     realFns.setItem = si;
     Storage.prototype.setItem = function (k, v) {
@@ -95,7 +108,11 @@
     };
   }
   function removeFaults() {
-    for (const k of Object.keys(realFns)) { if (k === 'setItem') Storage.prototype.setItem = realFns.setItem; else window[k] = realFns[k]; }
+    for (const k of Object.keys(realFns)) {
+      if (k === 'setItem') Storage.prototype.setItem = realFns.setItem;
+      else if (k === 'idbPut') IDBObjectStore.prototype.put = realFns.idbPut;
+      else window[k] = realFns[k];
+    }
   }
 
   // ---------- photos -------------------------------------------------------------
@@ -464,7 +481,11 @@
     autoSaveCurrent(); await sleep(300);
     faultsOn = fo;
     const before = { entries: savedEquipment.map(entrySig).sort((a, b) => a.id.localeCompare(b.id)), form: formSig() };
-    // a fresh launch: blank form + empty memory, loadAll decides
+    // a fresh launch: blank form + empty memory, loadAll decides — and none of
+    // this session's memory of deletes / re-saves or of the store's stamp
+    // (build 96: the overlay hid a delete a real relaunch had lost)
+    try { if (typeof resetTombstoneMemory === 'function') resetTombstoneMemory(); } catch (e) {}
+    try { if (typeof _entryStoreAt !== 'undefined') _entryStoreAt = null; } catch (e) {}
     _bootWipSettled = false;
     beginNewFormSession(); editingEntry = null; currentEntryId = null; savedEquipment = []; sources = []; photos = {}; miscPhotos = [];
     try { clearSketchState(); } catch (e) {}
@@ -608,14 +629,15 @@
     try { clearSketchState(); } catch (e) {}
     document.querySelectorAll('.dialog-overlay').forEach(o => { if (['exportOverlay', 'bulkDeleteOverlay', 'settingsOverlay'].includes(o.id)) o.style.display = 'none'; else o.remove(); });
     document.getElementById('equipType').value = ''; filterTemplateDropdown(''); document.getElementById('equipTemplate').value = '';
-    for (const k of ['loto_seq_used', 'loto_saved', 'loto_saved_at', 'loto_saved_snapshot', 'loto_saved_snapshot_at', 'loto_deleted_ids',
+    for (const k of ['loto_seq_used', 'loto_saved', 'loto_saved_at', 'loto_saved_snapshot', 'loto_saved_snapshot_at', 'loto_deleted_ids', 'loto_restored_ids',
       'loto_current', 'loto_current_alt', 'loto_entry_count', 'photoSeqNext', 'loto_sketch_prefs', 'loto_wip_superseded']) { try { localStorage.removeItem(k); } catch (e) {} }
     try { await deleteMetadata('current_wip_alt'); } catch (e) {}
     try { await deleteMetadata('deleted_ids'); } catch (e) {}
+    try { await deleteMetadata('restored_ids'); } catch (e) {}
     try { await saveMetadata('photo_hash_index', {}); } catch (e) {}
     // build 95: saveAll merges a list another writer stored since this tab's last read — the reset is not one
     try { if (typeof _entryStoreAt !== 'undefined') _entryStoreAt = (await getMetadata('saved_equipment_at')) || null; } catch (e) {}
-    try { if (typeof _tombAdds !== 'undefined') { Object.keys(_tombAdds).forEach(k => delete _tombAdds[k]); _tombClears.clear(); } } catch (e) {}
+    try { if (typeof resetTombstoneMemory === 'function') resetTombstoneMemory(); } catch (e) {}
     saveAll();
     const keys = await getAllPhotoKeys();
     await Promise.all(keys.map(k => deletePhotoFromDB(k)));

@@ -1,4 +1,4 @@
-# Execution-based review kit (build 94, 2026-09-27; updated for build 95)
+# Execution-based review kit (build 94, 2026-09-27; updated for builds 95 and 96)
 
 Everything here RUNS the app instead of reading it — the method of the
 2026-09-27 review (ARCHITECTURE.md §6 "Build 94"). Nothing is part of the
@@ -23,6 +23,7 @@ no npm packages.
 | Offline PWA export (server killed after the service worker precached) | `node offline_test.mjs` |
 | Two tabs saving at once (web): the tab opened last holds the claim, the other writes nothing; "Use this tab instead" hands over; a tab opened while another writes photos waits (build 95) | `node twotabs.mjs` |
 | Header width on phones | `node layout_hdr.mjs [outDir]` |
+| A build 94 tab still open when a newer build reaches the web: it must pause, its saves must not reach the store, a later tab sees what the new tab saved (build 96). Scratch site on its own port with the production no-store headers and the real service worker; build 94 comes from git (`B94=<commit>` to override) | `node b94_compat.mjs` (`SITE_PORT` / `PORT` to move it) |
 
 Oracles worth knowing: the harness compares every export with its OWN reading
 of the contract (`ownMarks`, the sheet's columns), not the app's helpers, so a
@@ -32,5 +33,10 @@ In/Out pair (`ref.marksFor`); the invariant `marks-order-unknown` flags any
 path that leaves such marks stored. Fault mode also fails the entry-list write
 itself (`writeEntryListMerged`, build 95's compare-and-set save — it no longer
 goes through `saveMetadataMany`), so the localStorage fallback path stays
-covered. In fault mode only a **silent** loss
-is a violation — a loss that came with a warning is recorded as info.
+covered — and since build 96 its COMMIT fails too (the transaction is aborted
+after every put was issued), which runs the save's retry. A simulated relaunch
+forgets this session's memory of deletes / re-saves and the store stamp
+(`resetTombstoneMemory()`), as a real one does: build 95's harness kept them, and
+passed while a real relaunch brought a deleted unit back. In fault mode only a
+**silent** loss is a violation — a loss that came with a warning is recorded as
+info.
