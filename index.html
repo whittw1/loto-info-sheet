@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b99</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b100</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -2203,10 +2203,12 @@ function pauseLegacyTabs() {
         if (!m.from || m.from === TAB_ID || _tabPaused || _tabClaiming) return;
         if (m.t === 'hello' && tabMayWrite()) _legacyTabChannel.postMessage({ t: 'live', from: TAB_ID, to: m.from });
         else if (m.t === 'released' && m.to === TAB_ID && tabMayWrite()) {
-          // Nothing written since this launch: the old tab's final autosave is
-          // the newest form — read it (build 99: this tab wrote its launch-time
-          // copy over it). Otherwise this tab's form is the tech's work.
-          if (_wipWrittenSinceBoot) autoSaveCurrent(); else reloadFromStorage();
+          // A form untouched since this launch is older than the old tab's
+          // final autosave — read that (build 99: this tab wrote its
+          // launch-time copy over it). A form the tech has changed goes back
+          // over it, written yet or not (build 100: a change still waiting on
+          // its autosave was reloaded away).
+          if (formChangedSinceBoot()) autoSaveCurrent(); else reloadFromStorage();
         }
       };
     }
@@ -10644,9 +10646,38 @@ const wipJson = (st) => JSON.stringify(Object.assign({}, st, { at: null }));
 // handing its form over, an unchanged form is not written over that tab's
 // final autosave — see pauseLegacyTabs).
 let _wipWrittenSinceBoot = false, _bootWipJson = null;
+// Whether the form holds anything this session put there since its launch
+// settled — written yet or not (build 100: a change still waiting on its
+// autosave counted as untouched).
+function formChangedSinceBoot() {
+  if (_wipWrittenSinceBoot) return true;
+  if (!_bootWipSettled) return false;   // the launch hasn't restored the form yet: nothing in it is the tech's
+  return _bootWipJson == null || wipJson(buildWipState()) !== _bootWipJson;
+}
+// Autosaves that must wait (build 100). After a late launch the slot the form
+// is to use can hold a unit just kept as a recovered draft — that slot is its
+// only full copy until the saved list lands — or the form was headed for the
+// alternate slot only because the main one held such a unit (build 99 wrote
+// the form into the alternate slot meanwhile, even when that slot couldn't be
+// read, and for the whole session when the save failed). The form waits in
+// memory; a waiting autosave retries the list save now and then, and the
+// first save made while it waits that lands runs `_wipHold` (the slots are
+// settled, the form written).
+let _wipHold = null, _wipHoldRetryAt = 0;
+function holdWipUntilSaved(open) { _wipHold = open; _wipHoldRetryAt = Date.now(); }
+function releaseWipHold(hold) {
+  if (!hold || _wipHold !== hold) return;
+  _wipHold = null;
+  try { hold(); } catch (e) {}
+  autoSaveCurrent();
+}
 function autoSaveCurrent() {
   if (!_bootWipSettled || !tabMayWrite()) return;
   setAutosaveStatus('saving');
+  if (_wipHold) {
+    if (Date.now() - _wipHoldRetryAt >= 10000) { _wipHoldRetryAt = Date.now(); saveAll(); }
+    return;
+  }
   const idbKey = _wipUnread ? 'current_wip_alt' : 'current_wip';
   const lsKey = _wipUnread ? 'loto_current_alt' : 'loto_current';
   const session = formSession;
@@ -11020,6 +11051,7 @@ function writeEntryListMerged(at, st) {
 function saveAll() {
   if (!tabMayWrite()) return Promise.resolve(false);   // another tab holds the claim — its list is the truth (build 95)
   const at = new Date().toISOString();
+  const hold = _wipHold;   // a save made while autosaves wait carries the unit they wait for (build 100)
   // An entry id must appear once. Duplicates are left in place (they're user
   // data) but reported — the saved panel badges them "SAVED TWICE".
   const seen = new Set(), dups = new Set();
@@ -11084,11 +11116,13 @@ function saveAll() {
     markOk();
     checkStorage();
     refreshAfterMerge();
+    releaseWipHold(hold);
     return true;
   }, () => {
     if (_tabPaused || st.paused) return false;
     const ok = writeFallback();   // unreadable / unwritable — never a partial list over the store
     refreshAfterMerge();
+    if (ok) releaseWipHold(hold);
     return ok;
   });
 }
@@ -11405,6 +11439,7 @@ async function loadAll() {
   // that unit was lost). A slot is emptied of an older unit only once that
   // unit is safely in the saved list (build 96).
   _wipSupersedeOnSave = null;
+  _wipHold = null;   // a fresh launch: no autosave waits yet
   let state = null, wipReadOk = true, alt = null, altReadOk = true;
   _wipKeepMarker = false;
   try { state = await getMetadata('current_wip'); } catch(e) { wipReadOk = false; console.warn('IDB load current_wip failed:', e); }
@@ -11487,15 +11522,21 @@ async function loadAll() {
     // unless that slot couldn't be read or holds an edit left for later; then
     // the main slot, once what that held is safe (build 99: an unreadable
     // alternate slot was written over, without a word).
-    const mainKept = kept.includes(fromMain);
+    const mainKept = kept.includes(fromMain), altKept = kept.includes(fromAlt);
     const toMain = (!altReadOk || edits.includes(fromAlt)) && wipReadOk && !edits.includes(fromMain);
-    _wipUnread = !(toMain && !mainKept);
-    if (kept.length) afterLaunchSave.push(ok => {
-      if (!ok || !mainKept) return;
-      if (wipReadOk) emptyWipSlot('main');
-      else if (tabMayWrite()) { try { localStorage.removeItem('loto_current'); } catch (e) {} }
-      if (toMain) _wipUnread = false;
-    });
+    const settle = () => {   // once the kept units are saved: the main slot's leaves it
+      if (mainKept) {
+        if (wipReadOk) emptyWipSlot('main');
+        else if (tabMayWrite()) { try { localStorage.removeItem('loto_current'); } catch (e) {} }
+      }
+      _wipUnread = !toMain;
+    };
+    if (kept.length) launchSave = true;
+    // The slot the form goes to holds a unit kept just now: the form waits
+    // until that unit is saved (build 100 — see _wipHold); the alternate slot
+    // stays "unread" meanwhile, so its local copy is kept too.
+    if (toMain ? mainKept : altKept) { _wipUnread = true; holdWipUntilSaved(settle); }
+    else { _wipUnread = !toMain; if (mainKept) afterLaunchSave.push(ok => { if (ok) settle(); }); }
     if (!altReadOk || !wipReadOk) showToast('\u26a0 Part of the stored work in progress couldn\'t be read \u2014 nothing was deleted. If a unit is missing, reopen the app before re-entering it.', true);
     state = null;
   } else if (wipReadOk) {
