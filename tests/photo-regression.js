@@ -38,6 +38,7 @@
 //   T142–T153 build 99: the 2026-09-28 medium + high reviews of builds 96–98
 //   T154 build 99: found by its fault campaign (a failed fallback write removed the fallback)
 //   T155 build 99: found finishing it (an unreadable re-save record let an older delete win)
+//   T156–T157 build 100: the 2026-09-28 low review of build 99
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -4065,7 +4066,7 @@
     let untouchedOk = false, touchedOk = false;
     try {
       await rawIdbPut('metadata', 'current_wip', wipOf('Flushed-147', genUuid(), { notes: 'final keystrokes' }));
-      try { _wipWrittenSinceBoot = false; } catch (e) {}                  // nothing written since this launch
+      try { _wipWrittenSinceBoot = false; _bootWipJson = wipJson(buildWipState()); } catch (e) {}   // the launch just finished: nothing changed or written since
       ch.postMessage({ t: 'released', from: 'OLD-TAB-147', to: TAB_ID });
       await sleep(500);
       const cw = await rawIdbGet('metadata', 'current_wip');
@@ -4294,6 +4295,65 @@
     dropLoadBanners(); _entryStoreUnread = false;
   }
 
+  // T156 — build 99's late launch: with the alternate slot unreadable (or
+  // holding an edit left for later) and the main slot's unit kept as a
+  // recovered draft, the form autosaved into the alternate slot until that
+  // draft's save landed — and for the rest of the session when it failed
+  async function t156_aLateLaunchWaitsForTheKeptUnitBeforeItsSlotTakesTheForm() {
+    const N = 'T156 after the 20 s timeout, the form never goes over an unreadable alternate slot, nor over the main slot\'s kept unit before that unit is saved';
+    await resetAppState(); await clearWipSlots();
+    const mId = genUuid();
+    await rawIdbPut('metadata', 'current_wip', wipOf('Main-156', mId, { at: new Date(Date.now() - 600000).toISOString(), notes: 'main unit' }));
+    await rawIdbPut('metadata', 'current_wip_alt', wipOf('Unread-156', genUuid(), { at: new Date(Date.now() - 300000).toISOString(), notes: 'kept' }));
+    forgetSessionMemory();
+    const realW = writeEntryListMerged, si = Storage.prototype.setItem;
+    const quota = () => { const e = new Error('QuotaExceededError (test)'); e.name = 'QuotaExceededError'; return e; };
+    writeEntryListMerged = () => Promise.reject(new Error('IndexedDB write failed (test)'));   // the launch's save fails everywhere
+    Storage.prototype.setItem = function (k, v) { if (k === 'loto_saved_deleted' || k === 'loto_saved') throw quota(); return si.call(this, k, v); };
+    _bootLoadTimedOut = true; _bootWipSettled = true; _wipUnread = true;   // what the 20 s timer does
+    let during = null;
+    try {
+      await withUnreadable(['current_wip_alt'], async () => { savedEquipment = []; await loadAll(); await sleep(400); });
+      fillForm('Live-156'); autoSaveCurrent(); await sleep(500);
+      during = { alt: await rawIdbGet('metadata', 'current_wip_alt'), main: await rawIdbGet('metadata', 'current_wip') };
+    } finally { writeEntryListMerged = realW; Storage.prototype.setItem = si; _bootLoadTimedOut = false; }
+    // storage is back: the next autosave retries the list save, which lands
+    try { _wipHoldRetryAt = 0; } catch (e) {}                            // (its retry is due)
+    autoSaveCurrent(); await sleep(800);
+    const alt = await rawIdbGet('metadata', 'current_wip_alt'), main = await rawIdbGet('metadata', 'current_wip');
+    const kept = savedEquipment.some(e => sameEntryId(e.id, mId));
+    const okDuring = !!during.alt && during.alt.notes === 'kept' && !!during.main && during.main.notes === 'main unit';
+    const okAfter = !!alt && alt.notes === 'kept' && !!main && main.equipName === 'Live-156' && kept;
+    record(N, okDuring && okAfter, 'while its save was failing: alternate=' + JSON.stringify(during.alt && during.alt.notes) + ', main=' + JSON.stringify(during.main && (during.main.notes || during.main.equipName)) +
+      '; once saved: alternate=' + JSON.stringify(alt && alt.notes) + ', main=' + JSON.stringify(main && main.equipName) + ', kept unit in the list=' + kept);
+    setStorageFailBanner(false); _wipUnread = false; await clearWipSlots(); dropLoadBanners();
+    savedEquipment = []; await loadAll(); await sleep(200);
+  }
+
+  // T157 — build 99 reloaded this tab when a build-94 tab released whenever no
+  // autosave had been WRITTEN since launch: a change still waiting on its
+  // autosave (or with its write in flight) was reloaded away
+  async function t157_aChangeNotYetAutosavedIsNeverReloadedAway() {
+    const N = 'T157 when a build-94 tab releases, a form changed since launch is written back, not reloaded away — even before its autosave has landed';
+    await resetAppState();
+    if (typeof tabLockActive === 'function' && !tabLockActive()) return record(N, true, 'single-window app (iOS) — no tabs');
+    if (typeof BroadcastChannel !== 'function') return record(N, true, 'no BroadcastChannel');
+    const ch = new BroadcastChannel('loto-collector-tabs');
+    const realReload = window.reloadFromStorage; let reloads = 0;
+    window.reloadFromStorage = () => { reloads++; };                      // the real one reloads the page
+    let cw = null;
+    try {
+      await rawIdbPut('metadata', 'current_wip', wipOf('Old-157', genUuid(), { notes: 'old tab' }));
+      try { _wipWrittenSinceBoot = false; _bootWipJson = wipJson(buildWipState()); } catch (e) {}   // the launch just finished
+      document.getElementById('equipName').value = 'Typed-157';          // typed; its autosave hasn't run yet
+      ch.postMessage({ t: 'released', from: 'OLD-TAB-157', to: TAB_ID });
+      await sleep(500);
+      cw = await rawIdbGet('metadata', 'current_wip');
+    } finally { window.reloadFromStorage = realReload; ch.close(); }
+    record(N, reloads === 0 && !!cw && cw.equipName === 'Typed-157', 'reloaded=' + reloads + ', stored form=' + JSON.stringify(cw && cw.equipName));
+    document.getElementById('equipName').value = ''; await clearWipSlots();
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -4360,7 +4420,8 @@
     t145_replaceKeepsTheNewerCopyOfATwin, t146_aLateLaunchNeverAutosavesOverAnUnreadableAlternateSlot, t147_theBuild94ChannelAnswersAndHandsTheFormBack,
     t148_waitingForAnotherTabsPhotosHasAWayOut, t149_anUnreadableDeleteRecordNeverHidesTheList, t150_theFallbackCarriesOnlyTheDeletesTheStoreLacks,
     t151_theHashIndexIsNeverWrittenAfterTheClaimMoved, t152_theFallbackListStaysAPlainList, t153_aWarningIsNeverReplacedBeforeItsTime,
-    t154_aFailedFallbackWriteNeverRemovesTheUnitsItHolds, t155_aReSavedUnitSurvivesALaunchThatCantReadItsReSaveRecord];
+    t154_aFailedFallbackWriteNeverRemovesTheUnitsItHolds, t155_aReSavedUnitSurvivesALaunchThatCantReadItsReSaveRecord,
+    t156_aLateLaunchWaitsForTheKeptUnitBeforeItsSlotTakesTheForm, t157_aChangeNotYetAutosavedIsNeverReloadedAway];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
