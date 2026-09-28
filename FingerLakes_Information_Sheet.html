@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b97</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b98</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -11482,10 +11482,13 @@ function showToast(msg, isWarning = false) {
   const keep = _toastLines.length > 0 && Date.now() - _toastWarnAt < 600;
   _toastLines = keep ? _toastLines.filter(l => l !== text).concat(text).slice(-3) : [text];
   if (isWarning) _toastWarnAt = Date.now();
-  t.textContent = _toastLines.join('\n');
+  const shown = _toastLines.join('\n');
+  t.textContent = shown;
   t.className = 'toast show' + (isWarning || keep ? ' toast-warning' : '');
   clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => { t.className = 'toast'; _toastLines = []; _toastWarnAt = 0; }, _toastLines.length > 1 ? 4000 : 2000);
+  // The longer time goes by the lines on screen, not the messages (build 98:
+  // Split's one three-line warning was up for 2 s).
+  _toastTimer = setTimeout(() => { t.className = 'toast'; _toastLines = []; _toastWarnAt = 0; }, shown.includes('\n') ? 4000 : 2000);
 }
 
 // ============================================================================
