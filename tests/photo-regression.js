@@ -34,6 +34,7 @@
 //   T125–T133 build 96: the medium findings of the 2026-09-28 review of build 95;
 //   T134 build 96: found by its fault campaign (a deleted unit back as a recovered draft)
 //   T135–T140 build 97: the low findings of the 2026-09-28 review of build 95
+//   T141 build 98: the 2026-09-28 quick review of build 97 (multi-line toast time)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -3916,6 +3917,21 @@
     clearForm(false);
   }
 
+  // T141 — build 97's toast gave a multi-line message 4 s by counting
+  // messages, not lines: Split's one three-line warning (marks cleared +
+  // 10-source heads-up) was up for 2 s only
+  async function t141_aMultiLineWarningGetsTheLongerTime() {
+    const N = 'T141 a warning composed of several lines stays up for the longer time';
+    await resetAppState();
+    await sleep(2300);                                                    // earlier toasts gone
+    showToast('Line one (test)\nLine two (test)\nLine three (test)', true);
+    await sleep(2600);
+    const el = document.getElementById('toast');
+    const visible = !!el && /\bshow\b/.test(el.className) && /Line three/.test(el.textContent || '');
+    record(N, visible, 'a three-line warning still visible after 2.6 s=' + visible);
+    await sleep(1800);
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -3977,7 +3993,7 @@
     t121_storageWarningIsInTheBottomBar, t122_noUserValueEverBecomesMarkup, t123_everyBuilderShowsUserTextVerbatim, t124_aDeleteSurvivesAFailedTombstoneWrite, t125_aDeleteStaysDeletedAcrossARelaunch, t126_aFailedCommitNeverMergesTheTabsOwnOldList, t127_aRetriedSaveStillShowsWhatItMerged, t128_anUnreadableAlternateSlotIsNeverSilentOrOverwritten, t129_aTabThatLosesTheClaimMidLaunchLeavesBothSlots, t130_aDeleteConfirmedAfterTheClaimMovedChangesNothing, t131_aLateLaunchNeverOverwritesTheFormInUse, t132_aStaleCopyOfASavedUnitNeverReopens, t133_theEntryCountFollowsTheListAfterAnUnreadLaunch,
     t134_aUnitDeletedAfterItsStoredEditNeverComesBack, t135_replaceKeepsTheEditOfATwinCopy, t136_aSaveCutShortByAnotherTabKeepsTheUnitWhole,
     t137_thePhotoBusyFlagFollowsTheWritesItGuards, t138_legacyMarksAreClearedWhenTheSourceBecomesAnInOutPair,
-    t139_aRestoredUnitWhoseSaveFailedIsNeverMarkedSuperseded, t140_noWarningIsHiddenByTheNextMessage];
+    t139_aRestoredUnitWhoseSaveFailedIsNeverMarkedSuperseded, t140_noWarningIsHiddenByTheNextMessage, t141_aMultiLineWarningGetsTheLongerTime];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
