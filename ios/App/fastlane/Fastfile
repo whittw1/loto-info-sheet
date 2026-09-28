@@ -1,0 +1,77 @@
+# fastlane lane: beta
+#
+# Builds the iOS app and uploads it to TestFlight using an
+# App Store Connect API key for authentication. Designed to run
+# from GitHub Actions on a `git tag ios-v*` push.
+#
+# Required environment variables (set as GitHub Actions secrets):
+#   APP_STORE_CONNECT_API_KEY_ID         — Key ID from App Store Connect
+#   APP_STORE_CONNECT_API_KEY_ISSUER_ID  — Issuer ID from App Store Connect
+#   APP_STORE_CONNECT_API_KEY_CONTENT    — Base64-encoded .p8 file contents
+#
+# The signing certificate (.p12) must already be imported into the
+# build machine's keychain by the GitHub Action step that runs before
+# this lane. The provisioning profile is fetched on-the-fly by Xcode
+# using -allowProvisioningUpdates and the API key above.
+
+default_platform(:ios)
+
+APP_IDENTIFIER = "com.hgsengineering.lotofieldcollector"
+
+platform :ios do
+  desc "Build the app and upload to TestFlight"
+  lane :beta do
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APP_STORE_CONNECT_API_KEY_ID"),
+      issuer_id: ENV.fetch("APP_STORE_CONNECT_API_KEY_ISSUER_ID"),
+      key_content: ENV.fetch("APP_STORE_CONNECT_API_KEY_CONTENT"),
+      is_key_content_base64: true,
+      in_house: false,
+    )
+
+    # ── Marketing version: from git tag (ios-vX.Y → X.Y) ───────────
+    tag = ENV["GITHUB_REF_NAME"] || ""
+    if tag.start_with?("ios-v")
+      marketing_version = tag.sub("ios-v", "")
+      UI.message("Setting MARKETING_VERSION to #{marketing_version} (from tag #{tag})")
+      increment_version_number(
+        version_number: marketing_version,
+        xcodeproj: "App.xcodeproj"
+      )
+    else
+      UI.message("Tag '#{tag}' does not start with 'ios-v', leaving MARKETING_VERSION unchanged")
+    end
+
+    # ── Build number: latest TestFlight build + 1 ──────────────────
+    next_build = latest_testflight_build_number(
+      api_key: api_key,
+      app_identifier: APP_IDENTIFIER,
+      initial_build_number: 0,
+    ) + 1
+    UI.message("Setting CURRENT_PROJECT_VERSION to #{next_build}")
+    increment_build_number(
+      build_number: next_build,
+      xcodeproj: "App.xcodeproj"
+    )
+
+    # ── Archive + export IPA ──────────────────────────────────────
+    build_app(
+      workspace: "App.xcworkspace",
+      scheme: "App",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "../../build",
+      clean: true,
+      xcargs: "-allowProvisioningUpdates",
+    )
+
+    # ── Upload to TestFlight ──────────────────────────────────────
+    upload_to_testflight(
+      api_key: api_key,
+      skip_waiting_for_build_processing: true,
+      changelog: "Automated build from #{tag.empty? ? 'manual workflow_dispatch' : tag}",
+    )
+
+    UI.success("✅ TestFlight build uploaded — version #{marketing_version || '(unchanged)'} build #{next_build}")
+  end
+end
