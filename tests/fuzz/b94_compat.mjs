@@ -82,13 +82,24 @@ try {
   await sleep(3000);                                   // first run: the page's one-time worker purge reloads once
   check(await until(A, loaded), 'tab A (build 94) loaded: ' + await A.ev(build));
   await A.ev(save('A0 (b94)'));
-  // "deploy" the working tree
+  // typed in A just before B opens — not yet autosaved (build 99: B wrote its
+  // older launch-time copy over A's final autosave)
+  await A.ev(`(() => { document.getElementById('equipNotes').value = 'A final words'; return true; })()`);
+  // "deploy" the working tree; build 94 stays reachable at /b94.html
+  fs.writeFileSync(path.join(site, 'b94.html'), fromGit(B94, 'index.html'));
   fs.copyFileSync(path.join(REPO, 'index.html'), path.join(site, 'index.html'));
   fs.copyFileSync(path.join(REPO, 'sw.js'), path.join(site, 'sw.js'));
   const B = await tab(url);
   check(await until(B, loaded), 'tab B loaded the new build: ' + await B.ev(build));
   check(await until(A, paused, 8000), 'the build 94 tab A paused when B opened');
   check(!(await B.ev(paused)), 'tab B is the live one');
+  check(await until(B, `(${loaded}) && document.getElementById('equipNotes').value === 'A final words'`, 12000),
+    'B (untouched) shows A\'s final autosave: ' + JSON.stringify(await B.ev(`document.getElementById('equipNotes').value`)));
+  // a build 94 tab opened after B: its launch "hello" is answered, and it pauses
+  const D = await tab(`http://127.0.0.1:${PORT}/b94.html`);
+  check(await until(D, paused, 12000), 'a build 94 tab opened after B paused on B\'s answer');
+  check(!(await B.ev(paused)), 'tab B is still the live one');
+  await D.close();
   await B.ev(save('U (new build)'));
   await A.ev(save('Z (b94, after B opened)'));
   const st = await B.ev(stored);

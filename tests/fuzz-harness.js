@@ -66,14 +66,15 @@
   // While faultsOn, IndexedDB metadata / photo writes and reads and localStorage
   // writes fail at random. The invariant then is: NO SILENT LOSS — anything lost
   // must have come with a visible warning (toast / alert / NOT SAVED badge).
-  let faultP = 0, faultsOn = false, warnedSinceRelaunch = false;
+  let faultP = 0, faultsOn = false, warnedSinceRelaunch = false, lateSeq = 0;
   let uploadTo = null;
   const realFns = {};
   function installFaults() {
     // build 95: the entry list is written by writeEntryListMerged (one
     // read-write transaction), no longer through saveMetadataMany; build 97:
-    // the unit-in-progress slots by wipSlotTx (the claim checked inside it)
-    for (const name of ['saveMetadata', 'saveMetadataMany', 'getMetadata', 'getMetadataMany', 'savePhotoToDB', 'writeEntryListMerged', 'wipSlotTx']) {
+    // the unit-in-progress slots by wipSlotTx; build 99: that and the
+    // photo-hash index by claimedMetadataTx (the claim checked inside it)
+    for (const name of ['saveMetadata', 'saveMetadataMany', 'getMetadata', 'getMetadataMany', 'savePhotoToDB', 'writeEntryListMerged', 'claimedMetadataTx']) {
       const real = window[name]; if (typeof real !== 'function') continue;
       realFns[name] = real;
       const isRead = /^get/.test(name);
@@ -139,9 +140,15 @@
   // ---------- dialogs ------------------------------------------------------------
   const realConfirm = window.confirm, realAlert = window.alert;
   let confirmBias = 0.75;
+  // The warnings that tell the tech the device's storage failed: only these
+  // make a loss at the next relaunch "warned" (build 99 — any warning did, so
+  // "Enter equipment name first" or "Valve marks cleared" turned a silent loss
+  // into info). Storage warnings go into the trace too (alerts always did).
+  const STORAGE_WARNING = /storage|entry store|could(?: not|n['’]t) (?:be )?read|recovered|restored|export (?:now|today|soon)/i;
+  const noteWarning = (m) => { warned = true; if (STORAGE_WARNING.test(String(m))) { warnedSinceRelaunch = true; return true; } return false; };
   function installDialogs() {
     window.confirm = (m) => { const a = chance(confirmBias); trace.push('  confirm(' + String(m).slice(0, 40).replace(/\n/g, ' ') + ')=' + a); return a; };
-    window.alert = (m) => { warned = true; warnedSinceRelaunch = true; trace.push('  alert(' + String(m).slice(0, 60).replace(/\n/g, ' ') + ')'); };
+    window.alert = (m) => { noteWarning(m); trace.push('  alert(' + String(m).slice(0, 60).replace(/\n/g, ' ') + ')'); };
     window.__askChoiceAuto = (o) => {
       const vals = (o && o.choices ? o.choices.map(c => c.value) : []).filter(v => v != null);
       const v = (o && o.id === 'export-blank-energy') ? 'export' : (vals.length ? (chance(0.7) && o.defaultValue ? o.defaultValue : pick(vals)) : 'cancel');
@@ -149,7 +156,7 @@
       return v;
     };
     const realToast = window.showToast;
-    window.showToast = function (m, w) { if (w) { warned = true; warnedSinceRelaunch = true; } try { return realToast.apply(this, arguments); } catch (e) {} };
+    window.showToast = function (m, w) { if (w && noteWarning(m)) trace.push('  warning(' + String(m).slice(0, 60).replace(/\n/g, ' ') + ')'); try { return realToast.apply(this, arguments); } catch (e) {} };
     window.showToast.__real = realToast;
   }
   function restoreDialogs() {
@@ -239,6 +246,17 @@
     };
   }
   const formHasContent = (f) => !!(f.name || f.src.length || f.photos || f.misc);
+  // What differs between two signatures, field by field, from the first
+  // differing character (build 99: a whole signature ran past the 700-character
+  // detail and the difference itself was cut off)
+  function sigDiff(before, after) {
+    return Object.keys(Object.assign({}, before, after)).filter(k => JSON.stringify(before[k]) !== JSON.stringify(after[k])).map(k => {
+      const x = JSON.stringify(before[k]) || '', y = JSON.stringify(after[k]) || '';
+      let i = 0; while (i < x.length && i < y.length && x[i] === y[i]) i++;
+      const from = Math.max(0, i - 40), cut = (t) => (from ? '…' : '') + t.slice(from, i + 110) + (t.length > i + 110 ? '…' : '');
+      return k + ': ' + cut(x) + ' => ' + cut(y);
+    }).join(' ;; ');
+  }
 
   // ---------- invariants ----------------------------------------------------------
   function checkCheap() {
@@ -496,7 +514,22 @@
     ['equipName', 'equipRoom', 'equipNotes', 'equipLotoId'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     document.getElementById('equipType').value = ''; filterTemplateDropdown(''); document.getElementById('equipTemplate').value = '';
     if (chance(0.5)) autoSaveCurrent();          // backgrounded during the load window
+    // build 99: sometimes the launch finishes after the 20 s timeout — the tech
+    // has started a new unit in the window (it autosaves to the alternate
+    // slot). The form in use must stay, and the stored unit in progress must
+    // come back as a recovered draft or stay in a slot — never be lost or
+    // restored over the new unit. (Only when the unit lives in the main slot:
+    // a window autosave over the alternate slot is the known limit.)
+    const late = !_wipUnread && chance(0.2);
+    const lateName = late ? 'Late unit ' + (++lateSeq) : null;
+    if (late) {
+      // typed while the launch's reads are still pending: its autosave hasn't landed
+      _bootLoadTimedOut = true; _bootWipSettled = true; _wipUnread = true;
+      document.getElementById('equipName').value = lateName;
+      trace.push('  late launch (form "' + lateName + '" in use)');
+    }
     try { await loadAll(); } catch (e) { viol('exception', 'loadAll: ' + ((e && e.stack) || e)); }
+    if (late) _bootLoadTimedOut = false;
     _bootWipSettled = true;
     renderSavedPanel(); renderSources();
     await sleep(60);
@@ -506,10 +539,20 @@
     const bad = (inv, d) => { if (pre === 'warned:') info(inv + ' (after a warning) ' + d.slice(0, 160)); else viol(pre + inv, d); };
     for (const [id, s] of b) {
       if (!a.has(id)) bad('relaunch-lost-entry', JSON.parse(s).name + ' (' + id + ')');
-      else if (a.get(id) !== s) bad('relaunch-changed-entry', 'before ' + s + ' || after ' + a.get(id));
+      else if (a.get(id) !== s) bad('relaunch-changed-entry', JSON.parse(s).name + ' (' + id + ') ' + sigDiff(JSON.parse(s), JSON.parse(a.get(id))));
     }
-    for (const id of a.keys()) if (!b.has(id)) bad('relaunch-added-entry', a.get(id));
-    if (formHasContent(before.form) && JSON.stringify(before.form) !== JSON.stringify(after.form)) bad('relaunch-changed-form', 'before ' + JSON.stringify(before.form) + ' || after ' + JSON.stringify(after.form));
+    const draftId = late && formHasContent(before.form) ? before.form.id : null;   // may come back as a recovered draft
+    for (const id of a.keys()) if (!b.has(id) && id !== draftId) bad('relaunch-added-entry', a.get(id));
+    if (late) {
+      if (after.form.name !== lateName) bad('late-launch-replaced-form', 'in use "' + lateName + '" || after ' + JSON.stringify(after.form));
+      if (draftId && !a.has(draftId) && !b.has(draftId)) {
+        const fo2 = faultsOn; faultsOn = false;
+        let slots = [];
+        try { slots = [await getMetadata('current_wip'), await getMetadata('current_wip_alt'), readLsJson('loto_current'), readLsJson('loto_current_alt')]; } catch (e) {}
+        faultsOn = fo2;
+        if (!slots.some(w => w && sameEntryId(w.entryId, draftId))) bad('late-launch-lost-unit', JSON.stringify(before.form).slice(0, 200));
+      }
+    } else if (formHasContent(before.form) && JSON.stringify(before.form) !== JSON.stringify(after.form)) bad('relaunch-changed-form', sigDiff(before.form, after.form));
     warnedSinceRelaunch = false;
     document.querySelectorAll('.container > div[style*="rgba(200,40,40"], .sticky-banner').forEach(x => x.remove());   // load banners (b95: .sticky-banner)
     return 'relaunch';
@@ -633,7 +676,7 @@
     try { clearSketchState(); } catch (e) {}
     document.querySelectorAll('.dialog-overlay').forEach(o => { if (['exportOverlay', 'bulkDeleteOverlay', 'settingsOverlay'].includes(o.id)) o.style.display = 'none'; else o.remove(); });
     document.getElementById('equipType').value = ''; filterTemplateDropdown(''); document.getElementById('equipTemplate').value = '';
-    for (const k of ['loto_seq_used', 'loto_saved', 'loto_saved_at', 'loto_saved_snapshot', 'loto_saved_snapshot_at', 'loto_deleted_ids', 'loto_restored_ids',
+    for (const k of ['loto_seq_used', 'loto_saved', 'loto_saved_at', 'loto_saved_deleted', 'loto_saved_snapshot', 'loto_saved_snapshot_at', 'loto_deleted_ids', 'loto_restored_ids',
       'loto_current', 'loto_current_alt', 'loto_entry_count', 'photoSeqNext', 'loto_sketch_prefs', 'loto_wip_superseded']) { try { localStorage.removeItem(k); } catch (e) {} }
     try { await deleteMetadata('current_wip_alt'); } catch (e) {}
     try { await deleteMetadata('deleted_ids'); } catch (e) {}
@@ -686,6 +729,9 @@
     try {
       for (const seed of seeds) {
         seedNow = seed; R = mulberry32(seed); trace = []; warned = false; warnedSinceRelaunch = false; pageErrors = [];
+        // the driver keeps the tail of the trace as it happens (build 99): a
+        // page that crashes can't report its own
+        if (opts.streamTrace) { const push = trace.push; trace.push = function (...xs) { for (const x of xs) console.debug('[fuzz] ' + seed + ' ' + x); return push.apply(this, xs); }; }
         faultsOn = false;
         await resetAll();
         faultsOn = faultP > 0;

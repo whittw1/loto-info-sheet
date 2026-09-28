@@ -35,6 +35,9 @@
 //   T134 build 96: found by its fault campaign (a deleted unit back as a recovered draft)
 //   T135–T140 build 97: the low findings of the 2026-09-28 review of build 95
 //   T141 build 98: the 2026-09-28 quick review of build 97 (multi-line toast time)
+//   T142–T153 build 99: the 2026-09-28 medium + high reviews of builds 96–98
+//   T154 build 99: found by its fault campaign (a failed fallback write removed the fallback)
+//   T155 build 99: found finishing it (an unreadable re-save record let an older delete win)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -134,7 +137,7 @@
     document.getElementById('equipTemplate').value = '';
     try { localStorage.removeItem(PHOTO_KEY_MIGRATION_FLAG); } catch (e) {}
     try { localStorage.removeItem('loto_seq_used'); } catch (e) {}
-    try { localStorage.removeItem('loto_saved'); localStorage.removeItem('loto_saved_at'); localStorage.removeItem('loto_wip_superseded'); } catch (e) {}
+    try { localStorage.removeItem('loto_saved'); localStorage.removeItem('loto_saved_at'); localStorage.removeItem('loto_saved_deleted'); localStorage.removeItem('loto_wip_superseded'); } catch (e) {}
     try { await saveMetadata('photo_hash_index', {}); } catch (e) {}
     // build 95: saveAll merges a list another writer stored — a test's raw
     // write of the store is not "another writer" for the reset
@@ -3932,6 +3935,365 @@
     await sleep(1800);
   }
 
+  // ======================================================================
+  // Build 99 — the 2026-09-28 medium + high reviews of builds 96–98
+  // ======================================================================
+  // T142 — a re-save stamped while the device clock ran ahead outranked every
+  // later delete of that unit: it stayed "re-saved" and any stored copy
+  // brought it back
+  async function t142_aDeleteAfterAFutureStampedReSaveStillDeletes() {
+    const N = 'T142 a delete after a re-save stamped by a clock that ran ahead still deletes the unit';
+    await resetAppState();
+    const X = mkEntry('Skew-142');
+    savedEquipment = [mkEntry('Keep-142'), X]; saveAll(); await sleep(400);
+    try {
+      const del = JSON.parse(localStorage.getItem('loto_deleted_ids') || '{}'), res = JSON.parse(localStorage.getItem('loto_restored_ids') || '{}');
+      del[X.id] = new Date(Date.now() - 3600000).toISOString();         // deleted once …
+      res[X.id] = new Date(Date.now() + 86400000).toISOString();        // … re-saved while the clock was a day ahead
+      localStorage.setItem('loto_deleted_ids', JSON.stringify(del)); localStorage.setItem('loto_restored_ids', JSON.stringify(res));
+    } catch (e) {}
+    await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.findIndex(e => e.id === X.id)); });   // clock right again
+    await sleep(500);
+    const dead = !!getTombstones()[String(X.id)];
+    const back = mergeEntryCopies([], [[X]], getTombstones()).list.some(e => e.id === X.id);   // a stale copy that still lists it
+    record(N, dead && !back, 'delete recorded as the latest event=' + dead + ', a stale copy brings it back=' + back);
+  }
+
+  // T143 — the 20 s late-launch path made the recovered draft from the MAIN
+  // slot first; a newer copy of the same unit in the alternate slot was then
+  // refused (its id taken) and dropped without a word
+  async function t143_aLateLaunchKeepsTheNewerCopyOfAUnit() {
+    const N = 'T143 a launch that finishes after the timeout keeps the NEWER of two stored copies of the same unit';
+    await resetAppState(); await clearWipSlots();
+    const id = genUuid(), ago = (s) => new Date(Date.now() - s * 1000).toISOString();
+    await rawIdbPut('metadata', 'current_wip', wipOf('U-143', id, { at: ago(600), notes: 'old' }));
+    await rawIdbPut('metadata', 'current_wip_alt', wipOf('U-143', id, { at: ago(300), notes: 'new' }));
+    forgetSessionMemory();
+    _bootLoadTimedOut = true; _bootWipSettled = true; _wipUnread = true;   // the form is the tech's; nothing typed yet
+    try { savedEquipment = []; await loadAll(); await sleep(500); }
+    finally { _bootLoadTimedOut = false; }
+    const rows = savedEquipment.filter(e => sameEntryId(e.id, id)).map(e => e.notes);
+    record(N, JSON.stringify(rows) === '["new"]', 'recovered copies of that unit=' + JSON.stringify(rows));
+    _wipUnread = false; await clearWipSlots(); dropLoadBanners();
+    savedEquipment = []; await loadAll(); await sleep(200);
+  }
+
+  // T144 — the launch stored the snapshot-only unit (sketch filled in as none)
+  // BEFORE the unit-in-progress section gave its sketch back; the second save
+  // failing left the sketch recorded as "none" for good
+  async function t144_aSketchRestoredAtLaunchIsSavedWithTheUnit() {
+    const N = 'T144 a sketch the launch restores to a unit that exists only as the emergency copy is stored in the same save';
+    await resetAppState(); await clearWipSlots();
+    const X = mkEntry('Snap-144');
+    X.sketch = { diagramKey: 'general', strokes: [{ color: '#f00', width: 3, points: [{ x: 0.1, y: 0.1 }, { x: 0.6, y: 0.6 }] }], labels: [] };
+    X.savedAt = X.updatedAt = new Date(Date.now() - 60000).toISOString();
+    const stripped = Object.assign({}, X); delete stripped.sketch;
+    await rawIdbPut('metadata', 'saved_equipment', []);
+    await rawIdbPut('metadata', 'saved_equipment_at', new Date(Date.now() - 120000).toISOString());
+    try { localStorage.setItem('loto_saved_snapshot', JSON.stringify([stripped])); localStorage.setItem('loto_saved_snapshot_at', X.savedAt); } catch (e) {}
+    await rawIdbPut('metadata', 'current_wip', wipOf('Snap-144', X.id, { at: new Date(Date.now() - 90000).toISOString(), sketch: X.sketch }));
+    forgetSessionMemory();
+    const real = writeEntryListMerged; let calls = 0;
+    writeEntryListMerged = function () { calls++; return calls === 1 ? real.apply(this, arguments) : Promise.reject(new Error('IndexedDB write failed (test)')); };
+    try { savedEquipment = []; await loadAll(); await sleep(800); }
+    finally { writeEntryListMerged = real; }
+    const stored = ((await rawIdbGet('metadata', 'saved_equipment')) || []).find(e => e && e.id === X.id);
+    const sk = !!(stored && stored.sketch && (stored.sketch.strokes || []).length === 1);
+    record(N, sk, 'the stored copy has its sketch=' + sk + ' (list writes: ' + calls + ')');
+    dropLoadBanners(); setStorageFailBanner(false);
+    try { localStorage.removeItem('loto_saved'); localStorage.removeItem('loto_saved_at'); localStorage.removeItem('loto_saved_deleted'); } catch (e) {}
+    await clearWipSlots(); savedEquipment = []; await loadAll(); await sleep(200);
+  }
+
+  // T145 — Import → Replace kept the FIRST row of a unit saved twice, not the
+  // newest: the newer copy's content left the list without a word
+  async function t145_replaceKeepsTheNewerCopyOfATwin() {
+    const N = 'T145 Import → Replace keeps the newer copy of a unit saved twice';
+    await resetAppState();
+    const R1 = mkEntry('Twin-145', { savedAt: new Date(Date.now() - 7200000).toISOString() }); R1.notes = 'older copy';
+    const R2 = Object.assign(JSON.parse(JSON.stringify(R1)), { notes: 'newer copy', updatedAt: new Date(Date.now() - 60000).toISOString() });
+    savedEquipment = [R1, R2]; saveAll(); await sleep(300);
+    const file = new File([JSON.stringify({ version: 2, entries: [R1, mkEntry('Other-145')] })], 'b.json', { type: 'application/json' });
+    await withDialogs({ confirm: true, choice: { 'backup-import': 'replace' } }, async () => {
+      handleBackupFile({ target: { files: [file] } });
+      await waitFor(() => savedEquipment.some(e => e.equipName === 'Other-145'), 8000, 'replace applied');
+      await sleep(200);
+    });
+    const rows = savedEquipment.filter(e => e.id === R1.id).map(e => e.notes);
+    record(N, JSON.stringify(rows) === '["newer copy"]', 'kept=' + JSON.stringify(rows));
+  }
+
+  // T146 — after the 20 s timeout the form kept autosaving into the alternate
+  // slot even when that slot couldn't be read — over whatever it held — and
+  // the launch said nothing
+  async function t146_aLateLaunchNeverAutosavesOverAnUnreadableAlternateSlot() {
+    const N = 'T146 after the 20 s timeout, an unreadable alternate slot is never autosaved over, and the launch says so';
+    await resetAppState(); await clearWipSlots();
+    await rawIdbPut('metadata', 'current_wip_alt', wipOf('Unread-146', genUuid(), { at: new Date(Date.now() - 300000).toISOString(), notes: 'kept' }));
+    forgetSessionMemory();
+    _bootLoadTimedOut = true; _bootWipSettled = true; _wipUnread = true;
+    let msgs = [];
+    try {
+      await withUnreadable(['current_wip_alt'], async () => {
+        msgs = await withToasts(async () => { savedEquipment = []; await loadAll(); await sleep(400); });
+        fillForm('Live-146'); autoSaveCurrent(); await sleep(500);
+      });
+    } finally { _bootLoadTimedOut = false; }
+    const alt = await rawIdbGet('metadata', 'current_wip_alt');
+    const warned = !!document.getElementById('wipReadBanner') || msgs.some(m => /couldn.t (be )?read/i.test(m));
+    record(N, !!alt && alt.notes === 'kept' && warned, 'unread copy after the form autosaved=' + JSON.stringify(alt && alt.notes) + ', warned=' + warned);
+    _wipUnread = false; await clearWipSlots(); dropLoadBanners();
+    savedEquipment = []; await loadAll(); await sleep(200);
+  }
+
+  // T147 — the build-94 channel: an old tab's launch "hello" is answered with
+  // "live"; after an old tab releases, a form nobody has written since this
+  // launch is reloaded from storage (the old tab's final autosave) instead of
+  // written over it; a form the tech has worked on goes back over it
+  async function t147_theBuild94ChannelAnswersAndHandsTheFormBack() {
+    const N = 'T147 a build-94 tab\'s hello is answered "live"; after it releases, an untouched form reloads its last save and a worked-on form is written back';
+    await resetAppState();
+    if (typeof tabLockActive === 'function' && !tabLockActive()) return record(N, true, 'single-window app (iOS) — no tabs');
+    if (typeof BroadcastChannel !== 'function') return record(N, true, 'no BroadcastChannel');
+    const ch = new BroadcastChannel('loto-collector-tabs'); const got = [];
+    ch.onmessage = (ev) => got.push(ev.data || {});
+    ch.postMessage({ t: 'hello', from: 'OLD-TAB-147', since: 0 });
+    await sleep(400);
+    const answered = got.some(m => m && m.t === 'live' && m.to === 'OLD-TAB-147');
+    const realReload = window.reloadFromStorage; let reloads = 0;
+    window.reloadFromStorage = () => { reloads++; };                      // the real one reloads the page
+    let untouchedOk = false, touchedOk = false;
+    try {
+      await rawIdbPut('metadata', 'current_wip', wipOf('Flushed-147', genUuid(), { notes: 'final keystrokes' }));
+      try { _wipWrittenSinceBoot = false; } catch (e) {}                  // nothing written since this launch
+      ch.postMessage({ t: 'released', from: 'OLD-TAB-147', to: TAB_ID });
+      await sleep(500);
+      const cw = await rawIdbGet('metadata', 'current_wip');
+      untouchedOk = reloads === 1 && !!cw && cw.notes === 'final keystrokes';
+      fillForm('Mine-147'); autoSaveCurrent(); await sleep(300);           // the tech works here
+      ch.postMessage({ t: 'released', from: 'OLD-TAB-147', to: TAB_ID });
+      await sleep(500);
+      const cw2 = await rawIdbGet('metadata', 'current_wip');
+      touchedOk = reloads === 1 && !!cw2 && cw2.equipName === 'Mine-147';
+    } finally { window.reloadFromStorage = realReload; ch.close(); }
+    record(N, answered && untouchedOk && touchedOk, 'hello answered=' + answered + ', untouched form reloaded (old tab\'s save kept)=' + untouchedOk + ', worked-on form written back=' + touchedOk);
+    await clearWipSlots();
+  }
+
+  // T148 — a launch waited up to 10 min behind another tab's photo writes with
+  // no way out; and it knew them only by a localStorage flag, never by a lock
+  // the browser lets go of when that tab closes or crashes
+  async function t148_waitingForAnotherTabsPhotosHasAWayOut() {
+    const N = 'T148 a launch waiting for another tab\'s photos can be opened anyway, and waits on a Web Lock that tab holds';
+    await resetAppState();
+    if (typeof tabLockActive === 'function' && !tabLockActive()) return record(N, true, 'single-window app (iOS) — no tabs');
+    if (typeof waitForOtherTabsPhotos !== 'function') return record(N, false, 'no waitForOtherTabsPhotos: the launch waits with no way out');
+    const beat = () => { try { localStorage.setItem('loto_tab_busy', JSON.stringify({ id: 'OTHER-148', at: new Date().toISOString() })); } catch (e) {} };
+    beat(); const iv = setInterval(beat, 2000);
+    let resolvedA = false, btn = null;
+    try {
+      waitForOtherTabsPhotos({ openAnywayAfterMs: 400 }).then(() => { resolvedA = true; });
+      await sleep(800);
+      btn = [...document.querySelectorAll('#tabPausedOverlay button')].find(b => /open anyway/i.test(b.textContent || ''));
+      if (btn) btn.click();
+      await sleep(500);
+    } finally { clearInterval(iv); try { localStorage.removeItem('loto_tab_busy'); } catch (e) {} }
+    let lockOk = true, lockDetail = 'no Web Locks here';
+    if (navigator.locks && navigator.locks.request) {
+      let release = null;
+      await new Promise(r => { navigator.locks.request('loto-photo-writes', () => new Promise(res => { release = res; r(); })); });
+      let resolvedB = false;
+      waitForOtherTabsPhotos({ openAnywayAfterMs: 60000 }).then(() => { resolvedB = true; });
+      await sleep(900);
+      const waited = !resolvedB;
+      release(); await sleep(900);
+      lockOk = waited && resolvedB; lockDetail = 'waited while the lock was held=' + waited + ', opened once released=' + resolvedB;
+    }
+    hideTabOverlay();
+    record(N, !!btn && resolvedA && lockOk, '"Open anyway" offered=' + !!btn + ', it opened the tab=' + resolvedA + '; ' + lockDetail);
+  }
+
+  // T149 — the deleted / re-saved records were read in the same transaction
+  // as the list: one unreadable record made the whole list "unreadable" at
+  // every launch, and every save went to the localStorage fallback
+  async function t149_anUnreadableDeleteRecordNeverHidesTheList() {
+    const N = 'T149 an unreadable deleted / re-saved record never makes the saved list unreadable or pushes saves off the store';
+    await resetAppState();
+    const A = mkEntry('A-149'); A.sketch = { diagramKey: 'general', strokes: [{ color: '#00f', width: 3, points: [{ x: 0.2, y: 0.2 }, { x: 0.5, y: 0.5 }] }], labels: [] };
+    savedEquipment = [A, mkEntry('B-149')]; saveAll(); await sleep(400);
+    forgetSessionMemory();
+    let banner = true;
+    await withUnreadable(['deleted_ids', 'restored_ids'], async () => {
+      savedEquipment = []; await loadAll(); await sleep(200);
+      banner = !!document.getElementById('entryStoreBanner');
+      _entryStoreAt = 'another-writer-149';                               // a save that has to merge the store first
+      savedEquipment.push(mkEntry('C-149')); await saveAll(); await sleep(300);
+    });
+    const stored = await storedNames();
+    const fallback = (() => { try { return localStorage.getItem('loto_saved'); } catch (e) { return 'x'; } })();
+    const a = savedEquipment.find(e => e.equipName === 'A-149');
+    record(N, !banner && stored.includes('C-149') && !fallback && !!(a && a.sketch),
+      'list shown as unreadable=' + banner + ', stored=' + JSON.stringify(stored) + ', went to the fallback=' + !!fallback + ', A keeps its sketch=' + !!(a && a.sketch));
+    dropLoadBanners(); _entryStoreUnread = false;
+    try { localStorage.removeItem('loto_saved'); localStorage.removeItem('loto_saved_at'); localStorage.removeItem('loto_saved_deleted'); } catch (e) {}
+  }
+
+  // T150 — the localStorage fallback carried the whole delete history in the
+  // same write as the list, the write that runs when storage is near full
+  async function t150_theFallbackCarriesOnlyTheDeletesTheStoreLacks() {
+    const N = 'T150 the localStorage fallback carries the deletes the store hasn\'t recorded, not the whole history';
+    await resetAppState();
+    const old = {}, t0 = new Date(Date.now() - 30 * 86400000).toISOString();
+    for (let i = 0; i < 2000; i++) old['old-150-' + i] = t0;
+    try { localStorage.setItem('loto_deleted_ids', JSON.stringify(old)); } catch (e) {}
+    savedEquipment = [mkEntry('Keep-150'), mkEntry('Gone-150')]; saveAll(); await sleep(500);   // the store has them all
+    const gone = savedEquipment.find(e => e.equipName === 'Gone-150');
+    const real = writeEntryListMerged;
+    writeEntryListMerged = () => Promise.reject(new Error('IndexedDB write failed (test)'));
+    try { await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.indexOf(gone)); await sleep(500); }); }
+    finally { writeEntryListMerged = real; }
+    const side = readLsJson('loto_saved_deleted'), obj = readLsJson('loto_saved');
+    const del = (side && side.deleted) || (obj && !Array.isArray(obj) && obj.deleted) || {};
+    const n = Object.keys(del).length;
+    record(N, !!del[gone.id] && n < 50, 'the fallback carries the new delete=' + !!del[gone.id] + ', deletes carried=' + n);
+    setStorageFailBanner(false);
+    try { ['loto_saved', 'loto_saved_at', 'loto_saved_deleted', 'loto_deleted_ids'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
+  }
+
+  // T151 — the photo-hash index is read-modify-write, and the claim was
+  // checked before the write was queued, not when it ran: a tab that lost the
+  // claim in between wrote its stale index over the live tab's
+  async function t151_theHashIndexIsNeverWrittenAfterTheClaimMoved() {
+    const N = 'T151 a photo-hash record is never written by a tab that lost the claim before the write ran';
+    await resetAppState();
+    if (typeof tabLockActive === 'function' && !tabLockActive()) return record(N, true, 'single-window app (iOS) — no tab claim');
+    await saveMetadata('photo_hash_index', {}); await sleep(300);
+    let had = null; try { had = localStorage.getItem('loto_tab_claim'); } catch (e) {}
+    const realTx = IDBDatabase.prototype.transaction; let armed = true;
+    IDBDatabase.prototype.transaction = function (names, mode) {
+      if (armed && mode === 'readwrite' && [].concat(names).includes('metadata')) { armed = false; otherTabClaims(); }
+      return realTx.apply(this, arguments);
+    };
+    try { await recordPhotoHash('hash-151', 'entry-151', 'photo::entry-151::main::x151', false); await sleep(200); }
+    finally { IDBDatabase.prototype.transaction = realTx; releaseOtherTabClaim(had); }
+    const idx = (await rawIdbGet('metadata', 'photo_hash_index')) || {};
+    record(N, !idx['hash-151'], 'record written by the tab that lost the claim=' + !!idx['hash-151']);
+  }
+
+  // T152 — build 96 made the fallback list an object ({list, deleted,
+  // restored}); builds up to 95 read only a list, so installing an older build
+  // dropped every unit that lived only in the fallback
+  async function t152_theFallbackListStaysAPlainList() {
+    const N = 'T152 the localStorage fallback stays a plain list older builds read, and a delete saved with it still holds at the next launch';
+    await resetAppState();
+    savedEquipment = [mkEntry('Keep-152'), mkEntry('Gone-152')]; saveAll(); await sleep(400);
+    const gone = savedEquipment.find(e => e.equipName === 'Gone-152');
+    const realW = writeEntryListMerged, si = Storage.prototype.setItem;
+    writeEntryListMerged = () => Promise.reject(new Error('IndexedDB write failed (test)'));
+    Storage.prototype.setItem = function (k, v) {
+      if (k === 'loto_deleted_ids') { const e = new Error('QuotaExceededError (test)'); e.name = 'QuotaExceededError'; throw e; }
+      return si.call(this, k, v);
+    };
+    try { await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.indexOf(gone)); await sleep(500); }); }
+    finally { writeEntryListMerged = realW; Storage.prototype.setItem = si; }
+    const raw = readLsJson('loto_saved');
+    const plain = Array.isArray(raw) && raw.some(e => e && e.equipName === 'Keep-152') && !raw.some(e => e && e.equipName === 'Gone-152');
+    forgetSessionMemory();
+    savedEquipment = []; await loadAll(); await sleep(300);              // the store still lists it; only the fallback knows
+    const back = savedEquipment.some(e => e.equipName === 'Gone-152');
+    record(N, plain && !back, 'fallback is a plain list=' + plain + ', deleted unit back at the next launch=' + back);
+    setStorageFailBanner(false); dropLoadBanners();
+    try { ['loto_saved', 'loto_saved_at', 'loto_saved_deleted'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
+  }
+
+  // T153 — build 97/98's toast kept a warning only for 0.6 s: a message 0.8 s
+  // later still replaced it before its time was up
+  async function t153_aWarningIsNeverReplacedBeforeItsTime() {
+    const N = 'T153 a warning is never replaced by a message that comes before its time is up';
+    await resetAppState();
+    await sleep(2300);
+    showToast('Warning first (test)', true); await sleep(800);
+    showToast('Info later (test)'); await sleep(100);
+    const el = document.getElementById('toast');
+    const both = !!el && /Warning first/.test(el.textContent || '') && /Info later/.test(el.textContent || '');
+    record(N, both, 'toast reads ' + JSON.stringify(el && el.textContent));
+    await sleep(4300);
+  }
+
+  // T154 — found by build 99's fault campaign (seed 99611; the path exists
+  // since build 89): when a later write of the localStorage fallback failed,
+  // the fallback that was already there was removed with it — even the list
+  // just written, when only its timestamp failed — and a unit whose store and
+  // emergency-copy writes had failed too was gone at the next launch
+  async function t154_aFailedFallbackWriteNeverRemovesTheUnitsItHolds() {
+    const N = 'T154 a fallback write that fails part-way never removes units that live only in the fallback';
+    await resetAppState();
+    savedEquipment = [mkEntry('Keep-154')]; saveAll(); await sleep(400);
+    const realW = writeEntryListMerged, si = Storage.prototype.setItem;
+    const quota = () => { const e = new Error('QuotaExceededError (test)'); e.name = 'QuotaExceededError'; return e; };
+    writeEntryListMerged = () => Promise.reject(new Error('IndexedDB write failed (test)'));
+    let failKeys = [];
+    Storage.prototype.setItem = function (k, v) { if (failKeys.includes(k)) throw quota(); return si.call(this, k, v); };
+    try {
+      // (a) only the fallback's timestamp can't be written: U1 lives only in the fallback list
+      failKeys = ['loto_saved_snapshot', 'loto_saved_snapshot_at', 'loto_saved_at'];
+      savedEquipment.push(mkEntry('U1-154')); await saveAll(); await sleep(200);
+      // (b) the next fallback can't even take the list: the one already there still holds U1
+      failKeys = ['loto_saved_snapshot', 'loto_saved_snapshot_at', 'loto_saved'];
+      savedEquipment.push(mkEntry('U2-154')); await saveAll(); await sleep(200);
+    } finally { writeEntryListMerged = realW; Storage.prototype.setItem = si; }
+    const kept = Array.isArray(readLsJson('loto_saved')) && readLsJson('loto_saved').some(e => e && e.equipName === 'U1-154');
+    forgetSessionMemory();
+    savedEquipment = []; await loadAll(); await sleep(300);              // the next launch
+    const back = savedEquipment.some(e => e.equipName === 'U1-154');
+    record(N, kept && back, 'U1 still in the fallback after the failed writes=' + kept + ', U1 at the next launch=' + back);
+    setStorageFailBanner(false); dropLoadBanners();
+    try { ['loto_saved', 'loto_saved_at', 'loto_saved_deleted'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
+  }
+
+  // T155 — found while finishing build 99 (its T149 change reads the re-save
+  // record on its own): a launch that couldn't read that record let an older
+  // delete win again. A unit deleted and then saved again while localStorage
+  // was full — the re-save recorded only in the store — vanished at that
+  // launch without a word, and the next save made it permanent
+  async function t155_aReSavedUnitSurvivesALaunchThatCantReadItsReSaveRecord() {
+    const N = 'T155 a unit deleted and saved again survives a launch (or a merging save) that can\'t read its re-save record';
+    const setUp = async (tag) => {
+      await resetAppState();
+      savedEquipment = [mkEntry('U-' + tag), mkEntry('Other-' + tag)]; saveAll(); await sleep(400);
+      const u = savedEquipment.find(e => e.equipName === 'U-' + tag);
+      await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.indexOf(u)); await sleep(400); });
+      // saved again while localStorage is full: only the store records the re-save
+      const si = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (k, v) {
+        if (k === 'loto_deleted_ids' || k === 'loto_restored_ids') { const e = new Error('QuotaExceededError (test)'); e.name = 'QuotaExceededError'; throw e; }
+        return si.call(this, k, v);
+      };
+      try { clearTombstones([u.id]); savedEquipment.push(Object.assign({}, u, { updatedAt: new Date().toISOString() })); await saveAll(); await sleep(300); }
+      finally { Storage.prototype.setItem = si; }
+      forgetSessionMemory();
+    };
+    const relaunch = async () => { forgetSessionMemory(); savedEquipment = []; await loadAll(); await sleep(300); return savedEquipment.map(e => e.equipName); };
+    // (a) the launch can't read the re-save record; the tech saves again
+    await setUp('155');
+    let first = [];
+    await withUnreadable(['restored_ids'], async () => {
+      savedEquipment = []; await loadAll(); await sleep(300);
+      first = savedEquipment.map(e => e.equipName);
+      savedEquipment.push(mkEntry('Next-155')); await saveAll(); await sleep(300);
+    });
+    const later = await relaunch();                                              // a later, healthy launch
+    // (b) the launch couldn't read the list either: the first save merges the
+    // store — and can't read the re-save record
+    await setUp('155b');
+    await withUnreadable(['saved_equipment', 'restored_ids'], async () => { savedEquipment = []; await loadAll(); await sleep(300); });
+    await withUnreadable(['restored_ids'], async () => { savedEquipment.push(mkEntry('Next-155b')); await saveAll(); await sleep(300); });
+    const merged = await relaunch();
+    record(N, first.includes('U-155') && later.includes('U-155') && merged.includes('U-155b'),
+      '(a) at the launch that couldn\'t read it: ' + JSON.stringify(first) + ', at the next: ' + JSON.stringify(later) + '; (b) after the merging save: ' + JSON.stringify(merged));
+    dropLoadBanners(); _entryStoreUnread = false;
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -3993,7 +4355,12 @@
     t121_storageWarningIsInTheBottomBar, t122_noUserValueEverBecomesMarkup, t123_everyBuilderShowsUserTextVerbatim, t124_aDeleteSurvivesAFailedTombstoneWrite, t125_aDeleteStaysDeletedAcrossARelaunch, t126_aFailedCommitNeverMergesTheTabsOwnOldList, t127_aRetriedSaveStillShowsWhatItMerged, t128_anUnreadableAlternateSlotIsNeverSilentOrOverwritten, t129_aTabThatLosesTheClaimMidLaunchLeavesBothSlots, t130_aDeleteConfirmedAfterTheClaimMovedChangesNothing, t131_aLateLaunchNeverOverwritesTheFormInUse, t132_aStaleCopyOfASavedUnitNeverReopens, t133_theEntryCountFollowsTheListAfterAnUnreadLaunch,
     t134_aUnitDeletedAfterItsStoredEditNeverComesBack, t135_replaceKeepsTheEditOfATwinCopy, t136_aSaveCutShortByAnotherTabKeepsTheUnitWhole,
     t137_thePhotoBusyFlagFollowsTheWritesItGuards, t138_legacyMarksAreClearedWhenTheSourceBecomesAnInOutPair,
-    t139_aRestoredUnitWhoseSaveFailedIsNeverMarkedSuperseded, t140_noWarningIsHiddenByTheNextMessage, t141_aMultiLineWarningGetsTheLongerTime];
+    t139_aRestoredUnitWhoseSaveFailedIsNeverMarkedSuperseded, t140_noWarningIsHiddenByTheNextMessage, t141_aMultiLineWarningGetsTheLongerTime,
+    t142_aDeleteAfterAFutureStampedReSaveStillDeletes, t143_aLateLaunchKeepsTheNewerCopyOfAUnit, t144_aSketchRestoredAtLaunchIsSavedWithTheUnit,
+    t145_replaceKeepsTheNewerCopyOfATwin, t146_aLateLaunchNeverAutosavesOverAnUnreadableAlternateSlot, t147_theBuild94ChannelAnswersAndHandsTheFormBack,
+    t148_waitingForAnotherTabsPhotosHasAWayOut, t149_anUnreadableDeleteRecordNeverHidesTheList, t150_theFallbackCarriesOnlyTheDeletesTheStoreLacks,
+    t151_theHashIndexIsNeverWrittenAfterTheClaimMoved, t152_theFallbackListStaysAPlainList, t153_aWarningIsNeverReplacedBeforeItsTime,
+    t154_aFailedFallbackWriteNeverRemovesTheUnitsItHolds, t155_aReSavedUnitSurvivesALaunchThatCantReadItsReSaveRecord];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
