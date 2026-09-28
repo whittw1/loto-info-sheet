@@ -1,6 +1,6 @@
 # LOTO Field Collector — Architecture Reference
 
-**Date:** 2026-09-28 (rev 26 — **build 100 fixes the two findings of a low review of build 99** — see §6 "Build 100": after a launch that finishes past the 20 s timeout, the form waits in memory — never going over an unreadable alternate slot, nor over a slot whose unit was just kept as a recovered draft — until that draft is saved (a waiting autosave retries the save); and when a build-94 tab releases, a form changed since launch is written back even before its autosave has landed (it used to be reloaded away). Suite: 162 tests / 167 results. Prior: rev 25 — **build 99 fixes 20 of the 22 findings of the medium and high reviews of builds 96–98** — see §6 "Build 99": a launch that finishes after the 20 s timeout keeps the newer copy of a unit and never autosaves over an unreadable slot; the launch saves once, after it has given snapshot-only units their sketches back; Replace keeps the newer copy of a unit saved twice; deletes and re-saves are stamped after every event known for that unit (a clock that ran ahead can't outrank them); a build-94 tab's final autosave is read back instead of written over; a tab waiting for another tab's photos can open anyway, and waits on a Web Lock the browser releases when that tab closes or crashes; warning toasts are queued, never replaced; an unreadable delete record no longer makes the whole saved list unreadable; the localStorage fallback is a plain list again (older builds read it) with only the recent deletes beside it; the photo-hash index is written in one claim-checked transaction; the fuzzer now runs late launches; a fallback write that fails part-way no longer throws away the fallback it had (found by the build's fault campaign); and a launch that can't read the store's re-save record rebuilds it from the stored list instead of letting an older delete drop a unit that was saved again (found while finishing the build — its own T149 change had opened it). The fuzz driver survives a crashed page and reports a changed unit field by field. The unit-in-progress redesign (versioned per-unit records) is build 101's. Suite: 160 tests / 165 results. Prior: rev 24 — **build 98 fixes the one finding of a quick review of build 97**: a warning toast composed of several lines (Split's "marks cleared" + 10-source heads-up) got the 4 s time only when it was several messages — the time now goes by the lines on screen (T141). Suite: 146 tests / 151 results. Prior: rev 23 — **build 97 fixes the six remaining (low) findings of the 2026-09-28 review of build 95** — see §6 "Build 97": Import → Replace keeps the edit of the other copy of a unit saved twice (the form moves to the copy that stays); a unit-in-progress write re-checks the tab claim inside its transaction, so a Save & New cut short by another tab no longer overwrites the unit's only full copy — and a launch gives a saved unit that exists only as the stripped emergency copy its sketch back from that copy of the form; the "still writing photos" flag is refreshed while writing, removed when the page goes away and stale after 20 s; marks saved by builds 92–94 record the shape they were placed for when first loaded, so a switch to an In/Out pair clears them; the "superseded" marker is written only for the restored unit itself, and Clear keeps an unread slot's local copy; a warning toast is never replaced by the next message in the same moment, and each toast gets its full time. Every finding of that review is now fixed. Suite: 145 tests / 150 results. Prior: rev 22 — **build 96 fixes the eight medium findings of the 2026-09-28 review of build 95** (and one low one in the same save path) — see §6 "Build 96". A build-94 tab still open on the web pauses again (build 95 had dropped the channel it listens on); a delete survives a relaunch however its records were lost — deletes and re-saves are **timestamped events** read back from every copy (localStorage, the IndexedDB mirror, the fallback list), the later one wins; the list save is **safe to retry** (a failed commit no longer merges the tab's own older list back); an unreadable alternate unit-in-progress slot is never silently overwritten; the launch decides whether it may write AFTER its reads and empties a slot only once the unit in it is saved; a delete / import / clear confirmed after another tab took over changes nothing; a launch that finishes after the 20 s timeout restores nothing over the form in use and keeps the units saved meanwhile in full; a stale copy of a saved unit never reopens as an edit of it; the entry count follows the list after an unreadable launch. The build's fault campaign found one older path: a unit deleted after its unsaved edit was stored came back as a "recovered draft" with its photos erased (T134). Six low findings stay open (listed there). Suite: 139 tests / 144 results. Prior: rev 21 — **build 95 fixes the 2026-09-27 code review of build 94** — see §6 "Build 95". Most of the 15 findings were in build 94's own fixes: a unit restored from its local copy could come back later as its OLDER stored copy (now marked superseded); the one-live-tab lock was decided once at launch, so a late tab could pause the up-to-date one and keep writing — it is now a **claim checked at every write**, `saveAll` **merges any list another writer stored since** (compare-and-set) and a tab never takes over mid photo-copy; a tab paused at launch no longer touches the unit-in-progress copies; Import → Replace closes the form holding a removed unit; deleting the other copy of a unit saved twice keeps the edit; marks placed before a source became an In/Out pair are cleared (the marks record the shape they were placed for — one rule, `marksFit`) and the "marks cleared" note is in the message the tech sees; the emergency-copy warning is a sticky banner; storage and photo warnings repeat in the bottom bar on phones; an undated unit open for edit stays undated. **All HTML with user values is built with an escape-by-default `html` template** (`raw()`, `jsArg()`), replacing ~95 hand-placed `escHtml()` calls. loto-web: the no-location rule now works with inventories that store 'Unknown' (field-app sheets only), the pre-QC validator uses the importer's matcher, and stored "LINKED →" details are repaired. The build's own fault campaign found one more (since build 91): a delete whose deleted-ids record couldn't be written came back at the next merging save — this session's deletions are now kept in memory too (T124). Suite: 129 tests / 134 results. Prior: rev 20 — **build 94 fixes the 2026-09-27 execution-based review of build 93** — see §6 "Build 94". This review RAN the app instead of reading it: a seeded random-action fuzzer with data-safety oracles (also under storage faults and inside the app on the Simulator), every export fed to loto-web's real importer, a b88→b90→current upgrade chain on a Simulator, offline / two-tab / phone-width checks — kit in `tests/fuzz/`. Fixed: deleting the unit open for edit now closes the form (Clear used to promise the deleted original was preserved); a second tab of the web app pauses instead of saving over the other tab's list; a link to an In/Out pair takes its device count; the header wraps on a phone; names and source fields are escaped everywhere (a name could run script; an inch-mark Device ID was cut short); Copy source clears marks when the count drops; the unsaved open unit goes on today's sheet; a linked source's Detail cell is clean — the link has its own XLSX column 13 "Linked To"; the save message reads cleanly; CSV quotes line breaks; an unreadable unit-in-progress is restored from its local copy with a warning. loto-web: a unit with no building/room binds to the block with no location; legacy "LINKED →" prefixes are stripped. Suite: 115 tests / 120 results. Prior: rev 19 — **build 93 fixes the 2026-09-26 review of build 92** — see §6 "Build 93": delete no longer trusts an old export stamp on the pre-UUID (numeric-id) June entries, whose photos builds 83–88 never exported (b91 made delete really erase them); Duplicate / Dup / Split no longer copy a Device ID or the LOTO ID; nothing autosaves before the launch restore (the blank launch form used to overwrite the unit in progress); In/Out marks ask for the IN valve first; a lower device count clears the source's marks; dialogs fit the screen (Settings has Close/Cancel); a water check never survives a switch to Electrical; JSZip/ExcelJS are bundled (`vendor/`) — the iOS app has no service worker; an evicted entry store is announced again; an "All dates" export writes one Information Sheet per survey date; a blank Energy Source is flagged and exports as "Unknown"; Condensate Pump loses the HHW pump template's HHW In; the template-change keep rule matches its promise (and keeps the Generator's voltage source); custom photo sizes are clamped. loto-web (separate deploy): re-import pairs sheet rows with sources by identity, not position; exact cross-date names before fuzzy matches. Suite: 104 tests / 109 results. Prior: rev 18 — **build 92 adds VALVE MARKS**: right after each source photo the tech taps where the valve / breaker is; the tap rides on that photo's reference and goes out in the Information Sheet XLSX (col 12 "Valve Mark"), `entries.json` (`photoMarks`) and the CSV, and loto-web starts that source's ID box + arrow on it instead of a preset corner — see §6 "Build 92". Placement is ONE rule shared number-for-number with loto-web (`layoutValveMarks`), so two valves in one shot never get stacked boxes. Suite: 90 tests (8 new, each first proven to fail on build 91); 95/95 in web, native-mock and inside the app on the Simulator. Prior: rev 17 — **build 91 fixes the 15 defects of the 2026-09-25 max-effort review, plus Cooling Tower** — see §6 "Build 91". The two that mattered most on the iPad: pre-UUID entries (June Atlanta Main Campus, **numeric ids**) could never export a photo (a number-vs-string owner compare), and build 89 had silently moved the filename it looks for when reading those entries' photos — both fixed together (no file is moved). The entry list is now MERGED at load from every stored copy (IndexedDB, the localStorage fallback, the emergency snapshot) with deleted-id tombstones, which closes three ways the build-89 failed-read guard could still be bypassed or entries saved during a storage outage lost. The XLSX Information Sheet (the office import path) now carries **Valve State** (col 11); the web build never reports an unconfirmed download as saved; the web purge runs once per device. Suite: 82 tests (20 new — 19 each first proven to fail on build 90, plus a guard for the new load-time merge, T78); 87/87 in web, native-mock and inside the app on the Simulator. Prior: rev 16 — **build 90 = build 89 + one fix found while re-testing it**: the header photo-integrity badge now refreshes after a delete, bulk delete, backup import, clear, source removal or duplicate (it used to keep counting — or flagging MISSING — photos no longer referenced; T58). **The regression suite now runs inside the real iOS app**: `tests/run-sim-suite.sh` builds a throwaway copy of `ios/` with `tests/sim-harness.js` in its bundle (never the project's own bundle, which is what Xcode archives), reinstalls it fresh on a dedicated "LOTO Test iPad" Simulator and runs the suite against the real WKWebView and the real Capacitor Filesystem plugin — 62/62 there, and 62/62 in both desktop modes. The runner's guard was widened for this and only this: inside the app it runs only with `{iosSimulator:true}`, only when the app container is under `CoreSimulator` (never a device), and only on an empty install. §2: iOS 90 (committed, synced, in Xcode; archive pending); web still 86 with 90 staged. Prior: rev 15 — **build 89 fixes all 28 photo-integrity defects the 2026-09-24 review found** — see §6 "Photo-integrity fixes — build 89", which replaces rev 14's open-defects list. Source photos now follow their source *object* (no more index-keyed misattachment on template / type / electrical-count changes); every async photo writer is bound to its form session and Save & New / Edit / Duplicate / Clear / Export / Backup wait for it; one form identity (Save & New replaces-or-appends BY ID — a reload mid-edit can no longer save a second copy); orphan re-attach is a reviewed, missing-slots-only repair instead of a launch-time guess; filesystem writes are atomic and size-verified, IndexedDB reconnects, and the newest copy of the entry list wins at load. Every fix has a regression test written first and proven to FAIL on build 88: the suite is now 61 tests and passes 61/61 in web mode AND with the whole suite run against a mock native filesystem (`runPhotoRegressionSuite({nativeMock:true})`), and it refuses to run anywhere real data could live. Photo filenames now always carry the device code (`0924_JW-a1b2_00001`, §7); linked sources keep and export their photo, with entry + source ids on `linkedTo` (§10). §2: iOS is at 89 (archive pending); the web (`main`) is still 86 with 89 staged. Prior: rev 14 — documented the review (its open-defects list is now §6's build-89 fixes table). A max-effort code review of build 88 (nine finder angles, every candidate independently verified, plus a gap sweep) found 28 photo-integrity defects — 20 confirmed, 4 plausible, 4 unverified, none refuted, none yet fixed — documented by root cause: index-keyed source photos (template/type changes silently misattach or drop photos), three unguarded async photo writers, split form identity, launch-time orphan re-attach, and unverified storage writes; plus field rules until fixed. §6 also gains what a stored photo is (no EXIF survives the canvas) and the deferred off-app backup design, and **the regression-suite instruction now carries a hard warning: its reset erases real data, so never run it where field data lives.** §2 records which build each channel carries — the web (`main`) is on build 86 and still has the photo-destroying retake-delete. §3 adds `tests/` and the public-repo rule; §9 documents promoting builds to the web via the `loto-main-web` worktree; new §13 points to the recovery tooling and the Lumix frame-number rule. Prior: rev 13 — builds 83–88, the photo-store rebuild and its aftermath. **§6 is the section to read.** Build 83 re-keyed the photo store on entry UUIDs after name-derived keys corrupted ~1,100 photo slots across five VA facilities, adding migration/quarantine, a hard export duplicate gate, capture-time hash warnings, Photo Audit and entry-retention guards. Builds 84–88 then fixed what 83 got wrong or left rough: 84 made the migration done-flag conditional on the stores being readable; 85 scoped and chunked the quarantine export; 86 scoped Photo Audit to today's work; **87 removed the retake/misc-removal deletes that were destroying live photos**, added the in-flight capture guard and `reattachOrphanedPhotos()`; 88 gave duplicated sources their own `sourceId` and recorded the copied photo as a `{dupOf}`. The regression suite is now 12 tests and is the gate on any photo-path change. §10 gains the office `Information_Sheet_MMDDYY.xlsx` field-app layout spec — geometry, the bare-reference photo rule, the `photo_detail` `String(20)` position-marker trap — and the cross-date survey problem that stranded 71 Atlanta photos. §8 versioning and §11 code map refreshed to build 88 / cache v7.84. Prior: build 79: simplified verification — water sources get Drain/Gauge checkboxes synthesizing the same canonical strings, electrical defaults to Controls, Settings toggle reverts to classic pickers (§5.4c). Prior: rev 10 — builds 74–77: durable photo storage + integrity. §6 rewritten: full-res photos now write to the **native filesystem** (Capacitor Filesystem, `DATA/loto_photos/`) with IndexedDB/localStorage as fallbacks, after iOS storage eviction silently lost 74 photos on 2026-08-04; capture-time save verification, export integrity guard, header integrity badge, collision-proof photo keys. §7: local-day date semantics + filtered-day export stamps; reuse-a-photo share model with export dedup; per-entry `exportedAt`/`exportId` stamps. §5.5: export-status badges + delete guards with "Export these first" escape hatch. New template: Unit Heater - Natural Gas. Prior: rev 9 — §5 registry inventory expanded. Named the equipment-side registries the doc had glossed over (`EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT`, `EQUIPMENT_PROMPT_FOR_TEMPLATE`, `EQUIPMENT_DIAGRAM_OVERRIDE`, `CONDENSATE_AUTO_EQUIP`, `CUSTOM_EQUIP_KEYWORD_TEMPLATE`) plus a new "Other registries (misc but load-bearing)" bullet block covering `SOURCE_DEFAULTS`, `ENERGY_DEVICE_MAP`, `ENERGY_KEYWORD_TEMP`, `ENERGY_LABEL_PREFIX/COLORS`, `PHOTO_DEFAULTS`, `SKETCH_DIAGRAMS`, `SAVED_FILTERS`, `HOSPITALS`. Prior revs: rev 8 = ingester live; rev 7 = data-entry UX pass; rev 6 = ZIP restructure.)
+**Date:** 2026-09-28 (rev 27 — **the descriptive sections now carry builds 99 and 100**, not only their §6 change logs: §2 (what the web build adds), §3 (layout, suite size, the fuzz kit), §4 (the bundled libraries — stale since build 93), §5.5 (the autosave indicator; new "Messages": the toast queue and the banners), §6 (the suite, the hash index, the metadata and localStorage tables, "The list write", and new current-state sections "The launch", "The unit in progress", "Tabs (web only)" and "Deletes and re-saves"), §7 (Replace) and §8 (build 100). No code change. Prior: rev 26 — **build 100 fixes the two findings of a low review of build 99** — see §6 "Build 100": after a launch that finishes past the 20 s timeout, the form waits in memory — never going over an unreadable alternate slot, nor over a slot whose unit was just kept as a recovered draft — until that draft is saved (a waiting autosave retries the save); and when a build-94 tab releases, a form changed since launch is written back even before its autosave has landed (it used to be reloaded away). Suite: 162 tests / 167 results. Prior: rev 25 — **build 99 fixes 20 of the 22 findings of the medium and high reviews of builds 96–98** — see §6 "Build 99": a launch that finishes after the 20 s timeout keeps the newer copy of a unit and never autosaves over an unreadable slot; the launch saves once, after it has given snapshot-only units their sketches back; Replace keeps the newer copy of a unit saved twice; deletes and re-saves are stamped after every event known for that unit (a clock that ran ahead can't outrank them); a build-94 tab's final autosave is read back instead of written over; a tab waiting for another tab's photos can open anyway, and waits on a Web Lock the browser releases when that tab closes or crashes; warning toasts are queued, never replaced; an unreadable delete record no longer makes the whole saved list unreadable; the localStorage fallback is a plain list again (older builds read it) with only the recent deletes beside it; the photo-hash index is written in one claim-checked transaction; the fuzzer now runs late launches; a fallback write that fails part-way no longer throws away the fallback it had (found by the build's fault campaign); and a launch that can't read the store's re-save record rebuilds it from the stored list instead of letting an older delete drop a unit that was saved again (found while finishing the build — its own T149 change had opened it). The fuzz driver survives a crashed page and reports a changed unit field by field. The unit-in-progress redesign (versioned per-unit records) is build 101's. Suite: 160 tests / 165 results. Prior: rev 24 — **build 98 fixes the one finding of a quick review of build 97**: a warning toast composed of several lines (Split's "marks cleared" + 10-source heads-up) got the 4 s time only when it was several messages — the time now goes by the lines on screen (T141). Suite: 146 tests / 151 results. Prior: rev 23 — **build 97 fixes the six remaining (low) findings of the 2026-09-28 review of build 95** — see §6 "Build 97": Import → Replace keeps the edit of the other copy of a unit saved twice (the form moves to the copy that stays); a unit-in-progress write re-checks the tab claim inside its transaction, so a Save & New cut short by another tab no longer overwrites the unit's only full copy — and a launch gives a saved unit that exists only as the stripped emergency copy its sketch back from that copy of the form; the "still writing photos" flag is refreshed while writing, removed when the page goes away and stale after 20 s; marks saved by builds 92–94 record the shape they were placed for when first loaded, so a switch to an In/Out pair clears them; the "superseded" marker is written only for the restored unit itself, and Clear keeps an unread slot's local copy; a warning toast is never replaced by the next message in the same moment, and each toast gets its full time. Every finding of that review is now fixed. Suite: 145 tests / 150 results. Prior: rev 22 — **build 96 fixes the eight medium findings of the 2026-09-28 review of build 95** (and one low one in the same save path) — see §6 "Build 96". A build-94 tab still open on the web pauses again (build 95 had dropped the channel it listens on); a delete survives a relaunch however its records were lost — deletes and re-saves are **timestamped events** read back from every copy (localStorage, the IndexedDB mirror, the fallback list), the later one wins; the list save is **safe to retry** (a failed commit no longer merges the tab's own older list back); an unreadable alternate unit-in-progress slot is never silently overwritten; the launch decides whether it may write AFTER its reads and empties a slot only once the unit in it is saved; a delete / import / clear confirmed after another tab took over changes nothing; a launch that finishes after the 20 s timeout restores nothing over the form in use and keeps the units saved meanwhile in full; a stale copy of a saved unit never reopens as an edit of it; the entry count follows the list after an unreadable launch. The build's fault campaign found one older path: a unit deleted after its unsaved edit was stored came back as a "recovered draft" with its photos erased (T134). Six low findings stay open (listed there). Suite: 139 tests / 144 results. Prior: rev 21 — **build 95 fixes the 2026-09-27 code review of build 94** — see §6 "Build 95". Most of the 15 findings were in build 94's own fixes: a unit restored from its local copy could come back later as its OLDER stored copy (now marked superseded); the one-live-tab lock was decided once at launch, so a late tab could pause the up-to-date one and keep writing — it is now a **claim checked at every write**, `saveAll` **merges any list another writer stored since** (compare-and-set) and a tab never takes over mid photo-copy; a tab paused at launch no longer touches the unit-in-progress copies; Import → Replace closes the form holding a removed unit; deleting the other copy of a unit saved twice keeps the edit; marks placed before a source became an In/Out pair are cleared (the marks record the shape they were placed for — one rule, `marksFit`) and the "marks cleared" note is in the message the tech sees; the emergency-copy warning is a sticky banner; storage and photo warnings repeat in the bottom bar on phones; an undated unit open for edit stays undated. **All HTML with user values is built with an escape-by-default `html` template** (`raw()`, `jsArg()`), replacing ~95 hand-placed `escHtml()` calls. loto-web: the no-location rule now works with inventories that store 'Unknown' (field-app sheets only), the pre-QC validator uses the importer's matcher, and stored "LINKED →" details are repaired. The build's own fault campaign found one more (since build 91): a delete whose deleted-ids record couldn't be written came back at the next merging save — this session's deletions are now kept in memory too (T124). Suite: 129 tests / 134 results. Prior: rev 20 — **build 94 fixes the 2026-09-27 execution-based review of build 93** — see §6 "Build 94". This review RAN the app instead of reading it: a seeded random-action fuzzer with data-safety oracles (also under storage faults and inside the app on the Simulator), every export fed to loto-web's real importer, a b88→b90→current upgrade chain on a Simulator, offline / two-tab / phone-width checks — kit in `tests/fuzz/`. Fixed: deleting the unit open for edit now closes the form (Clear used to promise the deleted original was preserved); a second tab of the web app pauses instead of saving over the other tab's list; a link to an In/Out pair takes its device count; the header wraps on a phone; names and source fields are escaped everywhere (a name could run script; an inch-mark Device ID was cut short); Copy source clears marks when the count drops; the unsaved open unit goes on today's sheet; a linked source's Detail cell is clean — the link has its own XLSX column 13 "Linked To"; the save message reads cleanly; CSV quotes line breaks; an unreadable unit-in-progress is restored from its local copy with a warning. loto-web: a unit with no building/room binds to the block with no location; legacy "LINKED →" prefixes are stripped. Suite: 115 tests / 120 results. Prior: rev 19 — **build 93 fixes the 2026-09-26 review of build 92** — see §6 "Build 93": delete no longer trusts an old export stamp on the pre-UUID (numeric-id) June entries, whose photos builds 83–88 never exported (b91 made delete really erase them); Duplicate / Dup / Split no longer copy a Device ID or the LOTO ID; nothing autosaves before the launch restore (the blank launch form used to overwrite the unit in progress); In/Out marks ask for the IN valve first; a lower device count clears the source's marks; dialogs fit the screen (Settings has Close/Cancel); a water check never survives a switch to Electrical; JSZip/ExcelJS are bundled (`vendor/`) — the iOS app has no service worker; an evicted entry store is announced again; an "All dates" export writes one Information Sheet per survey date; a blank Energy Source is flagged and exports as "Unknown"; Condensate Pump loses the HHW pump template's HHW In; the template-change keep rule matches its promise (and keeps the Generator's voltage source); custom photo sizes are clamped. loto-web (separate deploy): re-import pairs sheet rows with sources by identity, not position; exact cross-date names before fuzzy matches. Suite: 104 tests / 109 results. Prior: rev 18 — **build 92 adds VALVE MARKS**: right after each source photo the tech taps where the valve / breaker is; the tap rides on that photo's reference and goes out in the Information Sheet XLSX (col 12 "Valve Mark"), `entries.json` (`photoMarks`) and the CSV, and loto-web starts that source's ID box + arrow on it instead of a preset corner — see §6 "Build 92". Placement is ONE rule shared number-for-number with loto-web (`layoutValveMarks`), so two valves in one shot never get stacked boxes. Suite: 90 tests (8 new, each first proven to fail on build 91); 95/95 in web, native-mock and inside the app on the Simulator. Prior: rev 17 — **build 91 fixes the 15 defects of the 2026-09-25 max-effort review, plus Cooling Tower** — see §6 "Build 91". The two that mattered most on the iPad: pre-UUID entries (June Atlanta Main Campus, **numeric ids**) could never export a photo (a number-vs-string owner compare), and build 89 had silently moved the filename it looks for when reading those entries' photos — both fixed together (no file is moved). The entry list is now MERGED at load from every stored copy (IndexedDB, the localStorage fallback, the emergency snapshot) with deleted-id tombstones, which closes three ways the build-89 failed-read guard could still be bypassed or entries saved during a storage outage lost. The XLSX Information Sheet (the office import path) now carries **Valve State** (col 11); the web build never reports an unconfirmed download as saved; the web purge runs once per device. Suite: 82 tests (20 new — 19 each first proven to fail on build 90, plus a guard for the new load-time merge, T78); 87/87 in web, native-mock and inside the app on the Simulator. Prior: rev 16 — **build 90 = build 89 + one fix found while re-testing it**: the header photo-integrity badge now refreshes after a delete, bulk delete, backup import, clear, source removal or duplicate (it used to keep counting — or flagging MISSING — photos no longer referenced; T58). **The regression suite now runs inside the real iOS app**: `tests/run-sim-suite.sh` builds a throwaway copy of `ios/` with `tests/sim-harness.js` in its bundle (never the project's own bundle, which is what Xcode archives), reinstalls it fresh on a dedicated "LOTO Test iPad" Simulator and runs the suite against the real WKWebView and the real Capacitor Filesystem plugin — 62/62 there, and 62/62 in both desktop modes. The runner's guard was widened for this and only this: inside the app it runs only with `{iosSimulator:true}`, only when the app container is under `CoreSimulator` (never a device), and only on an empty install. §2: iOS 90 (committed, synced, in Xcode; archive pending); web still 86 with 90 staged. Prior: rev 15 — **build 89 fixes all 28 photo-integrity defects the 2026-09-24 review found** — see §6 "Photo-integrity fixes — build 89", which replaces rev 14's open-defects list. Source photos now follow their source *object* (no more index-keyed misattachment on template / type / electrical-count changes); every async photo writer is bound to its form session and Save & New / Edit / Duplicate / Clear / Export / Backup wait for it; one form identity (Save & New replaces-or-appends BY ID — a reload mid-edit can no longer save a second copy); orphan re-attach is a reviewed, missing-slots-only repair instead of a launch-time guess; filesystem writes are atomic and size-verified, IndexedDB reconnects, and the newest copy of the entry list wins at load. Every fix has a regression test written first and proven to FAIL on build 88: the suite is now 61 tests and passes 61/61 in web mode AND with the whole suite run against a mock native filesystem (`runPhotoRegressionSuite({nativeMock:true})`), and it refuses to run anywhere real data could live. Photo filenames now always carry the device code (`0924_JW-a1b2_00001`, §7); linked sources keep and export their photo, with entry + source ids on `linkedTo` (§10). §2: iOS is at 89 (archive pending); the web (`main`) is still 86 with 89 staged. Prior: rev 14 — documented the review (its open-defects list is now §6's build-89 fixes table). A max-effort code review of build 88 (nine finder angles, every candidate independently verified, plus a gap sweep) found 28 photo-integrity defects — 20 confirmed, 4 plausible, 4 unverified, none refuted, none yet fixed — documented by root cause: index-keyed source photos (template/type changes silently misattach or drop photos), three unguarded async photo writers, split form identity, launch-time orphan re-attach, and unverified storage writes; plus field rules until fixed. §6 also gains what a stored photo is (no EXIF survives the canvas) and the deferred off-app backup design, and **the regression-suite instruction now carries a hard warning: its reset erases real data, so never run it where field data lives.** §2 records which build each channel carries — the web (`main`) is on build 86 and still has the photo-destroying retake-delete. §3 adds `tests/` and the public-repo rule; §9 documents promoting builds to the web via the `loto-main-web` worktree; new §13 points to the recovery tooling and the Lumix frame-number rule. Prior: rev 13 — builds 83–88, the photo-store rebuild and its aftermath. **§6 is the section to read.** Build 83 re-keyed the photo store on entry UUIDs after name-derived keys corrupted ~1,100 photo slots across five VA facilities, adding migration/quarantine, a hard export duplicate gate, capture-time hash warnings, Photo Audit and entry-retention guards. Builds 84–88 then fixed what 83 got wrong or left rough: 84 made the migration done-flag conditional on the stores being readable; 85 scoped and chunked the quarantine export; 86 scoped Photo Audit to today's work; **87 removed the retake/misc-removal deletes that were destroying live photos**, added the in-flight capture guard and `reattachOrphanedPhotos()`; 88 gave duplicated sources their own `sourceId` and recorded the copied photo as a `{dupOf}`. The regression suite is now 12 tests and is the gate on any photo-path change. §10 gains the office `Information_Sheet_MMDDYY.xlsx` field-app layout spec — geometry, the bare-reference photo rule, the `photo_detail` `String(20)` position-marker trap — and the cross-date survey problem that stranded 71 Atlanta photos. §8 versioning and §11 code map refreshed to build 88 / cache v7.84. Prior: build 79: simplified verification — water sources get Drain/Gauge checkboxes synthesizing the same canonical strings, electrical defaults to Controls, Settings toggle reverts to classic pickers (§5.4c). Prior: rev 10 — builds 74–77: durable photo storage + integrity. §6 rewritten: full-res photos now write to the **native filesystem** (Capacitor Filesystem, `DATA/loto_photos/`) with IndexedDB/localStorage as fallbacks, after iOS storage eviction silently lost 74 photos on 2026-08-04; capture-time save verification, export integrity guard, header integrity badge, collision-proof photo keys. §7: local-day date semantics + filtered-day export stamps; reuse-a-photo share model with export dedup; per-entry `exportedAt`/`exportId` stamps. §5.5: export-status badges + delete guards with "Export these first" escape hatch. New template: Unit Heater - Natural Gas. Prior: rev 9 — §5 registry inventory expanded. Named the equipment-side registries the doc had glossed over (`EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT`, `EQUIPMENT_PROMPT_FOR_TEMPLATE`, `EQUIPMENT_DIAGRAM_OVERRIDE`, `CONDENSATE_AUTO_EQUIP`, `CUSTOM_EQUIP_KEYWORD_TEMPLATE`) plus a new "Other registries (misc but load-bearing)" bullet block covering `SOURCE_DEFAULTS`, `ENERGY_DEVICE_MAP`, `ENERGY_KEYWORD_TEMP`, `ENERGY_LABEL_PREFIX/COLORS`, `PHOTO_DEFAULTS`, `SKETCH_DIAGRAMS`, `SAVED_FILTERS`, `HOSPITALS`. Prior revs: rev 8 = ingester live; rev 7 = data-entry UX pass; rev 6 = ZIP restructure.)
 **Repo:** [github.com/whittw1/loto-info-sheet](https://github.com/whittw1/loto-info-sheet)
 **Prior standalone doc:** `LOTO_Integration_Architecture.md` in `~/Desktop/Claude Apps/LOTO Information Sheet App/` (April 2026, pre-iOS work — kept for reference, superseded by this file).
 
@@ -32,7 +32,7 @@ Both HTML files must be updated in lockstep — `FingerLakes_Information_Sheet.h
 | Channel | Source branch | Build | Photo-safety status |
 |---|---|---|---|
 | iOS / TestFlight | `ios-testflight-scaffold` | **100** (cache v7.96) — committed and synced 2026-09-28, ready to archive; it supersedes 95–99 (94 is on TestFlight) | The iPad was last known on **90**. Installing 100 over 90 is exactly the path the upgrade chain (`tests/fuzz/upgrade/`, b88 → b90 → 100 installed over each other on a Simulator) verified: every unit and every photo byte intact, the June numeric-id photos readable again ("✓ N photos safe"), the June units flagged "⚠ export again (photos)" until one export by this build ships them. **Export before deleting anything.** |
-| Azure SWA + GitHub Pages (web) | `main` | **100** — promoted 2026-09-28 (§9) | Same code; web-only fixes that matter there: the tab claim (one tab writes; the other pauses — and, since 96, a build-94 tab still open during a deploy pauses too) and the offline export (verified with the server killed after the service worker precached). |
+| Azure SWA + GitHub Pages (web) | `main` | **100** — promoted 2026-09-28 (§9) | Same code; web-only fixes that matter there: the tab claim (one tab writes; the other pauses — and, since 96, a build-94 tab still open during a deploy pauses too; since 99 its final autosave is read back, and since 100 a change made right after opening is kept); a launch waits on the Web Lock of a tab still writing photos, with **Open anyway** after 10 s (99) — §6 "Tabs (web only)"; and the offline export (verified with the server killed after the service worker precached). |
 
 **The web build is used in the field** — Bath VAMC (April 2026) was collected entirely on it — so a crew may be on either channel. Treat the two as one release: never leave `main` behind a photo-safety fix. To check what a channel carries: `git show origin/main:index.html | grep -o 'b[0-9]*</span>'`, or read the header on the device.
 
@@ -42,7 +42,7 @@ Both HTML files must be updated in lockstep — `FingerLakes_Information_Sheet.h
 
 ```
 loto-info-sheet/                              (the GitHub repo)
-├── index.html                                (~11,100 lines — the whole app)
+├── index.html                                (~12,000 lines — the whole app)
 ├── FingerLakes_Information_Sheet.html        (byte-identical mirror of index.html)
 ├── sw.js                                     (service worker — network-first cache)
 ├── manifest.json                             (PWA manifest, main)
@@ -55,13 +55,14 @@ loto-info-sheet/                              (the GitHub repo)
 ├── TODO.md                                   (deferred work)
 ├── IOS_RELEASE_SETUP.md                      (fastlane + GitHub Action prereqs)
 ├── tests/
-│   ├── photo-regression.js                   (photo-store regression suite, 115 tests — runs in a browser or inside the app on a Simulator — §6)
+│   ├── photo-regression.js                   (regression suite, 162 tests / 167 results (T1–T157) — runs in a browser or inside the app on a Simulator — §6)
 │   ├── sim-harness.js                        (loads the suite into a throwaway SIMULATOR build; inert without its trigger file)
 │   ├── run-sim-suite.sh                      (one command: sync → throwaway ios/ copy + harness → fresh install on "LOTO Test iPad" → run → report)
 │   ├── fuzz-harness.js                       (random-action fuzzer with data-safety oracles — build 94 review, §6; refuses real data)
 │   ├── sim-fuzz-harness.js                   (runs the fuzzer inside a throwaway Simulator build; inert without its trigger file)
-│   └── fuzz/                                 (the execution-based review kit — README: headless driver, suite runner, loto-web
-│                                              differential, Simulator fuzz, b88→b90→current upgrade chain, offline / two-tab / phone checks)
+│   ├── fuzz/                                 (the execution-based review kit — README: headless driver (one seed per run; a crashed
+│   │                                          page is reported, not hung), suite runner, loto-web differential, Simulator fuzz,
+│   │                                          b88→b90→current upgrade chain, offline / two-tab / build-94-tab / phone checks)
 │   ├── production_store_scan.py              (read-only quarantine classifier over export bundles)
 │   └── production-scan/                      (GITIGNORED — facility-identifying output; never commit)
 ├── .github/workflows/
@@ -101,8 +102,8 @@ loto-info-sheet/                              (the GitHub repo)
 | **Storage (photos, web / fallback)** | `IndexedDB` (`loto_photos_v3`) via a small custom wrapper | Primary on the plain web build; fallback on iOS. localStorage base64 is the last resort only when IDB is unavailable |
 | **Storage (metadata)** | `IndexedDB` `metadata` store + `localStorage` (JSON-stringified) | Entry list (`saved_equipment`), form state, photo thumbnails |
 | **Offline** | Service worker (`sw.js`) with network-first strategy + explicit `CACHE_NAME` version bump on every deploy | Bumped every change so users don't get stuck on stale HTML |
-| **ZIP generation** | JSZip 3.10.1 (loaded from cdnjs) | Client-side ZIP creation for exports |
-| **XLSX generation** | ExcelJS 4.4.0 (loaded from cdnjs) | Per-cell styling (SheetJS community can't do this) |
+| **ZIP generation** | JSZip 3.10.1 — bundled, `vendor/jszip-3.10.1.min.js` (build 93; it came from a CDN before, and the iOS app has no service worker) | Client-side ZIP creation for exports |
+| **XLSX generation** | ExcelJS 4.4.0 — bundled, `vendor/exceljs-4.4.0.min.js` (build 93) | Per-cell styling (SheetJS community can't do this) |
 | **Sketch** | Inline SVG diagrams + HTML5 Canvas overlay with pointer events (Apple Pencil supported via `setPointerCapture`) | 20 pre-drawn equipment diagrams; user draws + drops labels on top |
 | **iOS wrapper** | Capacitor 8.3 (WKWebView) | Wraps `index.html` as a native app for TestFlight distribution |
 | **iOS OCR** | Custom Capacitor plugin using Apple Vision (`VNRecognizeTextRequest`) | Registered in `AppDelegate.swift`; better English-print accuracy than ML Kit, no external SDK |
@@ -339,7 +340,7 @@ drain × gauge combos; `Controls` is 48% of ~850 electrical, blanks were 11%).
   CSS `.simple-verif-check` (the global `.form-group input` rule strips
   native checkbox rendering, so the checked state is painted manually).
 
-### 5.5  Saved-panel UX + Copy Source + autosave indicator + export badges
+### 5.5  Saved-panel UX + Copy Source + autosave indicator + messages + export badges
 
 #### Export-status badge + delete guards (build 77)
 
@@ -368,9 +369,9 @@ Deletion is guarded by the stamps:
 Entries saved before build 77 show amber until they ride along in one more
 export — an **All-dates export stamps everything** currently on the device.
 
-Three transient UX features live on top of the persisted data model. None of
-them are exported or serialised — they exist purely to make the on-device
-workflow faster.
+Four transient UX features live on top of the persisted data model. None of
+them are exported or serialised — they exist to make the on-device workflow
+faster and to say plainly what the device's storage is doing.
 
 #### Saved-equipment filter + search
 
@@ -430,14 +431,35 @@ header. `setAutosaveStatus(kind)` transitions between three states:
 | `'saved'`  | `✓ Saved at H:MM AM/PM` (local time) | `var(--success, #4ab86a)` |
 | `'error'`  | `⚠ Storage issue` | `var(--danger, #d34141)` |
 
-`autoSaveCurrent()` sets `'saving'` on entry, `'saved'` on
-`saveMetadata('current_wip', …).then(…)`, and `'error'` when both the IDB
-write and the localStorage fallback fail. The failure branch also still
-fires the existing `showToast('Storage issue - export soon', true)` for a
-louder signal.
+`autoSaveCurrent()` sets `'saving'` on entry and `'saved'` once the form is in
+its slot — `current_wip`, or `current_wip_alt` while `_wipUnread` (see §6 "The
+unit in progress"), written through the claim-checked `wipSlotTx` (build 97) —
+or in that slot's localStorage copy when IndexedDB fails; `'error'` when both
+fail, with `showToast('Storage issue - export soon', true)` for a louder signal.
+A form unchanged since the launch is not written for 3 s after a build-94 tab was
+told to pause (build 99; it reads `'saved'`). After a late launch the form can
+wait in memory for a kept unit's save: the indicator stays at `'saving'`
+meanwhile (build 100).
 
 The indicator initially reads `💾 Autosave ready` — it changes to a real
 timestamp on the first successful save after page load.
+
+#### Messages — the toast and the banners
+
+One toast element, used as a small queue (`showToast`, build 99): a warning
+stays for its own time (2 s; 4 s when it runs to several lines) and messages that
+come meanwhile show under it; anything else gives way to the next message; at most
+three lines are on screen — the oldest non-warning goes first, and the newest
+always shows. (Builds 97–98 kept a warning only 0.6 s ahead of the next message.)
+A note that belongs with another message is composed into it rather than shown
+after it: "Valve marks cleared" (build 95) and the 10-source heads-up
+(`sourceLimitNote` / `showSourceToast` — one rule for every caller, build 99).
+Conditions that last are **sticky banners** (`showStickyBanner`, build 95):
+storage writes failing, the entry store unreadable or empty, units the last save
+couldn't write restored from another copy, fewer units than the last save wrote,
+a unit in progress that couldn't be read, an unsaved edit a late launch left in
+its slot. On phones, storage and photo warnings repeat in the bottom bar (build
+95).
 
 ---
 
@@ -504,6 +526,9 @@ timestamp on the first successful save after page load.
   pure-JS SHA-256 (`sha256HexJS`, verified against Node's crypto) takes over when
   `crypto.subtle` is unavailable — the web build over plain http to a LAN IP —
   where hashing used to return null and silently switch off the duplicate gate.
+  Build 99: the index is read, added to and written in ONE claim-checked
+  transaction (`claimedMetadataTx`) — a tab that lost the claim in between used to
+  write its stale index over the live tab's.
 - **Export enforcement:** `resolveExportPhoto` ships bytes only through keys the
   entry's id owns — legacy/foreign keys, and (build 89) source photos whose key
   names a different source, are excluded + confirmed with the user (`unsafeRefs`,
@@ -593,7 +618,9 @@ timestamp on the first successful save after page load.
   `_entryStoreUnread` makes the next `saveAll` re-read the store and merge back
   anything memory lacks (entries, sketches, thumbnails) before writing.
   `repairPhotoRefs()` rebuilds thumbnails a snapshot restore stripped, and photo
-  slots show as taken by their stored key, not their thumbnail.
+  slots show as taken by their stored key, not their thumbnail. (Since build 91
+  the launch MERGES every stored copy instead of picking the newest — see "The
+  launch" below.)
 - **One form identity (build 89).** "Editing" means a saved entry has the form's
   `currentEntryId`; `performSaveAndNew` replaces-or-appends **by id**, and `loadAll`
   re-derives `editingEntry` from the id — the object reference didn't survive an
@@ -609,7 +636,7 @@ timestamp on the first successful save after page load.
   in the ~340 historical legacy-suspect entries and told the crew nothing about
   the day in front of them. Each scope labels what it covers, so a historical
   collision is never mistaken for today's work.
-- **Tests:** `tests/photo-regression.js` — **104 tests** (109 results), run by loading the app
+- **Tests:** `tests/photo-regression.js` — **162 tests** (167 results), run by loading the app
   and calling `runPhotoRegressionSuite()`. T1–T7 cover the
   original directive (same-name isolation, re-export byte stability, duplicate
   provenance, the cross-link/legacy export gates, key format, and a 500-entry /
@@ -618,8 +645,10 @@ timestamp on the first successful save after page load.
   Handler 16 duplicate-source scenario); **T12–T57 one per defect of the
   2026-09-24 review**, each written before its fix and proven to FAIL on build 88
   (see the table below); T58 (build 90) checks the integrity badge follows
-  deletes. **If you change any photo path, run it in all three environments and
-  expect every result to pass in each (109/109 at build 93):**
+  deletes; T59–T157 are one per finding of the later reviews and fault campaigns
+  (builds 91–100), each written first and proven to FAIL on the build before — see
+  each build's table below. **If you change any photo path, run it in all three
+  environments and expect every result to pass in each (167/167 at build 100):**
   1. `runPhotoRegressionSuite()` in a desktop browser (web: IndexedDB);
   2. `runPhotoRegressionSuite({nativeMock: true})` there too — an in-memory
      Capacitor Filesystem for the whole run;
@@ -645,6 +674,14 @@ timestamp on the first successful save after page load.
   > container path is under `~/Library/Developer/CoreSimulator/Devices/` (a real
   > iPad's is `/var/mobile/…`), and ONLY on an install with no entries and no
   > photo files; its reset refuses to run outside an armed suite run.
+
+  `tests/fuzz/run_suite.mjs` runs the suite headless (`ONLY=t100,t101`,
+  `VERBOSE=1`, `NATIVE_MOCK=1`). Beyond the suite, `tests/fuzz/` RUNS the app
+  (build 94, extended through build 99): a seeded random-action fuzzer with
+  data-safety oracles — with and without storage faults, and inside the app on
+  the Simulator — every export fed to loto-web's real importer, a b88 → b90 →
+  current upgrade chain on a Simulator, and two-tab / build-94-tab / offline /
+  phone-width checks; its README has the commands.
 
   Also `tests/production_store_scan.py` (read-only quarantine classifier against the
   8/5 all-dates export bundles).
@@ -873,7 +910,7 @@ Two object stores:
 | Store | Key | Value | Used for |
 |---|---|---|---|
 | `photos` | `dbKey` (string) | `{ data: ArrayBuffer, type: string, size: number }` | Full-res photo bytes |
-| `metadata` | key string | any JSON | `saved_equipment` (the main list) + `saved_equipment_at` (build 89 stamp), `current_wip` (the form autosave, with its own `at`), `photo_hash_index`, `photo_migration_report` |
+| `metadata` | key string | any JSON | `saved_equipment` (the main list) + `saved_equipment_at` (build 89 stamp) + `deleted_ids` / `restored_ids` (the delete / re-save records, build 96) — all four written in one transaction, see "The list write" below; `current_wip` / `current_wip_alt` (the two unit-in-progress slots, each copy with its own `at` — see "The unit in progress"); `photo_hash_index`; `photo_migration_report` |
 
 **Connection handling (build 89).** WKWebView can drop an IndexedDB connection
 (backgrounding, memory pressure). The handle used to be cached forever: every
@@ -884,6 +921,19 @@ next launch loaded the stale IndexedDB copy. Now every operation runs through
 informational — it no longer switches IndexedDB off for the session after one
 failure. The startup self-test record `__idb_test__` is excluded from every
 "stored photos" listing.
+
+**The list write (builds 95–100).** `saveAll()` first writes the emergency copy
+and the entry count (`writeEntrySnapshot`), then `writeEntryListMerged` — ONE
+read-write transaction. It reads the stored stamp; when another writer has stored
+since, or the launch couldn't read the store, it merges that list into memory
+first (its delete / re-save records read on their own — build 99); then it writes
+the list, its stamp and both records together, with the tab claim checked when the
+write runs (a moved claim aborts it as "paused" — build 95). It is safe to retry
+after a failed commit (build 96). When it fails, the localStorage fallback takes
+the list — a plain list, with the deletes the store hasn't recorded beside it
+(build 99) — and a fallback write that fails part-way keeps what the fallback
+already holds (T154). `saveAll()` resolves true once the list is stored durably
+anywhere (build 96); a save that lands releases a form waiting on it (build 100).
 
 Photo `dbKey` format (**build 83+**): `photo::<entry-uuid>::<slot-token>::<capture-rev>`
 — see "Photo keys — UUID ownership" above, which is authoritative. Two earlier
@@ -902,8 +952,9 @@ Kept small because iOS Safari can be miserly with it. Holds:
 | Key | Content |
 |---|---|
 | `loto_saved` + `loto_saved_at` (+ `loto_saved_deleted`) | Fallback copy of the entry list, written only when the IndexedDB write fails (build 89 stamps it). `loadAll` MERGES it with the other copies (build 91); a successful IndexedDB save clears it. A plain list (builds ≤ 95 and ≥ 99 — older builds must be able to read it); the deletes and re-saves the store hasn't recorded yet go in `loto_saved_deleted` `{deleted, restored}`, written FIRST (build 99). Builds 96–98 wrote `{list, deleted, restored}` into `loto_saved`; that is still read. |
-| `loto_deleted_ids` / `loto_restored_ids` | Deletes and re-saves of deleted ids, `{id: when}` (builds 91 / 96). The later event wins; they are merged with the IndexedDB mirror (`deleted_ids` / `restored_ids`, written by every list save) and the fallback's copy (build 96 — see §6 "Build 96"). `loto_deleted_ids` holds only ids that ARE deleted. |
-| `loto_tab_claim` / `loto_tab_busy` | Web only (build 95): the tab that may write; a tab still writing photos — refreshed every 5 s while it writes, removed when its page goes away, stale after 20 s (build 97). Since build 99 that tab also holds the Web Lock `loto-photo-writes` (`lock: true` in the flag), which a launch waits on instead. |
+| `loto_saved_snapshot` + `loto_saved_snapshot_at` / `loto_entry_count` | The emergency copy of the list — sketches and photo previews stripped — written at the start of every list save, and how many units the last save wrote (see "Entry retention" above and "The launch" below). |
+| `loto_deleted_ids` / `loto_restored_ids` | Deletes and re-saves of deleted ids, `{id: when}` (builds 91 / 96). The later event wins; they are merged with the IndexedDB mirror (`deleted_ids` / `restored_ids`, written by every list save) and the fallback's copy (build 96 — see §6 "Build 96"). `loto_deleted_ids` holds only ids that ARE deleted. Since build 99 a new event is stamped after every event already known for its id, and each map is parsed once per stored value — see "Deletes and re-saves" below. |
+| `loto_tab_claim` / `loto_tab_busy` | Web only (build 95): the tab that may write; a tab still writing photos — refreshed every 5 s while it writes, removed when its page goes away, stale after 20 s (build 97). Since build 99 that tab also holds the Web Lock `loto-photo-writes` (`lock: true` in the flag), which a launch waits on instead — offering **Open anyway** after 10 s; see "Tabs (web only)" below. |
 | `loto_current_alt` / `loto_wip_superseded` | The alternate unit-in-progress slot's fallback copy; the marker for main-slot copies an earlier launch already restored (build 95). |
 | `loto_current` | Fallback copy of the form autosave (same rule, by its `at`). |
 | `loto_seq_used` | Build 89 — `{ "MMDD": lastPhotoNumber }` handed off per date by this device; a re-typed start number at or below it prompts (§7). |
@@ -924,24 +975,133 @@ even after reconnecting). Reads via
 A failed save at every tier surfaces the red **NOT SAVED** badge — the old
 behavior of silently continuing is gone.
 
-### Migrations on load
+### The launch — in order, with the migrations (as of build 100)
 
-`loadAll()` first MERGES every stored copy of the entry list (build 91 — see §6
-"Build 91"), normalises entry ids to strings, then applies
-**`ENERGY_SOURCE_RENAMES`** (`CA In` → `Compressed Air In`, etc.). Anything that
-changed is written back **only through `saveAll()`, and only when IndexedDB was
-actually read** (build 91 — the migrations used to write `saved_equipment`
-directly, which put the stripped emergency snapshot over an intact store after
-a failed read). The old per-launch `migrateToggleablePhotoFlags` is **gone**: it
-cleared `noPhoto` on every launch, undoing the user's own "hide" and the
-templates' defaults. Separately,
-`init()` runs, in order: **`migratePhotosToFS()`** (native only — the
-one-time-per-photo IDB → filesystem copy described above), `cleanupFsTempFiles()`,
-**`runPhotoKeyMigration()`** (build 89: deterministic keys + checkpoints, so a
-kill mid-run resumes without duplicate copies; done-flag only when every store was
-readable), **`repairPhotoRefs()`** (rebuilds stripped thumbnails; settles refs a
-kill left "saving"), then paints the integrity badge. Orphan re-attach no longer
-runs at launch.
+1. **Web only — the tab claim** (`tabLockInit`). A launch first waits while
+   another tab is writing photos — it holds the Web Lock `loto-photo-writes`
+   (build 99), or, from a tab without it (builds up to 98, or a browser without
+   Web Locks), its `loto_tab_busy` flag is fresh — behind a "One moment" overlay
+   that offers **Open anyway** after 10 s (build 99; opening pauses the other tab)
+   and gives up waiting after 10 min. Then it claims (`loto_tab_claim`) and tells
+   any build-94 tab to pause — see "Tabs (web only)". The 20 s slow-storage timer
+   starts only now.
+2. **`loadAll()` — the saved list.** It reads `saved_equipment` and its stamp in
+   one read, then the delete / re-save records (`deleted_ids`, `restored_ids`)
+   each on its own (build 99 — one unreadable record used to make the whole list
+   "unreadable"; an unreadable re-save record is rebuilt from the list, T155). It
+   MERGES every stored copy — IndexedDB, the localStorage fallback (a plain list +
+   `loto_saved_deleted`, or builds 96–98's object) and the emergency snapshot
+   (build 91) — dropping every id whose latest event is a delete; normalises entry
+   ids to strings, records the shape older marks were placed for
+   (`backfillMarksShape`, build 97) and applies **`ENERGY_SOURCE_RENAMES`**
+   (`CA In` → `Compressed Air In`, etc.). The loud cases stay loud: an evicted
+   (empty) store, a store that couldn't be read (the copies are shown and nothing
+   is written over it — `_entryStoreUnread` makes the next save re-read and merge
+   it first), units restored from another copy, fewer units than the last save
+   wrote.
+3. **`loadAll()` — the unit in progress** (see below). A saved unit that exists
+   only as the stripped emergency copy gets its sketch and photo previews back
+   from the stored copy of the form it was saved from (build 97); the slots are
+   resolved and recovered drafts join the list.
+4. **One save** (build 99). Whatever the launch changed — list repairs,
+   migrations, restored sketches, recovered drafts — goes out in ONE `saveAll()`,
+   written back **only through `saveAll()`, and only when IndexedDB was actually
+   read** (build 91 — the migrations used to write `saved_equipment` directly,
+   which put the stripped emergency snapshot over an intact store after a failed
+   read). Slots are emptied only once that save is durable. Builds 91–98 saved up
+   to three times here, and the first stored a snapshot-only unit's sketch as
+   "none" before step 3 could give it back.
+5. The form is restored and recorded as the launch left it (`_bootWipJson` — the
+   build-94 handover compares against it); autosaves may write from here on
+   (`_bootWipSettled` — nothing autosaves during the launch, build 93).
+6. **`init()`, once `loadAll()` settles** — and only while this tab may write
+   (build 95): **`migratePhotosToFS()`** (native only — the one-time-per-photo IDB
+   → filesystem copy described above), `cleanupFsTempFiles()`,
+   **`runPhotoKeyMigration()`** (build 89: deterministic keys + checkpoints, so a
+   kill mid-run resumes without duplicate copies; done-flag only when every store
+   was readable), **`repairPhotoRefs()`** (rebuilds stripped thumbnails; settles
+   refs a kill left "saving"), then the integrity badge. Orphan re-attach no
+   longer runs at launch, and the old per-launch `migrateToggleablePhotoFlags` is
+   **gone** (it cleared `noPhoto` on every launch, undoing the user's own "hide"
+   and the templates' defaults).
+
+**Slow storage (20 s).** When `loadAll()` hasn't decided by then, the form
+becomes the tech's — "Storage is slow — keep working; nothing will be
+overwritten" — and it autosaves to the alternate slot. The late `loadAll()`
+restores nothing over it and merges the units saved meanwhile in full (build 96);
+what it does with the stored units in progress is below.
+
+### The unit in progress — two slots (as of build 100; build 101 replaces them)
+
+The form autosaves (`autoSaveCurrent`) into one of two IndexedDB slots, each with
+a localStorage copy for when IndexedDB fails: `current_wip` / `loto_current` (main)
+and `current_wip_alt` / `loto_current_alt` (alternate). It uses the alternate slot
+while `_wipUnread` is set: the main slot couldn't be read at launch, or the unit
+restored came from the alternate slot (builds 91–95), or the launch ran past 20 s.
+Every slot write checks the tab claim inside its own transaction
+(`claimedMetadataTx`, builds 97 / 99). A copy carries its unit's entry id from the
+form's first content (build 97) and its own `at`.
+
+A **normal launch** restores the newest copy. An OLDER copy of another unit with
+content becomes a saved **recovered draft** ("⚠ Recovered … — check it"), and its
+slot is emptied only once that draft is safely saved (build 96). A copy older than
+its unit's last save or delete is stale and dropped (`staleCopy`, build 96; T134),
+as are main-slot copies an earlier launch already restored (`loto_wip_superseded`,
+builds 95 / 97). An unreadable slot is never written over without a warning.
+
+A **late launch** (past the 20 s timer) keeps the form in use. Units found in the
+slots become recovered drafts — of one unit in both slots, its newer copy (build
+99) — and an unsaved edit of a saved unit stays in its slot, with a banner telling
+the tech to reopen the app for it. The form then autosaves to the alternate slot,
+or to the main slot when the alternate one couldn't be read or holds such an edit
+(build 99, with a warning). While the slot it is to use still holds a unit just
+kept as a draft — that slot is the unit's only full copy until the saved list
+lands — the form **waits in memory** (`_wipHold`, build 100): a waiting autosave
+retries the list save at most every 10 s, and the first save made meanwhile that
+lands settles the slots and writes the form. Known limit: when both slots must be
+kept (an edit left in the main slot, the alternate slot unreadable) the form still
+goes to the alternate slot. Build 101 stores units in progress as versioned
+per-unit records, which retires the slots, the superseded marker and these special
+cases.
+
+### Tabs (web only)
+
+One tab writes. The claim (`loto_tab_claim`) is taken at launch and checked at
+every write (`tabMayWrite()`, build 95) — inside the transaction itself for the
+unit-in-progress slots and the photo-hash index (`claimedMetadataTx`, builds 97 /
+99), and inside the list's compare-and-set write. A tab that loses the claim
+pauses behind "Open in another tab" with **Use this tab instead** (a reload that
+claims it back). A tab writing photos refreshes `loto_tab_busy` every 5 s (stale
+after 20 s, removed when its page goes away — build 97) and holds the Web Lock
+`loto-photo-writes`, which the browser releases the moment that tab closes or
+crashes (build 99); a launching tab waits on it (see "The launch").
+
+**Build-94 tabs** (still open from before build 95 reached the web) talk on the
+BroadcastChannel `loto-collector-tabs`. A new tab posts `takeover` as it claims,
+and answers a build-94 tab's launch `hello` with `live`, which pauses that tab
+(build 96). A build-94 tab that pauses autosaves its form and says `released`: if
+this tab's form is unchanged since its launch, it reloads to show that final
+autosave (build 99 — it used to write its own older copy over it); a form the tech
+has changed, written yet or not, goes back over it (build 100,
+`formChangedSinceBoot`). For 3 s after the takeover an unchanged form is not
+autosaved at all.
+
+### Deletes and re-saves — timestamped events (as of build 99)
+
+Every delete, and every re-save or re-import of a deleted id, is an event with its
+time; the later one wins (build 96). Events are gathered from every place they may
+be recorded: `loto_deleted_ids` / `loto_restored_ids` in localStorage, the
+IndexedDB mirror (`deleted_ids` / `restored_ids`, written in the same transaction
+as every list save), the fallback's side record (`loto_saved_deleted`; builds
+96–98 kept them inside `loto_saved`) and this session's memory (build 95 — a delete
+whose localStorage write failed was recorded nowhere else). A new event is stamped
+after every event already known for its id (`eventTimeAfter`, build 99 — a re-save
+stamped while the device clock ran ahead used to outrank every later delete). The
+localStorage maps are parsed once per stored value (`readLsMap`, build 99). The
+IndexedDB records are read on their own, and an unreadable re-save record is
+rebuilt from the stored list: every unit in a list was alive for its writer, so a
+unit in it whose delete is no later than the list's stamp had been re-saved by then
+(`restoresFromList`, T155). A delete after the stamp still wins.
 
 ---
 
@@ -1589,7 +1749,7 @@ The **primary integration surface**. Format:
 
 **For a downstream ingester** — the JSON gives you all the structural data (equipment, sources, sketches). The photo bytes live only in the ZIP export.
 
-**Restoring a backup (build 89).** Import asks **Merge (recommended) / Replace the saved list / Cancel — change nothing**. (The old native confirm made its *Cancel* button mean REPLACE.) Merge adds entries this device doesn't have, matched by entry id (or `legacyId`). Replace makes the list the backup's entries, but an entry that also exists on the device keeps the DEVICE's version — its photo refs point at the shots actually on disk; the old Replace pointed retaken photos back at the rejected originals. A backup includes an unsaved NEW form (with its id and photo refs) but never a second copy of an entry open for edit. `normaliseEntry` replaces a missing/malformed id with a UUID (old value → `legacyId`).
+**Restoring a backup (build 89).** Import asks **Merge (recommended) / Replace the saved list / Cancel — change nothing**. (The old native confirm made its *Cancel* button mean REPLACE.) Merge adds entries this device doesn't have, matched by entry id (or `legacyId`). Replace makes the list the backup's entries, but an entry that also exists on the device keeps the DEVICE's version — its photo refs point at the shots actually on disk; the old Replace pointed retaken photos back at the rejected originals. Of a unit saved twice on the device, the NEWER copy is that version (build 99); a form open on the copy that leaves moves to the one that stays (build 97), and a form holding a unit Replace removes is closed (build 95). A backup includes an unsaved NEW form (with its id and photo refs) but never a second copy of an entry open for edit. `normaliseEntry` replaces a missing/malformed id with a UUID (old value → `legacyId`).
 
 ### File save behavior — web vs iOS
 
@@ -1641,7 +1801,7 @@ Required by Apple even though the app only uses `<input type="file" capture="env
 ### Versioning
 
 - `MARKETING_VERSION` — user-facing (currently `1.4`); bump for user-visible releases
-- `CURRENT_PROJECT_VERSION` — build number (currently **99**); **must be strictly increasing** for the same `MARKETING_VERSION` or Apple rejects the upload. Bumped by +1 on every commit that goes to TestFlight. Both Debug + Release entries in `project.pbxproj` must match.
+- `CURRENT_PROJECT_VERSION` — build number (currently **100**); **must be strictly increasing** for the same `MARKETING_VERSION` or Apple rejects the upload. Bumped by +1 on every commit that goes to TestFlight. Both Debug + Release entries in `project.pbxproj` must match.
 
 ### Service worker cache
 
@@ -1928,12 +2088,13 @@ Approximate line numbers (may drift as edits accumulate) — refreshed for build
 | `resolveExportPhoto()` — owned-keys-only, source-binding check, hash-verified reads, sha256 manifest records (inside `runCombinedExport`) | 9385 |
 | Export gates inside `runCombinedExport`: missing bytes, hash mismatches, `unsafeRefs` acknowledgement, and the hard **duplicate gate** | 8989 – ~9060 |
 | `saveBackup()` — JSON backup (v2 envelope) | 10212 |
-| `handleBackupFile()` — Merge / Replace / Cancel (build 89) | 10278 |
+| `handleBackupFile()` — Merge / Replace / Cancel (build 89; Replace keeps the device's newer copy of a unit saved twice — build 99) | 10278 |
 | `normaliseEntry()` — backup import (spread-preserves identity fields; validates ids) | 10389 |
-| `setAutosaveStatus()` / `autoSaveCurrent()` — autosave indicator + save (§5.5) | 10493 / 10674 |
-| `saveAll()` — stamped writes, merge-before-write after an unread launch (build 89) | 11051 |
-| `mergeUnreadEntryStore` / `entryListStamp` / `firstCopyIsNewer` / `repairPhotoRefs` | 10512 / 10306 / — / 10526 |
-| `loadAll()` — newest copy wins; no snapshot write-back after a failed read; re-derives `editingEntry` | 10627 |
+| `setAutosaveStatus()` / `autoSaveCurrent()` — autosave indicator + save (§5.5; the form waits while a kept draft's save is pending — build 100) | 10493 / 10674 |
+| `saveAll()` — the list write (§6 "The list write"): emergency copy, compare-and-set store write, localStorage fallback; resolves true once durable | 11051 |
+| `mergeStoredEntryList` (the list write's merge, build 95 — it replaced mergeUnreadEntryStore; firstCopyIsNewer went with build 91's merge) / `entryListStamp` / `repairPhotoRefs` | 11167 / 10849 / 11183 |
+| `loadAll()` — merges every stored copy, resolves the unit in progress, saves once (§6 "The launch") | 11284 |
+| `mergeEntryCopies` (every stored copy; deleted ids dropped) / `keepWipAsRecoveredEntry` (a unit in progress becomes a recovered draft) | 10907 / 11257 |
 | `saveOrShare()` — unified file save helper (chunked native write, build 89) | 11802 |
 | **Form sessions + in-flight photo writes (build 89):** `formSession` / `beginNewFormSession` / `startPhotoWrite` / `photoWritesBusy` / `refuseIfPhotoWritesBusy` | 1773 / 1774 / 1778 / 1783 / 1788 |
 | `askChoice()` — promise-based multi-choice dialog (tests answer via `window.__askChoiceAuto`) / `escHtml` | 1841 / 1808 |
