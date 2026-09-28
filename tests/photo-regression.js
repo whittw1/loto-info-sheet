@@ -33,6 +33,7 @@
 //   T111–T124 build 95: one per finding of the 2026-09-27 review of build 94
 //   T125–T133 build 96: the medium findings of the 2026-09-28 review of build 95;
 //   T134 build 96: found by its fault campaign (a deleted unit back as a recovered draft)
+//   T135–T140 build 97: the low findings of the 2026-09-28 review of build 95
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -3757,6 +3758,164 @@
     savedEquipment = []; await loadAll(); await sleep(200);
   }
 
+  // ======================================================================
+  // Build 97 — one test per low finding of the 2026-09-28 review of build 95
+  // ======================================================================
+  // T135 — Import → Replace kept the FIRST row of a unit saved twice and
+  // closed the form holding the other one: the edit in progress was discarded
+  // with no warning (b94 kept it — Save & New wrote it onto the kept row)
+  async function t135_replaceKeepsTheEditOfATwinCopy() {
+    const N = 'T135 Import → Replace keeps the edit of the other copy of a unit saved twice (the form moves to the copy that stays)';
+    await resetAppState();
+    const R1 = mkEntry('Twin-135'); R1.notes = 'copy one';
+    const R2 = Object.assign(JSON.parse(JSON.stringify(R1)), { notes: 'copy two' });
+    savedEquipment = [R1, R2]; saveAll(); await sleep(300);
+    editSaved(1); await sleep(100);
+    document.getElementById('equipNotes').value = 'edited-135';
+    const file = new File([JSON.stringify({ version: 2, entries: [R1, mkEntry('Other-135')] })], 'b.json', { type: 'application/json' });
+    await withDialogs({ confirm: true, choice: { 'backup-import': 'replace' } }, async () => {
+      handleBackupFile({ target: { files: [file] } });
+      await waitFor(() => savedEquipment.some(e => e.equipName === 'Other-135'), 8000, 'replace applied');
+      await sleep(200);
+    });
+    const kept = document.getElementById('equipNotes').value === 'edited-135' && !!editingEntry && savedEquipment.includes(editingEntry);
+    performSaveAndNew(); await sleep(500);
+    const rows = savedEquipment.filter(e => e.id === R1.id).map(e => e.notes);
+    record(N, kept && JSON.stringify(rows) === '["edited-135"]', 'edit kept after Replace=' + kept + ', that unit after Save & New=' + JSON.stringify(rows));
+  }
+
+  // T136 — another tab's launch took the claim between Save & New's check and
+  // its list write: the write was refused, but the blank form still committed
+  // over current_wip — the unit's only full copy — and the next launch had the
+  // stripped emergency copy (no sketch)
+  async function t136_aSaveCutShortByAnotherTabKeepsTheUnitWhole() {
+    const N = 'T136 a Save & New cut short by another tab taking over keeps the unit whole (its sketch survives)';
+    await resetAppState(); await clearWipSlots();
+    if (typeof tabLockActive === 'function' && !tabLockActive()) return record(N, true, 'single-window app (iOS) — no tab claim');
+    fillForm('Sk-136');
+    restoreSketch({ diagramKey: 'general', strokes: [{ color: '#f00', width: 3, points: [{ x: 0.1, y: 0.1 }, { x: 0.6, y: 0.6 }] }], labels: [] });
+    autoSaveCurrent(); await sleep(400);
+    let had = null; try { had = localStorage.getItem('loto_tab_claim'); } catch (e) {}
+    const realGet = IDBObjectStore.prototype.get; let fired = false;
+    IDBObjectStore.prototype.get = function (k) { if (k === 'saved_equipment_at' && !fired) { fired = true; otherTabClaims(); } return realGet.apply(this, arguments); };
+    try { performSaveAndNew(); await sleep(800); }
+    finally { IDBObjectStore.prototype.get = realGet; }
+    const cw = await rawIdbGet('metadata', 'current_wip');
+    releaseOtherTabClaim(had);                                             // … the other tab's launch
+    forgetSessionMemory();
+    savedEquipment = []; await loadAll(); await sleep(400);
+    const u = savedEquipment.find(e => e.equipName === 'Sk-136');
+    const sk = !!(u && u.sketch && (u.sketch.strokes || []).length === 1);
+    record(N, !!cw && cw.equipName === 'Sk-136' && sk, 'current_wip after the cut-short save=' + JSON.stringify(cw && cw.equipName) + ', next launch lists it=' + !!u + ', with its sketch=' + sk);
+    dropLoadBanners(); await clearWipSlots();
+    savedEquipment = []; await loadAll(); await sleep(200);
+  }
+
+  // T137 — the "still writing photos" flag was never cleared when the page
+  // went away and never refreshed while writing: a refresh right after a photo
+  // held the next launch up to 60 s, and a copy running over 60 s could be
+  // taken over mid-copy
+  async function t137_thePhotoBusyFlagFollowsTheWritesItGuards() {
+    const N = 'T137 the "still writing photos" flag is cleared when the page goes away, refreshed while writing, and a dead one stops blocking soon';
+    await resetAppState();
+    if (typeof tabLockActive === 'function' && !tabLockActive()) return record(N, true, 'single-window app (iOS) — no tab claim');
+    const flag = () => { try { return JSON.parse(localStorage.getItem('loto_tab_busy') || 'null'); } catch (e) { return null; } };
+    let t = startPhotoWrite('test-137');
+    const set = !!flag();
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }));
+    const clearedOnHide = !flag();
+    endPhotoWrite(t); await sleep(1700);
+    t = startPhotoWrite('test-137b');
+    const at1 = (flag() || {}).at || '';
+    await sleep(6500);
+    const at2 = (flag() || {}).at || '';
+    endPhotoWrite(t); await sleep(1700);
+    const refreshed = !!at1 && !!at2 && at2 > at1;
+    try { localStorage.setItem('loto_tab_busy', JSON.stringify({ id: 'TEST-DEAD-TAB', at: new Date(Date.now() - 25000).toISOString() })); } catch (e) {}
+    const deadBlocks = otherTabBusy();
+    try { localStorage.removeItem('loto_tab_busy'); } catch (e) {}
+    record(N, set && clearedOnHide && refreshed && !deadBlocks, 'flag set=' + set + ', cleared on pagehide=' + clearedOnHide + ', refreshed while writing=' + refreshed + ', a flag 25 s old still blocks=' + deadBlocks);
+  }
+
+  // T138 — marks placed with builds 92–94 carry no record of the shape they
+  // were placed for, so b95's rule never cleared them when their source
+  // became an In/Out pair: exported In/Out in tap order
+  async function t138_legacyMarksAreClearedWhenTheSourceBecomesAnInOutPair() {
+    const N = 'T138 marks saved by builds 92–94 are cleared when their source becomes an In/Out pair';
+    await resetAppState();
+    const E = mkEntry('Legacy-138', { sources: [Object.assign(mkSrc('HHW In'), { deviceType: 'Ball Valve', quantity: 2, sourceId: genUuid() })] });
+    E.photos = { source_0: { dbKey: 'photo::' + E.id + '::' + E.sources[0].sourceId + '::a1b2c3d4', fileType: 'image/jpeg', timestamp: new Date().toISOString(),
+      marks: [{ x: 0.8, y: 0.5 }, { x: 0.2, y: 0.5 }] } };                  // no marksFor: placed before build 95
+    savedEquipment = [E]; saveAll(); await sleep(400);
+    forgetSessionMemory();
+    savedEquipment = []; await loadAll(); await sleep(300);              // relaunch with the new build
+    editSaved(savedEquipment.findIndex(e => e.id === E.id)); await sleep(100);
+    handleEnergySourceChange(0, 'HHW In/Out');
+    const left = ((photos.source_0 || {}).marks || []).length;
+    const exported = sourceMarksForExport({ sources: sources, photos: photos }, 0).length;
+    record(N, left === 0 && exported === 0, 'marks left after the switch to HHW In/Out=' + left + ', exported=' + exported);
+    clearForm(false);
+  }
+
+  // T139 — the "superseded" marker was written on the first alternate-slot
+  // write whatever the form held: after a Save & New that failed everywhere,
+  // the blank form's write marked the restored unit's stored copies
+  // superseded (and Clear had removed its local copy) — the unit was gone
+  async function t139_aRestoredUnitWhoseSaveFailedIsNeverMarkedSuperseded() {
+    const N = 'T139 a unit restored from its local copy whose Save & New failed everywhere comes back at the next launch';
+    await resetAppState(); await clearWipSlots();
+    const id = genUuid(), ago = (s) => new Date(Date.now() - s * 1000).toISOString();
+    await rawIdbPut('metadata', 'current_wip', wipOf('U-139', id, { at: ago(300), notes: 'v0' }));
+    localStorage.setItem('loto_current', JSON.stringify(wipOf('U-139', id, { at: ago(200), notes: 'v1' })));
+    await withUnreadable(['current_wip'], async () => { savedEquipment = []; await loadAll(); await sleep(300); });
+    dropLoadBanners();
+    const restored = document.getElementById('equipNotes').value;
+    const realW = writeEntryListMerged, si = Storage.prototype.setItem;
+    writeEntryListMerged = () => Promise.reject(new Error('IndexedDB write failed (test)'));
+    Storage.prototype.setItem = function (k, v) {
+      if (/^loto_saved/.test(String(k))) { const e = new Error('QuotaExceededError (test)'); e.name = 'QuotaExceededError'; throw e; }
+      return si.call(this, k, v);
+    };
+    try { await withDialogs({ confirm: true }, async () => { performSaveAndNew(); await sleep(900); }); }
+    finally { writeEntryListMerged = realW; Storage.prototype.setItem = si; }
+    const marker = localStorage.getItem('loto_wip_superseded');
+    dropLoadBanners(); setStorageFailBanner(false);
+    forgetSessionMemory(); _wipUnread = false;
+    savedEquipment = []; await loadAll(); await sleep(300);              // the next launch reads fine
+    const name = document.getElementById('equipName').value, notes = document.getElementById('equipNotes').value;
+    const inList = savedEquipment.some(e => e.equipName === 'U-139');
+    record(N, restored === 'v1' && ((name === 'U-139' && notes === 'v1') || inList),
+      'restored at launch 1=' + JSON.stringify(restored) + ', marker after the failed save=' + JSON.stringify(marker) + ', next launch form=' + JSON.stringify(name + '/' + notes) + ', in the list=' + inList);
+    await clearWipSlots(); dropLoadBanners();
+    savedEquipment = []; await loadAll(); await sleep(200);
+  }
+
+  // T140 — Split's "Valve marks cleared" note was replaced in the same tick by
+  // the 10-source heads-up, and a toast raised 1.9 s after another was hidden
+  // at 2 s by the first one's timer
+  async function t140_noWarningIsHiddenByTheNextMessage() {
+    const N = 'T140 Split\'s "marks cleared" note stays visible with the 10-source heads-up, and a later toast gets its full time';
+    await resetAppState();
+    fillFormNoSources('Split-140');
+    sources.push(Object.assign(mkSrc('HHW In'), { deviceType: 'Ball Valve', quantity: 2, collapsed: false }));
+    for (let i = 1; i < 10; i++) sources.push(mkSrc('Electrical 480V'));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('s140'));
+    openValveMarkDialog('source_0'); await markDialogReady(); tapMark(0.3, 0.5); tapMark(0.7, 0.5); clickById('valveMarkSave');
+    await sleep(2300);                                                    // earlier toasts gone
+    splitSource(0);
+    const shown = (document.getElementById('toast') || {}).textContent || '';
+    const marksNote = /valve marks cleared/i.test(shown), limitNote = /heads-up/i.test(shown);
+    await sleep(2300);
+    showToast('First toast (test)', true); await sleep(1900);
+    showToast('Second toast (test)', true); await sleep(300);
+    const el = document.getElementById('toast');
+    const secondVisible = !!el && /\bshow\b/.test(el.className) && /Second toast/.test(el.textContent || '');
+    record(N, marksNote && limitNote && secondVisible, 'after Split the toast reads ' + JSON.stringify(shown) + '; a toast raised 1.9 s after another is still visible 0.3 s later=' + secondVisible);
+    await sleep(2300);
+    clearForm(false);
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -3816,7 +3975,9 @@
     t117_marksClearedMessageIsTheOneShown, t118_marksPlacedBeforeAnInOutChangeAreDropped,
     t119_undatedUnitOpenForEditStaysUndated, t120_emergencyCopyWarningStaysOnScreen,
     t121_storageWarningIsInTheBottomBar, t122_noUserValueEverBecomesMarkup, t123_everyBuilderShowsUserTextVerbatim, t124_aDeleteSurvivesAFailedTombstoneWrite, t125_aDeleteStaysDeletedAcrossARelaunch, t126_aFailedCommitNeverMergesTheTabsOwnOldList, t127_aRetriedSaveStillShowsWhatItMerged, t128_anUnreadableAlternateSlotIsNeverSilentOrOverwritten, t129_aTabThatLosesTheClaimMidLaunchLeavesBothSlots, t130_aDeleteConfirmedAfterTheClaimMovedChangesNothing, t131_aLateLaunchNeverOverwritesTheFormInUse, t132_aStaleCopyOfASavedUnitNeverReopens, t133_theEntryCountFollowsTheListAfterAnUnreadLaunch,
-    t134_aUnitDeletedAfterItsStoredEditNeverComesBack];
+    t134_aUnitDeletedAfterItsStoredEditNeverComesBack, t135_replaceKeepsTheEditOfATwinCopy, t136_aSaveCutShortByAnotherTabKeepsTheUnitWhole,
+    t137_thePhotoBusyFlagFollowsTheWritesItGuards, t138_legacyMarksAreClearedWhenTheSourceBecomesAnInOutPair,
+    t139_aRestoredUnitWhoseSaveFailedIsNeverMarkedSuperseded, t140_noWarningIsHiddenByTheNextMessage];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

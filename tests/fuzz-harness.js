@@ -71,8 +71,9 @@
   const realFns = {};
   function installFaults() {
     // build 95: the entry list is written by writeEntryListMerged (one
-    // read-write transaction), no longer through saveMetadataMany
-    for (const name of ['saveMetadata', 'saveMetadataMany', 'getMetadata', 'getMetadataMany', 'savePhotoToDB', 'writeEntryListMerged']) {
+    // read-write transaction), no longer through saveMetadataMany; build 97:
+    // the unit-in-progress slots by wipSlotTx (the claim checked inside it)
+    for (const name of ['saveMetadata', 'saveMetadataMany', 'getMetadata', 'getMetadataMany', 'savePhotoToDB', 'writeEntryListMerged', 'wipSlotTx']) {
       const real = window[name]; if (typeof real !== 'function') continue;
       realFns[name] = real;
       const isRead = /^get/.test(name);
@@ -254,11 +255,14 @@
       const r = photos['source_' + i];
       if (r && r.dbKey && cleanValveMarks(r.marks).length > valveMarkSlots(s)) viol('marks-exceed-quantity', 'form source ' + i + ' qty ' + s.quantity + ' marks ' + cleanValveMarks(r.marks).length);
       if (r && r.dbKey && cleanValveMarks(r.marks).length && pairNow(s) && r.marksFor && !r.marksFor.inOut) viol('marks-order-unknown', 'form source ' + i + ' became ' + s.energySource + ' after its marks were tapped');
+      // build 97: every marked photo records the shape its marks were placed for
+      if (r && cleanValveMarks(r.marks).length && !r.marksFor) viol('marks-shape-unknown', 'form source ' + i);
     });
     savedEquipment.forEach(e => (e.sources || []).forEach((s, i) => {
       const r = e.photos && e.photos['source_' + i];
       if (r && r.dbKey && cleanValveMarks(r.marks).length > valveMarkSlots(s)) viol('marks-exceed-quantity', 'saved "' + e.equipName + '" source ' + i);
       if (r && r.dbKey && cleanValveMarks(r.marks).length && pairNow(s) && r.marksFor && !r.marksFor.inOut) viol('marks-order-unknown', 'saved "' + e.equipName + '" source ' + i);
+      if (r && cleanValveMarks(r.marks).length && !r.marksFor) viol('marks-shape-unknown', 'saved "' + e.equipName + '" source ' + i);
     }));
     if (!editingEntry && currentEntryId && savedEquipment.some(e => sameEntryId(e.id, currentEntryId))) {
       viol('form-id-is-a-saved-entry-but-not-editing', 'currentEntryId ' + currentEntryId + ' belongs to a saved entry while editingEntry is null');

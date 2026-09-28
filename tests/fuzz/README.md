@@ -1,4 +1,4 @@
-# Execution-based review kit (build 94, 2026-09-27; updated for builds 95 and 96)
+# Execution-based review kit (build 94, 2026-09-27; updated for builds 95–97)
 
 Everything here RUNS the app instead of reading it — the method of the
 2026-09-27 review (ARCHITECTURE.md §6 "Build 94"). Nothing is part of the
@@ -34,7 +34,11 @@ path that leaves such marks stored. Fault mode also fails the entry-list write
 itself (`writeEntryListMerged`, build 95's compare-and-set save — it no longer
 goes through `saveMetadataMany`), so the localStorage fallback path stays
 covered — and since build 96 its COMMIT fails too (the transaction is aborted
-after every put was issued), which runs the save's retry. A simulated relaunch
+after every put was issued), which runs the save's retry. Since build 97 the
+unit-in-progress writes go through `wipSlotTx` (the tab claim checked inside
+the transaction), which fault mode fails as well; and the invariant
+`marks-shape-unknown` flags a marked photo that doesn't record the shape its
+marks were placed for (`ref.marksFor`). A simulated relaunch
 forgets this session's memory of deletes / re-saves and the store stamp
 (`resetTombstoneMemory()`), as a real one does: build 95's harness kept them, and
 passed while a real relaunch brought a deleted unit back. In fault mode only a

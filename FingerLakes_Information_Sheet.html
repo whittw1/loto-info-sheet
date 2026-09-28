@@ -429,6 +429,7 @@ if ('serviceWorker' in navigator) {
     background: var(--success); color: white; padding: 12px 24px;
     border-radius: 10px; font-weight: 600; font-size: 14px;
     z-index: 300; opacity: 0; transition: opacity 0.3s; pointer-events: none;
+    white-space: pre-line; text-align: center;
   }
   .toast.show { opacity: 1; }
   .toast.toast-warning { background: var(--warning); color: #1a1f2e; }
@@ -477,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b96</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b97</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1778,7 +1779,7 @@ function startPhotoWrite(kind) { const t = ++_photoWriteSeq; _photoWrites.set(t,
 // The "still writing photos" flag another tab waits on stays up a moment after
 // the last write (build 95): what follows it — the autosave that attaches the
 // photos to the form — must land before that tab takes over.
-function endPhotoWrite(t) { _photoWrites.delete(t); if (!photoWritesBusy()) setTimeout(markTabBusy, 1500); }
+function endPhotoWrite(t) { _photoWrites.delete(t); if (!photoWritesBusy()) setTimeout(markTabBusy, 1500); else markTabBusy(); }
 function photoWritesBusy() {
   const now = Date.now();
   for (const w of _photoWrites.values()) if (now - w.at < PHOTO_WRITE_STALE_MS) return true;
@@ -2082,17 +2083,40 @@ function tabMayWrite() {
 }
 // Another tab is still writing photos (Duplicate with photos, a capture being
 // stored): taking over now would pause it mid-copy and those photos could no
-// longer be saved into its form.
+// longer be saved into its form. The writing tab refreshes its flag every few
+// seconds and at every photo it finishes, and removes it when the page goes
+// away (build 97): the flag was never refreshed — a copy running over 60 s
+// was taken over mid-copy — and never removed on a reload, which then waited
+// up to 60 s behind "still saving photos in another tab". A flag not refreshed
+// for TAB_BUSY_STALE_MS belongs to a tab that stopped.
+const TAB_BUSY_STALE_MS = 20000;
+const TAB_BUSY_MAX_WAIT_MS = 10 * 60000;   // a launch waits at most this long for another tab's photos
+let _tabBusyBeat = null;
 function otherTabBusy() {
   const b = readTabJson(TAB_BUSY_KEY);
-  return !!(b && b.id && b.id !== TAB_ID && Date.now() - (Date.parse(b.at) || 0) < PHOTO_WRITE_STALE_MS);
+  return !!(b && b.id && b.id !== TAB_ID && Date.now() - (Date.parse(b.at) || 0) < TAB_BUSY_STALE_MS);
 }
+function clearOwnTabBusy() {
+  try { const b = readTabJson(TAB_BUSY_KEY); if (b && b.id === TAB_ID) localStorage.removeItem(TAB_BUSY_KEY); } catch (e) {}
+}
+function writeOwnTabBusy() {
+  try { localStorage.setItem(TAB_BUSY_KEY, JSON.stringify({ id: TAB_ID, at: new Date().toISOString() })); } catch (e) {}
+}
+function stopTabBusyBeat() { if (_tabBusyBeat) { clearInterval(_tabBusyBeat); _tabBusyBeat = null; } }
 function markTabBusy() {
   if (!tabLockActive()) return;
-  try {
-    if (photoWritesBusy()) localStorage.setItem(TAB_BUSY_KEY, JSON.stringify({ id: TAB_ID, at: new Date().toISOString() }));
-    else { const b = readTabJson(TAB_BUSY_KEY); if (b && b.id === TAB_ID) localStorage.removeItem(TAB_BUSY_KEY); }
-  } catch (e) {}
+  if (photoWritesBusy() && !_tabPaused) {
+    writeOwnTabBusy();
+    if (!_tabBusyBeat) _tabBusyBeat = setInterval(beatTabBusy, 5000);
+  } else {
+    stopTabBusyBeat();
+    clearOwnTabBusy();   // a paused tab never holds another tab's launch back
+  }
+}
+// The heartbeat only refreshes the flag: clearing it is markTabBusy's, after
+// the moment the last write leaves for its autosave to land.
+function beatTabBusy() {
+  if (photoWritesBusy() && !_tabPaused) writeOwnTabBusy(); else stopTabBusyBeat();
 }
 function tabLockInit() {
   if (!tabLockActive()) return;
@@ -2100,11 +2124,12 @@ function tabLockInit() {
   window.addEventListener('storage', (e) => { if (e.key === TAB_CLAIM_KEY || e.key === null) recheck(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') recheck(); });
   window.addEventListener('pageshow', recheck);
+  window.addEventListener('pagehide', clearOwnTabBusy);   // a page going away writes nothing more (build 97)
   _tabClaiming = true;
   _tabReady = (async () => {
     const t0 = Date.now();
     let shown = false;
-    while (otherTabBusy() && Date.now() - t0 < PHOTO_WRITE_STALE_MS) {
+    while (otherTabBusy() && Date.now() - t0 < TAB_BUSY_MAX_WAIT_MS) {
       if (!shown) { showTabOverlay('wait'); shown = true; }
       await new Promise(r => setTimeout(r, 300));
     }
@@ -2153,6 +2178,7 @@ function showTabOverlay(kind) {
 function hideTabOverlay() { const ov = document.getElementById('tabPausedOverlay'); if (ov) ov.remove(); }
 function pauseThisTab() {
   _tabPaused = true;
+  markTabBusy();   // its photo-busy flag goes with the claim (build 97)
   showTabOverlay('paused');
 }
 // Reload: read what the other tab saved, then claim (after its photo writes finish).
@@ -4869,10 +4895,9 @@ function dropStaleSourceRefs(photoMap, srcList) {
 // importer reads fixed 27-row blocks); more still export in the CSV and
 // entries.json. Say so the moment an 11th source appears.
 const MAX_XLSX_SOURCES = 10;
+const SOURCE_LIMIT_NOTE = 'Heads-up: the Information Sheet holds ' + MAX_XLSX_SOURCES + ' sources per unit — #11+ export in the CSV / entries.json only';
 function noteSourceLimit() {
-  if (sources.length === MAX_XLSX_SOURCES + 1) {
-    showToast('Heads-up: the Information Sheet holds ' + MAX_XLSX_SOURCES + ' sources per unit — #11+ export in the CSV / entries.json only', true);
-  }
+  if (sources.length === MAX_XLSX_SOURCES + 1) showToast(SOURCE_LIMIT_NOTE, true);
 }
 
 function addSource() {
@@ -5246,8 +5271,10 @@ function splitSource(index) {
 
   renderSources();
   autoSaveCurrent();
-  showToast('Split out 1 valve — set as Normally Closed. State & photograph it.' + (marksCleared ? ' ' + MARKS_CLEARED_NOTE : ''), marksCleared);
-  noteSourceLimit();
+  // One message (build 97): the 10-source heads-up used to replace this one
+  // in the same tick, "marks cleared" with it.
+  const limitNote = sources.length === MAX_XLSX_SOURCES + 1 ? SOURCE_LIMIT_NOTE : '';
+  showToast(['Split out 1 valve — set as Normally Closed. State & photograph it.', marksCleared ? MARKS_CLEARED_NOTE : '', limitNote].filter(Boolean).join('\n'), marksCleared || !!limitNote);
   setTimeout(() => {
     const cards = document.querySelectorAll('.source-card');
     if (cards[index + 1]) cards[index + 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -6139,6 +6166,28 @@ function marksFit(ref, src) {
   return !(isInOutPair(src) && ref.marksFor && !ref.marksFor.inOut);
 }
 function marksShapeOf(src) { return { qty: valveMarkSlots(src), inOut: isInOutPair(src) }; }
+// Marks saved before build 95 carry no record of the shape they were placed
+// for, so the In/Out rule above never cleared them (build 97): they count as
+// placed for their source as it is when this build first loads them — a later
+// switch to an In/Out pair then clears them like any other. Runs on every
+// list and form this build loads, merges or imports. Returns how many refs
+// it filled in (each a NEW reference — see VALVE MARKS).
+function backfillMarksShape(srcs, photoMap) {
+  let n = 0;
+  for (const k of Object.keys(photoMap || {})) {
+    const m = /^source_(\d+)$/.exec(k);
+    const ref = m && photoMap[k], src = m && (srcs || [])[+m[1]];
+    if (!ref || !src || ref.marksFor || !cleanValveMarks(ref.marks).length) continue;
+    photoMap[k] = Object.assign({}, ref, { marksFor: marksShapeOf(src) });
+    n++;
+  }
+  return n;
+}
+function backfillEntriesMarksShape(list) {
+  let n = 0;
+  (list || []).forEach(e => { if (e && e.photos) n += backfillMarksShape(e.sources, e.photos); });
+  return n;
+}
 function fittingMarks(ref, src) {
   return (ref && src && marksFit(ref, src)) ? cleanValveMarks(ref.marks).slice(0, valveMarkSlots(src)) : [];
 }
@@ -8346,7 +8395,11 @@ function clearForm(confirm_first = true) {
   clearSketchState();
   renderSources();
   renderMiscPhotos();
-  if (tabMayWrite()) { try { localStorage.removeItem('loto_current'); } catch (e) {} }   // it may be the live tab's copy (build 96)
+  // The main slot's local copy goes with the form it holds — but not while that
+  // slot couldn't be read (build 97): then it is the newest copy of whatever is
+  // in the unread slot (a Save & New that failed everywhere lost the unit it
+  // had just been restored from), and autosaves go to the alternate slot.
+  if (tabMayWrite() && !_wipUnread) { try { localStorage.removeItem('loto_current'); } catch (e) {} }   // it may be the live tab's copy (build 96)
   autoSaveCurrent();
   updateIntegrityBadge();
   window.scrollTo(0, 0);
@@ -10211,7 +10264,14 @@ function handleBackupFile(event) {
           next.push(pick);
         });
         const leaving = savedEquipment.filter(e => !next.includes(e));
-        closeFormIfRemoving(leaving);
+        // The form holds the copy of a unit saved twice that leaves while the
+        // other copy stays (build 97): it moves to the copy that stays — the
+        // edit goes on and Save & New writes it there. Closing the form
+        // discarded that edit without a word.
+        const openLeaving = leaving.find(formHoldsEntry);
+        const twinStays = openLeaving && openLeaving.id != null ? next.find(e => sameEntryId(e.id, openLeaving.id)) : null;
+        if (twinStays) editingEntry = twinStays;
+        else closeFormIfRemoving(leaving);
         savedEquipment = next;
         clearTombstones(next.map(e => e.id));
         tombstoneRemovedEntries(leaving);   // a later merge of stored copies must not bring them back
@@ -10288,6 +10348,8 @@ function normaliseEntry(en) {
   // strings from here on (build 91 — see sameEntryId).
   if (!isValidEntryId(out.id)) { if (out.id) out.legacyId = String(out.id); out.id = genUuid(); }
   out.id = normEntryId(out.id);
+  out.photos = Object.assign({}, out.photos);
+  backfillMarksShape(out.sources, out.photos);   // marks from a pre-b95 backup (build 97)
   return out;
 }
 
@@ -10396,14 +10458,34 @@ const PAGE_LOADED_AT = new Date().toISOString();   // autosaves stamped since ar
 // The copy a launch restored becomes the main slot's; the alternate slot is
 // emptied once that write has landed (build 96: it was emptied first, so a
 // failed write left the unit in memory only) — and never while it is unread.
+// A unit-in-progress slot is written (or emptied) only while this tab holds
+// the claim — checked INSIDE the transaction, when it actually runs (build
+// 97): the claim can move after the caller's own check, and Save & New's
+// blank form then committed over current_wip while the unit's list write had
+// been refused — the unit's only full copy (its sketch) was gone. Resolves
+// false when the claim had moved (nothing written); rejects on a storage fault.
+function wipSlotTx(key, value, del) {
+  return withPhotoDB(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('metadata', 'readwrite');
+    const s = tx.objectStore('metadata');
+    let paused = false;
+    s.count(key).onsuccess = () => {
+      if (!tabMayWrite()) { paused = true; try { tx.abort(); } catch (e) {} return; }
+      if (del) s.delete(key); else s.put(value, key);
+    };
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => { if (!paused) reject(tx.error || new Error('IDB transaction error')); };
+    tx.onabort = () => { if (paused) resolve(false); else reject(tx.error || new Error('IDB transaction aborted')); };
+  }));
+}
 function settleWipSlots(st, altUnread) {
   if (!tabMayWrite()) return;
-  saveMetadata('current_wip', st).then(() => {
-    if (!tabMayWrite()) return;
+  wipSlotTx('current_wip', st).then((ok) => {
+    if (!ok || !tabMayWrite()) return;
     try { localStorage.removeItem('loto_current'); } catch (e) {}
     if (altUnread) return;   // the unread alternate copy — and the marker guarding it — wait for the next launch
     try { localStorage.removeItem(WIP_SUPERSEDED_KEY); } catch (e) {}
-    deleteMetadata('current_wip_alt');
+    wipSlotTx('current_wip_alt', null, true).catch(() => {});
     try { localStorage.removeItem('loto_current_alt'); } catch (e) {}
   }).catch(() => {});
 }
@@ -10411,10 +10493,10 @@ function settleWipSlots(st, altUnread) {
 function emptyWipSlot(which, idbToo = true) {
   if (!tabMayWrite()) return;
   if (which === 'main') {
-    if (idbToo) deleteMetadata('current_wip');
+    if (idbToo) wipSlotTx('current_wip', null, true).catch(() => {});
     try { localStorage.removeItem('loto_current'); localStorage.removeItem(WIP_SUPERSEDED_KEY); } catch (e) {}
   } else {
-    if (idbToo) deleteMetadata('current_wip_alt');
+    if (idbToo) wipSlotTx('current_wip_alt', null, true).catch(() => {});
     try { localStorage.removeItem('loto_current_alt'); } catch (e) {}
   }
 }
@@ -10430,9 +10512,17 @@ let _wipSupersedeOnSave = null;
 // the main slot but the marker stays (build 96): the unread copy may be the
 // newest, and a later launch that can read neither slot must still know it.
 let _wipKeepMarker = false;
-function noteWipWritten(toAlt) {
+// The marker is written only when what reached the alternate slot IS the
+// restored unit — the form still in the session it was restored into (build
+// 97): the first alternate write after a Save & New that failed everywhere
+// (the blank form) marked the unit's stored copies superseded, and the unit
+// was gone at the next launch.
+function noteWipWritten(toAlt, session) {
   try {
-    if (toAlt && _wipSupersedeOnSave) { localStorage.setItem(WIP_SUPERSEDED_KEY, JSON.stringify(_wipSupersedeOnSave)); _wipSupersedeOnSave = null; }
+    if (toAlt && _wipSupersedeOnSave) {
+      const m = _wipSupersedeOnSave; _wipSupersedeOnSave = null;
+      if (m.session === session) localStorage.setItem(WIP_SUPERSEDED_KEY, JSON.stringify({ at: m.at, entryId: m.entryId }));
+    }
     else if (!toAlt && !_wipKeepMarker) localStorage.removeItem(WIP_SUPERSEDED_KEY);   // the main slot holds the newest now
   } catch (e) {}
 }
@@ -10441,6 +10531,7 @@ function autoSaveCurrent() {
   setAutosaveStatus('saving');
   const idbKey = _wipUnread ? 'current_wip_alt' : 'current_wip';
   const lsKey = _wipUnread ? 'loto_current_alt' : 'loto_current';
+  const session = formSession;
   try {
     const state = {
       at: new Date().toISOString(),  // which copy is newest (IndexedDB vs the localStorage fallback)
@@ -10460,17 +10551,24 @@ function autoSaveCurrent() {
       miscPhotos: miscPhotos,
       sketch: getSketchData()
     };
+    // A form with content carries its entry id from the start (build 97), not
+    // only from its first photo: that id is how a launch tells its stored
+    // copies from a saved unit's, and a recovered draft keeps it.
+    if (!state.entryId && wipHasContent(state)) state.entryId = ensureCurrentEntryId();
     const toAlt = idbKey === 'current_wip_alt';
-    saveMetadata(idbKey, state).then(() => {
+    wipSlotTx(idbKey, state).then((ok) => {
+      if (!ok) return;   // another tab took over: this one wrote nothing
       try { localStorage.removeItem(lsKey); } catch (e) {}   // IndexedDB has the newest now
-      noteWipWritten(toAlt);
+      noteWipWritten(toAlt, session);
       checkStorage();
       setAutosaveStatus('saved');
     }).catch(() => {
-      // Fallback to localStorage if IDB fails (even after reconnecting)
+      // Fallback to localStorage if IDB fails (even after reconnecting) — not
+      // from a tab that lost the claim meanwhile (build 97)
+      if (!tabMayWrite()) return;
       try {
         localStorage.setItem(lsKey, JSON.stringify(state));
-        noteWipWritten(toAlt);
+        noteWipWritten(toAlt, session);
         setAutosaveStatus('saved');
       } catch(e2) {
         setAutosaveStatus('error');
@@ -10861,6 +10959,7 @@ function mergeStoredEntryList(stored) {
   const changed = m.list.length !== before || m.added > 0 || m.updated > 0 || m.list.some((e, i) => e !== savedEquipment[i]);
   savedEquipment = m.list;
   savedEquipment.forEach(e => { if (e && e.id != null && typeof e.id !== 'string') e.id = String(e.id); });
+  backfillEntriesMarksShape(savedEquipment);   // an older build's marks (build 97)
   if (editingEntry && !savedEquipment.includes(editingEntry)) editingEntry = savedEquipment.find(e => sameEntryId(e.id, editingEntry.id)) || editingEntry;
   return changed;
 }
@@ -11036,9 +11135,15 @@ async function loadAll() {
   }));
   const merged = mergeEntryCopies(primaryCopy.list, others, tomb);
   savedEquipment = lateMem ? mergeEntryCopies(merged.list, [{ list: lateMem, allowAdd: true }], tomb).list : merged.list;
+  // Units every stored copy of which is the stripped emergency copy: their
+  // sketch is unknown, not "none" (the merge fills in null) — see below.
+  const sketchKnown = new Set();
+  for (const c of copies.concat(lateMem ? [{ list: lateMem }] : [])) for (const e of (c.list || [])) if (e && e.id != null && ('sketch' in e)) sketchKnown.add(String(e.id));
+  const sketchUnknown = new Set(savedEquipment.filter(e => e && e.id != null && !sketchKnown.has(String(e.id))).map(e => String(e.id)));
   // Entry ids are strings from here on (build 91 — see sameEntryId).
   let idsNormalized = 0;
   savedEquipment.forEach(e => { if (e && e.id != null && typeof e.id !== 'string') { e.id = String(e.id); idsNormalized++; } });
+  const marksBackfilled = backfillEntriesMarksShape(savedEquipment);   // pre-b95 marks (build 97)
   _entryStoreUnread = !idbReadOk;   // saveAll will re-read + merge before writing
   if (idbReadOk) hideStickyBanner('entryStoreBanner');
   const recovered = merged.added + merged.updated;
@@ -11091,7 +11196,7 @@ async function loadAll() {
   // guarded) and only when the store was actually read (build 91: the two
   // launch migrations used to write saved_equipment directly, which put the
   // stripped emergency snapshot over an intact store after a failed read).
-  if (idbReadOk && (recovered > 0 || idsNormalized > 0 || migration.changedSources > 0 || Array.isArray(lsList) || lateMem)) saveAll();
+  if (idbReadOk && (recovered > 0 || idsNormalized > 0 || marksBackfilled > 0 || migration.changedSources > 0 || Array.isArray(lsList) || lateMem)) saveAll();
 
   // ---- The form autosave (build 91). Its own failed read must not be
   // overwritten by the blank form this launch will autosave: while
@@ -11112,6 +11217,24 @@ async function loadAll() {
   let lsState = readLsJson('loto_current');
   let lsAlt = readLsJson('loto_current_alt');
   const altPresent = !!(alt || lsAlt);
+  // A saved unit that exists only as its stripped emergency copy (the save
+  // that should have stored it in full was cut short) gets its sketch and photo
+  // previews back from the newest stored copy of the form it was saved from —
+  // one not newer than that save (build 97).
+  let wipHydrated = 0;
+  const wipDonors = [state, lsState, alt, lsAlt].filter(c => c && c.entryId != null && c.at).sort((x, y) => String(y.at).localeCompare(String(x.at)));
+  for (const c of wipDonors) {
+    const i = savedEquipment.findIndex(e => sameEntryId(e.id, c.entryId));
+    const e = i >= 0 ? savedEquipment[i] : null;
+    if (!e || String(c.at) > entryRecency(e)) continue;
+    let h = e;
+    const drawn = !!(c.sketch && (((c.sketch.strokes || []).length) || ((c.sketch.labels || []).length)));
+    if (sketchUnknown.has(String(e.id)) && e.sketch == null && drawn) h = Object.assign({}, h, { sketch: c.sketch });
+    sketchUnknown.delete(String(e.id));
+    if (entryIsStripped(h)) h = hydrateEntry(h, [{ sketch: c.sketch || null, photos: c.photos || {}, miscPhotos: c.miscPhotos || [], updatedAt: String(c.at) }]);
+    if (h !== e) { savedEquipment[i] = h; wipHydrated++; }
+  }
+  if (wipHydrated && idbReadOk) saveAll();
   // Copies of the main slot an earlier launch already restored — the unit
   // went on in the alternate slot — are not the unit in progress (build 95;
   // see WIP_SUPERSEDED_KEY).
@@ -11132,6 +11255,7 @@ async function loadAll() {
     const r = e ? entryRecency(e) : (tombs[String(c.entryId)] || '');
     return !!r && r > String(c.at) && r <= nowIso;
   };
+  const lsMainRaw = lsState;
   if (superseded(state) || staleCopy(state)) state = null;
   if (superseded(lsState) || staleCopy(lsState)) lsState = null;
   if (staleCopy(alt)) alt = null;
@@ -11220,14 +11344,18 @@ async function loadAll() {
     // couldn't be, the launch said nothing and its own autosave wrote the
     // blank form over the unit there).
     const slotSeen = !!sup && !lsState;
+    // … or this slot's newest copy — its local copy, newer than anything it
+    // holds — belongs to a unit saved since: nothing unread there matters
+    // either (build 97; the marker no longer follows a Save & New).
+    const slotSaved = !!lsMainRaw && staleCopy(lsMainRaw);
     const fromLocal = !!lsState && newerWip(alt, lsState) === lsState;
     state = newerWip(alt, state);
-    if (slotSeen && altReadOk) {
+    if ((slotSeen || slotSaved) && altReadOk) {
       // the unit (if any) continues from the alternate slot
     } else if (state && wipHasContent(state)) {
       // Once the restored unit is safely in the alternate slot, the main
       // slot's older copies are marked superseded (noteWipWritten).
-      if (fromLocal && state.at) _wipSupersedeOnSave = { at: String(state.at), entryId: normEntryId(state.entryId) || null };
+      if (fromLocal && state.at) _wipSupersedeOnSave = { at: String(state.at), entryId: normEntryId(state.entryId) || null, session: formSession };
       showToast('⚠ Couldn\'t read the unit in progress from storage — restored it from this device\'s backup copy. Check it before saving.', true);
     } else {
       // Neither slot could be read. With the marker, the main slot holds only
@@ -11294,6 +11422,7 @@ async function loadAll() {
     }
     photos = state.photos || {};
     dropStaleSourceRefs(photos, sources);
+    backfillMarksShape(sources, photos);   // pre-b95 marks (build 97)
     miscPhotos = state.miscPhotos || [];
 
     // Restore equipment photos (a slot is taken when its ref has a stored key)
@@ -11340,11 +11469,23 @@ function clearAllData() {
 // ============================================================================
 // TOAST
 // ============================================================================
+// One toast element (build 97): a warning shown a moment ago is not replaced
+// by the next message — both show, the warning first (a success message or
+// the 10-source heads-up in the same tick hid "Valve marks cleared"). And each
+// message gets its full time: the previous message's timer used to hide a
+// toast raised 1.9 s after it at the 2 s mark.
+let _toastTimer = null, _toastWarnAt = 0, _toastLines = [];
 function showToast(msg, isWarning = false) {
   const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = 'toast show' + (isWarning ? ' toast-warning' : '');
-  setTimeout(() => t.className = 'toast', 2000);
+  if (!t) return;
+  const text = String(msg);
+  const keep = _toastLines.length > 0 && Date.now() - _toastWarnAt < 600;
+  _toastLines = keep ? _toastLines.filter(l => l !== text).concat(text).slice(-3) : [text];
+  if (isWarning) _toastWarnAt = Date.now();
+  t.textContent = _toastLines.join('\n');
+  t.className = 'toast show' + (isWarning || keep ? ' toast-warning' : '');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { t.className = 'toast'; _toastLines = []; _toastWarnAt = 0; }, _toastLines.length > 1 ? 4000 : 2000);
 }
 
 // ============================================================================
