@@ -32,7 +32,7 @@ Both HTML files must be updated in lockstep — `FingerLakes_Information_Sheet.h
 | Channel | Source branch | Build | Photo-safety status |
 |---|---|---|---|
 | iOS / TestFlight | `ios-testflight-scaffold` | **98** (cache v7.94) — committed and synced 2026-09-28, ready to archive; it supersedes 95–97 (94 is on TestFlight) | The iPad was last known on **90**. Installing 98 over 90 is exactly the path the upgrade chain (`tests/fuzz/upgrade/`, b88 → b90 → 97 installed over each other on a Simulator) verified: every unit and every photo byte intact, the June numeric-id photos readable again ("✓ N photos safe"), the June units flagged "⚠ export again (photos)" until one export by this build ships them. **Export before deleting anything.** |
-| Azure SWA + GitHub Pages (web) | `main` | **97** — promoted 2026-09-28 (§9) | Same code; web-only fixes that matter there: the tab claim (one tab writes; the other pauses — and, since 96, a build-94 tab still open during a deploy pauses too) and the offline export (verified with the server killed after the service worker precached). |
+| Azure SWA + GitHub Pages (web) | `main` | **98** — promoted 2026-09-28 (§9) | Same code; web-only fixes that matter there: the tab claim (one tab writes; the other pauses — and, since 96, a build-94 tab still open during a deploy pauses too) and the offline export (verified with the server killed after the service worker precached). |
 
 **The web build is used in the field** — Bath VAMC (April 2026) was collected entirely on it — so a crew may be on either channel. Treat the two as one release: never leave `main` behind a photo-safety fix. To check what a channel carries: `git show origin/main:index.html | grep -o 'b[0-9]*</span>'`, or read the header on the device.
 
@@ -1614,8 +1614,8 @@ repo on branch `main-promotion`, tracking `origin/main`.
    public static site.
 3. `git commit`, then `git push origin main-promotion:main`. Azure deploys automatically.
 
-> **Build 97 promoted 2026-09-28 (`c424273`)** — Azure and GitHub Pages both serve
-> `b97` / cache v7.93 (checked after the push). Before it: build 96 (`372c9d3`), build 95 (`59f0eaf`),
+> **Build 98 promoted 2026-09-28 (`c29f10d`)** — Azure and GitHub Pages both serve
+> `b98` / cache v7.94 (checked after the push). Before it: build 97 (`c424273`), build 96 (`372c9d3`), build 95 (`59f0eaf`),
 > build 94 (`f8ee3e7`, the first with `vendor/`).
 
 Existing web users migrate in place on their next load: the IndexedDB schema
