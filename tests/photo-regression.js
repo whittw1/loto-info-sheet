@@ -44,6 +44,7 @@
 //   T186–T190 build 102's high review: write-once — nothing on SharePoint replaced (day-file snapshots, own export
 //             names, the form every 5 min, build 101's days), a scan asks before replacing a typed value
 //   T191      build 102's medium review: new collector initials never empty the old initials' files
+//   T192      build 103: with the backup off, Settings shows only its switch (no Sign in / Test / …)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -5450,6 +5451,40 @@
       + '; empty snapshots under the old initials: ' + JSON.stringify(emptied));
   }
 
+  // T192 — with the backup off, Settings shows only its switch (build 103)
+  async function t192_theBackupsButtonsShowOnlyWhileItIsOn() {
+    const N = 'T192 with the SharePoint backup off, Settings shows only its switch and "Off" — no Sign in, Sign out, Test or Send everything again (they appear once it is turned on and go again when it is turned off); where the backup can\'t work, the switch and why';
+    await resetAppState();
+    const vis = (el) => !!el && el.style.display !== 'none' && getComputedStyle(el).display !== 'none';
+    const state = () => {
+      const who = document.getElementById('backupWho');
+      return { actions: vis(document.getElementById('backupActions')), signIn: vis(document.getElementById('backupSignInBtn')),
+        signOut: vis(document.getElementById('backupSignOutBtn')), who: vis(who) ? who.textContent : '', status: (document.getElementById('backupStatus') || {}).textContent || '' };
+    };
+    const realAvail = window.backupAvailable;
+    let off = null, onState = null, offAgain = null, unavailable = null;
+    try {
+      Object.assign(backupCfg, { on: false, user: '', pass: '', passExpires: '' });
+      showSettings(); await sleep(100);
+      off = state();
+      await withToasts(async () => { setBackupOn(true); await sleep(50); });
+      onState = state();
+      setBackupOn(false); await sleep(50);
+      offAgain = state();
+      closeSettings();
+      window.backupAvailable = () => false;                   // e.g. the GitHub Pages copy
+      showSettings(); await sleep(100);
+      unavailable = state();
+      closeSettings();
+    } finally { window.backupAvailable = realAvail; backupTestOff(null); }
+    const hidden = (x) => !!x && !x.actions && !x.signIn && !x.signOut;
+    record(N, hidden(off) && off.who === '' && /^Off\./.test(off.status)
+      && !!onState && onState.actions && onState.signIn && /Not signed in/.test(onState.who) && !/^Off\./.test(onState.status)
+      && hidden(offAgain) && offAgain.who === ''
+      && hidden(unavailable) && /not in this copy/.test(unavailable.who),
+      'off: ' + JSON.stringify(off) + '; turned on: ' + JSON.stringify(onState) + '; off again: ' + JSON.stringify(offAgain) + '; unavailable: ' + JSON.stringify(unavailable));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -5530,7 +5565,7 @@
     t182_clearAllDataNeverEmptiesTheBackup, t183_panelIdReadTopToBottom, t184_aSecondReturnLinkIsNotAnError,
     t185_marksPlacedForAnOldShapeAreNotSaved, t186_nothingOnSharePointIsEverReplaced, t187_twoExportsTheSameDayKeepBoth,
     t188_theFormIsSnapshottedAtMostEveryFiveMinutes, t189_aScanAsksBeforeReplacingATypedValue, t190_aDayBackedUpByBuild101GetsItsFirstSnapshot,
-    t191_aNewCollectorTagNeverEmptiesTheOldTagsFiles];
+    t191_aNewCollectorTagNeverEmptiesTheOldTagsFiles, t192_theBackupsButtonsShowOnlyWhileItIsOn];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
