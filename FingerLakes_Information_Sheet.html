@@ -6464,6 +6464,7 @@ function openValveMarkDialog(slotId, opts) {
   closeValveMarkDialog();
   const session = formSession;
   const slots = valveMarkSlots(src);
+  const openShape = marksShapeOf(src);   // what these marks are placed for (build 102)
   let marks = fittingMarks(ref, src);
   const what = src.deviceType || 'valve / device';
   const overlay = document.createElement('div');
@@ -6554,7 +6555,7 @@ function openValveMarkDialog(slotId, opts) {
   });
   overlay.querySelector('#valveMarkClear').onclick = () => { marks = []; draw(); };
   overlay.querySelector('#valveMarkSkip').onclick = () => closeValveMarkDialog();
-  overlay.querySelector('#valveMarkSave').onclick = () => { closeValveMarkDialog(); saveValveMarks(ref, marks, session); };
+  overlay.querySelector('#valveMarkSave').onclick = () => { closeValveMarkDialog(); saveValveMarks(ref, marks, session, openShape); };
   const ask = overlay.querySelector('#valveMarkAsk');
   ask.checked = valveMarkPromptEnabled();
   ask.onchange = () => setValveMarkPrompt(ask.checked);
@@ -6582,7 +6583,7 @@ function openValveMarkDialog(slotId, opts) {
 // Store the marks on the photo reference the dialog was opened for — as a NEW
 // reference object (see VALVE MARKS above). Nothing is written if the form or
 // that photo changed meanwhile.
-function saveValveMarks(ref, marks, session) {
+function saveValveMarks(ref, marks, session, openShape) {
   if (session !== formSession) { showToast('\u26a0 The form changed \u2014 valve mark not saved', true); return false; }
   if (refuseIfDuplicateCopying()) return false;
   const slot = Object.keys(photos).find(k => /^source_\d+$/.test(k) && photos[k] === ref);
@@ -6590,6 +6591,15 @@ function saveValveMarks(ref, marks, session) {
   const clean = cleanValveMarks(marks);
   const src = sources[parseInt(slot.slice(7), 10)];
   const shape = marksShapeOf(src);
+  // The source changed while the dialog was open — an In/Out pair became one
+  // valve, the device count changed: the marks were placed for the old shape
+  // and are never stored against the new one (build 102 — the fuzzer inside
+  // the app kept two marks on a single valve: the dialog opened after a slow
+  // photo save, the energy source had changed meanwhile).
+  if (clean.length && ((openShape && JSON.stringify(openShape) !== JSON.stringify(shape)) || clean.length > shape.qty)) {
+    showToast('\u26a0 The source changed while you were marking \u2014 mark not saved. Tap \ud83d\udccd Mark to place it again.', true);
+    return false;
+  }
   if (JSON.stringify(clean) === JSON.stringify(cleanValveMarks(ref.marks)) && JSON.stringify(ref.marksFor || null) === JSON.stringify(clean.length ? shape : null)) return true;
   const next = Object.assign({}, ref);
   if (clean.length) { next.marks = clean; next.marksFor = shape; } else { delete next.marks; delete next.marksFor; }
@@ -11762,6 +11772,7 @@ async function loadAll() {
 function clearAllData() {
   if (confirm('Delete ALL saved equipment and clear the form? This cannot be undone.')) {
     if (!tabMayWrite()) return;   // another tab took over while the dialog was open (build 96)
+    backupForgetDevice();   // the backup stops — SharePoint keeps its last copy of every day (build 102)
     // Clear IndexedDB metadata store
     clearMetadataStore();
 
@@ -11830,7 +11841,8 @@ let _backupBusy = false, _backupPauseUntil = 0, _backupLastError = '', _backupSi
 let _backupWrongAccount = false;   // signed in, but with an account that may not back up here (403)
 let _backupState = { waiting: 0, unreadable: 0, checked: false };
 const _backupRetry = new Map();      // item id → { n, until }: one file SharePoint keeps refusing
-let _backupSoon = null, _backupPkce = null, _backupStarted = false;
+let _backupSoon = null, _backupPkce = null, _backupStarted = false, _backupSignedInAt = 0;
+let _backupEpoch = 0;   // bumped by "Clear all data": a pass started before it records nothing
 // The unit files mirror the saved list, so they are written only from a list
 // the launch read in full — never after a failed launch, nor while the store
 // couldn't be read (the list on screen may then be partial, and would replace
@@ -12061,6 +12073,20 @@ function backupDayFiles(info) {
 }
 
 // ---- The pass ------------------------------------------------------------------
+// "Clear all data" (build 102): the backup stops and forgets what this device
+// sent, so the clear is never mirrored — before, the next pass rewrote every
+// day this device had backed up as empty, the one event a backup must survive.
+// SharePoint keeps the last copy of every day (the clear also gives the device
+// a new id, so new work goes to new files). Turn it on and sign in to go on.
+function backupForgetDevice() {
+  _backupEpoch++;
+  clearTimeout(_backupSoon);
+  Object.assign(backupCfg, { on: false, user: '', pass: '', passExpires: '' });
+  _backupSent = new Map(); _backupDays = new Map(); _backupSentDirty = false; _backupDaysDirty = false;
+  _backupRetry.clear(); _backupPauseUntil = 0; _backupLastError = ''; _backupSignInNeeded = false; _backupWrongAccount = false;
+  _backupState = { waiting: 0, unreadable: 0, checked: false }; _backupPkce = null;
+  paintBackupBadge();
+}
 function scheduleBackup(ms) {
   if (!backupCfg.on) return;
   clearTimeout(_backupSoon);
@@ -12095,6 +12121,7 @@ async function drainBackup() {
   if (_backupBusy || !backupCfg.on || !backupAvailable()) { paintBackupBadge(); return; }
   if (!tabMayWrite()) return;   // the tab that may save is the one that backs up
   _backupBusy = true;
+  const epoch = _backupEpoch;   // a "Clear all data" during this pass ends it; nothing is recorded
   try {
     if (!await loadBackupRecords()) return;
     const info = backupPhotoList(), listed = _backupListTrusted && !_entryStoreUnread;
@@ -12128,9 +12155,11 @@ async function drainBackup() {
     if (marked) _backupDaysDirty = true;
     if (_backupDaysDirty && !await saveBackupRecords()) dayTodo.length = 0;   // not on the device (this pass's marks or an earlier one's): not sent — photos still go
     for (const f of dayTodo) {
+      if (epoch !== _backupEpoch) return;
       const rec = f.folder + '/' + f.path, id = 'day:' + rec;
       const ok = await backupAttempt(id, async () => {
         const sha = await backupSend(f.folder, f.path, new TextEncoder().encode(f.text), f.type);
+        if (epoch !== _backupEpoch) return;
         _backupDays.set(rec, { h: f.h, sha });
         _backupDaysDirty = true;
       });
@@ -12140,6 +12169,7 @@ async function drainBackup() {
     if (dayTodo.length) await saveBackupRecords();   // their confirmations, before the photos (which may take minutes)
     let sinceSave = 0;
     for (const p of todo) {
+      if (epoch !== _backupEpoch) return;
       if (!tabMayWrite() || !navigator.onLine || Date.now() < _backupPauseUntil) break;
       const id = 'photo:' + p.key;
       if (backupRetryWaiting(id)) continue;
@@ -12147,7 +12177,9 @@ async function drainBackup() {
       try { pd = await loadPhotoBytes(p.key, p.ref.fileType || 'image/jpeg'); } catch (e) { pd = null; }
       if (!pd || !pd.bytes) { _backupState.unreadable++; paintBackupBadge(); continue; }   // stays waiting — said so
       const ok = await backupAttempt(id, async () => {
-        _backupSent.set(p.key, { f: p.folder, s: await backupSend(p.folder, 'photos/' + backupPhotoName(p.key), pd.bytes, pd.type || 'image/jpeg') });
+        const s = await backupSend(p.folder, 'photos/' + backupPhotoName(p.key), pd.bytes, pd.type || 'image/jpeg');
+        if (epoch !== _backupEpoch) return;
+        _backupSent.set(p.key, { f: p.folder, s });
         _backupSentDirty = true;
       });
       if (ok === 'stop') return;
@@ -12158,7 +12190,7 @@ async function drainBackup() {
     }
   } finally {
     _backupBusy = false;
-    await saveBackupRecords();
+    if (epoch === _backupEpoch) await saveBackupRecords();
     paintBackupBadge();
     const ov = document.getElementById('settingsOverlay');
     if (ov && ov.style.display === 'flex') paintBackupSettings(true);
@@ -12274,7 +12306,12 @@ async function finishBackupSignIn(url) {
   try { const B = window.Capacitor.Plugins && window.Capacitor.Plugins.Browser; if (B) await B.close(); } catch (e) {}
   const pk = _backupPkce;
   _backupPkce = null;
-  if (!code || !pk || Date.now() - pk.at > 10 * 60000) { showToast('⚠ That sign-in was not started here — sign in again from Settings', true); return false; }
+  if (!code || !pk || Date.now() - pk.at > 10 * 60000) {
+    // the same sign-in coming back twice (the page's link, and its button) is not an error
+    if (!pk && backupSignedIn() && Date.now() - _backupSignedInAt < 2 * 60000) return false;
+    showToast('⚠ That sign-in was not started here — sign in again from Settings', true);
+    return false;
+  }
   let r = null;
   try { r = await backupTransport.api('POST', '/api/device-pass', { code, verifier: pk.verifier }); } catch (e) { r = null; }
   if (!r || r.status !== 200 || !r.body || !r.body.pass) {
@@ -12283,7 +12320,7 @@ async function finishBackupSignIn(url) {
   }
   backupCfg.pass = r.body.pass; backupCfg.user = r.body.user || ''; backupCfg.passExpires = r.body.expires || '';
   saveBackupCfg();
-  _backupSignInNeeded = false; _backupWrongAccount = false; _backupPauseUntil = 0;
+  _backupSignInNeeded = false; _backupWrongAccount = false; _backupPauseUntil = 0; _backupSignedInAt = Date.now();
   showToast('☁ Signed in for backup as ' + backupCfg.user);
   paintBackupBadge(); paintBackupSettings(true); scheduleBackup(500);
   return true;
@@ -12632,17 +12669,37 @@ function getCapPlugin(name) {
 }
 
 // A panel / MCC label reads "PANEL LP-1A" — or "PANEL" over "LP-1A" — often
-// with voltage lines under it. The ID is the first line that says more than
-// that word, without it (build 102). The tech can still edit it.
-const LOCATION_ID_WORDS = /^(?:panel\s*board|panel|pnl|mcc|motor\s+control\s+center)\b[\s:#.\-\u2013]*/i;
-function pickLocationIdFromScan(rawText, blocks) {
-  const lines = (Array.isArray(blocks) && blocks.length ? blocks.map(b => b && b.text) : String(rawText || '').split(/\r?\n/))
-    .map(t => String(t || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
-  for (const line of lines) {
-    const id = line.replace(LOCATION_ID_WORDS, '').trim();
-    if (id) return id;
+// with voltage lines beside or under it (build 102). Read top to bottom (the
+// plugin gives each line's place — Vision's own order isn't that; lines on one
+// row left to right), the ID is what follows the word on its line, else the
+// next line; a label without the word gives its top line. "MCC3" is MCC 3.
+// The tech can still edit it.
+const LOCATION_ID_WORDS = /^(?:panel\s*board|panel|pnl|mcc|motor\s+control\s+center)(?:\b|(?=\d))[\s:#.\-\u2013]*/i;
+function scanLinesTopDown(rawText, blocks) {
+  let rows = Array.isArray(blocks) ? blocks.filter(b => b && b.text) : [];
+  if (rows.length && rows.every(b => typeof b.y === 'number')) {
+    rows = rows.slice().sort((a, b) => {
+      const tol = Math.min(a.h || 0.02, b.h || 0.02) / 2;   // one row: left to right
+      return Math.abs(a.y - b.y) < tol ? (a.x || 0) - (b.x || 0) : b.y - a.y;
+    });
   }
-  return '';
+  return (rows.length ? rows.map(b => b.text) : String(rawText || '').split(/\r?\n/))
+    .map(t => String(t || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+}
+function pickLocationIdFromScan(rawText, blocks) {
+  const lines = scanLinesTopDown(rawText, blocks);
+  for (let k = 0; k < lines.length; k++) {
+    const m = LOCATION_ID_WORDS.exec(lines[k]);
+    if (!m) continue;
+    const rest = lines[k].slice(m[0].length).trim();
+    if (rest) return rest;
+    for (let j = k + 1; j < lines.length; j++) {   // a bare "PANEL": the next line
+      const next = lines[j].replace(LOCATION_ID_WORDS, '').trim();
+      if (next) return next;
+    }
+    return '';
+  }
+  return lines.length ? lines[0] : '';
 }
 
 // pick: how to read the label — '' (the whole text on one line) or
@@ -12710,7 +12767,9 @@ async function scanTextToField(inputId, pick) {
   if (!input) return;
 
   if (!text) {
-    showToast('No text detected — try again with more light or a closer angle.', true);
+    showToast(pick === 'locationId' && rawText.trim()
+      ? 'Read the label, but no ID on it — aim at the ID itself (e.g. LP-1A) and scan again.'
+      : 'No text detected — try again with more light or a closer angle.', true);
     return;
   }
 

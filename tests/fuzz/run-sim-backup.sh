@@ -119,6 +119,10 @@ check(sh.get('opened') is True, 'Sign in with Microsoft opens the link page in t
 si = steps.get('signed in through the link') or {}
 check(si.get('pass') is True and si.get('user') == 'tech@hgsengineeringinc.com' and any(f.get('ok') for f in si.get('finishes') or []),
       'the lotocollector:// link came back through iOS and the app traded code + verifier for its device pass: ' + json.dumps(si))
+oc = steps.get('panel label OCR') or {}
+ok = lambda k, want: (oc.get(k) or {}).get('id') == want and (oc.get(k) or {}).get('placed') is True
+check(ok('stacked', 'LP-1A') and ok('oneRow', 'LP-2B') and ok('fused', '3'),
+      'the Panel ID scan reads real labels with Vision (each line placed; top to bottom; "MCC3"): ' + json.dumps(oc))
 print('all checks passed' if not fails else str(len(fails)) + ' check(s) failed')
 sys.exit(1 if fails else 0)
 EOF

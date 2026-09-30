@@ -40,7 +40,7 @@
 //   T155 build 99: found finishing it (an unreadable re-save record let an older delete win)
 //   T156–T157 build 100: the 2026-09-28 low review of build 99
 //   T158–T179 build 101: SharePoint live backup
-//   T180–T181 build 102: Panel ID scan, a warning for a source without its photo
+//   T180–T185 build 102: Panel ID scan, a warning for a source without its photo; its medium review; marks for an old shape
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -5113,6 +5113,104 @@
       + '; warning shown=' + overlay + ', saved anyway=' + saved);
   }
 
+  // T182 — "Clear all data" never empties the backup
+  async function t182_clearAllDataNeverEmptiesTheBackup() {
+    const N = 'T182 "Clear all data" stops the backup and never mirrors the clear — SharePoint keeps its last copy of every day, even once the backup is turned on again';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    const a = mkEntry('A-182'); a.hospitalCode = 'Atlanta'; savedEquipment.push(a); await saveAll();
+    const folder = 'Atlanta/' + getEntryDate(a), path = folder + '/units_' + getCollectorTag() + '.json';
+    const stub = backupStub();
+    backupTestOn();
+    let before = null, on = null, after = null;
+    try {
+      await backupPass();
+      before = unitNames(unitsFile(stub, folder));
+      await withDialogs({ confirm: true }, async () => { clearAllData(); await sleep(300); });
+      on = backupCfg.on;
+      await backupPass();                                   // (off: nothing)
+      // turned on and signed in again — the cleared device's records are gone, so nothing is emptied
+      Object.assign(backupCfg, { on: true, user: 'tech@hgsengineeringinc.com', pass: 'v1.test.pass', passExpires: new Date(Date.now() + 86400000).toISOString() });
+      _backupListTrusted = true;
+      await backupPass();
+      const f = stub.files.get(path); after = f ? unitNames(JSON.parse(f.text)) : null;
+    } finally { backupTestOff(stub); }
+    record(N, !!before && before.join() === 'A-182' && on === false && !!after && after.join() === 'A-182',
+      'before the clear SharePoint listed ' + JSON.stringify(before) + '; the backup after the clear on=' + on + '; after turning it on again SharePoint lists ' + JSON.stringify(after));
+  }
+
+  // T183 — the Panel ID read top to bottom; "MCC3"; a label with no ID says so
+  async function t183_panelIdReadTopToBottom() {
+    const N = 'T183 the Panel / MCC ID scan reads the label top to bottom whatever order OCR gives its lines (one row left to right), splits "MCC3", and says so when the label has no ID';
+    const cases = [
+      [[{ text: '120/208V 3PH', x: 0.1, y: 0.2, h: 0.1 }, { text: 'LP-1A', x: 0.1, y: 0.5, h: 0.1 }, { text: 'PANEL', x: 0.1, y: 0.8, h: 0.1 }], 'LP-1A'],
+      [[{ text: 'LP-1A', x: 0.5, y: 0.805, h: 0.1 }, { text: 'PANEL', x: 0.1, y: 0.8, h: 0.1 }, { text: '480V', x: 0.1, y: 0.4, h: 0.1 }], 'LP-1A'],
+      [[{ text: 'MCC3', x: 0.1, y: 0.5, h: 0.1 }], '3'],
+      [[{ text: 'PNL1A', x: 0.1, y: 0.5, h: 0.1 }], '1A'],
+      [[{ text: 'MCCB-12', x: 0.1, y: 0.5, h: 0.1 }], 'MCCB-12'],
+    ];
+    const got = cases.map(([b]) => pickLocationIdFromScan(b.map(x => x.text).join('\n'), b));
+    await resetAppState();
+    fillForm('Pump-183'); sources[0].location = 'Panel'; renderSources();
+    const realCap = window.Capacitor;
+    window.Capacitor = { isNativePlatform: () => true, Plugins: Object.assign({}, (realCap && realCap.Plugins) || {}, {
+      Camera: { getPhoto: async () => ({ base64String: 'AAAA' }) },
+      TextRecognition: { recognizeText: async () => ({ text: 'PANEL', blocks: [{ text: 'PANEL', x: 0.1, y: 0.5, h: 0.1 }] }) },
+    }) };
+    let msgs = [];
+    try { msgs = await withToasts(async () => { await scanTextToField('src_locid_0', 'locationId'); }); }
+    finally { window.Capacitor = realCap; }
+    record(N, got.join('|') === cases.map(c => c[1]).join('|') && msgs.some(m => /no ID on it/.test(m)) && sources[0].location === 'Panel',
+      'picked ' + JSON.stringify(got) + '; a label with only the word said ' + JSON.stringify(msgs) + '; location still ' + JSON.stringify(sources[0].location));
+  }
+
+  // T184 — the same sign-in coming back twice is not an error
+  async function t184_aSecondReturnLinkIsNotAnError() {
+    const N = 'T184 the iPad sign-in coming back a second time (the page\'s link, then its button) keeps the pass and shows no "not started here" warning';
+    await resetAppState();
+    const verifier = 'V'.repeat(43);
+    const stub = backupStub({ verifier });
+    let first = null, second = null, pass = '', msgs = [];
+    try {
+      Object.assign(backupCfg, { on: true, user: '', pass: '', passExpires: '' });
+      _backupPkce = { verifier, at: Date.now() };
+      msgs = await withToasts(async () => {
+        first = await finishBackupSignIn('lotocollector://backup-link?code=c1.a.b&user=tech');
+        second = await finishBackupSignIn('lotocollector://backup-link?code=c1.a.b&user=tech');
+      });
+      pass = backupCfg.pass;
+    } finally { backupTestOff(stub); }
+    record(N, first === true && second === false && pass === 'v1.test.pass' && !msgs.some(m => /not started here/.test(m)),
+      'first ' + first + ', second ' + second + ', pass kept=' + (pass === 'v1.test.pass') + '; said ' + JSON.stringify(msgs));
+  }
+
+  // T185 — marks placed while the source changed shape are not saved against the new one
+  async function t185_marksPlacedForAnOldShapeAreNotSaved() {
+    const N = 'T185 valve marks placed while the source changed shape (an In/Out pair became one kind of valve) are not saved against the new shape — the tech is told to mark again; an unchanged source keeps both';
+    await resetAppState();
+    fillFormNoSources('VM-185');
+    sources.push(Object.assign(mkSrc('Geothermal Water In/Out'), { deviceType: 'Ball Valve', quantity: 2, collapsed: false }));
+    sources.push(Object.assign(mkSrc('Geothermal Water In/Out'), { deviceType: 'Ball Valve', quantity: 2, collapsed: false }));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('vm185a'));
+    await captureInto('source_1', await makePhotoFile('vm185b'));
+    const slots = valveMarkSlots(sources[0]);
+    let msgs = [];
+    msgs = await withToasts(async () => {
+      openValveMarkDialog('source_0'); await markDialogReady();
+      tapMark(0.3, 0.4); tapMark(0.7, 0.4);
+      updateSource(0, 'energySource', 'Chemical In');     // the source changes while the dialog is open
+      clickById('valveMarkSave');
+      openValveMarkDialog('source_1'); await markDialogReady();   // control: nothing changes
+      tapMark(0.3, 0.4); tapMark(0.7, 0.4);
+      clickById('valveMarkSave');
+    });
+    const changed = cleanValveMarks(photos.source_0 && photos.source_0.marks).length;
+    const control = cleanValveMarks(photos.source_1 && photos.source_1.marks).length;
+    record(N, slots === 2 && changed === 0 && control === 2 && msgs.some(m => /changed while you were marking/.test(m)),
+      'slots when opened ' + slots + '; marks kept after the change ' + changed + ' (source now ' + sources[0].energySource + ', ' + valveMarkSlots(sources[0]) + ' slot(s)); control kept ' + control + '; said ' + JSON.stringify(msgs));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -5189,7 +5287,9 @@
     t172_editingTheFormSendsOnlyItsOwnFile, t173_anUnsavedConfirmationNeverLeavesAnOlderOneStanding,
     t174_webSignInWaitsForAPhotoStillSaving, t175_aRefusedAccountStaysShownSoItCanBeSwitched, t176_anIPadSignInThatCannotBePreparedSaysSo,
     t177_aServiceWideRefusalPausesEverything, t178_dayFilesWaitWhileTheDeviceCannotRecordThem, t179_aDayFileMarkWritesOnlyTheDayRecord,
-    t180_panelIdScansOffTheLabel, t181_aSourceWithoutItsPhotoIsFlagged];
+    t180_panelIdScansOffTheLabel, t181_aSourceWithoutItsPhotoIsFlagged,
+    t182_clearAllDataNeverEmptiesTheBackup, t183_panelIdReadTopToBottom, t184_aSecondReturnLinkIsNotAnError,
+    t185_marksPlacedForAnOldShapeAreNotSaved];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

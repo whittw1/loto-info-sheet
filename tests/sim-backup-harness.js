@@ -87,6 +87,23 @@
         try { const B = window.Capacitor.Plugins.Browser; await B.close(); } catch (err) {}
       }
       window.finishBackupSignIn = realFinish;
+      // The Panel ID scan against real Vision OCR (build 102): labels drawn on a
+      // canvas, through the app's own TextRecognition plugin and picker.
+      const TR = getCapPlugin('TextRecognition');
+      const label = async (rows) => {
+        const cv = document.createElement('canvas'); cv.width = 1000; cv.height = 700;
+        const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.fillStyle = '#000';
+        rows.forEach(([t, x, y, size]) => { g.font = 'bold ' + size + 'px Helvetica'; g.fillText(t, x, y); });
+        const r = await TR.recognizeText({ base64Image: cv.toDataURL('image/jpeg', 0.95).split(',')[1] });
+        return { lines: (r.blocks || []).map(b => b.text), placed: (r.blocks || []).length > 0 && (r.blocks || []).every(b => typeof b.y === 'number'), id: pickLocationIdFromScan(r.text, r.blocks) };
+      };
+      try {
+        step('panel label OCR', {
+          stacked: await label([['PANEL', 80, 160, 110], ['LP-1A', 80, 360, 110], ['120/208V 3PH 4W', 80, 560, 70]]),
+          oneRow: await label([['PANEL', 80, 300, 110], ['LP-2B', 560, 300, 110], ['480V', 80, 560, 70]]),
+          fused: await label([['MCC3', 80, 360, 130]]),
+        });
+      } catch (err) { step('panel label OCR', { error: err.message }); }
       out.ok = true;
     } catch (e) {
       out.error = String(e && e.message || e);

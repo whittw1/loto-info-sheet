@@ -109,7 +109,13 @@ public class TextRecognition: CAPPlugin, CAPBridgedPlugin {
                 lines.append(top.string)
                 blocks.append([
                     "text": top.string,
-                    "confidence": top.confidence
+                    "confidence": top.confidence,
+                    // where the line sits (Vision's normalized box, origin at the
+                    // bottom-left): the app reads a label top to bottom — Vision's
+                    // own order isn't that (build 102)
+                    "x": Double(obs.boundingBox.minX),
+                    "y": Double(obs.boundingBox.midY),
+                    "h": Double(obs.boundingBox.height)
                 ])
             }
             call.resolve([
