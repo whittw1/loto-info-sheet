@@ -46,12 +46,14 @@ module.exports = async function (context, req) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.uploadUrl) {
       context.log.error('createUploadSession failed', r.status, JSON.stringify(j).slice(0, 300));
-      return done(502, { ok: false, error: 'SharePoint would not start the upload (' + r.status + ')' });
+      const f = r.ok ? { status: 502, error: 'SharePoint would not start the upload (' + r.status + ')' } : G.graphFailure(r.status);
+      return done(f.status, { ok: false, error: f.error });
     }
     context.log('upload session for ' + full + ' (' + size + ' bytes) for ' + gate.who + ' via ' + gate.via);
     return done(200, { ok: true, uploadUrl: j.uploadUrl, expirationDateTime: j.expirationDateTime || null, path: full, target: target.key });
   } catch (e) {
     context.log.error('upload session error', e.message);
-    return done(502, { ok: false, error: e.message });
+    const f = G.thrownFailure(e);
+    return done(f.status, { ok: false, error: f.error });
   }
 };

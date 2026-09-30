@@ -75,8 +75,13 @@ async function graphToken(c) {
   const r = await fetch(`https://login.microsoftonline.com/${c.tenant}/oauth2/v2.0/token`, {
     method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body,
   });
-  const j = await r.json();
-  if (!r.ok || !j.access_token) throw new Error('sign-in failed: ' + (j.error_description || j.error || r.status));
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token) {
+    // a setting, not the file: a wrong or expired secret, tenant or client id
+    const e = new Error('the backup service could not sign in to Microsoft (' + (j.error || r.status) + ') — ask the administrator to check its settings');
+    e.config = true;
+    throw e;
+  }
   cachedToken = { value: j.access_token, expires: Date.now() + (j.expires_in || 3600) * 1000 };
   return cachedToken.value;
 }
@@ -210,7 +215,25 @@ function fullPath(t, folder, path) {
 }
 function sha256Hex(bytes) { return crypto.createHash('sha256').update(bytes).digest('hex'); }
 
+// What a failed call to Graph means for the app. Only a problem with THIS file
+// is a 502 — the app waits on that one file and sends the rest. The service
+// itself answers 503 (the app pauses 10 minutes: a setting to fix — the site
+// grant, the site or library id, the app's own sign-in) or 429 (it pauses a
+// minute: SharePoint is busy or unreachable). One broken setting must never
+// make every photo upload in full only to fail, each backing off on its own.
+function graphFailure(status) {
+  if (status === 401 || status === 403 || status === 404) {
+    return { status: 503, error: 'SharePoint refused the backup service (' + status + ') — ask the administrator to check its site grant and settings' };
+  }
+  if (status === 429 || status >= 500) return { status: 429, error: 'SharePoint is busy (' + status + ') — trying again shortly' };
+  return { status: 502, error: 'SharePoint refused the file (' + status + ')' };
+}
+function thrownFailure(e) {
+  return e && e.config ? { status: 503, error: e.message } : { status: 429, error: 'could not reach SharePoint (' + ((e && e.message) || e) + ') — trying again shortly' };
+}
+
 module.exports = {
   GRAPH, cfg, configured, targets, resolveTarget, graphToken, safeSegments, safeFolder, safePath,
   whoIsAsking, mintDevicePass, readDevicePass, mintDeviceCode, redeemDeviceCode, admit, driveBase, itemUrl, fullPath, sha256Hex,
+  graphFailure, thrownFailure, resetTokenCache: () => { cachedToken = null; },   // (tests)
 };

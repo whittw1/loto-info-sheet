@@ -66,6 +66,27 @@
         const r = await backupUploadBig(new Blob([big]), 'Atlanta/' + out.unit.day, 'export/sim-big.bin');
         step('big upload', { ok: true, hashChecked: r.hashChecked, quickXorHash: r.quickXorHash, size: big.length });
       } catch (err) { step('big upload', { ok: false, error: err.message }); }
+      // The iPad sign-in through the real plugins: Browser opens the link page
+      // (full screen); the runner hands the code back the way the link page does —
+      // a lotocollector:// link delivered by iOS (simctl openurl) → App's
+      // appUrlOpen → finishBackupSignIn → /api/device-pass over native HTTP.
+      const finishes = [];
+      const realFinish = window.finishBackupSignIn;
+      window.finishBackupSignIn = async (u) => { const r = await realFinish(u); finishes.push({ url: String(u).slice(0, 34), ok: r }); return r; };
+      Object.assign(backupCfg, { pass: '', user: '', passExpires: '' });
+      let opened = null;
+      try { await signInForBackup(); opened = !!_backupPkce; } catch (err) { opened = 'threw: ' + err.message; }
+      step('sign-in sheet', { opened });
+      if (_backupPkce) {
+        const hex = await sha256HexOfBytes(new TextEncoder().encode(_backupPkce.verifier));
+        const challenge = backupB64url(new Uint8Array(hex.match(/../g).map(h => parseInt(h, 16))));
+        await fs.writeFile({ path: 'loto_signin_challenge.txt', data: challenge, directory: 'DATA', encoding: 'utf8' });
+        for (let i = 0; i < 900 && !backupCfg.pass; i++) await sleep(100);   // up to 90 s for the link
+        await sleep(1500);
+        step('signed in through the link', { pass: /^v1\./.test(backupCfg.pass || ''), user: backupCfg.user, expires: backupCfg.passExpires, finishes });
+        try { const B = window.Capacitor.Plugins.Browser; await B.close(); } catch (err) {}
+      }
+      window.finishBackupSignIn = realFinish;
       out.ok = true;
     } catch (e) {
       out.error = String(e && e.message || e);

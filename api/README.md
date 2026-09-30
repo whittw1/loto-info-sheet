@@ -30,8 +30,12 @@ verifier that never leaves the app). See `shared/graph.js`, "The device pass".
 
 ## One-time setup (an administrator)
 
-1. **SharePoint.** Create a site for the backups — e.g. *LOTO Field Backup* —
-   and in its **Documents** library a top folder **`LOTO Backups`**. Keep the
+1. **SharePoint.** Create a site for the backups — a normal **Team site**,
+   **Private**, e.g. *LOTO Field Backup* (a Communication site works too; the
+   app writes to the site's default **Documents** library either way). Members:
+   only the office people who manage the backups — others as Visitors
+   (read-only). The techs need no access to it: the app writes with its own
+   permission. In **Documents** make a top folder **`LOTO Backups`**. Keep the
    library's **version history on** (the default): a file the app replaces
    (a day's unit file, say) keeps its earlier versions. Keep this site away
    from the folders loto-web's nightly SharePoint sync imports from.
@@ -83,7 +87,15 @@ verifier that never leaves the app). See `shared/graph.js`, "The device pass".
    `/api/device-pass` must **not** be limited to signed-in web visitors: the
    iPad calls them with its device pass. Each function checks the caller itself.
 
-8. **Check it** — web: open the Azure address → Settings → SharePoint backup →
+8. **Consent to the sign-in, for everyone** — the web and iPad sign-in use the
+   Static Web App's built-in Microsoft sign-in ("Azure Static Web Apps"). The
+   first time an administrator signs in (step 9), Microsoft asks for consent:
+   tick **Consent on behalf of your organization**. Where users may not consent
+   to apps themselves, skipping this leaves every tech at **"Need admin
+   approval"** (it can also be granted later: Entra ID → Enterprise applications
+   → Azure Static Web Apps → Permissions → Grant admin consent).
+
+9. **Check it** — web: open the Azure address → Settings → SharePoint backup →
    turn it on → Sign in with Microsoft → **Test** (writes
    `LOTO Backups/<facility>/<today>/test_<collector>.txt`). iPad: the same in the
    app; Sign in opens a sheet, then comes back to the app.
@@ -92,8 +104,10 @@ verifier that never leaves the app). See `shared/graph.js`, "The device pass".
 
 - **A lost iPad** (or every iPad): set `DEVICE_PASS_NOT_BEFORE` to now — every
   device pass issued before then stops working; the others sign in again. A new
-  `DEVICE_PASS_SECRET` does the same. A pass can only ever add files to the
-  backup folder; it can't read or delete anything.
+  `DEVICE_PASS_SECRET` does the same. A pass can only write files inside the
+  backup folder — new ones, or a newer copy of one already there (SharePoint's
+  version history keeps the earlier copies: restore them from there); it can't
+  read or delete anything.
 - **A person**: disable their Entra account — no new sign-in, no new pass. A pass
   already on their iPad keeps working until it expires (30 days by default); to
   stop it at once, also set `DEVICE_PASS_NOT_BEFORE` (everyone else signs in again).

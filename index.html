@@ -11803,7 +11803,7 @@ const BACKUP_CHUNK = 16 * 327680;   // 5 MiB — Graph wants upload chunks in mu
 let backupCfg = { on: false, user: '', pass: '', passExpires: '', root: '' };
 let _backupSent = new Map();         // photo key → { f: folder, s: SHA-256 } of the copy SharePoint confirmed there
 let _backupDays = new Map();         // "<folder>/<file>" → { h: text hash, sha } SharePoint confirmed ({ h: '', sha: '' }: sent, not yet confirmed)
-let _backupRecordsLoaded = false, _backupRecordsDirty = false;
+let _backupRecordsLoaded = false, _backupSentDirty = false, _backupDaysDirty = false;   // each record saved only when it changed
 let _backupBusy = false, _backupPauseUntil = 0, _backupLastError = '', _backupSignInNeeded = false;
 let _backupWrongAccount = false;   // signed in, but with an account that may not back up here (403)
 let _backupState = { waiting: 0, unreadable: 0, checked: false };
@@ -11839,13 +11839,18 @@ async function loadBackupRecords() {
   } catch (e) { return false; }
   return true;
 }
-// true: the records on the device are current.
+// true: the records on the device are current. Each is written only when it
+// changed: the photo record grows with every photo on the device, and the day
+// files are marked before every send — often, while the form is typed in.
 async function saveBackupRecords() {
-  if (!_backupRecordsDirty) return true;
+  if (!_backupSentDirty && !_backupDaysDirty) return true;
   if (!tabMayWrite()) return false;
-  _backupRecordsDirty = false;
-  try { await saveMetadataMany({ backup_sent: Object.fromEntries(_backupSent), backup_days: Object.fromEntries(_backupDays) }); return true; }
-  catch (e) { _backupRecordsDirty = true; return false; }
+  const rec = {}, sent = _backupSentDirty, days = _backupDaysDirty;
+  if (sent) rec.backup_sent = Object.fromEntries(_backupSent);
+  if (days) rec.backup_days = Object.fromEntries(_backupDays);
+  _backupSentDirty = false; _backupDaysDirty = false;
+  try { await saveMetadataMany(rec); return true; }
+  catch (e) { if (sent) _backupSentDirty = true; if (days) _backupDaysDirty = true; return false; }
 }
 
 // ---- Talking to the API ------------------------------------------------------
@@ -11972,10 +11977,6 @@ function backupSlimUnit(e, info) {
   if (Array.isArray(e.miscPhotos)) c.miscPhotos = e.miscPhotos.map(m => backupSlimRef(m, info));
   return c;
 }
-function backupCsvCell(v) {
-  const t = String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
-  return /[",]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
-}
 function backupIndexCsv(list) {
   const rows = [['File', 'Unit', 'Equipment type', 'Building', 'Room', 'Unit date', 'Slot', 'Source', 'Energy', 'Device', 'Taken', 'SHA-256 at capture'].join(',')];
   list.slice().sort((a, b) => String(a.unit.equipName || '').localeCompare(String(b.unit.equipName || ''), 'en', { numeric: true })
@@ -11984,7 +11985,7 @@ function backupIndexCsv(list) {
       const u = p.unit, m = /^source_(\d+)$/.exec(p.slot), src = m ? (u.sources || [])[+m[1]] || {} : {};
       rows.push([backupPhotoName(p.key), u.equipName || '', u.equipType || '', u.equipBuilding || '',
         u.equipRoom || '', getEntryDate(u) || '', p.slot, m ? +m[1] + 1 : '', src.energySource || '', src.deviceType || '',
-        p.ref.timestamp || '', p.ref.sha256 || ''].map(backupCsvCell).join(','));
+        p.ref.timestamp || '', p.ref.sha256 || ''].map(v => quote(v)).join(','));   // the export CSV's own quoting
     });
   return '﻿' + rows.join('\r\n') + '\r\n';
 }
@@ -11996,10 +11997,6 @@ function backupTextHash(s) {
   h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
   h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
   return (h2 >>> 0).toString(36) + '-' + (h1 >>> 0).toString(36) + '-' + s.length;
-}
-function backupAppLabel() {
-  const el = document.querySelector('.header-title h1 span');
-  return 'LOTO Collector ' + (el ? el.textContent.trim() : '');
 }
 // The day files as they should be now: for each facility / day, its saved units
 // (by survey date) and the index of their photos (by the day taken); and the
@@ -12020,7 +12017,8 @@ function backupDayFiles(info) {
   if (wipHasContent(st)) group(backupFormFacility(), localDateStr(new Date())).inProgress = backupSlimUnit(Object.assign({}, st, { at: undefined }), info);
   info.forEach(p => { if (!p.unit.inProgress) group(p.fac, p.day).photos.push(p); });   // the form's photos: in its own file
   const unitsName = 'units_' + tag + '.json', csvName = 'photos_' + tag + '.csv', wipName = 'inprogress_' + tag + '.json';
-  const head = (fac, day) => ({ version: 1, app: backupAppLabel(), collector: tag, device: ensureDeviceId(), facility: fac, date: day });
+  // (no app version here: an update would change every file ever written, and send them all again)
+  const head = (fac, day) => ({ version: 1, collector: tag, device: ensureDeviceId(), facility: fac, date: day });
   const files = new Map();
   const put = (folder, path, type, text) => files.set(folder + '/' + path, { folder, path, type, text });
   groups.forEach(g => {
@@ -12083,7 +12081,7 @@ async function drainBackup() {
     // Sent means SharePoint holds it in the folder it belongs in now: a photo
     // whose unit changed facility (one taken before the facility was chosen,
     // say) goes again, to the new folder. Records of photos no longer here go.
-    if (listed) _backupSent.forEach((v, k) => { if (!info.has(k)) { _backupSent.delete(k); _backupRecordsDirty = true; } });
+    if (listed) _backupSent.forEach((v, k) => { if (!info.has(k)) { _backupSent.delete(k); _backupSentDirty = true; } });
     const todo = Array.from(info.values()).filter(p => { const s = _backupSent.get(p.key); return !(s && s.f === p.folder); })
       .sort((a, b) => b.taken - a.taken);   // newest first
     _backupState = { waiting: files.length + todo.length, unreadable: 0, checked: true };
@@ -12105,13 +12103,14 @@ async function drainBackup() {
     const dayTodo = files.filter(f => !backupRetryWaiting('day:' + f.folder + '/' + f.path));
     let marked = false;
     dayTodo.forEach(f => { const rec = f.folder + '/' + f.path, d = _backupDays.get(rec); if (!d || d.h || d.sha) { _backupDays.set(rec, { h: '', sha: '' }); marked = true; } });
-    if (marked) { _backupRecordsDirty = true; if (!await saveBackupRecords()) dayTodo.length = 0; }   // not recorded: not sent (photos still go)
+    if (marked) _backupDaysDirty = true;
+    if (_backupDaysDirty && !await saveBackupRecords()) dayTodo.length = 0;   // not on the device (this pass's marks or an earlier one's): not sent — photos still go
     for (const f of dayTodo) {
       const rec = f.folder + '/' + f.path, id = 'day:' + rec;
       const ok = await backupAttempt(id, async () => {
         const sha = await backupSend(f.folder, f.path, new TextEncoder().encode(f.text), f.type);
         _backupDays.set(rec, { h: f.h, sha });
-        _backupRecordsDirty = true;
+        _backupDaysDirty = true;
       });
       if (ok === 'stop') return;
       if (ok) { _backupState.waiting--; paintBackupBadge(); }
@@ -12127,7 +12126,7 @@ async function drainBackup() {
       if (!pd || !pd.bytes) { _backupState.unreadable++; paintBackupBadge(); continue; }   // stays waiting — said so
       const ok = await backupAttempt(id, async () => {
         _backupSent.set(p.key, { f: p.folder, s: await backupSend(p.folder, 'photos/' + backupPhotoName(p.key), pd.bytes, pd.type || 'image/jpeg') });
-        _backupRecordsDirty = true;
+        _backupSentDirty = true;
       });
       if (ok === 'stop') return;
       if (ok) {
@@ -12244,7 +12243,7 @@ async function signInForBackup() {
   if (!hex) { showToast('⚠ This device could not prepare the sign-in — try again', true); return; }
   const challenge = backupB64url(new Uint8Array(hex.match(/../g).map(h => parseInt(h, 16))));
   _backupPkce = { verifier, at: Date.now() };
-  try { await B.open({ url: backupHost() + '/backup-link.html?device=' + encodeURIComponent(getCollectorTag()) + '&challenge=' + challenge, presentationStyle: 'popover' }); }
+  try { await B.open({ url: backupHost() + '/backup-link.html?device=' + encodeURIComponent(getCollectorTag()) + '&challenge=' + challenge }); }   // full screen: the Microsoft sign-in runs to several pages
   catch (e) { _backupPkce = null; showToast('⚠ Could not open the sign-in page: ' + e.message, true); }
 }
 async function finishBackupSignIn(url) {
@@ -12375,7 +12374,7 @@ function backupEverythingAgain() {
     + 'Each goes to its own facility and day folder. Nothing on SharePoint is deleted. Keep the app open until the badge says backed up.')) return;
   _backupSent.clear();
   _backupDays.forEach(v => { if (v) v.sha = ''; });
-  _backupRecordsDirty = true;
+  _backupSentDirty = true; _backupDaysDirty = true;
   _backupRetry.clear();
   _backupPauseUntil = 0; _backupLastError = '';
   scheduleBackup(0);

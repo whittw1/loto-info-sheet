@@ -61,7 +61,8 @@ module.exports = async function (context, req) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
       context.log.error('graph upload failed', r.status, JSON.stringify(j).slice(0, 300));
-      return done(502, { ok: false, error: 'SharePoint refused the file (' + r.status + ')' });
+      const f = G.graphFailure(r.status);
+      return done(f.status, { ok: false, error: f.error });
     }
     // What SharePoint says it now holds.
     const qxh = qxhBase64(bytes);
@@ -75,6 +76,7 @@ module.exports = async function (context, req) {
       hashChecked: !!storedHash, by: gate.who, webUrl: j.webUrl || null });
   } catch (e) {
     context.log.error('upload error', e.message);
-    return done(502, { ok: false, error: e.message });
+    const f = G.thrownFailure(e);
+    return done(f.status, { ok: false, error: f.error });
   }
 };

@@ -76,6 +76,16 @@ xcrun simctl launch "$UDID" "$BID" >/dev/null
 echo "backup check running in the app…"
 
 R="$DATA/Documents/loto_backup_e2e.json"
+# the sign-in: when the app has opened the link page and written its challenge,
+# hand back a one-time code the way the page does — through iOS, as a link
+CH_FILE="$DATA/Documents/loto_signin_challenge.txt"
+for _ in $(seq 1 120); do { [ -f "$CH_FILE" ] || [ -f "$R" ]; } && break; sleep 2; done
+if [ -f "$CH_FILE" ]; then
+  CH=$(cat "$CH_FILE")
+  CODE=$(curl -s -b 'e2e_signed_in=1' "http://localhost:$SITE/api/device-token?device=SIM-e2e&challenge=$CH" | python3 -c "import json,sys; print(json.load(sys.stdin).get('code',''))")
+  echo "handing the sign-in code back through iOS (lotocollector://)…"
+  xcrun simctl openurl "$UDID" "lotocollector://backup-link?code=$CODE&user=tech%40hgsengineeringinc.com" || echo "openurl failed"
+fi
 for _ in $(seq 1 120); do [ -f "$R" ] && break; sleep 2; done
 [ -f "$R" ] || { echo "NO RESULTS after 4 min"; exit 1; }
 cp "$R" "$WORK/results.json"
@@ -104,6 +114,11 @@ b = steps.get('big upload') or {}
 big = st.get(folder + '/export/sim-big.bin')
 check(b.get('ok') and b.get('hashChecked') and bool(big) and big['size'] == b.get('size') and big['quickXorHash'] == b.get('quickXorHash'),
       '12 MB in 5 MiB pieces over native HTTP, hash matched: ' + json.dumps(b))
+sh = steps.get('sign-in sheet') or {}
+check(sh.get('opened') is True, 'Sign in with Microsoft opens the link page in the Browser sheet: ' + json.dumps(sh))
+si = steps.get('signed in through the link') or {}
+check(si.get('pass') is True and si.get('user') == 'tech@hgsengineeringinc.com' and any(f.get('ok') for f in si.get('finishes') or []),
+      'the lotocollector:// link came back through iOS and the app traded code + verifier for its device pass: ' + json.dumps(si))
 print('all checks passed' if not fails else str(len(fails)) + ' check(s) failed')
 sys.exit(1 if fails else 0)
 EOF

@@ -134,15 +134,43 @@ test('upload: stored only when SharePoint reports the same size and hash', async
   fakeGraph();
   res = await call(upload, { method: 'POST', headers: auth, body: photoBody(bytes, { sha256: '0'.repeat(64) }) });
   assert.strictEqual(res.status, 400, 'damaged on the way in');
-  fakeGraph({ status: 403 });
-  res = await call(upload, { method: 'POST', headers: auth, body: photoBody(bytes) });
-  assert.strictEqual(res.status, 502);
+  // the service, not the file: the app pauses everything instead of sending every photo to fail
+  for (const [graph, want] of [[401, 503], [403, 503], [404, 503], [429, 429], [500, 429], [503, 429], [409, 502], [423, 502], [400, 502]]) {
+    fakeGraph({ status: graph });
+    res = await call(upload, { method: 'POST', headers: auth, body: photoBody(bytes) });
+    assert.strictEqual(res.status, want, 'Graph ' + graph + ' → ' + want + ': ' + JSON.stringify(res.body));
+  }
   calls = fakeGraph();
   res = await call(upload, { method: 'POST', headers: auth, body: photoBody(bytes, { folder: '../../Other Site/x' }) });
   assert.strictEqual(res.status, 200);
   assert.ok(calls.find(x => x.init && x.init.method === 'PUT').url.includes('/root:/LOTO%20Backups/Other%20Site/x/photos/'), 'climbing out is dropped, the root stays');
   res = await call(upload, { method: 'POST', headers: auth, body: photoBody(bytes, { target: 'nope' }) });
   assert.strictEqual(res.status, 400, 'an unknown destination is refused, not redirected');
+});
+
+test('upload: the service failing (its own sign-in, the network, the upload session) pauses the app — 503 / 429 — never blames the file', async () => {
+  setEnv();
+  const bytes = crypto.randomBytes(1000);
+  const auth = { 'x-ms-client-principal': principal('tech@hgsengineeringinc.com') };
+  G.resetTokenCache();
+  global.fetch = async (url) => String(url).includes('login.microsoftonline.com')
+    ? new Response(JSON.stringify({ error: 'invalid_client' }), { status: 401 }) : new Response('{}', { status: 200 });
+  let res = await call(upload, { method: 'POST', headers: auth, body: photoBody(bytes) });
+  assert.strictEqual(res.status, 503, JSON.stringify(res.body));
+  assert.match(res.body.error, /could not sign in to Microsoft/);
+  G.resetTokenCache();
+  global.fetch = async () => { throw new TypeError('fetch failed'); };
+  res = await call(upload, { method: 'POST', headers: auth, body: photoBody(bytes) });
+  assert.strictEqual(res.status, 429, JSON.stringify(res.body));
+  G.resetTokenCache();
+  for (const [graph, want] of [[403, 503], [429, 429], [500, 429]]) {
+    global.fetch = async (url) => String(url).includes('login.microsoftonline.com')
+      ? new Response(JSON.stringify({ access_token: 'graph-token', expires_in: 3600 }), { status: 200 })
+      : new Response(JSON.stringify({ error: { code: 'x' } }), { status: graph });
+    res = await call(uploadSession, { method: 'POST', headers: auth, body: { path: 'export/x.zip', folder: 'Atlanta/2026-10-06', size: 100 } });
+    assert.strictEqual(res.status, want, 'upload session: Graph ' + graph + ' → ' + want);
+  }
+  G.resetTokenCache();
 });
 
 test('upload: GET says who is asking and how; not configured is 503; strangers learn nothing', async () => {

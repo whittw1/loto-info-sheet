@@ -39,7 +39,7 @@
 //   T154 build 99: found by its fault campaign (a failed fallback write removed the fallback)
 //   T155 build 99: found finishing it (an unreadable re-save record let an older delete win)
 //   T156–T157 build 100: the 2026-09-28 low review of build 99
-//   T158–T176 build 101: SharePoint live backup
+//   T158–T179 build 101: SharePoint live backup
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -4907,7 +4907,7 @@
       withB = unitNames(unitsFile(stub, folder));
       window.saveMetadataMany = realSave;
       // opened again: the records come from the device; B is deleted — the day is back to []
-      _backupRecordsLoaded = false; _backupSent = new Map(); _backupDays = new Map(); _backupPauseUntil = 0; _backupRetry.clear(); _backupRecordsDirty = false;
+      _backupRecordsLoaded = false; _backupSent = new Map(); _backupDays = new Map(); _backupPauseUntil = 0; _backupRetry.clear(); _backupSentDirty = false; _backupDaysDirty = false;
       await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.findIndex(e => e.equipName === 'B-173')); await sleep(300); });
       await backupPass();
       after = unitNames(unitsFile(stub, folder));
@@ -4980,6 +4980,73 @@
     } finally { window.sha256HexOfBytes = realHash; window.Capacitor = realCap; window.backupNative = realNative; backupTestOff(); }
     record(N, !threw && opened === 0 && _backupPkce === null && msgs.some(m => /sign-in/.test(m)),
       'threw: ' + JSON.stringify(threw) + '; sheet opened ' + opened + '×; sign-in half-started=' + (_backupPkce !== null) + '; said: ' + JSON.stringify(msgs));
+  }
+
+  // T177 — the service failing pauses everything; it never sends every photo to fail
+  async function t177_aServiceWideRefusalPausesEverything() {
+    const N = 'T177 when the backup service itself fails (503: a setting to fix; 429: busy) the pass stops at the first file and pauses — it never sends every photo only to fail';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    fillForm('A-177'); await captureInto('equip_main', await makePhotoFile('t177a')); saveEntry();
+    fillForm('B-177'); await captureInto('equip_main', await makePhotoFile('t177b')); saveEntry();
+    let stub = backupStub({ status: 503 });
+    backupTestOn();
+    let s503 = null, s429 = null;
+    try {
+      await backupPass();
+      s503 = { posts: stub.posts.length, minutes: Math.round((_backupPauseUntil - Date.now()) / 60000), perFile: _backupRetry.size };
+      stub.restore(); stub = backupStub({ status: 429 }); _backupPauseUntil = 0;
+      await backupPass();
+      s429 = { posts: stub.posts.length, seconds: Math.round((_backupPauseUntil - Date.now()) / 1000), perFile: _backupRetry.size };
+    } finally { backupTestOff(stub); }
+    record(N, !!s503 && s503.posts === 1 && s503.minutes >= 9 && s503.perFile === 0 && !!s429 && s429.posts === 1 && s429.seconds > 30 && s429.seconds <= 60 && s429.perFile === 0,
+      '503: ' + JSON.stringify(s503) + '; 429: ' + JSON.stringify(s429));
+  }
+
+  // T178 — no day file goes while the device can't record it
+  async function t178_dayFilesWaitWhileTheDeviceCannotRecordThem() {
+    const N = 'T178 while the device can\'t write its backup record, no day file is sent — neither in the pass whose mark failed nor in the next; once it can, they go';
+    await resetAppState();
+    setHospitalCode('Marion');
+    const a = mkEntry('A-178'); a.hospitalCode = 'Marion'; savedEquipment.push(a); await saveAll();
+    const folder = 'Marion/' + getEntryDate(a), unitsPath = folder + '/units_' + getCollectorTag() + '.json';
+    const stub = backupStub();
+    backupTestOn();
+    const realSave = window.saveMetadataMany;
+    let during = -1, after = null;
+    try {
+      window.saveMetadataMany = function (o) { if (o && ('backup_sent' in o || 'backup_days' in o)) return Promise.reject(new Error('storage full (test)')); return realSave.apply(this, arguments); };
+      await backupPass();                                   // marks, can't record them
+      await backupPass();                                   // still can't
+      during = stub.posts.filter(x => x.folder + '/' + x.file === unitsPath).length;
+      window.saveMetadataMany = realSave;
+      await backupPass();
+      after = unitNames(unitsFile(stub, folder));
+    } finally { window.saveMetadataMany = realSave; backupTestOff(stub); }
+    record(N, during === 0 && !!after && after.join() === 'A-178',
+      'sent while the record could not be written: ' + during + '×; once it could, SharePoint lists ' + JSON.stringify(after));
+  }
+
+  // T179 — a day-file mark writes the small day record, not the photo record
+  async function t179_aDayFileMarkWritesOnlyTheDayRecord() {
+    const N = 'T179 a pass that only sends the unit in progress writes only the small day record — never the whole photo record again';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    fillForm('A-179'); await captureInto('equip_main', await makePhotoFile('t179')); saveEntry();
+    const stub = backupStub();
+    backupTestOn();
+    const realSave = window.saveMetadataMany, writes = [];
+    let sentIt = false;
+    try {
+      await backupPass();                                   // the photo and the day files: both records
+      window.saveMetadataMany = function (o) { if (o && ('backup_sent' in o || 'backup_days' in o)) writes.push(Object.keys(o).sort().join('+')); return realSave.apply(this, arguments); };
+      fillForm('Form-179'); autoSaveCurrent(); await sleep(200);   // only the unit on the form changes
+      const n = stub.posts.length;
+      await backupPass();
+      sentIt = stub.posts.slice(n).some(x => /^inprogress_/.test(String(x.file || '')));
+    } finally { window.saveMetadataMany = realSave; backupTestOff(stub); }
+    record(N, sentIt && writes.length > 0 && writes.every(w => w === 'backup_days'),
+      'the unit in progress went=' + sentIt + '; records written: ' + JSON.stringify(writes));
   }
 
   // ---------- runner --------------------------------------------------------
@@ -5056,7 +5123,8 @@
     t167_theIPadSignInNeedsTheVerifierThisAppMade, t168_aPartialListNeverRewritesTheUnitFiles,
     t169_aPhotoWhoseFacilityChangesGoesAgain, t170_aDayFileIsRememberedBeforeItIsSent, t171_sentRecordsFollowTheListNeverAPartialOne,
     t172_editingTheFormSendsOnlyItsOwnFile, t173_anUnsavedConfirmationNeverLeavesAnOlderOneStanding,
-    t174_webSignInWaitsForAPhotoStillSaving, t175_aRefusedAccountStaysShownSoItCanBeSwitched, t176_anIPadSignInThatCannotBePreparedSaysSo];
+    t174_webSignInWaitsForAPhotoStillSaving, t175_aRefusedAccountStaysShownSoItCanBeSwitched, t176_anIPadSignInThatCannotBePreparedSaysSo,
+    t177_aServiceWideRefusalPausesEverything, t178_dayFilesWaitWhileTheDeviceCannotRecordThem, t179_aDayFileMarkWritesOnlyTheDayRecord];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
