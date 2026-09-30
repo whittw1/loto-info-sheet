@@ -1,15 +1,24 @@
 # LOTO Collector — SharePoint live backup: the server side
 
 While the app is open and online, the field work is copied into one SharePoint
-folder (ARCHITECTURE.md §6 "SharePoint live backup"):
+folder (ARCHITECTURE.md §6 "Build 101" and "Build 102"):
 
 ```
-LOTO Backups/<facility>/<YYYY-MM-DD>/photos/<file>.jpg      each photo, once safely stored on the device
-LOTO Backups/<facility>/<YYYY-MM-DD>/units_<collector>.json that day's saved units, kept current
-LOTO Backups/<facility>/<YYYY-MM-DD>/photos_<collector>.csv which of their photos is which unit / source
-LOTO Backups/<facility>/<today>/inprogress_<collector>.json the unit on the form (its own small file)
-LOTO Backups/<facility>/<YYYY-MM-DD>/export/…               exports sent with "Export to SharePoint"
+LOTO Backups/<facility>/<YYYY-MM-DD>/photos/<file>.jpg                   each photo, once safely stored on the device
+LOTO Backups/<facility>/<YYYY-MM-DD>/units_<collector>/<time>_<h>.json   that day's saved units — a new snapshot at each change
+LOTO Backups/<facility>/<YYYY-MM-DD>/photos_<collector>/<time>_<h>.csv   which of their photos is which unit / source
+LOTO Backups/<facility>/<today>/inprogress_<collector>/<time>_<h>.json   the unit on the form (at most one every 5 minutes)
+LOTO Backups/<facility>/<YYYY-MM-DD>/export/…_<id>.zip / .xlsx           each "Export to SharePoint", under its own name
+LOTO Backups/<facility>/<today>/test_<collector>_<time>.txt              Settings → Test
 ```
+
+**Nothing is ever overwritten** (build 102). Every file is written once, under
+a name nothing else uses: the functions ask SharePoint with
+`conflictBehavior=fail`, so a name that exists is never replaced — the same
+bytes sent again are answered "already there", anything else is refused (502)
+and the file there kept. A day's unit file is a folder of snapshots: the newest
+(`<time>` is UTC, so the names sort in time order) is the current list; every
+earlier one stays. Nothing is ever deleted either.
 
 This folder is the API that writes them: four small functions in the LOTO
 Azure Static Web App (the same site that serves the web app). The devices hold
@@ -18,8 +27,8 @@ backup folder of one SharePoint site.
 
 | Function | Who may call it | What it does |
 |---|---|---|
-| `upload` | a web sign-in or an iPad device pass, `@hgsengineeringinc.com` only | GET: is it set up, who is asking. POST: writes one file (≤ 8 MB) — refused unless the bytes match the SHA-256 the app sent, and answered only once SharePoint reports the same size and QuickXorHash for what it stored |
-| `upload-session` | same | starts a large upload (an export ZIP): a short-lived URL for that one file; the device sends the pieces straight to SharePoint and checks the finished file's hash itself |
+| `upload` | a web sign-in or an iPad device pass, `@hgsengineeringinc.com` only | GET: is it set up, who is asking. POST: writes one NEW file (≤ 8 MB) — refused unless the bytes match the SHA-256 the app sent, and answered only once SharePoint reports the same size and QuickXorHash for what it stored. A name already there is never replaced: the same bytes → "already there"; others → 502 |
+| `upload-session` | same | starts a large upload (an export ZIP) of a NEW file: a short-lived URL for that one name (refused if it exists); the device sends the pieces straight to SharePoint and checks the finished file's hash itself |
 | `device-token` | a web sign-in only (Static Web Apps enforces it) | step 1 of the iPad sign-in: a one-time code, 5 minutes, bound to the app's challenge |
 | `device-pass` | anyone holding a fresh code **and** the app's verifier | step 2: the iPad's device pass — upload-only, expires (30 days by default) |
 
@@ -35,9 +44,9 @@ verifier that never leaves the app). See `shared/graph.js`, "The device pass".
    app writes to the site's default **Documents** library either way). Members:
    only the office people who manage the backups — others as Visitors
    (read-only). The techs need no access to it: the app writes with its own
-   permission. In **Documents** make a top folder **`LOTO Backups`**. Keep the
-   library's **version history on** (the default): a file the app replaces
-   (a day's unit file, say) keeps its earlier versions. Keep this site away
+   permission. In **Documents** make a top folder **`LOTO Backups`**. The app
+   never replaces a file (every change is a new file), so version history
+   holds nothing of the app's — leave it at the default. Keep this site away
    from the folders loto-web's nightly SharePoint sync imports from.
 
 2. **Register an app** — Entra ID → App registrations → New registration:
@@ -80,7 +89,7 @@ verifier that never leaves the app). See `shared/graph.js`, "The device pass".
    Optional instead of the plain site settings: `GRAPH_DRIVE_ID` (one library
    directly) or `GRAPH_TARGETS` (a JSON list of destinations — see `shared/graph.js`).
 
-7. **Deploy** — the web release that brings build 101 also brings this folder,
+7. **Deploy** — the web release that brings build 101 (write-once: build 102) also brings this folder,
    `backup-link.html`, `staticwebapp.config.json` (its `/api/device-token`
    route, `platform.apiRuntime`, the 401 override) and the workflow's
    `api_location: "api"`. `/api/upload`, `/api/upload-session` and
@@ -96,18 +105,17 @@ verifier that never leaves the app). See `shared/graph.js`, "The device pass".
    → Azure Static Web Apps → Permissions → Grant admin consent).
 
 9. **Check it** — web: open the Azure address → Settings → SharePoint backup →
-   turn it on → Sign in with Microsoft → **Test** (writes
-   `LOTO Backups/<facility>/<today>/test_<collector>.txt`). iPad: the same in the
-   app; Sign in opens a sheet, then comes back to the app.
+   turn it on → Sign in with Microsoft → **Test** (writes a new
+   `LOTO Backups/<facility>/<today>/test_<collector>_<time>.txt` each time). iPad:
+   the same in the app; Sign in opens a sheet, then comes back to the app.
 
 ## Revoking
 
 - **A lost iPad** (or every iPad): set `DEVICE_PASS_NOT_BEFORE` to now — every
   device pass issued before then stops working; the others sign in again. A new
-  `DEVICE_PASS_SECRET` does the same. A pass can only write files inside the
-  backup folder — new ones, or a newer copy of one already there (SharePoint's
-  version history keeps the earlier copies: restore them from there); it can't
-  read or delete anything.
+  `DEVICE_PASS_SECRET` does the same. A pass can only write NEW files inside
+  the backup folder — never replace one already there (build 102), never read
+  or delete anything.
 - **A person**: disable their Entra account — no new sign-in, no new pass. A pass
   already on their iPad keeps working until it expires (30 days by default); to
   stop it at once, also set `DEVICE_PASS_NOT_BEFORE` (everyone else signs in again).

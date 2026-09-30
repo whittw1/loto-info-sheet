@@ -10217,7 +10217,7 @@ async function runCombinedExport(opts) {
       saveResult = await sendExportToSharePoint(zipBlob, exportFilename, {
         facility: facs.size === 1 ? Array.from(facs)[0] : (effectiveFacilityCode || ''),
         day: /^\d{4}-\d{2}-\d{2}$/.test(dateFilter) ? dateFilter : localDateStr(new Date()),
-        sheets: cloudSheets });
+        sheets: cloudSheets, exportId });
     } else saveResult = await saveOrShare(zipBlob, exportFilename, 'application/zip');
     const firstName = formatPhotoName(datePrefix, startNum);
     const lastName = formatPhotoName(datePrefix, seqCounter - 1);
@@ -11798,11 +11798,15 @@ function clearAllData() {
 // While the app is open and online, the work is copied into SharePoint, inside
 // the backup folder the API is set up with ("LOTO Backups"):
 //   <facility>/<YYYY-MM-DD>/photos/<file>.jpg    each photo, once safely stored here
-//   <facility>/<YYYY-MM-DD>/units_<collector>.json  that day's saved units, kept current
-//   <facility>/<YYYY-MM-DD>/photos_<collector>.csv  which of their photos is which unit / source
-//   <facility>/<today>/inprogress_<collector>.json  the unit on the form (its own small
-//                                                   file: typing never re-sends the day)
+//   <facility>/<YYYY-MM-DD>/units_<collector>/<time>_<h>.json   that day's saved units — a new
+//                                                  snapshot at each change, never replacing one
+//   <facility>/<YYYY-MM-DD>/photos_<collector>/<time>_<h>.csv   which of their photos is which unit
+//   <facility>/<today>/inprogress_<collector>/<time>_<h>.json  the unit on the form (at most
+//                                                  every 5 minutes)
 //   <facility>/<YYYY-MM-DD>/export/…             exports sent with "Export to SharePoint"
+// NOTHING on SharePoint is ever overwritten (build 102): every file is written
+// once — the API refuses to replace a name that exists — so each change is a
+// new snapshot; the newest (the names sort by time, UTC) is the current state.
 // A safety net: capture, save and export never wait for it, and it stays off
 // until the tech turns it on and signs in with Microsoft (Settings). Ported from
 // the NPS Audit Photo Collector's live backup (v4.12) and the rules it learned:
@@ -11817,9 +11821,9 @@ function clearAllData() {
 //    said backed up with 32 photos missing): the API checks the bytes' SHA-256
 //    against what was sent, and SharePoint's own size and QuickXorHash of what
 //    it stored; only then is a file counted.
-//  • Nothing on SharePoint is ever deleted — only written, or replaced by a
-//    newer copy of the same file. A deleted unit leaves its day file rewritten
-//    without it.
+//  • Nothing on SharePoint is ever deleted or overwritten — each file is
+//    written once. A deleted unit leaves the day's next snapshot without it;
+//    the earlier snapshots stay as they were.
 //  • Filed by the data: each unit's own facility stamp and survey date, each
 //    photo's day taken — never the facility picked on screen.
 // Foreground only: iOS runs nothing while the app is closed or in the
@@ -11833,9 +11837,10 @@ function backupHost() { return window.__backupTestHost || BACKUP_HOST; }
 const BACKUP_CFG_KEY = 'loto_backup_cfg';
 const BACKUP_LINK = 'lotocollector://backup-link';
 const BACKUP_CHUNK = 16 * 327680;   // 5 MiB — Graph wants upload chunks in multiples of 320 KiB
+const BACKUP_WIP_EVERY = 5 * 60000;  // the unit on the form: a new snapshot at most every 5 minutes (build 102)
 let backupCfg = { on: false, user: '', pass: '', passExpires: '', root: '' };
 let _backupSent = new Map();         // photo key → { f: folder, s: SHA-256 } of the copy SharePoint confirmed there
-let _backupDays = new Map();         // "<folder>/<file>" → { h: text hash, sha } SharePoint confirmed ({ h: '', sha: '' }: sent, not yet confirmed)
+let _backupDays = new Map();         // "<folder>/<logical file>" → { h: text hash, file: its snapshot, at, sha } (sha '': sent, not yet confirmed)
 let _backupRecordsLoaded = false, _backupSentDirty = false, _backupDaysDirty = false;   // each record saved only when it changed
 let _backupBusy = false, _backupPauseUntil = 0, _backupLastError = '', _backupSignInNeeded = false;
 let _backupWrongAccount = false;   // signed in, but with an account that may not back up here (403)
@@ -12073,6 +12078,14 @@ function backupDayFiles(info) {
 }
 
 // ---- The pass ------------------------------------------------------------------
+// A day file's snapshot: in a folder named after the file, named by the time
+// (UTC — sorts in order, whatever the clocks do) and its text's fingerprint:
+// units_JW-ab12.json → units_JW-ab12/2026-09-30T183502.123Z_k3j2x1.json.
+function backupSnapshotName(path, at, h) {
+  const dot = path.lastIndexOf('.'), base = dot > 0 ? path.slice(0, dot) : path, ext = dot > 0 ? path.slice(dot) : '';
+  const t = new Date(at).toISOString().replace(/:/g, '');
+  return base + '/' + t + '_' + String(h || '').replace(/[^a-z0-9]/gi, '').slice(0, 6) + ext;
+}
 // "Clear all data" (build 102): the backup stops and forgets what this device
 // sent, so the clear is never mirrored — before, the next pass rewrote every
 // day this device had backed up as empty, the one event a backup must survive.
@@ -12125,8 +12138,17 @@ async function drainBackup() {
   try {
     if (!await loadBackupRecords()) return;
     const info = backupPhotoList(), listed = _backupListTrusted && !_entryStoreUnread;
+    // Each logical day file (the units, their photo index, the unit on the form)
+    // goes as a NEW snapshot whenever its text changed — never replacing one.
+    // The unit on the form: at most every 5 minutes (typing makes many).
+    const wipEvery = window.__backupWipEvery != null ? window.__backupWipEvery : BACKUP_WIP_EVERY;   // (tests)
     const files = (listed ? backupDayFiles(info) : []).map(f => Object.assign(f, { h: backupTextHash(f.text) }))
-      .filter(f => { const d = _backupDays.get(f.folder + '/' + f.path); return !(d && d.sha && d.h === f.h); });
+      .filter(f => {
+        const d = _backupDays.get(f.folder + '/' + f.path);
+        if (d && d.h === f.h && d.file && d.sha) return false;   // SharePoint confirmed this text as a snapshot (a build-101 record, with no snapshot, gets its first)
+        if (/^inprogress_/.test(f.path) && d && d.h !== f.h && Date.now() - (d.at || 0) < wipEvery) return false;
+        return true;
+      });
     // Sent means SharePoint holds it in the folder it belongs in now: a photo
     // whose unit changed facility (one taken before the facility was chosen,
     // say) goes again, to the new folder. Records of photos no longer here go.
@@ -12143,24 +12165,30 @@ async function drainBackup() {
     }
     _backupSignInNeeded = false;
     // The unit files first: small, and all that is needed to rebuild the work.
-    // Each is recorded on the device as sent-not-confirmed BEFORE it goes: from
-    // that send on, SharePoint may hold it — even when the answer is lost, or the
-    // app is closed before it saves its records again. A confirmation that never
-    // reached the device's records must not leave an older one standing: were
-    // the day to go back to that older text (its units deleted again), the file
-    // would be skipped while SharePoint holds the newer one.
+    // Each snapshot is named and recorded on the device as sent-not-confirmed
+    // BEFORE it goes: from that send on, SharePoint may hold it — even when the
+    // answer is lost, or the app is closed before it saves its records again. A
+    // retry sends the SAME snapshot (the API finds it already there); new text
+    // is always a new snapshot, named later, so the newest is the current state.
     const dayTodo = files.filter(f => !backupRetryWaiting('day:' + f.folder + '/' + f.path));
     let marked = false;
-    dayTodo.forEach(f => { const rec = f.folder + '/' + f.path, d = _backupDays.get(rec); if (!d || d.h || d.sha) { _backupDays.set(rec, { h: '', sha: '' }); marked = true; } });
+    dayTodo.forEach(f => {
+      const rec = f.folder + '/' + f.path, d = _backupDays.get(rec);
+      if (d && d.h === f.h && d.file && !d.sha) return;   // this very snapshot is already named: send it again
+      const at = Math.max(Date.now(), ((d && d.at) || 0) + 1);   // later than this file's last snapshot
+      _backupDays.set(rec, { h: f.h, file: backupSnapshotName(f.path, at, f.h), at, sha: '' });
+      marked = true;
+    });
     if (marked) _backupDaysDirty = true;
     if (_backupDaysDirty && !await saveBackupRecords()) dayTodo.length = 0;   // not on the device (this pass's marks or an earlier one's): not sent — photos still go
     for (const f of dayTodo) {
       if (epoch !== _backupEpoch) return;
       const rec = f.folder + '/' + f.path, id = 'day:' + rec;
+      const snap = _backupDays.get(rec);
       const ok = await backupAttempt(id, async () => {
-        const sha = await backupSend(f.folder, f.path, new TextEncoder().encode(f.text), f.type);
+        const sha = await backupSend(f.folder, snap.file, new TextEncoder().encode(f.text), f.type);
         if (epoch !== _backupEpoch) return;
-        _backupDays.set(rec, { h: f.h, sha });
+        _backupDays.set(rec, Object.assign({}, snap, { sha }));
         _backupDaysDirty = true;
       });
       if (ok === 'stop') return;
@@ -12226,6 +12254,7 @@ async function backupUploadBig(blob, folder, path, onProgress) {
       continue;
     }
     if (r && (r.status === 404 || r.status === 410)) throw backupError('the upload expired — send it again', r.status);
+    if (r && r.status === 409) throw backupError('SharePoint already holds ' + path.split('/').pop() + ' — it is kept as it is; this copy was not written', 502);   // write-once (build 102)
     if (++fails > 5) throw backupError(r ? 'SharePoint refused a piece (' + r.status + ')' : 'the connection dropped', r ? r.status : 0);
     await new Promise(w => setTimeout(w, 1000 * fails));
     try {   // ask the session where it got to rather than assume
@@ -12248,11 +12277,13 @@ async function sendExportToSharePoint(zipBlob, name, meta) {
   const say = (t) => showStickyBanner('exportCloudBanner', html`&#9729; ${t}`);
   try {
     say('Sending ' + name + ' (' + mb(zipBlob.size) + ' MB) to SharePoint — keep the app open…');
+    const tag = '_' + String(meta.exportId || Date.now()).replace(/[^A-Za-z0-9]/g, '').slice(0, 8);   // never the name of an earlier export (build 102)
+    name = name.replace(/(\.zip)?$/i, tag + '.zip');
     await backupUploadBig(zipBlob, folder, 'export/' + name, (done, total) =>
       say('Sending ' + name + ' to SharePoint: ' + Math.floor(done / total * 100) + '% (' + mb(done) + ' of ' + mb(total) + ' MB) — keep the app open…'));
     let sheetFails = 0;
     for (const s of (meta.sheets || [])) {
-      try { await backupSend(backupFolderOf(meta.facility, s.day), 'export/' + s.name, new Uint8Array(s.bytes), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); }
+      try { await backupSend(backupFolderOf(meta.facility, s.day), 'export/' + s.name.replace(/(\.xlsx)?$/i, tag + '.xlsx'), new Uint8Array(s.bytes), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); }
       catch (e) { sheetFails++; }
     }
     hideStickyBanner('exportCloudBanner');
@@ -12414,7 +12445,7 @@ async function testBackup() {
     const t = (r.body.targets || [])[0];
     if (t && t.root) { backupCfg.root = t.root; saveBackupCfg(); }
     const folder = backupFolderOf(getHospitalCode(), localDateStr(new Date()));
-    await backupSend(folder, 'test_' + getCollectorTag() + '.txt', new TextEncoder().encode('LOTO Collector backup test ' + new Date().toISOString() + ' by ' + (r.body.signedInAs || '') + '\r\n'), 'text/plain');
+    await backupSend(folder, 'test_' + getCollectorTag() + '_' + new Date().toISOString().replace(/[:.]/g, '') + '.txt', new TextEncoder().encode('LOTO Collector backup test ' + new Date().toISOString() + ' by ' + (r.body.signedInAs || '') + '\r\n'), 'text/plain');
     _backupSignInNeeded = false;
     if (s) s.textContent = 'Working, as ' + (r.body.signedInAs || backupCfg.user) + '. Today’s work goes to ' + (backupCfg.root || 'LOTO Backups') + '/' + folder + '/';
     scheduleBackup(300);
@@ -12429,8 +12460,8 @@ async function testBackup() {
 function backupEverythingAgain() {
   if (!backupCfg.on) { const s = document.getElementById('backupStatus'); if (s) s.textContent = 'Turn it on first.'; return; }
   const n = backupPhotoList().size;
-  if (!confirm('Send all ' + n + ' photo' + (n === 1 ? '' : 's') + ' and every unit file to SharePoint again, including those already confirmed?\n\n'
-    + 'Each goes to its own facility and day folder. Nothing on SharePoint is deleted. Keep the app open until the badge says backed up.')) return;
+  if (!confirm('Check all ' + n + ' photo' + (n === 1 ? '' : 's') + ' and every unit file against SharePoint again, including those already confirmed?\n\n'
+    + 'Any missing there is written again, to its own facility and day folder. Files already on SharePoint are left exactly as they are \u2014 nothing is ever replaced or deleted. Keep the app open until the badge says backed up.')) return;
   _backupSent.clear();
   _backupDays.forEach(v => { if (v) v.sha = ''; });
   _backupSentDirty = true; _backupDaysDirty = true;
@@ -12773,6 +12804,9 @@ async function scanTextToField(inputId, pick) {
     return;
   }
 
+  // A value already typed is never replaced without asking (build 102).
+  const before = String(input.value || '').trim();
+  if (before && before !== text && !confirm('Replace \u201c' + before + '\u201d with the scanned \u201c' + text + '\u201d?')) return;
   input.value = text;
   input.dispatchEvent(new Event('input', { bubbles: true }));
   const preview = text.length > 40 ? text.slice(0, 40) + '…' : text;

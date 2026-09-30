@@ -90,7 +90,8 @@ for _ in $(seq 1 120); do [ -f "$R" ] && break; sleep 2; done
 [ -f "$R" ] || { echo "NO RESULTS after 4 min"; exit 1; }
 cp "$R" "$WORK/results.json"
 curl -s "http://localhost:$SITE/__store" > "$WORK/store.json"
-python3 - "$WORK/results.json" "$WORK/store.json" <<'EOF'
+curl -s "http://localhost:$SITE/__stats" > "$WORK/stats.json"
+python3 - "$WORK/results.json" "$WORK/store.json" "$WORK/stats.json" <<'EOF'
 import json, sys
 r = json.load(open(sys.argv[1])); st = json.load(open(sys.argv[2]))
 fails = []
@@ -107,7 +108,11 @@ u = r.get('unit') or {}
 folder = 'LOTO Backups/Atlanta/' + str(u.get('day'))
 ph = st.get(folder + '/photos/' + str(u.get('name')))
 check(bool(ph) and ph['sha256'] == u.get('sha'), 'the photo is in SharePoint byte-identical to the capture: ' + folder + '/photos/' + str(u.get('name')))
-check((folder + '/units_' + str(u.get('tag')) + '.json') in st and (folder + '/photos_' + str(u.get('tag')) + '.csv') in st, 'the day\'s unit file and photo index are there')
+snap = lambda name, ext: sorted(k for k in st if k.startswith(folder + '/' + name + '_' + str(u.get('tag')) + '/') and k.endswith(ext))
+plain = [k for k in st if k.startswith(folder + '/') and k.count('/') == folder.count('/') + 1 and k.split('/')[-1].split('_')[0] in ('units', 'photos', 'inprogress')]
+check(len(snap('units', '.json')) >= 1 and len(snap('photos', '.csv')) >= 1 and not plain,
+      'the day\'s unit file and photo index are there, as write-once snapshots: ' + json.dumps([k[len(folder) + 1:] for k in snap('units', '.json') + snap('photos', '.csv')]))
+check(json.load(open(sys.argv[3])).get('replaced') == 0, 'SharePoint saw no write that would replace a file')
 p = steps.get('pass') or {}
 check(not p.get('error') and 'backed up' in str(p.get('badge')), 'the pass finished clean: ' + json.dumps(p))
 b = steps.get('big upload') or {}

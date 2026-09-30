@@ -79,7 +79,9 @@ try {
   const folder = 'LOTO Backups/Atlanta/' + unit.day;
   const photo = st[folder + '/photos/' + unit.name];
   check(!!photo && photo.sha256 === unit.sha, 'the photo is in SharePoint at ' + folder + '/photos/, byte-identical to the capture (SHA-256 ' + (photo ? photo.sha256.slice(0, 12) : 'missing') + '…)');
-  check(!!st[folder + '/units_' + unit.tag + '.json'] && !!st[folder + '/photos_' + unit.tag + '.csv'], 'the day\'s unit file and photo index are there');
+  const snaps = (store, name, ext) => Object.keys(store).filter(p => p.startsWith(folder + '/' + name + '_' + unit.tag + '/') && p.endsWith(ext)).sort();
+  const units1 = snaps(st, 'units', '.json');
+  check(units1.length === 1 && snaps(st, 'photos', '.csv').length === 1, 'the day\'s unit file and photo index are there, as snapshots: ' + (units1[0] || 'missing').slice(folder.length + 1));
   check(/backed up/.test(pass1.badge) && !pass1.error, 'the badge says "' + pass1.badge + '"' + (pass1.error ? ' (last error: ' + pass1.error + ')' : ''));
 
   // --- Export to SharePoint: the ZIP through an upload session, then "exported" ----
@@ -96,11 +98,38 @@ try {
   })()`);
   const st2 = await storeNow();
   const zip = Object.keys(st2).find(p => p.startsWith(folder + '/export/FieldExport_Atlanta_') && p.endsWith('.zip'));
-  const sheet = Object.keys(st2).find(p => /\/export\/Information_Sheet_\d{6}\.xlsx$/.test(p));
+  const sheet = Object.keys(st2).find(p => /\/export\/Information_Sheet_\d{6}_[A-Za-z0-9]+\.xlsx$/.test(p));
   check(exp.cloud, 'the Export dialog offers "Export to SharePoint" once signed in');
   check(!!zip && st2[zip].size > 1000, 'the export ZIP went up through an upload session: ' + (zip || 'missing'));
   check(!!sheet, 'the day\'s Information Sheet is in its day folder: ' + (sheet || 'missing'));
   check(!!exp.exportedAt, 'the unit is marked exported after SharePoint confirmed the ZIP');
+
+  // --- write-once (build 102): nothing already on SharePoint is ever replaced ----------
+  const again = await P.ev(`(async () => {
+    const e = savedEquipment.find(u => u.equipName === 'E2E Pump');
+    e.notes = 'edited after the first backup'; e.savedAt = new Date().toISOString(); await saveAll();
+    await drainBackup(); while (_backupBusy) await new Promise(r => setTimeout(r, 50));
+    await runCombinedExport({ toSharePoint: true });
+    return { error: _backupLastError };
+  })()`);
+  const st3 = await storeNow();
+  const units2 = snaps(st3, 'units', '.json');
+  check(units2.length === 2 && units2[0] === units1[0] && st3[units1[0]].sha256 === st[units1[0]].sha256 && !again.error,
+    'an edit goes up as a second unit snapshot; the first is still there, unchanged (' + units2.length + ' snapshots)');
+  const zips = Object.keys(st3).filter(p => p.startsWith(folder + '/export/FieldExport_Atlanta_') && p.endsWith('.zip'));
+  check(zips.length === 2 && st3[zip].sha256 === st2[zip].sha256, 'a second export the same day lands beside the first, which is unchanged (' + zips.length + ' ZIPs)');
+  const put = async (name, text) => { const r = await fetch(BASE + '/api/upload', { method: 'POST', headers: { 'content-type': 'application/json', cookie: 'e2e_signed_in=1' },
+    body: JSON.stringify({ folder: 'Atlanta/' + unit.day, path: name, contentType: 'text/plain', contentBase64: Buffer.from(text).toString('base64'),
+      sha256: crypto.createHash('sha256').update(text).digest('hex') }) }); return { status: r.status, body: await r.json() }; };
+  const w1 = await put('test_write_once.txt', 'first copy'), w2 = await put('test_write_once.txt', 'first copy'), w3 = await put('test_write_once.txt', 'another copy');
+  const over = await put(units1[0].slice(folder.length + 1), '{"units":[]}');
+  const st4 = await storeNow(), firstSha = crypto.createHash('sha256').update('first copy').digest('hex');
+  check(w1.status === 200 && !w1.body.alreadyThere && w2.status === 200 && w2.body.alreadyThere === true && w2.body.hashChecked === true,
+    'the real API: a new name is written; the same bytes again are "already there" (hash checked), not written again');
+  check(w3.status === 502 && /already holds/.test(w3.body.error) && st4[folder + '/test_write_once.txt'].sha256 === firstSha
+    && over.status === 502 && st4[units1[0]].sha256 === st[units1[0]].sha256,
+    'the real API refuses different bytes under a name SharePoint holds (' + w3.status + ': ' + w3.body.error + ') — the file there is untouched, a unit snapshot too');
+  check((await (await fetch(BASE + '/__stats')).json()).replaced === 0, 'SharePoint saw no write that would replace a file');
 
   // --- the iPad sign-in, through the real link page and the real endpoints --------
   const verifier = crypto.randomBytes(32).toString('base64url');

@@ -24,7 +24,7 @@ no npm packages.
 | Offline PWA export (server killed after the service worker precached) | `node offline_test.mjs` |
 | Two tabs saving at once (web): the tab opened last holds the claim, the other writes nothing; "Use this tab instead" hands over; a tab opened while another writes photos waits (build 95) | `node twotabs.mjs` |
 | Header width on phones | `node layout_hdr.mjs [outDir]` |
-| The fuzzer with the SharePoint live backup on (build 101): a stand-in SharePoint that, while faults are on, refuses, drops, wrongly confirms or stores without answering; units moved to earlier days and facilities changed so day folders empty out | `BACKUP=1 node fuzz_driver.mjs …` · in the app: `OPTS='{"seeds":[1,2],"steps":40,"backup":true}' ./run-sim-fuzz.sh` |
+| The fuzzer with the SharePoint live backup on (build 101; write-once since build 102): a stand-in SharePoint that, while faults are on, refuses, drops, wrongly confirms or stores without answering; units moved to earlier days and facilities changed so day folders empty out | `BACKUP=1 node fuzz_driver.mjs …` · in the app: `OPTS='{"seeds":[1,2],"steps":40,"backup":true}' ./run-sim-fuzz.sh` |
 | The backup end to end, web: the real client in headless Chrome against the REAL `api/` functions (`backup_e2e_server.mjs` on port 8790 fakes only Microsoft's sign-in, Graph and SharePoint) | `node backup_e2e.mjs` |
 | The backup end to end inside the iOS app: CapacitorHttp, the device pass, a photo byte-identical in the stand-in, 12 MB in 5 MiB pieces, the whole sign-in — the Browser sheet, the `lotocollector://` link back through iOS (`simctl openurl`), code + verifier → pass — and (build 102) the Panel ID scan reading drawn labels with real Vision OCR (throwaway build; its Info.plist alone may load `http://localhost`) | `./run-sim-backup.sh` (`SITE_PORT` to move the stand-in) |
 | The backup's functions, Graph faked (QuickXorHash against the libqxh vectors, paths, the pass, PKCE) | `node ../api/api.test.js` |
@@ -75,7 +75,12 @@ file a version stored there). Each worker's line says how much was compared
 (`backup compared {photos, unitFiles, emptied, inProgress}`) — a run that compares
 nothing proves nothing. Eight bugs planted in the client were each caught (a
 missed rewrite of an emptied day only at 30 % faults — the suite's T170 / T173
-cover it directly). Backup mode adds two actions: `yesterday` (a saved unit moves
+cover it directly). Since build 102 the stand-in is write-once, like the real
+API (the same bytes again: "already there"; other bytes under a name it holds:
+refused, and `backup-overwrite-attempt`), a day file is read as its NEWEST
+snapshot (`units_<tag>/<time>_<h>.json`), a file under a build-101 day-file name
+is `backup-plain-day-file`, and each confirmed day record must point at a
+snapshot stored with those bytes. Backup mode adds two actions: `yesterday` (a saved unit moves
 to the day before — day folders that empty out) and `refacility` (the facility
 on screen changes, blank included). While the computer running the fuzzer is
 offline the backup check is skipped with an info line — the app rightly holds

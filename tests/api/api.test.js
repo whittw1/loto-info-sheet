@@ -25,20 +25,35 @@ const principal = (email) => Buffer.from(JSON.stringify({ userDetails: email, id
 const ctx = () => ({ res: null, log: Object.assign(() => {}, { error() {}, warn() {} }) });
 
 // A fake Graph: the token endpoint, and PUTs that "store" the bytes and answer
-// like SharePoint does — size and quickXorHash — unless told to misbehave.
+// like SharePoint does — size and quickXorHash — unless told to misbehave. It
+// keeps what it stored, so a PUT with conflictBehavior=fail on an existing name
+// is refused (409) and a GET of the item reports what it holds (write-once).
 function fakeGraph(opts) {
   opts = opts || {};
   const calls = [];
+  const store = new Map();
   global.fetch = async (url, init) => {
-    calls.push({ url: String(url), init });
-    if (String(url).includes('login.microsoftonline.com')) return new Response(JSON.stringify({ access_token: 'graph-token', expires_in: 3600 }), { status: 200 });
-    if (String(url).endsWith('/createUploadSession')) return new Response(JSON.stringify({ uploadUrl: 'https://upload.example/session/1', expirationDateTime: '2026-10-01T00:00:00Z' }), { status: 200 });
+    url = String(url); init = init || {};
+    calls.push({ url, init });
+    if (url.includes('login.microsoftonline.com')) return new Response(JSON.stringify({ access_token: 'graph-token', expires_in: 3600 }), { status: 200 });
+    if (url.endsWith('/createUploadSession')) return new Response(JSON.stringify({ uploadUrl: 'https://upload.example/session/1', expirationDateTime: '2026-10-01T00:00:00Z' }), { status: 200 });
     if (opts.status && opts.status !== 200) return new Response(JSON.stringify({ error: { code: 'x' } }), { status: opts.status });
-    const bytes = Buffer.from(init.body);
-    const size = opts.size != null ? opts.size : bytes.length;
-    const hash = opts.hash != null ? opts.hash : qxhBase64(bytes);
-    return new Response(JSON.stringify({ size, webUrl: 'https://sp.example/x', file: { hashes: { quickXorHash: hash } } }), { status: 200 });
+    const m = /\/root:\/(.*?):(?:\/content)?(?:\?|$)/.exec(url);
+    const key = m ? decodeURIComponent(m[1]) : url;
+    if (init.method === 'PUT') {
+      if (/conflictBehavior=fail/.test(url) && store.has(key)) return new Response(JSON.stringify({ error: { code: 'nameAlreadyExists' } }), { status: 409 });
+      const bytes = Buffer.from(init.body);
+      store.set(key, bytes);
+      const size = opts.size != null ? opts.size : bytes.length;
+      const hash = opts.hash != null ? opts.hash : qxhBase64(bytes);
+      return new Response(JSON.stringify({ size, webUrl: 'https://sp.example/x', file: { hashes: { quickXorHash: hash } } }), { status: 201 });
+    }
+    const b = store.get(key);
+    if (!b) return new Response(JSON.stringify({ error: { code: 'itemNotFound' } }), { status: 404 });
+    if (/:\/content$/.test(url)) return new Response(b, { status: 200 });   // the bytes
+    return new Response(JSON.stringify({ size: b.length, webUrl: 'https://sp.example/x', file: opts.noHash ? {} : { hashes: { quickXorHash: qxhBase64(b) } } }), { status: 200 });
   };
+  calls.store = store;
   return calls;
 }
 async function call(fn, req) { const c = ctx(); await fn(c, Object.assign({ headers: {}, query: {} }, req)); return c.res; }
@@ -170,6 +185,45 @@ test('upload: the service failing (its own sign-in, the network, the upload sess
     res = await call(uploadSession, { method: 'POST', headers: auth, body: { path: 'export/x.zip', folder: 'Atlanta/2026-10-06', size: 100 } });
     assert.strictEqual(res.status, want, 'upload session: Graph ' + graph + ' → ' + want);
   }
+  G.resetTokenCache();
+});
+
+test('upload: write-once — an existing name is never replaced; the same bytes are already backed up', async () => {
+  setEnv(); G.resetTokenCache();
+  const auth = { 'x-ms-client-principal': principal('tech@hgsengineeringinc.com') };
+  const a = crypto.randomBytes(5000), b = crypto.randomBytes(5000);
+  const calls = fakeGraph();
+  let res = await call(upload, { method: 'POST', headers: auth, body: photoBody(a) });
+  assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+  assert.ok(!res.body.alreadyThere);
+  assert.ok(calls.filter(x => x.init && x.init.method === 'PUT').every(x => /conflictBehavior=fail/.test(x.url)), 'every write asks SharePoint never to replace');
+  res = await call(upload, { method: 'POST', headers: auth, body: photoBody(a) });   // the same bytes again
+  assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+  assert.strictEqual(res.body.alreadyThere, true);
+  assert.strictEqual(res.body.sha256, crypto.createHash('sha256').update(a).digest('hex'));
+  res = await call(upload, { method: 'POST', headers: auth, body: photoBody(b) });   // different bytes, the same name
+  assert.strictEqual(res.status, 502, JSON.stringify(res.body));
+  assert.match(res.body.error, /kept as it is/);
+  const kept = [...calls.store.values()][0];
+  assert.ok(kept.equals(a), 'SharePoint still holds the first file, untouched');
+  // SharePoint lists no hash for the file there: the bytes themselves decide
+  const noHash = fakeGraph({ noHash: true });
+  res = await call(upload, { method: 'POST', headers: auth, body: photoBody(a) });
+  assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+  res = await call(upload, { method: 'POST', headers: auth, body: photoBody(a) });
+  assert.strictEqual(res.status, 200, 'the same bytes, no hash listed: ' + JSON.stringify(res.body));
+  assert.strictEqual(res.body.alreadyThere, true);
+  res = await call(upload, { method: 'POST', headers: auth, body: photoBody(b) });   // the same size, other bytes
+  assert.strictEqual(res.status, 502, JSON.stringify(res.body));
+  assert.ok([...noHash.store.values()][0].equals(a), 'still untouched');
+  // an export ZIP's upload session asks SharePoint never to replace either
+  fakeGraph();
+  const calls2 = [];
+  const f0 = global.fetch; global.fetch = async (u, i) => { calls2.push({ u: String(u), i }); return f0(u, i); };
+  res = await call(uploadSession, { method: 'POST', headers: auth, body: { path: 'export/x.zip', folder: 'Atlanta/2026-10-06', size: 100 } });
+  assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+  const cs = calls2.find(x => x.u.endsWith('/createUploadSession'));
+  assert.strictEqual(JSON.parse(cs.i.body).item['@microsoft.graph.conflictBehavior'], 'fail');
   G.resetTokenCache();
 });
 

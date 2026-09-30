@@ -575,7 +575,10 @@
   // storage healthy again (end of a sequence, after the relaunch) a clean pass
   // must leave SharePoint holding every stored photo byte for byte, and each
   // facility/day unit file listing exactly that day's units (a deleted unit's
-  // file rewritten without it), the unit in progress in today's file.
+  // file written again without it), the unit in progress in today's file.
+  // Build 102 — write-once, like the real API: a name SharePoint holds is never
+  // replaced (the same bytes: "already there"; others: refused), and the device
+  // must never even try; a day file is a folder of snapshots, the newest current.
   let bk = null;
   let bkStats = { photos: 0, unitFiles: 0, emptied: 0, inProgress: 0 };   // what the checks compared (not vacuous)
   function installBackupStandIn() {
@@ -595,6 +598,12 @@
         const sha = await sha256HexOfBytes(bytes);
         if (body.sha256 !== sha) return { status: 400, body: { ok: false, error: 'damaged (fuzz)' } };
         const at = body.folder + '/' + body.path;
+        const had = bk.files.get(at);
+        if (had) {                                           // write-once (build 102)
+          if (had.sha !== sha) { viol('backup-overwrite-attempt', at + ' — SharePoint holds other bytes under that name'); return { status: 502, body: { ok: false, error: 'SharePoint already holds a different file (fuzz)' } }; }
+          if (lose) throw new Error('the answer was lost (fuzz)');
+          return { status: 200, body: { ok: true, alreadyThere: true, size: bytes.length, sha256: sha } };
+        }
         bk.files.set(at, { bytes, sha });
         if (!bk.hist.has(at)) bk.hist.set(at, new Set());
         bk.hist.get(at).add(sha);
@@ -608,6 +617,7 @@
   function removeBackupStandIn() {
     if (!bk) return;
     backupTransport.api = bk.real.api; backupTransport.session = bk.real.session;
+    delete window.__backupWipEvery;
     Object.assign(backupCfg, { on: false, user: '', pass: '', passExpires: '' });
     clearTimeout(_backupSoon);
     bk = null;
@@ -618,7 +628,14 @@
     Object.assign(backupCfg, { on: true, user: 'fuzz@hgsengineeringinc.com', pass: 'v1.fuzz.pass', passExpires: new Date(Date.now() + 86400000).toISOString() });
     _backupListTrusted = true; _backupRecordsLoaded = true; _backupSent = new Map(); _backupDays = new Map();
     _backupRetry.clear(); _backupPauseUntil = 0; _backupLastError = ''; _backupSignInNeeded = false; _backupWrongAccount = false;
+    window.__backupWipEvery = 0;   // the form's 5-minute snapshot spacing off, so the checks can ask for today's form exactly (T188 covers the spacing)
     try { await saveMetadataMany({ backup_sent: {}, backup_days: {} }); } catch (e) {}
+  }
+  // a day file's snapshots: <folder>/units_<tag>/<time>_<h>.json for <folder>/units_<tag>.json; the newest is current
+  function latestSnap(logical) {
+    const pre = logical.replace(/\.(json|csv)$/, '') + '/'; let best = null;
+    for (const k of bk.files.keys()) if (k.startsWith(pre) && k.indexOf('/', pre.length) < 0 && (!best || k > best)) best = k;
+    return best ? bk.files.get(best) : null;
   }
   // At every step: the device's records claim only what SharePoint confirmed —
   // each photo at its recorded folder with those bytes, each day file a version
@@ -631,8 +648,8 @@
     });
     _backupDays.forEach((v, k) => {
       if (!v || !v.sha) return;                             // sent, not confirmed: claims nothing
-      const h = bk.hist.get(k);
-      if (!h || !h.has(v.sha)) viol('backup-record-untrue', 'day file ' + k + ' (' + tag + ')');
+      const h = v.file && bk.hist.get(k.slice(0, k.lastIndexOf('/') + 1) + v.file);   // its snapshot (build 102)
+      if (!h || !h.has(v.sha)) viol('backup-record-untrue', 'day file ' + k + ' → ' + v.file + ' (' + tag + ')');
     });
   }
   async function backupCheck(tag) {
@@ -672,7 +689,7 @@
       if (_entryStoreUnread) return;                          // the unit files wait for a list read in full
       const tagName = getCollectorTag(), want = new Map();
       savedEquipment.forEach(e => { if (!e) return; const f = backupFolderOf(e.hospitalCode || '', getEntryDate(e)); if (!want.has(f)) want.set(f, []); want.get(f).push(String(e.id)); });
-      const unitsOf = (f) => { const x = bk.files.get(f + '/units_' + tagName + '.json'); try { return x ? JSON.parse(new TextDecoder().decode(x.bytes)) : null; } catch (e) { return { bad: true }; } };
+      const unitsOf = (f) => { const x = latestSnap(f + '/units_' + tagName + '.json'); try { return x ? JSON.parse(new TextDecoder().decode(x.bytes)) : null; } catch (e) { return { bad: true }; } };
       for (const [f, ids] of want) {
         const j = unitsOf(f);
         if (!j || j.bad) { bviol('backup-missing-unit-file@' + tag, f); continue; }
@@ -680,17 +697,20 @@
         if (got.join() !== exp.join()) bviol('backup-unit-file-mismatch@' + tag, f + ': has ' + got.length + ', list ' + exp.length);
         bkStats.unitFiles++;
       }
-      for (const [path, x] of bk.files) {
-        if (!/\/units_[^/]+\.json$/.test(path)) continue;
-        const f = path.slice(0, path.lastIndexOf('/'));
+      const logicals = new Map();                               // every units file SharePoint has snapshots of
+      for (const path of bk.files.keys()) { const m = /^(.*)\/(units_[^/]+)\/[^/]+\.json$/.exec(path); if (m) logicals.set(m[1] + '/' + m[2] + '.json', m[1]); }
+      for (const [logical, f] of logicals) {
         if (want.has(f)) continue;
+        const x = latestSnap(logical);
         let j = null; try { j = JSON.parse(new TextDecoder().decode(x.bytes)); } catch (e) {}
-        if (j && (j.units || []).length) bviol('backup-stale-unit-file@' + tag, path + ' still lists ' + j.units.length + ' unit(s)');
-        else if (j) bkStats.emptied++;                           // a vanished day's file, written again empty
+        if (j && (j.units || []).length) bviol('backup-stale-unit-file@' + tag, logical + ' (newest snapshot) still lists ' + j.units.length + ' unit(s)');
+        else if (j) bkStats.emptied++;                           // a vanished day's file: its newest snapshot empty
       }
+      for (const path of bk.files.keys())                       // nothing under a plain day-file name (build 101's layout)
+        if (/\/(units|photos|inprogress)_[^/]+\.(json|csv)$/.test(path)) bviol('backup-plain-day-file@' + tag, path);
       // and each file holds what the device would write now, to the letter
       for (const f of backupDayFiles(backupPhotoList())) {
-        const x = bk.files.get(f.folder + '/' + f.path);
+        const x = latestSnap(f.folder + '/' + f.path);
         if (!x) bviol('backup-day-file-missing@' + tag, f.folder + '/' + f.path);
         else {
           const had = new TextDecoder('utf-8', { ignoreBOM: true }).decode(x.bytes);   // the index's byte-order mark is part of the file
@@ -702,7 +722,7 @@
       }
       const st = buildWipState();
       if (wipHasContent(st)) {
-        const w = bk.files.get(backupFolderOf(backupFormFacility(), localDateStr(new Date())) + '/inprogress_' + tagName + '.json');
+        const w = latestSnap(backupFolderOf(backupFormFacility(), localDateStr(new Date())) + '/inprogress_' + tagName + '.json');
         let j = null; try { j = w ? JSON.parse(new TextDecoder().decode(w.bytes)) : null; } catch (e) {}
         if (!j || !j.unit || !sameEntryId(j.unit.entryId, st.entryId)) bviol('backup-form-missing@' + tag, JSON.stringify(st.entryId));
         bkStats.inProgress++;

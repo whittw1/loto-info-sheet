@@ -41,6 +41,8 @@
 //   T156–T157 build 100: the 2026-09-28 low review of build 99
 //   T158–T179 build 101: SharePoint live backup
 //   T180–T185 build 102: Panel ID scan, a warning for a source without its photo; its medium review; marks for an old shape
+//   T186–T190 build 102's high review: write-once — nothing on SharePoint replaced (day-file snapshots, own export
+//             names, the form every 5 min, build 101's days), a scan asks before replacing a typed value
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -4375,7 +4377,7 @@
   function backupStub(opts) {
     opts = opts || {};
     if (!window.__realBackupTransport) window.__realBackupTransport = { api: backupTransport.api, session: backupTransport.session };
-    const files = new Map(), posts = [], sessions = new Map();
+    const files = new Map(), posts = [], sessions = new Map(), overwrites = [];
     backupTransport.api = async (method, path, body) => {
       posts.push({ method, path, folder: body && body.folder, file: body && body.path });
       if (opts.offline) throw new Error('offline (test)');
@@ -4386,12 +4388,24 @@
         const sha = await sha256HexOfBytes(bytes);
         if (body.sha256 !== sha) return { status: 400, body: { ok: false, error: 'damaged on the way (test)' } };
         if (opts.refuse && opts.refuse(body)) return { status: 502, body: { ok: false, error: 'SharePoint refused the file (test)' } };
+        // write-once, like the API (build 102): a name that exists is never replaced
+        const had = files.get(body.folder + '/' + body.path);
+        if (had) {
+          const same = had.bytes.length === bytes.length && had.bytes.every((x, i) => x === bytes[i]);
+          overwrites.push({ path: body.folder + '/' + body.path, same });
+          return same ? { status: 200, body: { ok: true, alreadyThere: true, size: bytes.length, sha256: sha } }
+                      : { status: 502, body: { ok: false, error: 'SharePoint already holds a different file (test)' } };
+        }
         files.set(body.folder + '/' + body.path, { bytes, text: /json|csv|text/.test(body.contentType) ? new TextDecoder().decode(bytes) : null });
         if (opts.lose && opts.lose(body)) throw new Error('the answer was lost (test)');   // stored — the device never hears
         return { status: 200, body: { ok: true, size: opts.shortSize ? bytes.length - 1 : bytes.length, sha256: opts.wrongSha ? '0'.repeat(64) : sha } };
       }
       if (path === '/api/upload-session') {
         if (opts.sessionStatus) return { status: opts.sessionStatus, body: { ok: false, error: 'test ' + opts.sessionStatus } };
+        if (files.has(body.folder + '/' + body.path)) {   // write-once: SharePoint refuses the session (the API answers 502)
+          overwrites.push({ path: body.folder + '/' + body.path, same: false, session: true });
+          return { status: 502, body: { ok: false, error: 'SharePoint already holds a file with that name (test)' } };
+        }
         const url = 'stub://session/' + (sessions.size + 1);
         sessions.set(url, { folder: body.folder, path: body.path, size: body.size, buf: new Uint8Array(body.size), got: 0, puts: 0 });
         return { status: 200, body: { ok: true, uploadUrl: url } };
@@ -4412,11 +4426,12 @@
       if (from !== s.got) return { status: 416, body: {} };
       s.buf.set(bytes, from); s.got = to + 1;
       if (s.got < s.size) return { status: 202, body: { nextExpectedRanges: [s.got + '-'] } };
+      if (files.has(s.folder + '/' + s.path)) { overwrites.push({ path: s.folder + '/' + s.path, same: false, session: true }); return { status: 409, body: {} }; }   // the name appeared meanwhile
       files.set(s.folder + '/' + s.path, { bytes: s.buf });
       const qxh = opts.badHash ? 'AAAAAAAAAAAAAAAAAAAAAAAAAAA=' : uint8ToBase64(qxhCreate().update(s.buf).digest());
       return { status: 201, body: { size: s.size, file: { hashes: { quickXorHash: qxh } } } };
     };
-    return { files, posts, sessions, restore() { Object.assign(backupTransport, window.__realBackupTransport); } };
+    return { files, posts, sessions, overwrites, restore() { Object.assign(backupTransport, window.__realBackupTransport); } };
   }
   function backupTestOn() {
     Object.assign(backupCfg, { on: true, user: 'tech@hgsengineeringinc.com', pass: 'v1.test.pass',
@@ -4424,18 +4439,24 @@
     _backupListTrusted = true; _backupRecordsLoaded = true; _backupSent = new Map(); _backupDays = new Map();
     _backupRetry.clear(); _backupPauseUntil = 0; _backupLastError = ''; _backupSignInNeeded = false; _backupWrongAccount = false;
     _backupState = { waiting: 0, unreadable: 0, checked: false };
+    window.__backupWipEvery = 0;   // the unit-on-the-form snapshot's 5-minute spacing off (T188 checks it)
     clearTimeout(_backupSoon);
   }
   function backupTestOff(stub) {
     if (stub) stub.restore();
+    delete window.__backupWipEvery;
     Object.assign(backupCfg, { on: false, user: '', pass: '', passExpires: '' });
     clearTimeout(_backupSoon);
     try { localStorage.removeItem('loto_backup_cfg'); } catch (e) {}
     setHospitalCode('');
   }
   async function backupPass() { while (_backupBusy) await sleep(20); await drainBackup(); while (_backupBusy) await sleep(20); }
-  const unitsFile = (stub, folder) => { const f = stub.files.get(folder + '/units_' + getCollectorTag() + '.json'); return f ? JSON.parse(f.text) : null; };
-  const wipFile = (stub, folder) => { const f = stub.files.get(folder + '/inprogress_' + getCollectorTag() + '.json'); return f ? JSON.parse(f.text) : null; };
+  // Build 102: a day file lives as write-once snapshots — units_<tag>.json is
+  // the folder units_<tag>/ of <time>_<h>.json files; the newest is current.
+  const logicalOf = (folder, file) => { const m = /^((?:units|photos|inprogress)_[^/]+)\/[^/]+(\.json|\.csv)$/.exec(String(file || '')); return folder + '/' + (m ? m[1] + m[2] : file); };
+  const latestOf = (stub, logical) => { const pre = logical.replace(/\.(json|csv)$/, '') + '/'; let best = null; for (const k of stub.files.keys()) if (k.startsWith(pre) && (!best || k > best)) best = k; return best ? stub.files.get(best) : null; };
+  const unitsFile = (stub, folder) => { const f = latestOf(stub, folder + '/units_' + getCollectorTag() + '.json'); return f ? JSON.parse(f.text) : null; };
+  const wipFile = (stub, folder) => { const f = latestOf(stub, folder + '/inprogress_' + getCollectorTag() + '.json'); return f ? JSON.parse(f.text) : null; };
   const unitNames = (j) => (j && j.units || []).map(u => u.equipName).sort();
 
   // T158 — a stored photo goes up, and counts only once SharePoint confirmed it
@@ -4460,7 +4481,7 @@
       good = _backupSent.get(ref.dbKey);
       badge = document.getElementById('backupBadge').textContent;
       units = unitsFile(stub, folder);
-      csv = (stub.files.get(folder + '/photos_' + getCollectorTag() + '.csv') || {}).text || '';
+      csv = (latestOf(stub, folder + '/photos_' + getCollectorTag() + '.csv') || {}).text || '';
     } finally { backupTestOff(stub); }
     const ok = short && !short.counted && /waiting/.test(short.badge) && same && !!good && good.f === folder && good.s === (await sha256HexOfBytes((await loadPhotoBytes(ref.dbKey, 'image/jpeg')).bytes))
       && /backed up/.test(badge) && unitNames(units).join() === 'Pump-158' && csv.indexOf(backupPhotoName(ref.dbKey)) >= 0 && csv.indexOf('Pump-158') >= 0
@@ -4512,9 +4533,9 @@
     try {
       await backupPass();
       first = unitNames(unitsFile(stub, folder));
-      const n = stub.posts.filter(x => x.folder + '/' + x.file === unitsPath).length;
+      const n = stub.posts.filter(x => logicalOf(x.folder, x.file) === unitsPath).length;
       await backupPass();
-      resends = stub.posts.filter(x => x.folder + '/' + x.file === unitsPath).length - n;
+      resends = stub.posts.filter(x => logicalOf(x.folder, x.file) === unitsPath).length - n;
       await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.findIndex(e => e.equipName === 'B-160')); await sleep(300); });
       await backupPass();
       afterB = unitNames(unitsFile(stub, folder));
@@ -4657,7 +4678,7 @@
       await runCloud(stub);
       const today = localDateStr(new Date());
       zipAt = Array.from(stub.files.keys()).find(p => /^Atlanta\/\d{4}-\d{2}-\d{2}\/export\/FieldExport_Atlanta_.*\.zip$/.test(p)) || '';
-      sheetAt = Array.from(stub.files.keys()).find(p => /\/export\/Information_Sheet_\d{6}\.xlsx$/.test(p)) || '';
+      sheetAt = Array.from(stub.files.keys()).find(p => /\/export\/Information_Sheet_\d{6}_[A-Za-z0-9]+\.xlsx$/.test(p)) || '';
       stamped = !!savedEquipment.find(e => e.id === A.id).exportedAt && zipAt.indexOf('Atlanta/' + today + '/') === 0;
       // (c) a 12 MB file in 5 MiB pieces, the second piece lost once: resumed, and its hash checked
       stub.restore(); stub = backupStub({ dropPut: (n) => n === 2 });
@@ -4695,7 +4716,7 @@
       asked = (r.log[0] || '');
       again = stub.posts.filter(x => x.method === 'POST').length - n0;
     } finally { backupTestOff(stub); }
-    record(N, declined === 0 && again >= 3 && /Send all 1 photo/.test(asked), 'declined: sent ' + declined + '; agreed: sent ' + again + ' (photo, unit file, index) after "' + asked.slice(0, 70) + '…"');
+    record(N, declined === 0 && again >= 3 && /Check all 1 photo/.test(asked), 'declined: sent ' + declined + '; agreed: sent ' + again + ' (photo, unit file, index) after "' + asked.slice(0, 70) + '…"');
   }
 
   // T167 — the iPad sign-in: only the verifier this app made turns the code into a pass
@@ -4736,7 +4757,7 @@
     try {
       await backupPass();
       before = unitNames(unitsFile(stub, folder));
-      const n = () => stub.posts.filter(x => x.folder + '/' + x.file === unitsPath).length;
+      const n = () => stub.posts.filter(x => logicalOf(x.folder, x.file) === unitsPath).length;
       const n0 = n();
       const keep = savedEquipment.slice();
       savedEquipment = savedEquipment.filter(e => e.equipName !== 'B-168');   // a partial list in memory
@@ -4772,7 +4793,7 @@
       await backupPass();
       second = stub.files.has('Atlanta/' + day + '/' + name);
       units = unitsFile(stub, 'Atlanta/' + getEntryDate(A));
-      oldCsv = (stub.files.get('No facility/' + day + '/photos_' + getCollectorTag() + '.csv') || {}).text;
+      oldCsv = (latestOf(stub, 'No facility/' + day + '/photos_' + getCollectorTag() + '.csv') || {}).text;
       oldWip = wipFile(stub, 'No facility/' + day);
       sentTo = (_backupSent.get(key) || {}).f;
     } finally { backupTestOff(stub); }
@@ -4792,7 +4813,7 @@
     const a = mkEntry('A-170'); a.hospitalCode = 'Marion';
     savedEquipment.push(a); await saveAll();
     const folder = 'Marion/' + getEntryDate(a), unitsPath = folder + '/units_' + getCollectorTag() + '.json';
-    let stub = backupStub({ lose: (b) => b.folder + '/' + b.path === unitsPath });
+    let stub = backupStub({ lose: (b) => logicalOf(b.folder, b.path) === unitsPath });
     backupTestOn();
     let stored = null, after = null;
     try {
@@ -4860,13 +4881,13 @@
       await captureInto('equip_dataplate', await makePhotoFile('t172g'));
       await sleep(300);
       await backupPass();
-      typed = stub.posts.slice(n1).map(x => x.file);
+      typed = stub.posts.slice(n1).map(x => logicalOf('', x.file).slice(1));
       wip = wipFile(stub, folder);
       const n2 = stub.posts.length;
       saveEntry();
       await sleep(300);
       await backupPass();
-      saved = stub.posts.slice(n2).map(x => x.file);
+      saved = stub.posts.slice(n2).map(x => logicalOf('', x.file).slice(1));
       units = unitNames(unitsFile(stub, folder));
       wipAfter = (wipFile(stub, folder) || {}).unit;
     } finally { backupTestOff(stub); }
@@ -4901,7 +4922,7 @@
       savedEquipment.push(b); await saveAll();
       // SharePoint confirms [B]; the app is closed before it saves that confirmation
       let closed = false;
-      const had = stub.files; stub.restore(); stub = backupStub({ lose: (x) => { if (x.folder + '/' + x.path === unitsPath) closed = true; return false; } });
+      const had = stub.files; stub.restore(); stub = backupStub({ lose: (x) => { if (logicalOf(x.folder, x.path) === unitsPath) closed = true; return false; } });
       had.forEach((v, k) => stub.files.set(k, v));
       window.saveMetadataMany = function (o) { if (closed && o && ('backup_sent' in o || 'backup_days' in o)) return Promise.reject(new Error('the app was closed (test)')); return realSave.apply(this, arguments); };
       await backupPass();
@@ -5019,7 +5040,7 @@
       window.saveMetadataMany = function (o) { if (o && ('backup_sent' in o || 'backup_days' in o)) return Promise.reject(new Error('storage full (test)')); return realSave.apply(this, arguments); };
       await backupPass();                                   // marks, can't record them
       await backupPass();                                   // still can't
-      during = stub.posts.filter(x => x.folder + '/' + x.file === unitsPath).length;
+      during = stub.posts.filter(x => logicalOf(x.folder, x.file) === unitsPath).length;
       window.saveMetadataMany = realSave;
       await backupPass();
       after = unitNames(unitsFile(stub, folder));
@@ -5133,7 +5154,7 @@
       Object.assign(backupCfg, { on: true, user: 'tech@hgsengineeringinc.com', pass: 'v1.test.pass', passExpires: new Date(Date.now() + 86400000).toISOString() });
       _backupListTrusted = true;
       await backupPass();
-      const f = stub.files.get(path); after = f ? unitNames(JSON.parse(f.text)) : null;
+      const f = latestOf(stub, path); after = f ? unitNames(JSON.parse(f.text)) : null;
     } finally { backupTestOff(stub); }
     record(N, !!before && before.join() === 'A-182' && on === false && !!after && after.join() === 'A-182',
       'before the clear SharePoint listed ' + JSON.stringify(before) + '; the backup after the clear on=' + on + '; after turning it on again SharePoint lists ' + JSON.stringify(after));
@@ -5209,6 +5230,184 @@
     const control = cleanValveMarks(photos.source_1 && photos.source_1.marks).length;
     record(N, slots === 2 && changed === 0 && control === 2 && msgs.some(m => /changed while you were marking/.test(m)),
       'slots when opened ' + slots + '; marks kept after the change ' + changed + ' (source now ' + sources[0].energySource + ', ' + valveMarkSlots(sources[0]) + ' slot(s)); control kept ' + control + '; said ' + JSON.stringify(msgs));
+  }
+
+  // ---------- write-once (build 102, the high review) ----------------------------
+  // T186 — a whole day's history: every change a new snapshot, nothing replaced
+  async function t186_nothingOnSharePointIsEverReplaced() {
+    const N = 'T186 nothing on SharePoint is ever replaced: each change to a day (saved, on the form, deleted, emptied, sent again, cleared and collected again) goes up as a new snapshot beside the earlier ones — the device never even tries to write different bytes under a name already there';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    fillForm('A-186'); await captureInto('equip_main', await makePhotoFile('t186a')); saveEntry();
+    const folder = 'Atlanta/' + localDateStr(new Date()), tag = getCollectorTag();
+    const stub = backupStub();
+    backupTestOn();
+    const del = async (name) => { await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.findIndex(e => e.equipName === name)); await sleep(300); }); await backupPass(); };
+    let history = [], wips = 0, bare = [], replaced = [], alreadyThere = 0, againSent = 0, after = null, newTag = '';
+    try {
+      await backupPass();                                                                        // [A]
+      fillForm('B-186'); await captureInto('equip_main', await makePhotoFile('t186b'));
+      await sleep(300); await backupPass();                                                      // B on the form
+      saveEntry(); await sleep(300); await backupPass();                                        // [A, B]
+      await del('A-186');                                                                        // [B]
+      await del('B-186');                                                                        // []
+      const n0 = stub.posts.length;
+      await withDialogs({ confirm: true }, async () => { backupEverythingAgain(); await sleep(50); await backupPass(); });
+      againSent = stub.posts.slice(n0).filter(x => x.method === 'POST').length;
+      await withDialogs({ confirm: true }, async () => { clearAllData(); await sleep(300); });
+      Object.assign(backupCfg, { on: true, user: 'tech@hgsengineeringinc.com', pass: 'v1.test.pass', passExpires: new Date(Date.now() + 86400000).toISOString() });
+      _backupListTrusted = true;
+      setHospitalCode('Atlanta');
+      fillForm('A-186'); saveEntry(); await sleep(300); await backupPass();                    // a new A, the same day and name
+      newTag = getCollectorTag();                                                               // (the clear gave the device a new id)
+      after = unitNames(unitsFile(stub, folder));
+      const keys = Array.from(stub.files.keys()).sort();
+      history = keys.filter(k => k.startsWith(folder + '/units_' + tag + '/')).map(k => unitNames(JSON.parse(stub.files.get(k).text)).join('+') || '(none)');
+      wips = keys.filter(k => k.startsWith(folder + '/inprogress_' + tag + '/')).length;
+      bare = stub.posts.filter(x => x.method === 'POST' && /^(units|photos|inprogress)_[^/]+\.(json|csv)$/.test(x.file || '')).map(x => x.file);
+      replaced = stub.overwrites.filter(o => !o.same).map(o => o.path);
+      alreadyThere = stub.overwrites.filter(o => o.same).length;
+    } finally { backupTestOff(stub); }
+    const want = 'A-186 → A-186+B-186 → B-186 → (none)' + (newTag === tag ? ' → A-186' : '');
+    record(N, history.join(' → ') === want && wips >= 2 && bare.length === 0 && replaced.length === 0 && againSent > 0 && alreadyThere > 0 && !!after && after.join() === 'A-186',
+      'the day\'s unit snapshots: ' + history.join(' → ') + ' (want ' + want + '), all still there after the clear; collected again as ' + newTag + ': ' + JSON.stringify(after)
+      + '; form snapshots ' + wips + '; files sent under a plain day-file name ' + JSON.stringify(bare)
+      + '; tried to replace ' + JSON.stringify(replaced) + '; "Send everything again" sent ' + againSent + ', ' + alreadyThere + ' found already there');
+  }
+
+  // T187 — two exports the same day keep both ZIPs and both sheets
+  async function t187_twoExportsTheSameDayKeepBoth() {
+    const N = 'T187 two Export to SharePoint runs on the same day each land under their own name — the second never replaces the first ZIP or Information Sheet (and a name SharePoint already holds is refused, not replaced)';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    fillForm('Pump-187a'); await captureInto('equip_main', await makePhotoFile('t187a')); saveEntry();
+    const runCloud = async () => {
+      const real = { c: window.confirm, a: window.alert, ch: window.__askChoiceAuto };
+      window.confirm = () => true; window.alert = () => {};
+      window.__askChoiceAuto = (o) => (o && o.id === 'export-blank-energy') ? 'export' : ((o && o.defaultValue) || 'cancel');
+      try {
+        showExportDialog();
+        document.getElementById('exportDateFilter').value = 'all'; populateExportFacilityFilter();
+        document.getElementById('exportFacilityFilter').value = 'all';
+        document.getElementById('photoSeqStart').value = '1';
+        return await withToasts(async () => { await runCombinedExport({ toSharePoint: true }); });
+      } finally { window.confirm = real.c; window.alert = real.a; window.__askChoiceAuto = real.ch; }
+    };
+    const stub = backupStub();
+    backupTestOn();
+    let m1 = [], m2 = [], zips = [], sheets = [], replaced = [], dupErr = '';
+    const race = { err: '', ms: -1, kept: false };
+    try {
+      m1 = await runCloud();
+      fillForm('Pump-187b'); await captureInto('equip_main', await makePhotoFile('t187b')); saveEntry();
+      m2 = await runCloud();
+      const keys = Array.from(stub.files.keys());
+      zips = keys.filter(k => /\/export\/FieldExport_[^/]*\.zip$/.test(k));
+      sheets = keys.filter(k => /\/export\/Information_Sheet_[^/]*\.xlsx$/.test(k));
+      replaced = stub.overwrites.filter(o => !o.same).map(o => o.path);
+      // a name already there: refused, and the file there is untouched
+      const at = zips[0], before = at && stub.files.get(at).bytes.length;
+      try { await backupUploadBig(new Blob([new Uint8Array(1000)]), at.slice(0, at.indexOf('/export/')), at.slice(at.indexOf('/export/') + 1)); } catch (e) { dupErr = e.message; }
+      dupErr += at && stub.files.get(at).bytes.length === before ? '' : ' — AND THE FILE CHANGED';
+      // the name appears while the pieces go (another device): the last piece is refused — said at once, the other file untouched
+      const folder = at.slice(0, at.indexOf('/export/')), realSession = backupTransport.session;
+      backupTransport.session = async (url, method, bytes, range) => {
+        const s = stub.sessions.get(url);
+        if (s && method === 'PUT' && s.path === 'export/race.zip' && !stub.files.has(folder + '/export/race.zip')) stub.files.set(folder + '/export/race.zip', { bytes: new Uint8Array(7) });
+        return realSession(url, method, bytes, range);
+      };
+      const t0 = Date.now();
+      try { await backupUploadBig(new Blob([new Uint8Array(1000)]), folder, 'export/race.zip'); } catch (e) { race.err = e.message; }
+      race.ms = Date.now() - t0; race.kept = stub.files.get(folder + '/export/race.zip').bytes.length === 7;
+    } finally { backupTestOff(stub); }
+    const sent = (m) => m.some(x => /In SharePoint/.test(x) && !/not sent/.test(x));
+    record(N, sent(m1) && sent(m2) && zips.length === 2 && sheets.length === 2 && replaced.length === 0 && /already holds/.test(dupErr) && !/CHANGED/.test(dupErr)
+      && /already holds race\.zip/.test(race.err) && race.ms >= 0 && race.ms < 3000 && race.kept,
+      'first export sent=' + sent(m1) + ', second sent=' + sent(m2) + '; ZIPs ' + JSON.stringify(zips.map(z => z.split('/').pop())) + '; sheets ' + JSON.stringify(sheets.map(z => z.split('/').pop()))
+      + '; names the exports tried to replace ' + JSON.stringify(replaced.map(z => z.split('/').pop())) + '; sending over an existing ZIP on purpose said "' + dupErr + '"'
+      + '; a name that appeared mid-upload: said "' + race.err + '" after ' + race.ms + ' ms, the other file kept=' + race.kept);
+  }
+
+  // T188 — the unit on the form: a snapshot at most every 5 minutes
+  async function t188_theFormIsSnapshottedAtMostEveryFiveMinutes() {
+    const N = 'T188 the unit on the form goes up as a snapshot at most every 5 minutes while it keeps changing — typing never floods SharePoint with files; the latest still goes once the 5 minutes are up, and a saved unit never waits';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    fillForm('Form-188');
+    const folder = 'Atlanta/' + localDateStr(new Date()), wipLogical = folder + '/inprogress_' + getCollectorTag() + '.json';
+    const stub = backupStub();
+    backupTestOn(); delete window.__backupWipEvery;                                             // the real spacing
+    const snaps = () => Array.from(stub.files.keys()).filter(k => k.startsWith(wipLogical.replace(/\.json$/, '/'))).length;
+    let s1 = 0, s2 = 0, s3 = 0, latest = null, units = null;
+    try {
+      await backupPass(); s1 = snaps();                                                         // the first: at once
+      for (const t of ['Form-188 a', 'Form-188 ab', 'Form-188 abc']) { document.getElementById('equipName').value = t; autoSaveCurrent(); await sleep(150); await backupPass(); }
+      s2 = snaps();                                                                             // inside 5 minutes: no more
+      const d = _backupDays.get(wipLogical);
+      _backupDays.set(wipLogical, Object.assign({}, d, { at: d.at - BACKUP_WIP_EVERY - 1000 }));  // 5 minutes on
+      await backupPass(); s3 = snaps();
+      latest = ((wipFile(stub, folder) || {}).unit || {}).equipName;
+      document.getElementById('equipName').value = 'Form-188 saved'; saveEntry(); await sleep(300); await backupPass();
+      units = unitNames(unitsFile(stub, folder));
+    } finally { backupTestOff(stub); }
+    record(N, s1 === 1 && s2 === 1 && s3 === 2 && latest === 'Form-188 abc' && !!units && units.join() === 'Form-188 saved',
+      'form snapshots: first pass ' + s1 + ', after three edits inside 5 minutes ' + s2 + ', 5 minutes on ' + s3 + ' (latest ' + JSON.stringify(latest) + '); saved at once: ' + JSON.stringify(units));
+  }
+
+  // T189 — a scan never replaces a typed value without asking
+  async function t189_aScanAsksBeforeReplacingATypedValue() {
+    const N = 'T189 a scan never replaces a value already typed without asking — declined, the typed value stays (the Panel ID too); an empty field, or the same text, is filled without a question';
+    await resetAppState();
+    fillForm('Pump-189');
+    sources[0].location = 'Panel LP-9'; renderSources();
+    const realCap = window.Capacitor; let reads = [];
+    window.Capacitor = { isNativePlatform: () => true, Plugins: Object.assign({}, (realCap && realCap.Plugins) || {}, {
+      Camera: { getPhoto: async () => ({ base64String: 'AAAA' }) },
+      TextRecognition: { recognizeText: async () => reads.shift() },
+    }) };
+    const scan = async (id, pick, read, answer) => { reads = [read]; const r = await withDialogs({ confirm: answer }, async () => { await scanTextToField(id, pick); }); return r.log.filter(m => /^\[CONFIRM\]/.test(m)); };
+    const val = (id) => document.getElementById(id).value;
+    const r = {};
+    try {
+      const declined = await scan('equipName', undefined, { text: 'AHU-7' }, false);
+      r.declined = { asked: declined.some(m => /Pump-189/.test(m) && /AHU-7/.test(m)), value: val('equipName') };
+      await scan('equipName', undefined, { text: 'AHU-7' }, true);
+      r.accepted = val('equipName');
+      r.same = (await scan('equipName', undefined, { text: 'AHU-7' }, false)).length;
+      document.getElementById('equipLotoId').value = '';
+      r.empty = { asked: (await scan('equipLotoId', undefined, { text: 'LOTO-12' }, false)).length, value: val('equipLotoId') };
+      const panel = await scan('src_locid_0', 'locationId', { text: 'PANEL\nLP-1A', blocks: [{ text: 'PANEL' }, { text: 'LP-1A' }] }, false);
+      r.panel = { asked: panel.some(m => /LP-9/.test(m) && /LP-1A/.test(m)), location: sources[0].location };
+    } finally { window.Capacitor = realCap; }
+    record(N, r.declined && r.declined.asked && r.declined.value === 'Pump-189' && r.accepted === 'AHU-7' && r.same === 0
+      && r.empty && r.empty.asked === 0 && r.empty.value === 'LOTO-12' && r.panel && r.panel.asked && r.panel.location === 'Panel LP-9', JSON.stringify(r));
+  }
+
+  // T190 — a day build 101 backed up gets its first snapshot after the update
+  async function t190_aDayBackedUpByBuild101GetsItsFirstSnapshot() {
+    const N = 'T190 after the update from build 101, a day build 101 backed up (under its one plain name) and unchanged since gets its first snapshot — the newest snapshot is the current list for every day; the plain file is left as it was';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    const a = mkEntry('A-190'); a.hospitalCode = 'Atlanta'; savedEquipment.push(a); await saveAll();
+    const folder = 'Atlanta/' + getEntryDate(a), tag = getCollectorTag();
+    const stub = backupStub();
+    backupTestOn();
+    let snap = null, plain = false, tried = [], left = [];
+    try {
+      // what build 101 left: each day file under its plain name, confirmed in the device's records as { h, sha }
+      for (const f of backupDayFiles(backupPhotoList())) {
+        const bytes = new TextEncoder().encode(f.text);
+        stub.files.set(f.folder + '/' + f.path, { bytes, text: f.text });
+        _backupDays.set(f.folder + '/' + f.path, { h: backupTextHash(f.text), sha: await sha256HexOfBytes(bytes) });
+        left.push(f.path);
+      }
+      await backupPass();
+      snap = unitsFile(stub, folder);
+      plain = stub.files.has(folder + '/units_' + tag + '.json');
+      tried = stub.overwrites.map(o => o.path);
+    } finally { backupTestOff(stub); }
+    record(N, left.length > 0 && !!snap && unitNames(snap).join() === 'A-190' && plain && tried.length === 0,
+      'build 101 left ' + JSON.stringify(left) + '; after one pass the newest snapshot lists ' + JSON.stringify(snap && unitNames(snap)) + '; the plain file still there=' + plain + '; tried to replace ' + JSON.stringify(tried));
   }
 
   // ---------- runner --------------------------------------------------------
@@ -5289,7 +5488,8 @@
     t177_aServiceWideRefusalPausesEverything, t178_dayFilesWaitWhileTheDeviceCannotRecordThem, t179_aDayFileMarkWritesOnlyTheDayRecord,
     t180_panelIdScansOffTheLabel, t181_aSourceWithoutItsPhotoIsFlagged,
     t182_clearAllDataNeverEmptiesTheBackup, t183_panelIdReadTopToBottom, t184_aSecondReturnLinkIsNotAnError,
-    t185_marksPlacedForAnOldShapeAreNotSaved];
+    t185_marksPlacedForAnOldShapeAreNotSaved, t186_nothingOnSharePointIsEverReplaced, t187_twoExportsTheSameDayKeepBoth,
+    t188_theFormIsSnapshottedAtMostEveryFiveMinutes, t189_aScanAsksBeforeReplacingATypedValue, t190_aDayBackedUpByBuild101GetsItsFirstSnapshot];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

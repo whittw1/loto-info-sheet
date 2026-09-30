@@ -5,7 +5,9 @@
 //   • the Microsoft sign-in (/.auth/login/aad sets a cookie; /.auth/me reads
 //     it; the functions get the x-ms-client-principal header, as on Azure);
 //   • Microsoft Graph and SharePoint (files kept in memory; an upload session
-//     is served from here; answers carry size + QuickXorHash, like SharePoint).
+//     is served from here; answers carry size + QuickXorHash, like SharePoint;
+//     conflictBehavior=fail on a name that exists → 409, as SharePoint does —
+//     and any write that WOULD replace a file is counted in /__stats.replaced).
 // Never deploy this. Test-only endpoints: GET /__store (what "SharePoint"
 // holds), GET /__mint-pass (a device pass, for the Simulator run, which can't
 // drive the in-app browser sheet), POST /__reset.
@@ -32,23 +34,35 @@ for (const f of ['upload', 'upload-session', 'device-token', 'device-pass']) FUN
 
 // ---- fake SharePoint --------------------------------------------------------------
 let store = new Map();        // library path → Buffer
-let sessions = new Map();     // id → { path, size, buf, got }
+let sessions = new Map();     // id → { path, size, buf, got, fail }
+let replaced = 0;             // writes that replaced a file (build 102: must stay 0)
 const GRAPH_ITEM = /\/drive\/root:\/(.+):\/(content|createUploadSession)(\?.*)?$/;
+const GRAPH_META = /\/drive\/root:\/(.+):$/;
+const conflict = () => new Response(JSON.stringify({ error: { code: 'nameAlreadyExists', message: 'The specified item name already exists.' } }), { status: 409 });
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
   const u = String(url);
   if (u.startsWith('https://login.microsoftonline.com/')) return new Response(JSON.stringify({ access_token: 'e2e-graph-token', expires_in: 3600 }), { status: 200 });
+  const meta = GRAPH_META.exec(u);
+  if (meta && u.startsWith('https://graph.microsoft.com/') && (!init || !init.method || init.method === 'GET')) {
+    const b = store.get(decodeURIComponent(meta[1]));
+    if (!b) return new Response(JSON.stringify({ error: { code: 'itemNotFound' } }), { status: 404 });
+    return new Response(JSON.stringify({ size: b.length, webUrl: 'https://e2e.sharepoint.com/' + encodeURI(decodeURIComponent(meta[1])), file: { hashes: { quickXorHash: qxhBase64(b) } } }), { status: 200 });
+  }
   const m = GRAPH_ITEM.exec(u);
   if (m && u.startsWith('https://graph.microsoft.com/')) {
     const p = decodeURIComponent(m[1]);
     if (m[2] === 'content') {
       const bytes = Buffer.from(init.body);
+      if (store.has(p)) { if (/conflictBehavior=fail/.test(u)) return conflict(); replaced++; }
       store.set(p, bytes);
       return new Response(JSON.stringify({ size: bytes.length, webUrl: 'https://e2e.sharepoint.com/' + encodeURI(p), file: { hashes: { quickXorHash: qxhBase64(bytes) } } }), { status: 201 });
     }
     const id = crypto.randomBytes(8).toString('hex');
-    const size = +JSON.parse(init.body || '{}').size || 0;   // (the real call doesn't send size; the session learns it from the chunks)
-    sessions.set(id, { path: p, size, buf: null, got: 0 });
+    const req = JSON.parse(init.body || '{}'), fail = !!(req.item && req.item['@microsoft.graph.conflictBehavior'] === 'fail');
+    if (fail && store.has(p)) return conflict();
+    const size = +req.size || 0;   // (the real call doesn't send size; the session learns it from the chunks)
+    sessions.set(id, { path: p, size, buf: null, got: 0, fail });
     return new Response(JSON.stringify({ uploadUrl: 'http://localhost:' + PORT + '/__session/' + id, expirationDateTime: new Date(Date.now() + 3600e3).toISOString() }), { status: 200 });
   }
   return realFetch(url, init);
@@ -65,6 +79,7 @@ function sessionRequest(req, res, id, body) {
   if (from !== s.got || body.length !== to - from + 1) return send(416, { error: 'range ' + from + ' expected ' + s.got + ' (' + body.length + ' bytes)' });
   body.copy(s.buf, from); s.got = to + 1;
   if (s.got < total) return send(202, { nextExpectedRanges: [s.got + '-'] });
+  if (store.has(s.path)) { if (s.fail) return send(409, { error: { code: 'nameAlreadyExists' } }); replaced++; }
   store.set(s.path, s.buf);
   return send(201, { size: total, name: s.path.split('/').pop(), file: { hashes: { quickXorHash: qxhBase64(s.buf) } } });
 }
@@ -86,8 +101,8 @@ const server = http.createServer(async (req, res) => {
       store.forEach((b, p) => { out[p] = { size: b.length, sha256: crypto.createHash('sha256').update(b).digest('hex'), quickXorHash: qxhBase64(b) }; });
       return json(200, out);
     }
-    if (url.pathname === '/__reset' && req.method === 'POST') { store = new Map(); sessions = new Map(); return json(200, { ok: true }); }
-    if (url.pathname === '/__stats') return json(200, { loginHits });
+    if (url.pathname === '/__reset' && req.method === 'POST') { store = new Map(); sessions = new Map(); replaced = 0; return json(200, { ok: true }); }
+    if (url.pathname === '/__stats') return json(200, { loginHits, replaced });
     if (url.pathname === '/__deny-token' && req.method === 'POST') { denyToken = url.searchParams.get('on') === '1'; return json(200, { denyToken }); }
     if (url.pathname === '/__mint-pass') return json(200, G.mintDevicePass(G.cfg(), url.searchParams.get('user') || USER, url.searchParams.get('device') || 'e2e'));
     if (url.pathname === '/.auth/login/aad') {

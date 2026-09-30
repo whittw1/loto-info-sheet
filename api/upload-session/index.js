@@ -9,6 +9,9 @@
 // anything exported.
 //
 // POST → { path, folder, target, size } → { ok, uploadUrl, expirationDateTime, path }
+// Write-once (build 102): an existing file is never replaced — SharePoint
+// refuses the session (or its last piece) for a name that exists; the app gives
+// every export its own name.
 
 const G = require('../shared/graph');
 const MAX_BYTES = 512 * 1024 * 1024;   // a sanity bound; a day's export is far smaller
@@ -41,7 +44,7 @@ module.exports = async function (context, req) {
     const r = await fetch(G.itemUrl(target, full) + '/createUploadSession', {
       method: 'POST',
       headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
-      body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': 'replace', name } }),
+      body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': 'fail', name } }),   // write-once: never replaces (build 102)
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.uploadUrl) {
