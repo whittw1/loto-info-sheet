@@ -17,7 +17,7 @@ import path from 'node:path';
 
 const [workers = '4', seedStart = '1', perWorker = '25', steps = '40', faults = '0', outJson = 'fuzz_out.json', uploadTo = ''] = process.argv.slice(2);
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const APP = 'http://localhost:8741/index.html';
+const APP = (process.env.APP_BASE || 'http://localhost:8741') + '/index.html';   // APP_BASE: another checkout's server
 const SEED_TIMEOUT_MS = 60 * 60 * 1000;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 

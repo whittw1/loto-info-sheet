@@ -35,10 +35,11 @@ const fails = [];
 const check = (ok, what) => { console.log((ok ? 'ok   ' : 'FAIL ') + what); if (!ok) fails.push(what); };
 try {
   await sleep(1500);
-  const A = await tab('http://localhost:8741/index.html?tab=A');
+  const BASE = process.env.APP_BASE || 'http://localhost:8741';
+  const A = await tab(BASE + '/index.html?tab=A');
   await sleep(5000);
   console.log('A saves:', JSON.stringify(await A.ev(save('Unit From Tab A'))));
-  const B = await tab('http://localhost:8741/index.html?tab=B');
+  const B = await tab(BASE + '/index.html?tab=B');
   await sleep(5000);
   const a1 = await A.ev(overlay), b1 = await B.ev(overlay);
   check(a1 === 'paused' && b1 === 'live', 'B opened last → B live (' + b1 + '), A paused (' + a1 + ')');
@@ -58,7 +59,7 @@ try {
   await B.ev(save('Stale From Tab B'));
   // Photo-write wait: A is mid "Duplicate with photos" when the tech opens C.
   await A.ev(`(window.__w = startPhotoWrite('duplicate'), true)`);
-  const C = await tab('http://localhost:8741/index.html?tab=C');
+  const C = await tab(BASE + '/index.html?tab=C');
   await sleep(2500);
   const c1 = await C.ev(overlay), a3 = await A.ev(overlay);
   check(c1 === 'waiting' && a3 === 'live', 'C opened while A writes photos → C waits (' + c1 + '), A still live (' + a3 + ')');

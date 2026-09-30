@@ -24,7 +24,7 @@ try {
   await new Promise(r => sock.onopen = r);
   const send = (method, params = {}) => new Promise(res => { const i = ++id; pend.set(i, res); sock.send(JSON.stringify({ id: i, method, params })); });
   await send('Page.enable'); await send('Runtime.enable');
-  await send('Page.navigate', { url: 'http://localhost:8741/index.html?suite=' + Date.now() });
+  await send('Page.navigate', { url: (process.env.APP_BASE || 'http://localhost:8741') + '/index.html?suite=' + Date.now() });
   await sleep(4500);
   await send('Runtime.evaluate', { expression: `new Promise((res, rej) => { const s = document.createElement('script'); s.src = '/tests/photo-regression.js?v=' + Date.now(); s.onload = res; s.onerror = rej; document.body.appendChild(s); })`, awaitPromise: true });
   const opts = { iUnderstandThisErasesAllData: true };

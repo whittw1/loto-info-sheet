@@ -40,6 +40,7 @@
 //   T155 build 99: found finishing it (an unreadable re-save record let an older delete win)
 //   T156–T157 build 100: the 2026-09-28 low review of build 99
 //   T158–T179 build 101: SharePoint live backup
+//   T180–T181 build 102: Panel ID scan, a warning for a source without its photo
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -5049,6 +5050,69 @@
       'the unit in progress went=' + sentIt + '; records written: ' + JSON.stringify(writes));
   }
 
+  // T180 — Scan the Panel / MCC ID off its label
+  async function t180_panelIdScansOffTheLabel() {
+    const N = 'T180 the Panel / MCC ID has a Scan button: the label\'s ID line lands in the source\'s location without the word "Panel" / "MCC"';
+    await resetAppState();
+    fillForm('Pump-180');
+    sources[0].location = 'Panel'; sources.push(Object.assign({}, sources[0], { location: 'MCC', sourceId: undefined }));
+    renderSources();
+    const button = (i) => { const inp = document.getElementById('src_locid_' + i); return !!(inp && inp.parentElement && inp.parentElement.querySelector('.scan-btn')); };
+    const buttons = [button(0), button(1)];
+    const realCap = window.Capacitor, labels = [
+      { text: 'PANEL\nLP-1A\n120/208V 3PH 4W', blocks: [{ text: 'PANEL' }, { text: 'LP-1A' }, { text: '120/208V 3PH 4W' }] },
+      { text: 'MCC-3B', blocks: [{ text: 'MCC-3B' }] },
+    ];
+    let n = 0, threw = '';
+    window.Capacitor = { isNativePlatform: () => true, Plugins: Object.assign({}, (realCap && realCap.Plugins) || {}, {
+      Camera: { getPhoto: async () => ({ base64String: 'AAAA' }) },
+      TextRecognition: { recognizeText: async () => labels[n++] },
+    }) };
+    try {
+      await scanTextToField('src_locid_0', 'locationId');
+      await scanTextToField('src_locid_1', 'locationId');
+    } catch (e) { threw = String(e && e.message || e); }
+    finally { window.Capacitor = realCap; }
+    record(N, buttons[0] && buttons[1] && !threw && sources[0].location === 'Panel LP-1A' && sources[1].location === 'MCC 3B',
+      'scan buttons ' + JSON.stringify(buttons) + '; locations ' + JSON.stringify([sources[0].location, sources[1].location]) + (threw ? '; threw ' + threw : ''));
+  }
+
+  // T181 — Save & New warns about a source whose photo slot is empty
+  async function t181_aSourceWithoutItsPhotoIsFlagged() {
+    const N = 'T181 Save & New flags each source whose photo slot is shown but empty — never a duplicate, a linked source, a kind that needs no photo, or one set to "no photo"; the source card shows exactly those slots';
+    await resetAppState();
+    fillForm('Pump-181');
+    const base = sources[0];
+    sources.length = 0;
+    sources.push(
+      Object.assign({}, base, { energySource: 'Electrical 480V', sourceId: undefined }),                                    // #1 expects a photo — none
+      Object.assign({}, base, { energySource: 'Electrical 480V', sourceId: undefined }),                                    // #2 has one
+      Object.assign({}, base, { energySource: 'Gravity/Potential', deviceType: 'Potential', verification: 'Block', sourceId: undefined }),   // #3 needs none
+      Object.assign({}, base, { energySource: 'Electrical 480V', duplicate: 'Yes', sourceId: undefined }),                  // #4 duplicate
+      Object.assign({}, base, { energySource: 'Kinetic', deviceType: 'Belt', noPhoto: true, sourceId: undefined }),         // #5 set to no photo
+      Object.assign({}, base, { energySource: 'Kinetic', deviceType: 'Belt', sourceId: undefined }));                       // #6 toggleable, slot shown — none
+    sources.forEach(ensureSourceId);
+    renderSources();
+    await captureInto('source_1', await makePhotoFile('t181'));
+    const flagged = collectIncompleteFields().filter(m => /Photo/.test(m));
+    const flaggedNums = flagged.map(m => +(/Source #(\d+)/.exec(m) || [])[1]).sort();
+    // the card shows a photo slot exactly where a photo is expected (or held)
+    renderSources();
+    const slotShown = sources.map((src, i) => !!document.getElementById('photo_source_' + i));
+    const expected = sources.map((src, i) => sourceExpectsPhoto(src) || sourcePhotoTaken(i));
+    // Save & New stops with the warning; Save anyway saves
+    let overlay = false, saved = false;
+    await withDialogs({ confirm: true }, async () => {
+      saveAndNew();
+      overlay = !!document.getElementById('incompleteWarningOverlay') && /Photo/.test(document.getElementById('incompleteWarningOverlay').textContent);
+      closeIncompleteWarning(); performSaveAndNew(); await sleep(200);
+      saved = savedEquipment.some(e => e.equipName === 'Pump-181');
+    });
+    record(N, flaggedNums.join() === '1,6' && overlay && saved && expected.join() === 'true,true,false,false,false,true' && slotShown.join() === expected.join(),
+      'flagged ' + JSON.stringify(flagged) + '; photo expected per source ' + JSON.stringify(expected) + ', slot shown ' + JSON.stringify(slotShown)
+      + '; warning shown=' + overlay + ', saved anyway=' + saved);
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -5124,7 +5188,8 @@
     t169_aPhotoWhoseFacilityChangesGoesAgain, t170_aDayFileIsRememberedBeforeItIsSent, t171_sentRecordsFollowTheListNeverAPartialOne,
     t172_editingTheFormSendsOnlyItsOwnFile, t173_anUnsavedConfirmationNeverLeavesAnOlderOneStanding,
     t174_webSignInWaitsForAPhotoStillSaving, t175_aRefusedAccountStaysShownSoItCanBeSwitched, t176_anIPadSignInThatCannotBePreparedSaysSo,
-    t177_aServiceWideRefusalPausesEverything, t178_dayFilesWaitWhileTheDeviceCannotRecordThem, t179_aDayFileMarkWritesOnlyTheDayRecord];
+    t177_aServiceWideRefusalPausesEverything, t178_dayFilesWaitWhileTheDeviceCannotRecordThem, t179_aDayFileMarkWritesOnlyTheDayRecord,
+    t180_panelIdScansOffTheLabel, t181_aSourceWithoutItsPhotoIsFlagged];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

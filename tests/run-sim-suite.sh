@@ -28,7 +28,7 @@ echo "work dir: $WORK"
 
 # 2. Throwaway copy of the iOS project, with the suite + harness in its bundle.
 rsync -a --delete --exclude xcuserdata --exclude build --exclude DerivedData "$REPO/ios/" "$WORK/ios/"
-ln -sfn "$REPO/node_modules" "$WORK/node_modules"      # CapApp-SPM resolves ../../../node_modules
+ln -sfn "$(cd "$REPO/node_modules" && pwd -P)" "$WORK/node_modules"   # the real folder: SwiftPM loses its way through a link to a link (a worktree); CapApp-SPM resolves ../../../node_modules
 PUB="$WORK/ios/App/App/public"
 mkdir -p "$PUB/tests"
 cp "$REPO/tests/photo-regression.js" "$REPO/tests/sim-harness.js" "$PUB/tests/"

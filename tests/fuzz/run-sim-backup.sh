@@ -28,7 +28,7 @@ for _ in $(seq 1 40); do curl -s "http://localhost:$SITE/__store" >/dev/null && 
 
 ( cd "$REPO" && npm run sync >/dev/null )
 rsync -a --delete --exclude xcuserdata --exclude build --exclude DerivedData "$REPO/ios/" "$WORK/ios/"
-ln -sfn "$REPO/node_modules" "$WORK/node_modules"
+ln -sfn "$(cd "$REPO/node_modules" && pwd -P)" "$WORK/node_modules"   # the real folder: SwiftPM loses its way through a link to a link (a worktree)
 PUB="$WORK/ios/App/App/public"
 mkdir -p "$PUB/tests"
 cp "$REPO/tests/sim-backup-harness.js" "$PUB/tests/"

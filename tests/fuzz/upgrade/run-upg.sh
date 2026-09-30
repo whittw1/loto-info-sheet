@@ -26,7 +26,7 @@ xcrun simctl bootstatus "$UDID" -b >/dev/null
 if [ ! -d "$WORK/dd/Build/Products/Debug-iphonesimulator/App.app" ]; then
   ( cd "$REPO" && npm run sync >/dev/null )
   rsync -a --delete --exclude xcuserdata --exclude build --exclude DerivedData "$REPO/ios/" "$WORK/ios/"
-  ln -sfn "$REPO/node_modules" "$WORK/node_modules"
+  ln -sfn "$(cd "$REPO/node_modules" && pwd -P)" "$WORK/node_modules"   # the real folder: SwiftPM loses its way through a link to a link (a worktree)
   xcodebuild -project "$WORK/ios/App/App.xcodeproj" -scheme App -configuration Debug -destination "platform=iOS Simulator,id=$UDID" \
     -derivedDataPath "$WORK/dd" CODE_SIGNING_ALLOWED=NO build > "$WORK/build.log" 2>&1 || { tail -30 "$WORK/build.log"; echo BUILD FAILED; exit 1; }
 fi

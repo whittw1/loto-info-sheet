@@ -20,7 +20,7 @@ try {
   await new Promise(r => sock.onopen = r);
   const send = (method, params = {}) => new Promise(res => { const i = ++id; pend.set(i, res); sock.send(JSON.stringify({ id: i, method, params })); });
   await send('Page.enable'); await send('Runtime.enable');
-  await send('Page.navigate', { url: 'http://localhost:8741/index.html?directed=' + Date.now() });
+  await send('Page.navigate', { url: (process.env.APP_BASE || 'http://localhost:8741') + '/index.html?directed=' + Date.now() });
   await sleep(4000);
   const body = files.map(f => readFileSync(f, 'utf8')).join('\n');
   const r = await send('Runtime.evaluate', { expression: `(async () => { ${body} })().then(x => JSON.stringify(x, null, 1), e => 'ERROR ' + (e && e.stack || e))`, awaitPromise: true, returnByValue: true, timeout: 600000 });

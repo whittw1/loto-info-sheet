@@ -8,7 +8,8 @@ localhost only and an empty store; in the app: the iOS Simulator only, on an
 empty install).
 
 The web runs need the app served at http://localhost:8741 (preview
-`loto-testflight`). Google Chrome, Node 22+ (built-in WebSocket) and Python 3;
+`loto-testflight`) — or another checkout's server named in `APP_BASE`
+(e.g. `APP_BASE=http://localhost:8742` for a worktree; build 102). Google Chrome, Node 22+ (built-in WebSocket) and Python 3;
 no npm packages.
 
 | What | How |

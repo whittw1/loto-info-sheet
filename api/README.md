@@ -50,7 +50,7 @@ verifier that never leaves the app). See `shared/graph.js`, "The device pass".
 4. **Give it write access to that one site** — in Graph Explorer, signed in as a
    SharePoint or Global admin who has consented to `Sites.FullControl.All`:
    ```
-   GET  https://graph.microsoft.com/v1.0/sites/hgsengineeringinc.sharepoint.com:/sites/<site-path>
+   GET  https://graph.microsoft.com/v1.0/sites/hgsengineeringinc1.sharepoint.com:/sites/LOTOBackups
         → note the site "id"
    POST https://graph.microsoft.com/v1.0/sites/<site id>/permissions
         { "roles": ["write"],

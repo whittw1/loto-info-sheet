@@ -16,7 +16,7 @@ try {
   await send('Page.enable');
   for (const [w, h, mobile] of [[390, 844, true], [430, 932, true], [768, 1024, true], [820, 1180, true]]) {
     await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 2, mobile });
-    await send('Page.navigate', { url: 'http://localhost:8741/index.html?lay=' + w });
+    await send('Page.navigate', { url: (process.env.APP_BASE || 'http://localhost:8741') + '/index.html?lay=' + w });
     await sleep(3500);
     const r = await ev(`(() => { const ha = document.querySelector('.header-actions'); const btns = [...(ha ? ha.children : [])].map(b => { const r = b.getBoundingClientRect(); return (b.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 10) + '@' + Math.round(r.left) + '-' + Math.round(r.right); }); return { vw: innerWidth, scrollWidth: document.documentElement.scrollWidth, offscreen: btns.filter(s => +s.split('-').pop() > innerWidth), headerActions: btns }; })()`);
     console.log(w + 'x' + h, JSON.stringify(r));

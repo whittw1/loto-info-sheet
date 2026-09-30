@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b101</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b102</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1525,6 +1525,25 @@ function isPhotoToggleable(energySource) {
 function shouldAllowPhotoForSource(equipType, energySource) {
   const set = EQUIPMENT_ALLOW_PHOTO_FOR_SOURCE[equipType];
   return !!(set && set.has(energySource));
+}
+
+// Whether a source expects a photo of its own — its photo slot is shown
+// (build 102: one rule for the source card and the Save & New warning). Not a
+// duplicate (the photo is on another source), not linked (it points at another
+// unit's source), not a kind that needs none (Gravity/Potential, or a
+// toggleable kind the tech set to "no photo") unless this equipment type asks
+// for one.
+function sourceExpectsPhoto(src) {
+  if (!src || src.duplicate === 'Yes' || src.linkedTo) return false;
+  const noPhotoFromKind = isPhotoToggleable(src.energySource)
+    ? !!src.noPhoto
+    : !!(src.noPhoto || (SOURCE_DEFAULTS[src.energySource] && SOURCE_DEFAULTS[src.energySource].noPhoto));
+  return !noPhotoFromKind || shouldAllowPhotoForSource(getEquipType(), src.energySource);
+}
+// A source's photo is taken when its slot holds a stored photo (not one whose save failed).
+function sourcePhotoTaken(i) {
+  const ref = photos['source_' + i];
+  return !!(ref && ref.dbKey && !ref.unsaved);
 }
 
 // User-toggled per-source photo visibility. Flips src.noPhoto for a
@@ -5084,15 +5103,11 @@ function renderSources() {
       // For other source kinds, behavior is unchanged: src.noPhoto OR the
       // SOURCE_DEFAULTS[*].noPhoto fallback hides the slot, unless the
       // equipment-type override allows it.
-      const photoAllowedForKind = shouldAllowPhotoForSource(getEquipType(), src.energySource);
       const sourceIsToggleable = isPhotoToggleable(src.energySource);
-      const noPhotoFromKind = sourceIsToggleable
-        ? !!src.noPhoto
-        : (src.noPhoto || (SOURCE_DEFAULTS[src.energySource] && SOURCE_DEFAULTS[src.energySource].noPhoto));
       // A source that HOLDS a photo always shows it (build 91) — whatever the
       // no-photo rules say — so it can be seen, retaken, and is never dropped.
       const hasPhotoRef = !!(photos['source_' + i] && photos['source_' + i].dbKey);
-      const isNoPhoto = !hasPhotoRef && (isDuplicate || isLinked || (noPhotoFromKind && !photoAllowedForKind));
+      const isNoPhoto = !hasPhotoRef && !sourceExpectsPhoto(src);   // the same rule the Save & New warning uses
       const noPhotoMessage = isLinked
         ? html`🔗 Linked to ${src.linkedTo.equipName} &mdash; ${src.linkedTo.sourceLabel}`
         : isDuplicate
@@ -5184,8 +5199,11 @@ function renderSources() {
             </div>
             ${(() => { const li = !src._customLoc ? locationIdInfo(src.location) : null; return li ? html`<div class="form-group">
               <label>${li.prefix} ID</label>
-              <input type="text" id="src_locid_${i}" value="${li.id}" placeholder="${li.prefix==='MCC'?'e.g. 3, 3B':'e.g. A, LP-1'}"
-                oninput="updateLocationId(${i},this.value)">
+              <div class="scan-input-row">
+                <input type="text" id="src_locid_${i}" value="${li.id}" placeholder="${li.prefix==='MCC'?'e.g. 3, 3B':'e.g. A, LP-1'}"
+                  oninput="updateLocationId(${i},this.value)">
+                <button type="button" class="scan-btn" onclick="scanTextToField('src_locid_${i}','locationId')" title="Scan the ${li.prefix} label">&#128247;</button>
+              </div>
             </div>` : ''; })()}
             ${src._customLoc ? html`<div class="form-group" id="customLocGroup_${i}">
               <label>Custom Location</label>
@@ -8271,7 +8289,8 @@ function renderMiscPhotos() {
 // ============================================================================
 // SAVE & NEW - Core multi-equipment feature
 // ============================================================================
-// Fields checked before saving. Deliberately NOT flagged, because they're
+// Fields checked before saving (and, since build 102, each source's photo
+// where its slot is shown). Deliberately NOT flagged, because they're
 // optional by design: LOTO ID (often not assigned in the field), Notes, Tied
 // To, Device ID, Detail, and Quantity / Duplicate / Valve State (which always
 // carry a value). Linked sources are skipped entirely — their details come
@@ -8305,6 +8324,9 @@ function collectIncompleteFields() {
     if (!s.deviceType && !ackOnly)   gaps.push('Device Type');
     if (!s.location)     gaps.push('Location');
     if (!s.verification && !ackOnly) gaps.push('Verification');
+    // build 102: its photo slot is shown but empty (a duplicate, a linked source
+    // and a kind that needs no photo are never flagged — sourceExpectsPhoto)
+    if (sourceExpectsPhoto(s) && !sourcePhotoTaken(i)) gaps.push('Photo');
     if (gaps.length) {
       const label = s.energySource ? `Source #${i + 1} (${s.energySource})` : `Source #${i + 1}`;
       missing.push(`${label} — ${gaps.join(', ')}`);
@@ -8323,7 +8345,7 @@ function showIncompleteWarning(missing) {
     <div class="dialog" style="max-width:440px;">
       <h3 style="margin:0 0 6px 0;color:#d9a441;">&#9888; Incomplete entry</h3>
       <p style="margin:0 0 10px 0;color:var(--text-dim);font-size:14px;">
-        ${missing.length} field${missing.length > 1 ? 's are' : ' is'} still blank:
+        ${missing.length} item${missing.length > 1 ? 's are' : ' is'} still missing:
       </p>
       <ul style="margin:0 0 16px 18px;padding:0;font-size:13px;max-height:250px;overflow-y:auto;">${items}</ul>
       <div style="display:flex;flex-direction:column;gap:10px;">
@@ -12609,7 +12631,23 @@ function getCapPlugin(name) {
   return C.Plugins && C.Plugins[name];
 }
 
-async function scanTextToField(inputId) {
+// A panel / MCC label reads "PANEL LP-1A" — or "PANEL" over "LP-1A" — often
+// with voltage lines under it. The ID is the first line that says more than
+// that word, without it (build 102). The tech can still edit it.
+const LOCATION_ID_WORDS = /^(?:panel\s*board|panel|pnl|mcc|motor\s+control\s+center)\b[\s:#.\-\u2013]*/i;
+function pickLocationIdFromScan(rawText, blocks) {
+  const lines = (Array.isArray(blocks) && blocks.length ? blocks.map(b => b && b.text) : String(rawText || '').split(/\r?\n/))
+    .map(t => String(t || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+  for (const line of lines) {
+    const id = line.replace(LOCATION_ID_WORDS, '').trim();
+    if (id) return id;
+  }
+  return '';
+}
+
+// pick: how to read the label — '' (the whole text on one line) or
+// 'locationId' (a Panel / MCC ID: pickLocationIdFromScan).
+async function scanTextToField(inputId, pick) {
   const native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   if (!native) {
     showToast('Scan only works in the iOS app.', true);
@@ -12664,8 +12702,9 @@ async function scanTextToField(inputId) {
 
   const rawText = (result && result.text) || '';
   // Most labels are 1–3 lines; collapse line breaks into spaces so the field
-  // ends up with a single clean string the user can edit.
-  const text = rawText.replace(/\s+/g, ' ').trim();
+  // ends up with a single clean string the user can edit. A Panel / MCC ID
+  // takes the line with the ID, without the word "Panel" / "MCC".
+  const text = pick === 'locationId' ? pickLocationIdFromScan(rawText, result && result.blocks) : rawText.replace(/\s+/g, ' ').trim();
 
   const input = document.getElementById(inputId);
   if (!input) return;
