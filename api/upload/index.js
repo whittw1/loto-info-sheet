@@ -16,6 +16,13 @@
 // sha256 the app sent — else they were damaged on the way, 400 — and SharePoint
 // must report back the same size and QuickXorHash as the bytes written — else
 // 502. Only then does the app count the file as backed up.
+//
+// Write-once (build 102): NOTHING on SharePoint is ever overwritten. A name
+// that already exists is never replaced: if it holds these very bytes (same
+// size and QuickXorHash) the file is already backed up — 200, alreadyThere,
+// nothing written; if it holds anything else it is kept as it is and this copy
+// is refused (502 — the app waits on that one file). The server enforces it, so
+// no build of the app, no lost iPad's pass and no bug can replace a file.
 
 const G = require('../shared/graph');
 const { qxhBase64 } = require('../shared/qxh');
@@ -56,16 +63,40 @@ module.exports = async function (context, req) {
   try {
     const token = await G.graphToken(c);
     const full = G.fullPath(target, folder, path);
-    const r = await fetch(G.itemUrl(target, full) + '/content?%40microsoft.graph.conflictBehavior=replace',
+    const qxh = qxhBase64(bytes);
+    const r = await fetch(G.itemUrl(target, full) + '/content?%40microsoft.graph.conflictBehavior=fail',
       { method: 'PUT', headers: { authorization: 'Bearer ' + token, 'content-type': contentType }, body: bytes });
     const j = await r.json().catch(() => ({}));
+    if (r.status === 409) {
+      // The name exists: never replaced. The same bytes → already backed up.
+      // Not found a moment later (an earlier copy still being committed, or
+      // removed by hand): about this file only — never the service-wide pause.
+      const lookFailed = (st) => { const f = st === 404 ? { status: 502, error: 'SharePoint is still settling ' + path.split('/').pop() + ' — it will be checked again' } : G.graphFailure(st); return done(f.status, { ok: false, error: f.error }); };
+      const ex = await fetch(G.itemUrl(target, full), { headers: { authorization: 'Bearer ' + token } });
+      const ej = await ex.json().catch(() => ({}));
+      if (!ex.ok) return lookFailed(ex.status);
+      const exHash = ej && ej.file && ej.file.hashes && ej.file.hashes.quickXorHash;
+      let same = Number(ej.size) === bytes.length && !!exHash && exHash === qxh;
+      if (!same && Number(ej.size) === bytes.length && !exHash) {
+        // SharePoint lists no hash for it: compare the bytes themselves (≤ 8 MB)
+        const dl = await fetch(G.itemUrl(target, full) + '/content', { headers: { authorization: 'Bearer ' + token } });
+        if (!dl.ok) return lookFailed(dl.status);
+        same = G.sha256Hex(Buffer.from(await dl.arrayBuffer())) === sha;
+      }
+      if (same) {
+        context.log('already there ' + full + ' for ' + gate.who + ' via ' + gate.via);
+        return done(200, { ok: true, path: full, target: target.key, size: bytes.length, sha256: sha, quickXorHash: qxh,
+          hashChecked: true, alreadyThere: true, by: gate.who, webUrl: ej.webUrl || null });
+      }
+      context.log.warn('kept a different existing file', full, ej.size, bytes.length);
+      return done(502, { ok: false, error: 'SharePoint already holds a different ' + path.split('/').pop() + ' — it is kept as it is; this copy was not written' });
+    }
     if (!r.ok) {
       context.log.error('graph upload failed', r.status, JSON.stringify(j).slice(0, 300));
       const f = G.graphFailure(r.status);
       return done(f.status, { ok: false, error: f.error });
     }
     // What SharePoint says it now holds.
-    const qxh = qxhBase64(bytes);
     const storedHash = j && j.file && j.file.hashes && j.file.hashes.quickXorHash;
     if (Number(j.size) !== bytes.length || (storedHash && storedHash !== qxh)) {
       context.log.error('stored copy differs', full, j.size, bytes.length, storedHash, qxh);

@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b101</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b102</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1525,6 +1525,25 @@ function isPhotoToggleable(energySource) {
 function shouldAllowPhotoForSource(equipType, energySource) {
   const set = EQUIPMENT_ALLOW_PHOTO_FOR_SOURCE[equipType];
   return !!(set && set.has(energySource));
+}
+
+// Whether a source expects a photo of its own — its photo slot is shown
+// (build 102: one rule for the source card and the Save & New warning). Not a
+// duplicate (the photo is on another source), not linked (it points at another
+// unit's source), not a kind that needs none (Gravity/Potential, or a
+// toggleable kind the tech set to "no photo") unless this equipment type asks
+// for one.
+function sourceExpectsPhoto(src) {
+  if (!src || src.duplicate === 'Yes' || src.linkedTo) return false;
+  const noPhotoFromKind = isPhotoToggleable(src.energySource)
+    ? !!src.noPhoto
+    : !!(src.noPhoto || (SOURCE_DEFAULTS[src.energySource] && SOURCE_DEFAULTS[src.energySource].noPhoto));
+  return !noPhotoFromKind || shouldAllowPhotoForSource(getEquipType(), src.energySource);
+}
+// A source's photo is taken when its slot holds a stored photo (not one whose save failed).
+function sourcePhotoTaken(i) {
+  const ref = photos['source_' + i];
+  return !!(ref && ref.dbKey && !ref.unsaved);
 }
 
 // User-toggled per-source photo visibility. Flips src.noPhoto for a
@@ -5084,15 +5103,11 @@ function renderSources() {
       // For other source kinds, behavior is unchanged: src.noPhoto OR the
       // SOURCE_DEFAULTS[*].noPhoto fallback hides the slot, unless the
       // equipment-type override allows it.
-      const photoAllowedForKind = shouldAllowPhotoForSource(getEquipType(), src.energySource);
       const sourceIsToggleable = isPhotoToggleable(src.energySource);
-      const noPhotoFromKind = sourceIsToggleable
-        ? !!src.noPhoto
-        : (src.noPhoto || (SOURCE_DEFAULTS[src.energySource] && SOURCE_DEFAULTS[src.energySource].noPhoto));
       // A source that HOLDS a photo always shows it (build 91) — whatever the
       // no-photo rules say — so it can be seen, retaken, and is never dropped.
       const hasPhotoRef = !!(photos['source_' + i] && photos['source_' + i].dbKey);
-      const isNoPhoto = !hasPhotoRef && (isDuplicate || isLinked || (noPhotoFromKind && !photoAllowedForKind));
+      const isNoPhoto = !hasPhotoRef && !sourceExpectsPhoto(src);   // the same rule the Save & New warning uses
       const noPhotoMessage = isLinked
         ? html`🔗 Linked to ${src.linkedTo.equipName} &mdash; ${src.linkedTo.sourceLabel}`
         : isDuplicate
@@ -5184,8 +5199,11 @@ function renderSources() {
             </div>
             ${(() => { const li = !src._customLoc ? locationIdInfo(src.location) : null; return li ? html`<div class="form-group">
               <label>${li.prefix} ID</label>
-              <input type="text" id="src_locid_${i}" value="${li.id}" placeholder="${li.prefix==='MCC'?'e.g. 3, 3B':'e.g. A, LP-1'}"
-                oninput="updateLocationId(${i},this.value)">
+              <div class="scan-input-row">
+                <input type="text" id="src_locid_${i}" value="${li.id}" placeholder="${li.prefix==='MCC'?'e.g. 3, 3B':'e.g. A, LP-1'}"
+                  oninput="updateLocationId(${i},this.value)">
+                <button type="button" class="scan-btn" onclick="scanTextToField('src_locid_${i}','locationId')" title="Scan the ${li.prefix} label">&#128247;</button>
+              </div>
             </div>` : ''; })()}
             ${src._customLoc ? html`<div class="form-group" id="customLocGroup_${i}">
               <label>Custom Location</label>
@@ -6446,6 +6464,7 @@ function openValveMarkDialog(slotId, opts) {
   closeValveMarkDialog();
   const session = formSession;
   const slots = valveMarkSlots(src);
+  const openShape = marksShapeOf(src);   // what these marks are placed for (build 102)
   let marks = fittingMarks(ref, src);
   const what = src.deviceType || 'valve / device';
   const overlay = document.createElement('div');
@@ -6536,7 +6555,7 @@ function openValveMarkDialog(slotId, opts) {
   });
   overlay.querySelector('#valveMarkClear').onclick = () => { marks = []; draw(); };
   overlay.querySelector('#valveMarkSkip').onclick = () => closeValveMarkDialog();
-  overlay.querySelector('#valveMarkSave').onclick = () => { closeValveMarkDialog(); saveValveMarks(ref, marks, session); };
+  overlay.querySelector('#valveMarkSave').onclick = () => { closeValveMarkDialog(); saveValveMarks(ref, marks, session, openShape); };
   const ask = overlay.querySelector('#valveMarkAsk');
   ask.checked = valveMarkPromptEnabled();
   ask.onchange = () => setValveMarkPrompt(ask.checked);
@@ -6564,7 +6583,7 @@ function openValveMarkDialog(slotId, opts) {
 // Store the marks on the photo reference the dialog was opened for — as a NEW
 // reference object (see VALVE MARKS above). Nothing is written if the form or
 // that photo changed meanwhile.
-function saveValveMarks(ref, marks, session) {
+function saveValveMarks(ref, marks, session, openShape) {
   if (session !== formSession) { showToast('\u26a0 The form changed \u2014 valve mark not saved', true); return false; }
   if (refuseIfDuplicateCopying()) return false;
   const slot = Object.keys(photos).find(k => /^source_\d+$/.test(k) && photos[k] === ref);
@@ -6572,6 +6591,15 @@ function saveValveMarks(ref, marks, session) {
   const clean = cleanValveMarks(marks);
   const src = sources[parseInt(slot.slice(7), 10)];
   const shape = marksShapeOf(src);
+  // The source changed while the dialog was open — an In/Out pair became one
+  // valve, the device count changed: the marks were placed for the old shape
+  // and are never stored against the new one (build 102 — the fuzzer inside
+  // the app kept two marks on a single valve: the dialog opened after a slow
+  // photo save, the energy source had changed meanwhile).
+  if (clean.length && ((openShape && JSON.stringify(openShape) !== JSON.stringify(shape)) || clean.length > shape.qty)) {
+    showToast('\u26a0 The source changed while you were marking \u2014 mark not saved. Tap \ud83d\udccd Mark to place it again.', true);
+    return false;
+  }
   if (JSON.stringify(clean) === JSON.stringify(cleanValveMarks(ref.marks)) && JSON.stringify(ref.marksFor || null) === JSON.stringify(clean.length ? shape : null)) return true;
   const next = Object.assign({}, ref);
   if (clean.length) { next.marks = clean; next.marksFor = shape; } else { delete next.marks; delete next.marksFor; }
@@ -8271,7 +8299,8 @@ function renderMiscPhotos() {
 // ============================================================================
 // SAVE & NEW - Core multi-equipment feature
 // ============================================================================
-// Fields checked before saving. Deliberately NOT flagged, because they're
+// Fields checked before saving (and, since build 102, each source's photo
+// where its slot is shown). Deliberately NOT flagged, because they're
 // optional by design: LOTO ID (often not assigned in the field), Notes, Tied
 // To, Device ID, Detail, and Quantity / Duplicate / Valve State (which always
 // carry a value). Linked sources are skipped entirely — their details come
@@ -8305,6 +8334,9 @@ function collectIncompleteFields() {
     if (!s.deviceType && !ackOnly)   gaps.push('Device Type');
     if (!s.location)     gaps.push('Location');
     if (!s.verification && !ackOnly) gaps.push('Verification');
+    // build 102: its photo slot is shown but empty (a duplicate, a linked source
+    // and a kind that needs no photo are never flagged — sourceExpectsPhoto)
+    if (sourceExpectsPhoto(s) && !sourcePhotoTaken(i)) gaps.push('Photo');
     if (gaps.length) {
       const label = s.energySource ? `Source #${i + 1} (${s.energySource})` : `Source #${i + 1}`;
       missing.push(`${label} — ${gaps.join(', ')}`);
@@ -8323,7 +8355,7 @@ function showIncompleteWarning(missing) {
     <div class="dialog" style="max-width:440px;">
       <h3 style="margin:0 0 6px 0;color:#d9a441;">&#9888; Incomplete entry</h3>
       <p style="margin:0 0 10px 0;color:var(--text-dim);font-size:14px;">
-        ${missing.length} field${missing.length > 1 ? 's are' : ' is'} still blank:
+        ${missing.length} item${missing.length > 1 ? 's are' : ' is'} still missing:
       </p>
       <ul style="margin:0 0 16px 18px;padding:0;font-size:13px;max-height:250px;overflow-y:auto;">${items}</ul>
       <div style="display:flex;flex-direction:column;gap:10px;">
@@ -10185,7 +10217,7 @@ async function runCombinedExport(opts) {
       saveResult = await sendExportToSharePoint(zipBlob, exportFilename, {
         facility: facs.size === 1 ? Array.from(facs)[0] : (effectiveFacilityCode || ''),
         day: /^\d{4}-\d{2}-\d{2}$/.test(dateFilter) ? dateFilter : localDateStr(new Date()),
-        sheets: cloudSheets });
+        sheets: cloudSheets, exportId });
     } else saveResult = await saveOrShare(zipBlob, exportFilename, 'application/zip');
     const firstName = formatPhotoName(datePrefix, startNum);
     const lastName = formatPhotoName(datePrefix, seqCounter - 1);
@@ -11740,6 +11772,7 @@ async function loadAll() {
 function clearAllData() {
   if (confirm('Delete ALL saved equipment and clear the form? This cannot be undone.')) {
     if (!tabMayWrite()) return;   // another tab took over while the dialog was open (build 96)
+    backupForgetDevice();   // the backup stops — SharePoint keeps its last copy of every day (build 102)
     // Clear IndexedDB metadata store
     clearMetadataStore();
 
@@ -11765,11 +11798,15 @@ function clearAllData() {
 // While the app is open and online, the work is copied into SharePoint, inside
 // the backup folder the API is set up with ("LOTO Backups"):
 //   <facility>/<YYYY-MM-DD>/photos/<file>.jpg    each photo, once safely stored here
-//   <facility>/<YYYY-MM-DD>/units_<collector>.json  that day's saved units, kept current
-//   <facility>/<YYYY-MM-DD>/photos_<collector>.csv  which of their photos is which unit / source
-//   <facility>/<today>/inprogress_<collector>.json  the unit on the form (its own small
-//                                                   file: typing never re-sends the day)
+//   <facility>/<YYYY-MM-DD>/units_<collector>/<time>_<h>.json   that day's saved units — a new
+//                                                  snapshot at each change, never replacing one
+//   <facility>/<YYYY-MM-DD>/photos_<collector>/<time>_<h>.csv   which of their photos is which unit
+//   <facility>/<today>/inprogress_<collector>/<time>_<h>.json  the unit on the form (at most
+//                                                  every 5 minutes)
 //   <facility>/<YYYY-MM-DD>/export/…             exports sent with "Export to SharePoint"
+// NOTHING on SharePoint is ever overwritten (build 102): every file is written
+// once — the API refuses to replace a name that exists — so each change is a
+// new snapshot; the newest (the names sort by time, UTC) is the current state.
 // A safety net: capture, save and export never wait for it, and it stays off
 // until the tech turns it on and signs in with Microsoft (Settings). Ported from
 // the NPS Audit Photo Collector's live backup (v4.12) and the rules it learned:
@@ -11784,9 +11821,9 @@ function clearAllData() {
 //    said backed up with 32 photos missing): the API checks the bytes' SHA-256
 //    against what was sent, and SharePoint's own size and QuickXorHash of what
 //    it stored; only then is a file counted.
-//  • Nothing on SharePoint is ever deleted — only written, or replaced by a
-//    newer copy of the same file. A deleted unit leaves its day file rewritten
-//    without it.
+//  • Nothing on SharePoint is ever deleted or overwritten — each file is
+//    written once. A deleted unit leaves the day's next snapshot without it;
+//    the earlier snapshots stay as they were.
 //  • Filed by the data: each unit's own facility stamp and survey date, each
 //    photo's day taken — never the facility picked on screen.
 // Foreground only: iOS runs nothing while the app is closed or in the
@@ -11800,15 +11837,17 @@ function backupHost() { return window.__backupTestHost || BACKUP_HOST; }
 const BACKUP_CFG_KEY = 'loto_backup_cfg';
 const BACKUP_LINK = 'lotocollector://backup-link';
 const BACKUP_CHUNK = 16 * 327680;   // 5 MiB — Graph wants upload chunks in multiples of 320 KiB
+const BACKUP_WIP_EVERY = 5 * 60000;  // the unit on the form: a new snapshot at most every 5 minutes while the same unit changes (build 102)
 let backupCfg = { on: false, user: '', pass: '', passExpires: '', root: '' };
 let _backupSent = new Map();         // photo key → { f: folder, s: SHA-256 } of the copy SharePoint confirmed there
-let _backupDays = new Map();         // "<folder>/<file>" → { h: text hash, sha } SharePoint confirmed ({ h: '', sha: '' }: sent, not yet confirmed)
+let _backupDays = new Map();         // "<folder>/<logical file>" → { h: text hash, file: its snapshot, at, sha, u? } (sha '': sent, not yet confirmed; u: the form file's unit)
 let _backupRecordsLoaded = false, _backupSentDirty = false, _backupDaysDirty = false;   // each record saved only when it changed
 let _backupBusy = false, _backupPauseUntil = 0, _backupLastError = '', _backupSignInNeeded = false;
 let _backupWrongAccount = false;   // signed in, but with an account that may not back up here (403)
 let _backupState = { waiting: 0, unreadable: 0, checked: false };
 const _backupRetry = new Map();      // item id → { n, until }: one file SharePoint keeps refusing
-let _backupSoon = null, _backupPkce = null, _backupStarted = false;
+let _backupSoon = null, _backupPkce = null, _backupStarted = false, _backupSignedInAt = 0;
+let _backupEpoch = 0;   // bumped by "Clear all data": a pass started before it records nothing
 // The unit files mirror the saved list, so they are written only from a list
 // the launch read in full — never after a failed launch, nor while the store
 // couldn't be read (the list on screen may then be partial, and would replace
@@ -12003,8 +12042,10 @@ function backupTextHash(s) {
 // unit on the form, in its own small file in today's folder of the facility it
 // will be saved under — so typing re-sends that one unit, never the whole day
 // (the form autosaves at every keystroke). A file SharePoint has from before
-// whose units or photos have all gone (deleted, moved, saved) is written again,
-// empty — never left saying they exist.
+// whose units or photos have all gone (deleted, moved, saved) gets an empty
+// snapshot — never left saying they exist. Only this collector tag's files: a
+// file under another tag (the initials changed, or the device id was lost) is
+// left as it is — its units didn't go anywhere (build 102 medium review).
 function backupDayFiles(info) {
   const tag = getCollectorTag(), groups = new Map();
   const group = (fac, day) => {
@@ -12015,30 +12056,54 @@ function backupDayFiles(info) {
   savedEquipment.forEach(e => { if (e) group(e.hospitalCode || '', getEntryDate(e)).units.push(backupSlimUnit(e, info)); });
   const st = buildWipState();
   if (wipHasContent(st)) group(backupFormFacility(), localDateStr(new Date())).inProgress = backupSlimUnit(Object.assign({}, st, { at: undefined }), info);
+  const formUnit = String(st.entryId || '');   // which unit the form file holds (the 5-minute spacing is per unit)
   info.forEach(p => { if (!p.unit.inProgress) group(p.fac, p.day).photos.push(p); });   // the form's photos: in its own file
   const unitsName = 'units_' + tag + '.json', csvName = 'photos_' + tag + '.csv', wipName = 'inprogress_' + tag + '.json';
   // (no app version here: an update would change every file ever written, and send them all again)
   const head = (fac, day) => ({ version: 1, collector: tag, device: ensureDeviceId(), facility: fac, date: day });
   const files = new Map();
-  const put = (folder, path, type, text) => files.set(folder + '/' + path, { folder, path, type, text });
+  const put = (folder, path, type, text, u) => files.set(folder + '/' + path, { folder, path, type, text, u });
   groups.forEach(g => {
     if (g.units.length) put(g.folder, unitsName, 'application/json', JSON.stringify(Object.assign(head(g.fac, g.day), { units: g.units }), null, 1));
-    if (g.inProgress) put(g.folder, wipName, 'application/json', JSON.stringify(Object.assign(head(g.fac, g.day), { unit: g.inProgress }), null, 1));
+    if (g.inProgress) put(g.folder, wipName, 'application/json', JSON.stringify(Object.assign(head(g.fac, g.day), { unit: g.inProgress }), null, 1), formUnit);
     if (g.photos.length) put(g.folder, csvName, 'text/csv', backupIndexCsv(g.photos));
   });
   _backupDays.forEach((v, id) => {
     if (files.has(id)) return;
     const at = id.lastIndexOf('/'), folder = id.slice(0, at), path = id.slice(at + 1);
+    if (path !== unitsName && path !== csvName && path !== wipName) return;   // another tag's file: never emptied
     const cut = folder.lastIndexOf('/'), f0 = folder.slice(0, cut), d0 = folder.slice(cut + 1);
     const h = head(f0 === 'No facility' ? '' : f0, d0 === 'Undated' ? '' : d0);
     if (/^units_.*\.json$/.test(path)) put(folder, path, 'application/json', JSON.stringify(Object.assign(h, { units: [] }), null, 1));
-    else if (/^inprogress_.*\.json$/.test(path)) put(folder, path, 'application/json', JSON.stringify(Object.assign(h, { unit: null }), null, 1));
+    else if (/^inprogress_.*\.json$/.test(path)) put(folder, path, 'application/json', JSON.stringify(Object.assign(h, { unit: null }), null, 1), '');
     else if (/^photos_.*\.csv$/.test(path)) put(folder, path, 'text/csv', backupIndexCsv([]));
   });
   return Array.from(files.values());
 }
 
 // ---- The pass ------------------------------------------------------------------
+// A day file's snapshot: in a folder named after the file, named by the time
+// (UTC — sorts in order, whatever the clocks do) and its text's fingerprint:
+// units_JW-ab12.json → units_JW-ab12/2026-09-30T183502.123Z_k3j2x1.json.
+function backupSnapshotName(path, at, h) {
+  const dot = path.lastIndexOf('.'), base = dot > 0 ? path.slice(0, dot) : path, ext = dot > 0 ? path.slice(dot) : '';
+  const t = new Date(at).toISOString().replace(/:/g, '');
+  return base + '/' + t + '_' + String(h || '').replace(/[^a-z0-9]/gi, '').slice(0, 6) + ext;
+}
+// "Clear all data" (build 102): the backup stops and forgets what this device
+// sent, so the clear is never mirrored — before, the next pass rewrote every
+// day this device had backed up as empty, the one event a backup must survive.
+// SharePoint keeps the last copy of every day (the clear also gives the device
+// a new id, so new work goes to new files). Turn it on and sign in to go on.
+function backupForgetDevice() {
+  _backupEpoch++;
+  clearTimeout(_backupSoon);
+  Object.assign(backupCfg, { on: false, user: '', pass: '', passExpires: '' });
+  _backupSent = new Map(); _backupDays = new Map(); _backupSentDirty = false; _backupDaysDirty = false;
+  _backupRetry.clear(); _backupPauseUntil = 0; _backupLastError = ''; _backupSignInNeeded = false; _backupWrongAccount = false;
+  _backupState = { waiting: 0, unreadable: 0, checked: false }; _backupPkce = null;
+  paintBackupBadge();
+}
 function scheduleBackup(ms) {
   if (!backupCfg.on) return;
   clearTimeout(_backupSoon);
@@ -12073,18 +12138,30 @@ async function drainBackup() {
   if (_backupBusy || !backupCfg.on || !backupAvailable()) { paintBackupBadge(); return; }
   if (!tabMayWrite()) return;   // the tab that may save is the one that backs up
   _backupBusy = true;
+  const epoch = _backupEpoch;   // a "Clear all data" during this pass ends it; nothing is recorded
   try {
     if (!await loadBackupRecords()) return;
     const info = backupPhotoList(), listed = _backupListTrusted && !_entryStoreUnread;
+    // Each logical day file (the units, their photo index, the unit on the form)
+    // goes as a NEW snapshot whenever its text changed — never replacing one.
+    // The unit on the form: at most every 5 minutes (typing makes many).
+    const wipEvery = window.__backupWipEvery != null ? window.__backupWipEvery : BACKUP_WIP_EVERY;   // (tests)
+    let held = 0;   // form snapshots waiting out the 5 minutes: still waiting — the badge never says backed up over them
     const files = (listed ? backupDayFiles(info) : []).map(f => Object.assign(f, { h: backupTextHash(f.text) }))
-      .filter(f => { const d = _backupDays.get(f.folder + '/' + f.path); return !(d && d.sha && d.h === f.h); });
+      .filter(f => {
+        const d = _backupDays.get(f.folder + '/' + f.path);
+        if (d && d.h === f.h && d.file && d.sha) return false;   // SharePoint confirmed this text as a snapshot (a build-101 record, with no snapshot, gets its first)
+        // the same unit still being typed waits out the 5 minutes; a new unit, or the form emptied (saved, cleared), goes at once
+        if (/^inprogress_/.test(f.path) && d && d.h !== f.h && (d.u || '') === (f.u || '') && Date.now() - (d.at || 0) < wipEvery) { held++; return false; }
+        return true;
+      });
     // Sent means SharePoint holds it in the folder it belongs in now: a photo
     // whose unit changed facility (one taken before the facility was chosen,
     // say) goes again, to the new folder. Records of photos no longer here go.
     if (listed) _backupSent.forEach((v, k) => { if (!info.has(k)) { _backupSent.delete(k); _backupSentDirty = true; } });
     const todo = Array.from(info.values()).filter(p => { const s = _backupSent.get(p.key); return !(s && s.f === p.folder); })
       .sort((a, b) => b.taken - a.taken);   // newest first
-    _backupState = { waiting: files.length + todo.length, unreadable: 0, checked: true };
+    _backupState = { waiting: files.length + held + todo.length, held, unreadable: 0, checked: true };
     paintBackupBadge();
     if (!_backupState.waiting) { _backupLastError = ''; return; }
     if (!navigator.onLine || Date.now() < _backupPauseUntil) return;
@@ -12093,23 +12170,32 @@ async function drainBackup() {
       if (!backupSignedIn()) { _backupSignInNeeded = true; return; }
     }
     _backupSignInNeeded = false;
+    if (!files.length && !todo.length) return;   // only the form, waiting out its 5 minutes (the 30 s pass sends it then)
     // The unit files first: small, and all that is needed to rebuild the work.
-    // Each is recorded on the device as sent-not-confirmed BEFORE it goes: from
-    // that send on, SharePoint may hold it — even when the answer is lost, or the
-    // app is closed before it saves its records again. A confirmation that never
-    // reached the device's records must not leave an older one standing: were
-    // the day to go back to that older text (its units deleted again), the file
-    // would be skipped while SharePoint holds the newer one.
+    // Each snapshot is named and recorded on the device as sent-not-confirmed
+    // BEFORE it goes: from that send on, SharePoint may hold it — even when the
+    // answer is lost, or the app is closed before it saves its records again. A
+    // retry sends the SAME snapshot (the API finds it already there); new text
+    // is always a new snapshot, named later, so the newest is the current state.
     const dayTodo = files.filter(f => !backupRetryWaiting('day:' + f.folder + '/' + f.path));
     let marked = false;
-    dayTodo.forEach(f => { const rec = f.folder + '/' + f.path, d = _backupDays.get(rec); if (!d || d.h || d.sha) { _backupDays.set(rec, { h: '', sha: '' }); marked = true; } });
+    dayTodo.forEach(f => {
+      const rec = f.folder + '/' + f.path, d = _backupDays.get(rec);
+      if (d && d.h === f.h && d.file && !d.sha) return;   // this very snapshot is already named: send it again
+      const at = Math.max(Date.now(), ((d && d.at) || 0) + 1);   // later than this file's last snapshot
+      _backupDays.set(rec, Object.assign({ h: f.h, file: backupSnapshotName(f.path, at, f.h), at, sha: '' }, f.u != null ? { u: f.u } : {}));
+      marked = true;
+    });
     if (marked) _backupDaysDirty = true;
     if (_backupDaysDirty && !await saveBackupRecords()) dayTodo.length = 0;   // not on the device (this pass's marks or an earlier one's): not sent — photos still go
     for (const f of dayTodo) {
+      if (epoch !== _backupEpoch) return;
       const rec = f.folder + '/' + f.path, id = 'day:' + rec;
+      const snap = _backupDays.get(rec);
       const ok = await backupAttempt(id, async () => {
-        const sha = await backupSend(f.folder, f.path, new TextEncoder().encode(f.text), f.type);
-        _backupDays.set(rec, { h: f.h, sha });
+        const sha = await backupSend(f.folder, snap.file, new TextEncoder().encode(f.text), f.type);
+        if (epoch !== _backupEpoch) return;
+        _backupDays.set(rec, Object.assign({}, snap, { sha }));
         _backupDaysDirty = true;
       });
       if (ok === 'stop') return;
@@ -12118,6 +12204,7 @@ async function drainBackup() {
     if (dayTodo.length) await saveBackupRecords();   // their confirmations, before the photos (which may take minutes)
     let sinceSave = 0;
     for (const p of todo) {
+      if (epoch !== _backupEpoch) return;
       if (!tabMayWrite() || !navigator.onLine || Date.now() < _backupPauseUntil) break;
       const id = 'photo:' + p.key;
       if (backupRetryWaiting(id)) continue;
@@ -12125,7 +12212,9 @@ async function drainBackup() {
       try { pd = await loadPhotoBytes(p.key, p.ref.fileType || 'image/jpeg'); } catch (e) { pd = null; }
       if (!pd || !pd.bytes) { _backupState.unreadable++; paintBackupBadge(); continue; }   // stays waiting — said so
       const ok = await backupAttempt(id, async () => {
-        _backupSent.set(p.key, { f: p.folder, s: await backupSend(p.folder, 'photos/' + backupPhotoName(p.key), pd.bytes, pd.type || 'image/jpeg') });
+        const s = await backupSend(p.folder, 'photos/' + backupPhotoName(p.key), pd.bytes, pd.type || 'image/jpeg');
+        if (epoch !== _backupEpoch) return;
+        _backupSent.set(p.key, { f: p.folder, s });
         _backupSentDirty = true;
       });
       if (ok === 'stop') return;
@@ -12136,7 +12225,7 @@ async function drainBackup() {
     }
   } finally {
     _backupBusy = false;
-    await saveBackupRecords();
+    if (epoch === _backupEpoch) await saveBackupRecords();
     paintBackupBadge();
     const ov = document.getElementById('settingsOverlay');
     if (ov && ov.style.display === 'flex') paintBackupSettings(true);
@@ -12172,6 +12261,7 @@ async function backupUploadBig(blob, folder, path, onProgress) {
       continue;
     }
     if (r && (r.status === 404 || r.status === 410)) throw backupError('the upload expired — send it again', r.status);
+    if (r && r.status === 409) throw backupError('SharePoint already holds ' + path.split('/').pop() + ' — it is kept as it is; this copy was not written', 502);   // write-once (build 102)
     if (++fails > 5) throw backupError(r ? 'SharePoint refused a piece (' + r.status + ')' : 'the connection dropped', r ? r.status : 0);
     await new Promise(w => setTimeout(w, 1000 * fails));
     try {   // ask the session where it got to rather than assume
@@ -12194,11 +12284,13 @@ async function sendExportToSharePoint(zipBlob, name, meta) {
   const say = (t) => showStickyBanner('exportCloudBanner', html`&#9729; ${t}`);
   try {
     say('Sending ' + name + ' (' + mb(zipBlob.size) + ' MB) to SharePoint — keep the app open…');
+    const tag = '_' + String(meta.exportId || Date.now()).replace(/[^A-Za-z0-9]/g, '').slice(0, 8);   // never the name of an earlier export (build 102)
+    name = name.replace(/(\.zip)?$/i, tag + '.zip');
     await backupUploadBig(zipBlob, folder, 'export/' + name, (done, total) =>
       say('Sending ' + name + ' to SharePoint: ' + Math.floor(done / total * 100) + '% (' + mb(done) + ' of ' + mb(total) + ' MB) — keep the app open…'));
     let sheetFails = 0;
     for (const s of (meta.sheets || [])) {
-      try { await backupSend(backupFolderOf(meta.facility, s.day), 'export/' + s.name, new Uint8Array(s.bytes), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); }
+      try { await backupSend(backupFolderOf(meta.facility, s.day), 'export/' + s.name.replace(/(\.xlsx)?$/i, tag + '.xlsx'), new Uint8Array(s.bytes), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); }
       catch (e) { sheetFails++; }
     }
     hideStickyBanner('exportCloudBanner');
@@ -12252,7 +12344,12 @@ async function finishBackupSignIn(url) {
   try { const B = window.Capacitor.Plugins && window.Capacitor.Plugins.Browser; if (B) await B.close(); } catch (e) {}
   const pk = _backupPkce;
   _backupPkce = null;
-  if (!code || !pk || Date.now() - pk.at > 10 * 60000) { showToast('⚠ That sign-in was not started here — sign in again from Settings', true); return false; }
+  if (!code || !pk || Date.now() - pk.at > 10 * 60000) {
+    // the same sign-in coming back twice (the page's link, and its button) is not an error
+    if (!pk && backupSignedIn() && Date.now() - _backupSignedInAt < 2 * 60000) return false;
+    showToast('⚠ That sign-in was not started here — sign in again from Settings', true);
+    return false;
+  }
   let r = null;
   try { r = await backupTransport.api('POST', '/api/device-pass', { code, verifier: pk.verifier }); } catch (e) { r = null; }
   if (!r || r.status !== 200 || !r.body || !r.body.pass) {
@@ -12261,7 +12358,7 @@ async function finishBackupSignIn(url) {
   }
   backupCfg.pass = r.body.pass; backupCfg.user = r.body.user || ''; backupCfg.passExpires = r.body.expires || '';
   saveBackupCfg();
-  _backupSignInNeeded = false; _backupWrongAccount = false; _backupPauseUntil = 0;
+  _backupSignInNeeded = false; _backupWrongAccount = false; _backupPauseUntil = 0; _backupSignedInAt = Date.now();
   showToast('☁ Signed in for backup as ' + backupCfg.user);
   paintBackupBadge(); paintBackupSettings(true); scheduleBackup(500);
   return true;
@@ -12295,7 +12392,8 @@ function paintBackupBadge() {
   else if (w) {
     text = '☁ ' + w + ' waiting' + (navigator.onLine ? '' : ' (offline)');
     bg = (_backupLastError || un) ? amber : grey;
-    tip = un ? un + ' photo' + (un === 1 ? '' : 's') + ' could not be read on this device yet — still trying.' : (_backupLastError ? 'Last try: ' + _backupLastError : 'Keep the app open until this says backed up.');
+    tip = un ? un + ' photo' + (un === 1 ? '' : 's') + ' could not be read on this device yet — still trying.' : (_backupLastError ? 'Last try: ' + _backupLastError : 'Keep the app open until this says backed up.')
+      + (_backupState.held ? ' The unit on the form goes up at most every 5 minutes while it changes.' : '');
   } else { text = '☁ backed up'; bg = green; tip = 'SharePoint has confirmed every photo and unit file.'; }
   b.textContent = text; b.style.background = bg; b.title = tip;
 }
@@ -12324,8 +12422,9 @@ function paintBackupSettings(later) {
   s.textContent = !backupCfg.on ? 'Off. Nothing leaves this device except the exports you make.'
     : (!_backupState.checked ? 'Checking…' : w ? w + ' file' + (w === 1 ? '' : 's') + ' waiting'
         + (un ? ' — ' + un + ' photo' + (un === 1 ? '' : 's') + ' not readable yet' : '') + (_backupLastError ? ' — ' + _backupLastError : '')
+        + (_backupState.held ? ' (the unit on the form goes up at most every 5 minutes while it changes)' : '')
       : 'Up to date — SharePoint has confirmed everything.')
-      + ' Today’s work goes to ' + where + '. Keep the app open until the badge says backed up; nothing on SharePoint is ever deleted.';
+      + ' Today’s work goes to ' + where + '. Keep the app open until the badge says backed up; nothing on SharePoint is ever deleted or replaced.';
 }
 function setBackupOn(on) {
   if (on && !backupAvailable()) {
@@ -12355,7 +12454,7 @@ async function testBackup() {
     const t = (r.body.targets || [])[0];
     if (t && t.root) { backupCfg.root = t.root; saveBackupCfg(); }
     const folder = backupFolderOf(getHospitalCode(), localDateStr(new Date()));
-    await backupSend(folder, 'test_' + getCollectorTag() + '.txt', new TextEncoder().encode('LOTO Collector backup test ' + new Date().toISOString() + ' by ' + (r.body.signedInAs || '') + '\r\n'), 'text/plain');
+    await backupSend(folder, 'test_' + getCollectorTag() + '_' + new Date().toISOString().replace(/[:.]/g, '') + '.txt', new TextEncoder().encode('LOTO Collector backup test ' + new Date().toISOString() + ' by ' + (r.body.signedInAs || '') + '\r\n'), 'text/plain');
     _backupSignInNeeded = false;
     if (s) s.textContent = 'Working, as ' + (r.body.signedInAs || backupCfg.user) + '. Today’s work goes to ' + (backupCfg.root || 'LOTO Backups') + '/' + folder + '/';
     scheduleBackup(300);
@@ -12370,8 +12469,8 @@ async function testBackup() {
 function backupEverythingAgain() {
   if (!backupCfg.on) { const s = document.getElementById('backupStatus'); if (s) s.textContent = 'Turn it on first.'; return; }
   const n = backupPhotoList().size;
-  if (!confirm('Send all ' + n + ' photo' + (n === 1 ? '' : 's') + ' and every unit file to SharePoint again, including those already confirmed?\n\n'
-    + 'Each goes to its own facility and day folder. Nothing on SharePoint is deleted. Keep the app open until the badge says backed up.')) return;
+  if (!confirm('Check all ' + n + ' photo' + (n === 1 ? '' : 's') + ' and every unit file against SharePoint again, including those already confirmed?\n\n'
+    + 'Any missing there is written again, to its own facility and day folder. Files already on SharePoint are left exactly as they are \u2014 nothing is ever replaced or deleted. Keep the app open until the badge says backed up.')) return;
   _backupSent.clear();
   _backupDays.forEach(v => { if (v) v.sha = ''; });
   _backupSentDirty = true; _backupDaysDirty = true;
@@ -12609,7 +12708,43 @@ function getCapPlugin(name) {
   return C.Plugins && C.Plugins[name];
 }
 
-async function scanTextToField(inputId) {
+// A panel / MCC label reads "PANEL LP-1A" — or "PANEL" over "LP-1A" — often
+// with voltage lines beside or under it (build 102). Read top to bottom (the
+// plugin gives each line's place — Vision's own order isn't that; lines on one
+// row left to right), the ID is what follows the word on its line, else the
+// next line; a label without the word gives its top line. "MCC3" is MCC 3.
+// The tech can still edit it.
+const LOCATION_ID_WORDS = /^(?:panel\s*board|panel|pnl|mcc|motor\s+control\s+center)(?:\b|(?=\d))[\s:#.\-\u2013]*/i;
+function scanLinesTopDown(rawText, blocks) {
+  let rows = Array.isArray(blocks) ? blocks.filter(b => b && b.text) : [];
+  if (rows.length && rows.every(b => typeof b.y === 'number')) {
+    rows = rows.slice().sort((a, b) => {
+      const tol = Math.min(a.h || 0.02, b.h || 0.02) / 2;   // one row: left to right
+      return Math.abs(a.y - b.y) < tol ? (a.x || 0) - (b.x || 0) : b.y - a.y;
+    });
+  }
+  return (rows.length ? rows.map(b => b.text) : String(rawText || '').split(/\r?\n/))
+    .map(t => String(t || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+}
+function pickLocationIdFromScan(rawText, blocks) {
+  const lines = scanLinesTopDown(rawText, blocks);
+  for (let k = 0; k < lines.length; k++) {
+    const m = LOCATION_ID_WORDS.exec(lines[k]);
+    if (!m) continue;
+    const rest = lines[k].slice(m[0].length).trim();
+    if (rest) return rest;
+    for (let j = k + 1; j < lines.length; j++) {   // a bare "PANEL": the next line
+      const next = lines[j].replace(LOCATION_ID_WORDS, '').trim();
+      if (next) return next;
+    }
+    return '';
+  }
+  return lines.length ? lines[0] : '';
+}
+
+// pick: how to read the label — '' (the whole text on one line) or
+// 'locationId' (a Panel / MCC ID: pickLocationIdFromScan).
+async function scanTextToField(inputId, pick) {
   const native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   if (!native) {
     showToast('Scan only works in the iOS app.', true);
@@ -12664,17 +12799,23 @@ async function scanTextToField(inputId) {
 
   const rawText = (result && result.text) || '';
   // Most labels are 1–3 lines; collapse line breaks into spaces so the field
-  // ends up with a single clean string the user can edit.
-  const text = rawText.replace(/\s+/g, ' ').trim();
+  // ends up with a single clean string the user can edit. A Panel / MCC ID
+  // takes the line with the ID, without the word "Panel" / "MCC".
+  const text = pick === 'locationId' ? pickLocationIdFromScan(rawText, result && result.blocks) : rawText.replace(/\s+/g, ' ').trim();
 
   const input = document.getElementById(inputId);
   if (!input) return;
 
   if (!text) {
-    showToast('No text detected — try again with more light or a closer angle.', true);
+    showToast(pick === 'locationId' && rawText.trim()
+      ? 'Read the label, but no ID on it — aim at the ID itself (e.g. LP-1A) and scan again.'
+      : 'No text detected — try again with more light or a closer angle.', true);
     return;
   }
 
+  // A value already typed is never replaced without asking (build 102).
+  const before = String(input.value || '').trim();
+  if (before && before !== text && !confirm('Replace \u201c' + before + '\u201d with the scanned \u201c' + text + '\u201d?')) return;
   input.value = text;
   input.dispatchEvent(new Event('input', { bubbles: true }));
   const preview = text.length > 40 ? text.slice(0, 40) + '…' : text;

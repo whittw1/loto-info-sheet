@@ -5,7 +5,7 @@
     "GRAPH_TENANT_ID": "<the HGS Entra tenant id>",
     "GRAPH_CLIENT_ID": "<this app registration's client id>",
     "GRAPH_CLIENT_SECRET": "<its client secret — never commit>",
-    "GRAPH_SITE_ID": "hgsengineeringinc.sharepoint.com,<site-collection-guid>,<site-guid>",
+    "GRAPH_SITE_ID": "hgsengineeringinc1.sharepoint.com,<site-collection-guid>,<site-guid>",
     "GRAPH_DRIVE_ID": "",
     "GRAPH_ROOT_FOLDER": "LOTO Backups",
     "ALLOWED_DOMAIN": "hgsengineeringinc.com",

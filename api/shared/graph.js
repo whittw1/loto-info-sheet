@@ -222,6 +222,8 @@ function sha256Hex(bytes) { return crypto.createHash('sha256').update(bytes).dig
 // minute: SharePoint is busy or unreachable). One broken setting must never
 // make every photo upload in full only to fail, each backing off on its own.
 function graphFailure(status) {
+  // write-once: a name that already exists is kept as it is — about this file
+  if (status === 409) return { status: 502, error: 'SharePoint already holds a file with that name — it is kept as it is; this copy was not written' };
   if (status === 401 || status === 403 || status === 404) {
     return { status: 503, error: 'SharePoint refused the backup service (' + status + ') — ask the administrator to check its site grant and settings' };
   }
