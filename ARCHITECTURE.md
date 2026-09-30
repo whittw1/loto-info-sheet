@@ -42,9 +42,12 @@ copy. It writes into one SharePoint site only; its settings live in Azure (§6
 | iOS / TestFlight | `ios-testflight-scaffold` | **100** (cache v7.96) — archived 2026-09-28; it supersedes 95–99, which were never uploaded (94 was the TestFlight build before it) | The iPad was last known on **90**. Installing 100 over 90 is exactly the path the upgrade chain (`tests/fuzz/upgrade/`, b88 → b90 → 100 installed over each other on a Simulator) verified: every unit and every photo byte intact, the June numeric-id photos readable again ("✓ N photos safe"), the June units flagged "⚠ export again (photos)" until one export by this build ships them. **Export before deleting anything.** |
 | Azure SWA + GitHub Pages (web) | `main` | **100** — promoted 2026-09-28 (§9) | Same code; web-only fixes that matter there: the tab claim (one tab writes; the other pauses — and, since 96, a build-94 tab still open during a deploy pauses too; since 99 its final autosave is read back, and since 100 a change made right after opening is kept); a launch waits on the Web Lock of a tab still writing photos, with **Open anyway** after 10 s (99) — §6 "Tabs (web only)"; and the offline export (verified with the server killed after the service worker precached). |
 
-**Build 101** (the SharePoint live backup) is on branch `sharepoint-backup` and on
-neither channel yet: it is released once the backup's one-time admin setup
-(`api/README.md`) is done and checked against the real SharePoint site.
+**Build 101** (the SharePoint live backup) — web: promoted 2026-09-29 (`2a2ac46`),
+the API functions live on the Azure address (answering "not set up yet" until
+the settings exist); iOS: `ios-testflight-scaffold` at `784c8c6`, synced — the
+archive and TestFlight upload are the user's. The backup works once the one-time
+admin setup (`api/README.md`, Static Web App `loto-field-collector`, resource
+group `rg-fs-tools`) is done; until then it stays off and the app is build 100's.
 
 **The web build is used in the field** — Bath VAMC (April 2026) was collected entirely on it — so a crew may be on either channel. Treat the two as one release: never leave `main` behind a photo-safety fix. To check what a channel carries: `git show origin/main:index.html | grep -o 'b[0-9]*</span>'`, or read the header on the device.
 
@@ -2144,6 +2147,11 @@ repo on branch `main-promotion`, tracking `origin/main`.
    public static site.
 3. `git commit`, then `git push origin main-promotion:main`. Azure deploys automatically.
 
+> **Build 101 promoted 2026-09-29 (`2a2ac46`)** — the first promotion with `api/`,
+> `backup-link.html`, `staticwebapp.config.json` and the workflow's `api_location`;
+> the deploy built the functions (1 min 10 s); Azure and GitHub Pages serve `b101` /
+> cache v7.97, `/api/upload` answers 401 unsigned, `/api/device-token` 401,
+> `/api/device-pass` 503 until `DEVICE_PASS_SECRET` is set (checked after the push).
 > **Build 100 promoted 2026-09-28 (`521bfe9`)** — Azure and GitHub Pages both serve
 > `b100` / cache v7.96 (checked after the push). Before it: build 99 (`b23bc06`), build 98 (`c29f10d`), build 97 (`c424273`), build 96 (`372c9d3`), build 95 (`59f0eaf`),
 > build 94 (`f8ee3e7`, the first with `vendor/`).
