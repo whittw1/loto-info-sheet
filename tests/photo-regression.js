@@ -43,6 +43,7 @@
 //   T180–T185 build 102: Panel ID scan, a warning for a source without its photo; its medium review; marks for an old shape
 //   T186–T190 build 102's high review: write-once — nothing on SharePoint replaced (day-file snapshots, own export
 //             names, the form every 5 min, build 101's days), a scan asks before replacing a typed value
+//   T191      build 102's medium review: new collector initials never empty the old initials' files
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -5330,7 +5331,7 @@
 
   // T188 — the unit on the form: a snapshot at most every 5 minutes
   async function t188_theFormIsSnapshottedAtMostEveryFiveMinutes() {
-    const N = 'T188 the unit on the form goes up as a snapshot at most every 5 minutes while it keeps changing — typing never floods SharePoint with files; the latest still goes once the 5 minutes are up, and a saved unit never waits';
+    const N = 'T188 the unit on the form goes up as a snapshot at most every 5 minutes while the same unit keeps changing — typing never floods SharePoint with files; the latest still goes once the 5 minutes are up (the badge counts it waiting until then, never "backed up"); a saved unit, the emptied form and the next unit never wait';
     await resetAppState();
     setHospitalCode('Atlanta');
     fillForm('Form-188');
@@ -5338,20 +5339,29 @@
     const stub = backupStub();
     backupTestOn(); delete window.__backupWipEvery;                                             // the real spacing
     const snaps = () => Array.from(stub.files.keys()).filter(k => k.startsWith(wipLogical.replace(/\.json$/, '/'))).length;
-    let s1 = 0, s2 = 0, s3 = 0, latest = null, units = null;
+    let s1 = 0, s2 = 0, s3 = 0, latest = null, units = null, badgeHeld = '', badgeAfter = '', afterSave = null, nextUnit = null;
+    const badge = () => (document.getElementById('backupBadge') || {}).textContent || '';
     try {
       await backupPass(); s1 = snaps();                                                         // the first: at once
       for (const t of ['Form-188 a', 'Form-188 ab', 'Form-188 abc']) { document.getElementById('equipName').value = t; autoSaveCurrent(); await sleep(150); await backupPass(); }
       s2 = snaps();                                                                             // inside 5 minutes: no more
+      badgeHeld = badge();                                                                      // ...and the badge says so
       const d = _backupDays.get(wipLogical);
       _backupDays.set(wipLogical, Object.assign({}, d, { at: d.at - BACKUP_WIP_EVERY - 1000 }));  // 5 minutes on
-      await backupPass(); s3 = snaps();
+      await backupPass(); s3 = snaps(); badgeAfter = badge();
       latest = ((wipFile(stub, folder) || {}).unit || {}).equipName;
       document.getElementById('equipName').value = 'Form-188 saved'; saveEntry(); await sleep(300); await backupPass();
       units = unitNames(unitsFile(stub, folder));
+      afterSave = { wip: (wipFile(stub, folder) || {}).unit, badge: badge() };   // the form emptied: goes at once, no wait
+      fillForm('Form-188 next'); await sleep(300); await backupPass();
+      nextUnit = ((wipFile(stub, folder) || {}).unit || {}).equipName;          // a new unit on the form: its first snapshot at once
     } finally { backupTestOff(stub); }
-    record(N, s1 === 1 && s2 === 1 && s3 === 2 && latest === 'Form-188 abc' && !!units && units.join() === 'Form-188 saved',
-      'form snapshots: first pass ' + s1 + ', after three edits inside 5 minutes ' + s2 + ', 5 minutes on ' + s3 + ' (latest ' + JSON.stringify(latest) + '); saved at once: ' + JSON.stringify(units));
+    record(N, s1 === 1 && s2 === 1 && s3 === 2 && latest === 'Form-188 abc' && !!units && units.join() === 'Form-188 saved'
+      && /1 waiting/.test(badgeHeld) && /backed up/.test(badgeAfter)
+      && !!afterSave && afterSave.wip === null && /backed up/.test(afterSave.badge) && nextUnit === 'Form-188 next',
+      'form snapshots: first pass ' + s1 + ', after three edits inside 5 minutes ' + s2 + ' (badge ' + JSON.stringify(badgeHeld) + '), 5 minutes on ' + s3
+      + ' (latest ' + JSON.stringify(latest) + ', badge ' + JSON.stringify(badgeAfter) + '); saved at once: ' + JSON.stringify(units)
+      + ' — the emptied form went at once (' + JSON.stringify(afterSave) + '), the next unit\'s first snapshot too (' + JSON.stringify(nextUnit) + ')');
   }
 
   // T189 — a scan never replaces a typed value without asking
@@ -5408,6 +5418,36 @@
     } finally { backupTestOff(stub); }
     record(N, left.length > 0 && !!snap && unitNames(snap).join() === 'A-190' && plain && tried.length === 0,
       'build 101 left ' + JSON.stringify(left) + '; after one pass the newest snapshot lists ' + JSON.stringify(snap && unitNames(snap)) + '; the plain file still there=' + plain + '; tried to replace ' + JSON.stringify(tried));
+  }
+
+  // T191 — new collector initials never empty the old initials' files
+  async function t191_aNewCollectorTagNeverEmptiesTheOldTagsFiles() {
+    const N = 'T191 changing the collector initials (or losing the device id) never writes the old initials\' day files empty — their newest snapshot still lists the units, which go on under the new initials';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    let realTag = null; try { realTag = localStorage.getItem('loto_collector_tag'); } catch (e) {}
+    try { localStorage.setItem('loto_collector_tag', 'AB'); } catch (e) {}
+    const a = mkEntry('A-191'); a.hospitalCode = 'Atlanta'; savedEquipment.push(a); await saveAll();
+    const folder = 'Atlanta/' + getEntryDate(a), oldTag = getCollectorTag();
+    const stub = backupStub();
+    backupTestOn();
+    let before = null, oldAfter = null, newAfter = null, newTag = '', emptied = [];
+    try {
+      await backupPass();
+      before = unitNames(unitsFile(stub, folder));
+      try { localStorage.setItem('loto_collector_tag', 'CD'); } catch (e) {}
+      newTag = getCollectorTag();
+      await backupPass();
+      const f = latestOf(stub, folder + '/units_' + oldTag + '.json'); oldAfter = f ? unitNames(JSON.parse(f.text)) : null;
+      newAfter = unitNames(unitsFile(stub, folder));
+      emptied = Array.from(stub.files.keys()).filter(k => k.indexOf('_' + oldTag + '/') > 0 && /"units": \[\]|"unit": null/.test(stub.files.get(k).text || ''));
+    } finally {
+      backupTestOff(stub);
+      try { if (realTag == null) localStorage.removeItem('loto_collector_tag'); else localStorage.setItem('loto_collector_tag', realTag); } catch (e) {}
+    }
+    record(N, !!before && before.join() === 'A-191' && !!oldAfter && oldAfter.join() === 'A-191' && !!newAfter && newAfter.join() === 'A-191' && oldTag !== newTag && emptied.length === 0,
+      'as ' + oldTag + ': ' + JSON.stringify(before) + '; after the change to ' + newTag + ' the old newest snapshot lists ' + JSON.stringify(oldAfter) + ', the new one ' + JSON.stringify(newAfter)
+      + '; empty snapshots under the old initials: ' + JSON.stringify(emptied));
   }
 
   // ---------- runner --------------------------------------------------------
@@ -5489,7 +5529,8 @@
     t180_panelIdScansOffTheLabel, t181_aSourceWithoutItsPhotoIsFlagged,
     t182_clearAllDataNeverEmptiesTheBackup, t183_panelIdReadTopToBottom, t184_aSecondReturnLinkIsNotAnError,
     t185_marksPlacedForAnOldShapeAreNotSaved, t186_nothingOnSharePointIsEverReplaced, t187_twoExportsTheSameDayKeepBoth,
-    t188_theFormIsSnapshottedAtMostEveryFiveMinutes, t189_aScanAsksBeforeReplacingATypedValue, t190_aDayBackedUpByBuild101GetsItsFirstSnapshot];
+    t188_theFormIsSnapshottedAtMostEveryFiveMinutes, t189_aScanAsksBeforeReplacingATypedValue, t190_aDayBackedUpByBuild101GetsItsFirstSnapshot,
+    t191_aNewCollectorTagNeverEmptiesTheOldTagsFiles];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

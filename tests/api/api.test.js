@@ -48,7 +48,7 @@ function fakeGraph(opts) {
       const hash = opts.hash != null ? opts.hash : qxhBase64(bytes);
       return new Response(JSON.stringify({ size, webUrl: 'https://sp.example/x', file: { hashes: { quickXorHash: hash } } }), { status: 201 });
     }
-    const b = store.get(key);
+    const b = opts.gone ? null : store.get(key);   // gone: removed between the conflict and the look (a race)
     if (!b) return new Response(JSON.stringify({ error: { code: 'itemNotFound' } }), { status: 404 });
     if (/:\/content$/.test(url)) return new Response(b, { status: 200 });   // the bytes
     return new Response(JSON.stringify({ size: b.length, webUrl: 'https://sp.example/x', file: opts.noHash ? {} : { hashes: { quickXorHash: qxhBase64(b) } } }), { status: 200 });
@@ -216,6 +216,12 @@ test('upload: write-once — an existing name is never replaced; the same bytes 
   res = await call(upload, { method: 'POST', headers: auth, body: photoBody(b) });   // the same size, other bytes
   assert.strictEqual(res.status, 502, JSON.stringify(res.body));
   assert.ok([...noHash.store.values()][0].equals(a), 'still untouched');
+  // the name conflicts, but the file isn't there a moment later: about this file only (502), never the 10-minute pause (503)
+  const gone = fakeGraph({ gone: true });
+  gone.store.set('LOTO Backups/Atlanta/2026-10-06/photos/p.a.b.1.jpg', a);
+  res = await call(upload, { method: 'POST', headers: auth, body: photoBody(a) });
+  assert.strictEqual(res.status, 502, 'a vanished file after a conflict: ' + JSON.stringify(res.body));
+  assert.match(res.body.error, /checked again/);
   // an export ZIP's upload session asks SharePoint never to replace either
   fakeGraph();
   const calls2 = [];

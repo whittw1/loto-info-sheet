@@ -69,15 +69,18 @@ module.exports = async function (context, req) {
     const j = await r.json().catch(() => ({}));
     if (r.status === 409) {
       // The name exists: never replaced. The same bytes → already backed up.
+      // Not found a moment later (an earlier copy still being committed, or
+      // removed by hand): about this file only — never the service-wide pause.
+      const lookFailed = (st) => { const f = st === 404 ? { status: 502, error: 'SharePoint is still settling ' + path.split('/').pop() + ' — it will be checked again' } : G.graphFailure(st); return done(f.status, { ok: false, error: f.error }); };
       const ex = await fetch(G.itemUrl(target, full), { headers: { authorization: 'Bearer ' + token } });
       const ej = await ex.json().catch(() => ({}));
-      if (!ex.ok) { const f = G.graphFailure(ex.status); return done(f.status, { ok: false, error: f.error }); }
+      if (!ex.ok) return lookFailed(ex.status);
       const exHash = ej && ej.file && ej.file.hashes && ej.file.hashes.quickXorHash;
       let same = Number(ej.size) === bytes.length && !!exHash && exHash === qxh;
       if (!same && Number(ej.size) === bytes.length && !exHash) {
         // SharePoint lists no hash for it: compare the bytes themselves (≤ 8 MB)
         const dl = await fetch(G.itemUrl(target, full) + '/content', { headers: { authorization: 'Bearer ' + token } });
-        if (!dl.ok) { const f = G.graphFailure(dl.status); return done(f.status, { ok: false, error: f.error }); }
+        if (!dl.ok) return lookFailed(dl.status);
         same = G.sha256Hex(Buffer.from(await dl.arrayBuffer())) === sha;
       }
       if (same) {

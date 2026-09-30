@@ -11837,10 +11837,10 @@ function backupHost() { return window.__backupTestHost || BACKUP_HOST; }
 const BACKUP_CFG_KEY = 'loto_backup_cfg';
 const BACKUP_LINK = 'lotocollector://backup-link';
 const BACKUP_CHUNK = 16 * 327680;   // 5 MiB — Graph wants upload chunks in multiples of 320 KiB
-const BACKUP_WIP_EVERY = 5 * 60000;  // the unit on the form: a new snapshot at most every 5 minutes (build 102)
+const BACKUP_WIP_EVERY = 5 * 60000;  // the unit on the form: a new snapshot at most every 5 minutes while the same unit changes (build 102)
 let backupCfg = { on: false, user: '', pass: '', passExpires: '', root: '' };
 let _backupSent = new Map();         // photo key → { f: folder, s: SHA-256 } of the copy SharePoint confirmed there
-let _backupDays = new Map();         // "<folder>/<logical file>" → { h: text hash, file: its snapshot, at, sha } (sha '': sent, not yet confirmed)
+let _backupDays = new Map();         // "<folder>/<logical file>" → { h: text hash, file: its snapshot, at, sha, u? } (sha '': sent, not yet confirmed; u: the form file's unit)
 let _backupRecordsLoaded = false, _backupSentDirty = false, _backupDaysDirty = false;   // each record saved only when it changed
 let _backupBusy = false, _backupPauseUntil = 0, _backupLastError = '', _backupSignInNeeded = false;
 let _backupWrongAccount = false;   // signed in, but with an account that may not back up here (403)
@@ -12042,8 +12042,10 @@ function backupTextHash(s) {
 // unit on the form, in its own small file in today's folder of the facility it
 // will be saved under — so typing re-sends that one unit, never the whole day
 // (the form autosaves at every keystroke). A file SharePoint has from before
-// whose units or photos have all gone (deleted, moved, saved) is written again,
-// empty — never left saying they exist.
+// whose units or photos have all gone (deleted, moved, saved) gets an empty
+// snapshot — never left saying they exist. Only this collector tag's files: a
+// file under another tag (the initials changed, or the device id was lost) is
+// left as it is — its units didn't go anywhere (build 102 medium review).
 function backupDayFiles(info) {
   const tag = getCollectorTag(), groups = new Map();
   const group = (fac, day) => {
@@ -12054,24 +12056,26 @@ function backupDayFiles(info) {
   savedEquipment.forEach(e => { if (e) group(e.hospitalCode || '', getEntryDate(e)).units.push(backupSlimUnit(e, info)); });
   const st = buildWipState();
   if (wipHasContent(st)) group(backupFormFacility(), localDateStr(new Date())).inProgress = backupSlimUnit(Object.assign({}, st, { at: undefined }), info);
+  const formUnit = String(st.entryId || '');   // which unit the form file holds (the 5-minute spacing is per unit)
   info.forEach(p => { if (!p.unit.inProgress) group(p.fac, p.day).photos.push(p); });   // the form's photos: in its own file
   const unitsName = 'units_' + tag + '.json', csvName = 'photos_' + tag + '.csv', wipName = 'inprogress_' + tag + '.json';
   // (no app version here: an update would change every file ever written, and send them all again)
   const head = (fac, day) => ({ version: 1, collector: tag, device: ensureDeviceId(), facility: fac, date: day });
   const files = new Map();
-  const put = (folder, path, type, text) => files.set(folder + '/' + path, { folder, path, type, text });
+  const put = (folder, path, type, text, u) => files.set(folder + '/' + path, { folder, path, type, text, u });
   groups.forEach(g => {
     if (g.units.length) put(g.folder, unitsName, 'application/json', JSON.stringify(Object.assign(head(g.fac, g.day), { units: g.units }), null, 1));
-    if (g.inProgress) put(g.folder, wipName, 'application/json', JSON.stringify(Object.assign(head(g.fac, g.day), { unit: g.inProgress }), null, 1));
+    if (g.inProgress) put(g.folder, wipName, 'application/json', JSON.stringify(Object.assign(head(g.fac, g.day), { unit: g.inProgress }), null, 1), formUnit);
     if (g.photos.length) put(g.folder, csvName, 'text/csv', backupIndexCsv(g.photos));
   });
   _backupDays.forEach((v, id) => {
     if (files.has(id)) return;
     const at = id.lastIndexOf('/'), folder = id.slice(0, at), path = id.slice(at + 1);
+    if (path !== unitsName && path !== csvName && path !== wipName) return;   // another tag's file: never emptied
     const cut = folder.lastIndexOf('/'), f0 = folder.slice(0, cut), d0 = folder.slice(cut + 1);
     const h = head(f0 === 'No facility' ? '' : f0, d0 === 'Undated' ? '' : d0);
     if (/^units_.*\.json$/.test(path)) put(folder, path, 'application/json', JSON.stringify(Object.assign(h, { units: [] }), null, 1));
-    else if (/^inprogress_.*\.json$/.test(path)) put(folder, path, 'application/json', JSON.stringify(Object.assign(h, { unit: null }), null, 1));
+    else if (/^inprogress_.*\.json$/.test(path)) put(folder, path, 'application/json', JSON.stringify(Object.assign(h, { unit: null }), null, 1), '');
     else if (/^photos_.*\.csv$/.test(path)) put(folder, path, 'text/csv', backupIndexCsv([]));
   });
   return Array.from(files.values());
@@ -12142,11 +12146,13 @@ async function drainBackup() {
     // goes as a NEW snapshot whenever its text changed — never replacing one.
     // The unit on the form: at most every 5 minutes (typing makes many).
     const wipEvery = window.__backupWipEvery != null ? window.__backupWipEvery : BACKUP_WIP_EVERY;   // (tests)
+    let held = 0;   // form snapshots waiting out the 5 minutes: still waiting — the badge never says backed up over them
     const files = (listed ? backupDayFiles(info) : []).map(f => Object.assign(f, { h: backupTextHash(f.text) }))
       .filter(f => {
         const d = _backupDays.get(f.folder + '/' + f.path);
         if (d && d.h === f.h && d.file && d.sha) return false;   // SharePoint confirmed this text as a snapshot (a build-101 record, with no snapshot, gets its first)
-        if (/^inprogress_/.test(f.path) && d && d.h !== f.h && Date.now() - (d.at || 0) < wipEvery) return false;
+        // the same unit still being typed waits out the 5 minutes; a new unit, or the form emptied (saved, cleared), goes at once
+        if (/^inprogress_/.test(f.path) && d && d.h !== f.h && (d.u || '') === (f.u || '') && Date.now() - (d.at || 0) < wipEvery) { held++; return false; }
         return true;
       });
     // Sent means SharePoint holds it in the folder it belongs in now: a photo
@@ -12155,7 +12161,7 @@ async function drainBackup() {
     if (listed) _backupSent.forEach((v, k) => { if (!info.has(k)) { _backupSent.delete(k); _backupSentDirty = true; } });
     const todo = Array.from(info.values()).filter(p => { const s = _backupSent.get(p.key); return !(s && s.f === p.folder); })
       .sort((a, b) => b.taken - a.taken);   // newest first
-    _backupState = { waiting: files.length + todo.length, unreadable: 0, checked: true };
+    _backupState = { waiting: files.length + held + todo.length, held, unreadable: 0, checked: true };
     paintBackupBadge();
     if (!_backupState.waiting) { _backupLastError = ''; return; }
     if (!navigator.onLine || Date.now() < _backupPauseUntil) return;
@@ -12164,6 +12170,7 @@ async function drainBackup() {
       if (!backupSignedIn()) { _backupSignInNeeded = true; return; }
     }
     _backupSignInNeeded = false;
+    if (!files.length && !todo.length) return;   // only the form, waiting out its 5 minutes (the 30 s pass sends it then)
     // The unit files first: small, and all that is needed to rebuild the work.
     // Each snapshot is named and recorded on the device as sent-not-confirmed
     // BEFORE it goes: from that send on, SharePoint may hold it — even when the
@@ -12176,7 +12183,7 @@ async function drainBackup() {
       const rec = f.folder + '/' + f.path, d = _backupDays.get(rec);
       if (d && d.h === f.h && d.file && !d.sha) return;   // this very snapshot is already named: send it again
       const at = Math.max(Date.now(), ((d && d.at) || 0) + 1);   // later than this file's last snapshot
-      _backupDays.set(rec, { h: f.h, file: backupSnapshotName(f.path, at, f.h), at, sha: '' });
+      _backupDays.set(rec, Object.assign({ h: f.h, file: backupSnapshotName(f.path, at, f.h), at, sha: '' }, f.u != null ? { u: f.u } : {}));
       marked = true;
     });
     if (marked) _backupDaysDirty = true;
@@ -12385,7 +12392,8 @@ function paintBackupBadge() {
   else if (w) {
     text = '☁ ' + w + ' waiting' + (navigator.onLine ? '' : ' (offline)');
     bg = (_backupLastError || un) ? amber : grey;
-    tip = un ? un + ' photo' + (un === 1 ? '' : 's') + ' could not be read on this device yet — still trying.' : (_backupLastError ? 'Last try: ' + _backupLastError : 'Keep the app open until this says backed up.');
+    tip = un ? un + ' photo' + (un === 1 ? '' : 's') + ' could not be read on this device yet — still trying.' : (_backupLastError ? 'Last try: ' + _backupLastError : 'Keep the app open until this says backed up.')
+      + (_backupState.held ? ' The unit on the form goes up at most every 5 minutes while it changes.' : '');
   } else { text = '☁ backed up'; bg = green; tip = 'SharePoint has confirmed every photo and unit file.'; }
   b.textContent = text; b.style.background = bg; b.title = tip;
 }
@@ -12414,8 +12422,9 @@ function paintBackupSettings(later) {
   s.textContent = !backupCfg.on ? 'Off. Nothing leaves this device except the exports you make.'
     : (!_backupState.checked ? 'Checking…' : w ? w + ' file' + (w === 1 ? '' : 's') + ' waiting'
         + (un ? ' — ' + un + ' photo' + (un === 1 ? '' : 's') + ' not readable yet' : '') + (_backupLastError ? ' — ' + _backupLastError : '')
+        + (_backupState.held ? ' (the unit on the form goes up at most every 5 minutes while it changes)' : '')
       : 'Up to date — SharePoint has confirmed everything.')
-      + ' Today’s work goes to ' + where + '. Keep the app open until the badge says backed up; nothing on SharePoint is ever deleted.';
+      + ' Today’s work goes to ' + where + '. Keep the app open until the badge says backed up; nothing on SharePoint is ever deleted or replaced.';
 }
 function setBackupOn(on) {
   if (on && !backupAvailable()) {
