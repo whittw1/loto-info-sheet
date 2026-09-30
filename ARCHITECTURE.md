@@ -39,8 +39,8 @@ copy. It writes into one SharePoint site only; its settings live in Azure (§6
 
 | Channel | Source branch | Build | Photo-safety status |
 |---|---|---|---|
-| iOS / TestFlight | `ios-testflight-scaffold` | **102** (cache v7.98) — synced 2026-09-30 for the archive (101 was never archived); **100** (archived 2026-09-28) is the last build uploaded before it | The iPad was last known on **90**; the upgrade chain installs b88 → b90 → 102 over each other (all intact). Installing 100 over 90 is exactly the path the upgrade chain (`tests/fuzz/upgrade/`, b88 → b90 → 100 installed over each other on a Simulator) verified: every unit and every photo byte intact, the June numeric-id photos readable again ("✓ N photos safe"), the June units flagged "⚠ export again (photos)" until one export by this build ships them. **Export before deleting anything.** |
-| Azure SWA + GitHub Pages (web) | `main` | **102** — promoted 2026-09-30 with the write-once backup API (§9) | Same code; web-only fixes that matter there: the tab claim (one tab writes; the other pauses — and, since 96, a build-94 tab still open during a deploy pauses too; since 99 its final autosave is read back, and since 100 a change made right after opening is kept); a launch waits on the Web Lock of a tab still writing photos, with **Open anyway** after 10 s (99) — §6 "Tabs (web only)"; and the offline export (verified with the server killed after the service worker precached). |
+| iOS / TestFlight | `ios-testflight-scaffold` | **103** (cache v7.99) — synced 2026-09-30 for the archive (101 and 102 were never archived); **100** (archived 2026-09-28) is the last build uploaded before it | The iPad was last known on **90**; the upgrade chain installs b88 → b90 → 102 over each other (all intact). Installing 100 over 90 is exactly the path the upgrade chain (`tests/fuzz/upgrade/`, b88 → b90 → 100 installed over each other on a Simulator) verified: every unit and every photo byte intact, the June numeric-id photos readable again ("✓ N photos safe"), the June units flagged "⚠ export again (photos)" until one export by this build ships them. **Export before deleting anything.** |
+| Azure SWA + GitHub Pages (web) | `main` | **103** — promoted 2026-09-30 (`e782d71`; the write-once backup API since 102) (§9) | Same code; web-only fixes that matter there: the tab claim (one tab writes; the other pauses — and, since 96, a build-94 tab still open during a deploy pauses too; since 99 its final autosave is read back, and since 100 a change made right after opening is kept); a launch waits on the Web Lock of a tab still writing photos, with **Open anyway** after 10 s (99) — §6 "Tabs (web only)"; and the offline export (verified with the server killed after the service worker precached). |
 
 **Build 102** (Panel ID scan; the photo warning; the write-once backup) — released
 2026-09-30: `ios-testflight-scaffold` fast-forwarded to `build-102` (`c9df526`) and synced
@@ -2279,6 +2279,9 @@ repo on branch `main-promotion`, tracking `origin/main`.
    public static site.
 3. `git commit`, then `git push origin main-promotion:main`. Azure deploys automatically.
 
+> **Build 103 promoted 2026-09-30 (`e782d71`)** — the app only (the two HTML copies, `sw.js`): the backup's
+> buttons show only while it is on; both deploys green; Azure and GitHub Pages serve `b103` / cache v7.99.
+> iOS: `ios-testflight-scaffold` at `9d55c75`, synced — build 102 was never archived; 103 is the upload.
 > **Build 102 promoted 2026-09-30 (`7b3d02e`)** — the app and the write-once `api/`
 > (8 files changed: the two HTML copies, `sw.js`, `api/upload`, `api/upload-session`,
 > `api/shared/graph.js`, `api/README.md`, the settings example); both deploys green;
