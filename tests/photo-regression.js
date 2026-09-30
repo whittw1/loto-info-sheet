@@ -39,7 +39,7 @@
 //   T154 build 99: found by its fault campaign (a failed fallback write removed the fallback)
 //   T155 build 99: found finishing it (an unreadable re-save record let an older delete win)
 //   T156–T157 build 100: the 2026-09-28 low review of build 99
-//   T158–T173 build 101: SharePoint live backup
+//   T158–T176 build 101: SharePoint live backup
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -147,6 +147,7 @@
       try { localStorage.removeItem('loto_backup_cfg'); } catch (e) {}
       _backupSent = new Map(); _backupDays = new Map(); _backupRetry.clear(); _backupPauseUntil = 0; _backupLastError = '';
       _backupSignInNeeded = false; _backupState = { waiting: 0, unreadable: 0, checked: false };
+      if (typeof _backupWrongAccount !== 'undefined') _backupWrongAccount = false;
       clearTimeout(_backupSoon);
       if (window.__realBackupTransport) Object.assign(backupTransport, window.__realBackupTransport);
       try { await saveMetadataMany({ backup_sent: {}, backup_days: {} }); } catch (e) {}
@@ -4420,7 +4421,7 @@
     Object.assign(backupCfg, { on: true, user: 'tech@hgsengineeringinc.com', pass: 'v1.test.pass',
       passExpires: new Date(Date.now() + 86400000).toISOString(), root: 'LOTO Backups' });
     _backupListTrusted = true; _backupRecordsLoaded = true; _backupSent = new Map(); _backupDays = new Map();
-    _backupRetry.clear(); _backupPauseUntil = 0; _backupLastError = ''; _backupSignInNeeded = false;
+    _backupRetry.clear(); _backupPauseUntil = 0; _backupLastError = ''; _backupSignInNeeded = false; _backupWrongAccount = false;
     _backupState = { waiting: 0, unreadable: 0, checked: false };
     clearTimeout(_backupSoon);
   }
@@ -4915,6 +4916,72 @@
       'emptied first: ' + JSON.stringify(emptied) + '; then SharePoint confirmed ' + JSON.stringify(withB) + ' but the app closed before recording it; after the restart and deleting B, SharePoint lists ' + JSON.stringify(after));
   }
 
+  // T174 — the web sign-in / sign-out never leave the page mid photo write
+  async function t174_webSignInWaitsForAPhotoStillSaving() {
+    const N = 'T174 on the web, Sign in / Sign out with Microsoft never leave the page while a photo is still being written — they say so and stay';
+    await resetAppState();
+    const realNative = window.backupNative, realGo = window.backupGo, went = [];
+    window.backupNative = () => false;                     // the web app
+    window.backupGo = (u) => { went.push(u); };            // leaving the page, recorded instead
+    let busyIn = -1, busyOut = -1, kept = '', msgs = [], freeIn = -1;
+    const t = startPhotoWrite('t174');
+    try {
+      Object.assign(backupCfg, { on: true, user: 'tech@hgsengineeringinc.com' });
+      msgs = await withToasts(async () => { await signInForBackup(); busyIn = went.length; signOutBackup(); busyOut = went.length; });
+      kept = backupCfg.user;
+      endPhotoWrite(t);
+      await signInForBackup(); freeIn = went.length;
+    } finally { endPhotoWrite(t); window.backupNative = realNative; window.backupGo = realGo; backupTestOff(); }
+    record(N, busyIn === 0 && busyOut === 0 && kept === 'tech@hgsengineeringinc.com' && msgs.filter(m => /still saving/.test(m)).length === 2
+        && freeIn === 1 && /^\/\.auth\/login\/aad/.test(went[0] || ''),
+      'while a photo was saving: left the page ' + busyIn + '× (sign in), ' + (busyOut - busyIn) + '× (sign out), account kept=' + (kept === 'tech@hgsengineeringinc.com')
+      + ', said so ' + msgs.filter(m => /still saving/.test(m)).length + '×; once saved, sign in went to ' + JSON.stringify(went[0] || ''));
+  }
+
+  // T175 — an account that may not back up stays shown, with its Sign out
+  async function t175_aRefusedAccountStaysShownSoItCanBeSwitched() {
+    const N = 'T175 an account SharePoint backup refuses (403) stays shown — "account not allowed", with Sign out to switch; a lapsed sign-in (401) asks to sign in again';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    const a = mkEntry('A-175'); a.hospitalCode = 'Atlanta'; savedEquipment.push(a); await saveAll();
+    const realNative = window.backupNative;
+    window.backupNative = () => false;                     // the web app
+    let stub = backupStub({ status: 403 });
+    backupTestOn();
+    let wrong = null, lapsed = null;
+    try {
+      await backupPass();
+      paintBackupSettings(true);
+      const out = document.getElementById('backupSignOutBtn');
+      wrong = { user: backupCfg.user, badge: document.getElementById('backupBadge').textContent, signOut: !!out && out.style.display !== 'none',
+        who: (document.getElementById('backupWho') || {}).textContent || '' };
+      stub.restore(); stub = backupStub({ status: 401 }); _backupPauseUntil = 0;
+      await backupPass();
+      lapsed = { user: backupCfg.user, badge: document.getElementById('backupBadge').textContent };
+    } finally { window.backupNative = realNative; backupTestOff(stub); }
+    record(N, !!wrong && wrong.user === 'tech@hgsengineeringinc.com' && /not allowed/.test(wrong.badge) && wrong.signOut && /may not back up/.test(wrong.who)
+        && !!lapsed && lapsed.user === '' && /sign in/.test(lapsed.badge),
+      'refused: account ' + JSON.stringify(wrong && wrong.user) + ', badge "' + (wrong && wrong.badge) + '", Sign out shown=' + (wrong && wrong.signOut)
+      + '; lapsed: account ' + JSON.stringify(lapsed && lapsed.user) + ', badge "' + (lapsed && lapsed.badge) + '"');
+  }
+
+  // T176 — an iPad sign-in that can't be prepared says so
+  async function t176_anIPadSignInThatCannotBePreparedSaysSo() {
+    const N = 'T176 when the device can\'t hash the sign-in challenge, the iPad sign-in says so — no sheet opened, nothing half-started, nothing thrown';
+    await resetAppState();
+    const realNative = window.backupNative, realHash = window.sha256HexOfBytes, realCap = window.Capacitor;
+    let opened = 0, threw = '', msgs = [];
+    window.backupNative = () => true;                      // the iPad app
+    window.Capacitor = Object.assign({}, realCap || {}, { Plugins: Object.assign({}, (realCap && realCap.Plugins) || {}, { Browser: { open: async () => { opened++; }, close: async () => {} } }) });
+    window.sha256HexOfBytes = async () => null;            // hashing unavailable
+    try {
+      _backupPkce = null;
+      msgs = await withToasts(async () => { try { await signInForBackup(); } catch (e) { threw = String(e && e.message || e); } });
+    } finally { window.sha256HexOfBytes = realHash; window.Capacitor = realCap; window.backupNative = realNative; backupTestOff(); }
+    record(N, !threw && opened === 0 && _backupPkce === null && msgs.some(m => /sign-in/.test(m)),
+      'threw: ' + JSON.stringify(threw) + '; sheet opened ' + opened + '×; sign-in half-started=' + (_backupPkce !== null) + '; said: ' + JSON.stringify(msgs));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -4988,7 +5055,8 @@
     t164_onlyTheTabThatMaySaveBacksUp, t165_exportToSharePointMarksExportedOnlyWhenConfirmed, t166_sendEverythingAgainResendsAll,
     t167_theIPadSignInNeedsTheVerifierThisAppMade, t168_aPartialListNeverRewritesTheUnitFiles,
     t169_aPhotoWhoseFacilityChangesGoesAgain, t170_aDayFileIsRememberedBeforeItIsSent, t171_sentRecordsFollowTheListNeverAPartialOne,
-    t172_editingTheFormSendsOnlyItsOwnFile, t173_anUnsavedConfirmationNeverLeavesAnOlderOneStanding];
+    t172_editingTheFormSendsOnlyItsOwnFile, t173_anUnsavedConfirmationNeverLeavesAnOlderOneStanding,
+    t174_webSignInWaitsForAPhotoStillSaving, t175_aRefusedAccountStaysShownSoItCanBeSwitched, t176_anIPadSignInThatCannotBePreparedSaysSo];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

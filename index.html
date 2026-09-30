@@ -11805,6 +11805,7 @@ let _backupSent = new Map();         // photo key → { f: folder, s: SHA-256 } 
 let _backupDays = new Map();         // "<folder>/<file>" → { h: text hash, sha } SharePoint confirmed ({ h: '', sha: '' }: sent, not yet confirmed)
 let _backupRecordsLoaded = false, _backupRecordsDirty = false;
 let _backupBusy = false, _backupPauseUntil = 0, _backupLastError = '', _backupSignInNeeded = false;
+let _backupWrongAccount = false;   // signed in, but with an account that may not back up here (403)
 let _backupState = { waiting: 0, unreadable: 0, checked: false };
 const _backupRetry = new Map();      // item id → { n, until }: one file SharePoint keeps refusing
 let _backupSoon = null, _backupPkce = null, _backupStarted = false;
@@ -11894,13 +11895,20 @@ const backupTransport = {
   },
 };
 function backupError(message, status) { const e = new Error(message); e.status = status; return e; }
-// What a refused request means for the account: sign in again.
+// What a refused request means for the account. 401: the sign-in is gone —
+// sign in again. 403: signed in, but with an account that may not back up here
+// (a personal Microsoft account, say): it stays shown, with its Sign out — the
+// way to switch — rather than looking signed out while a Sign in would only come
+// back as the same account.
 function backupRefused(status) {
   _backupSignInNeeded = true;
-  if (backupNative()) { if (status === 401) { backupCfg.pass = ''; backupCfg.passExpires = ''; } }
-  else backupCfg.user = '';
-  saveBackupCfg();
-  return backupError(status === 403 ? 'that account may not back up here' : 'sign in with Microsoft to back up', status);
+  _backupWrongAccount = status === 403;
+  if (status === 401) {
+    if (backupNative()) { backupCfg.pass = ''; backupCfg.passExpires = ''; }
+    else backupCfg.user = '';
+    saveBackupCfg();
+  }
+  return backupError(status === 403 ? 'that account may not back up here — sign out, then sign in with your company account' : 'sign in with Microsoft to back up', status);
 }
 // Sends one file (up to 8 MB). Resolves only once SharePoint confirmed these
 // exact bytes; throws (with .status) otherwise.
@@ -12046,7 +12054,7 @@ async function backupAttempt(id, send) {
   try {
     await send();
     _backupRetry.delete(id);
-    _backupLastError = '';
+    _backupLastError = ''; _backupWrongAccount = false;
     return true;
   } catch (e) {
     _backupLastError = e.message;
@@ -12215,19 +12223,25 @@ async function refreshBackupUser() {
     saveBackupCfg();
   } catch (e) {}
 }
+// The web sign-in and sign-out leave the page (tests replace this).
+function backupGo(url) { location.href = url; }
 function backupB64url(bytes) { return uint8ToBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
 // iPad: the link page in an in-app browser sheet signs in with Microsoft and
 // hands back a one-time code; the app trades it — with a verifier that never
 // left the app — for its device pass (OAuth PKCE; api/shared/graph.js).
 async function signInForBackup() {
   if (!backupAvailable()) { showToast('SharePoint backup works in the iPad app and at the Azure web address', true); return; }
-  if (!backupNative()) { location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(location.pathname + location.search); return; }
+  if (!backupNative()) {
+    if (refuseIfPhotoWritesBusy('sign in')) return;   // leaving the page would cut a photo write off
+    backupGo('/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(location.pathname + location.search)); return;
+  }
   const B = window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
   if (!B) { showToast('⚠ This build cannot open the sign-in page — update the app', true); return; }
   const raw = new Uint8Array(32);
   crypto.getRandomValues(raw);
   const verifier = backupB64url(raw);
   const hex = await sha256HexOfBytes(new TextEncoder().encode(verifier));
+  if (!hex) { showToast('⚠ This device could not prepare the sign-in — try again', true); return; }
   const challenge = backupB64url(new Uint8Array(hex.match(/../g).map(h => parseInt(h, 16))));
   _backupPkce = { verifier, at: Date.now() };
   try { await B.open({ url: backupHost() + '/backup-link.html?device=' + encodeURIComponent(getCollectorTag()) + '&challenge=' + challenge, presentationStyle: 'popover' }); }
@@ -12248,17 +12262,19 @@ async function finishBackupSignIn(url) {
   }
   backupCfg.pass = r.body.pass; backupCfg.user = r.body.user || ''; backupCfg.passExpires = r.body.expires || '';
   saveBackupCfg();
-  _backupSignInNeeded = false; _backupPauseUntil = 0;
+  _backupSignInNeeded = false; _backupWrongAccount = false; _backupPauseUntil = 0;
   showToast('☁ Signed in for backup as ' + backupCfg.user);
   paintBackupBadge(); paintBackupSettings(true); scheduleBackup(500);
   return true;
 }
 function signOutBackup() {
   if (!backupNative()) {
+    if (refuseIfPhotoWritesBusy('sign out')) return;
     backupCfg.user = ''; saveBackupCfg();
-    location.href = '/.auth/logout?post_logout_redirect_uri=' + encodeURIComponent(location.pathname + location.search);
+    backupGo('/.auth/logout?post_logout_redirect_uri=' + encodeURIComponent(location.pathname + location.search));
     return;
   }
+  _backupWrongAccount = false;
   backupCfg.pass = ''; backupCfg.user = ''; backupCfg.passExpires = '';
   saveBackupCfg();
   paintBackupBadge(); paintBackupSettings(true);
@@ -12274,7 +12290,8 @@ function paintBackupBadge() {
   const w = _backupState.waiting, un = _backupState.unreadable;
   const amber = 'rgba(224,164,74,0.95)', grey = 'rgba(90,100,112,0.9)', green = 'rgba(74,184,106,0.9)';
   let text, bg, tip;
-  if (!backupSignedIn() || _backupSignInNeeded) { text = '☁ sign in to back up'; bg = amber; tip = 'Tap for Settings, then Sign in with Microsoft.'; }
+  if (_backupWrongAccount && backupSignedIn()) { text = '☁ account not allowed'; bg = amber; tip = backupCfg.user + ' may not back up here. Tap for Settings: Sign out, then sign in with your company account.'; }
+  else if (!backupSignedIn() || _backupSignInNeeded) { text = '☁ sign in to back up'; bg = amber; tip = 'Tap for Settings, then Sign in with Microsoft.'; }
   else if (!_backupState.checked) { text = '☁ checking…'; bg = grey; tip = 'Working out what SharePoint still needs.'; }
   else if (w) {
     text = '☁ ' + w + ' waiting' + (navigator.onLine ? '' : ' (offline)');
@@ -12295,6 +12312,7 @@ function paintBackupSettings(later) {
   const avail = backupAvailable(), signed = backupSignedIn();
   const who = document.getElementById('backupWho');
   if (who) who.textContent = !avail ? 'SharePoint backup works in the iPad app and at the Azure web address — not in this copy of the web app.'
+    : signed && _backupWrongAccount ? 'Signed in as ' + backupCfg.user + ', which may not back up here. Sign out, then sign in with your company Microsoft account.'
     : signed ? 'Signed in as ' + backupCfg.user + (backupNative() && backupCfg.passExpires ? ' — until ' + new Date(backupCfg.passExpires).toLocaleDateString() : '')
     : (backupCfg.pass && !backupPassValid() ? 'The sign-in has expired. ' : 'Not signed in. ') + 'Tap Sign in with Microsoft.';
   const inBtn = document.getElementById('backupSignInBtn'), outBtn = document.getElementById('backupSignOutBtn');

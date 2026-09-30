@@ -617,7 +617,7 @@
     bk.files = new Map(); bk.hist = new Map(); bk.flaky = true;
     Object.assign(backupCfg, { on: true, user: 'fuzz@hgsengineeringinc.com', pass: 'v1.fuzz.pass', passExpires: new Date(Date.now() + 86400000).toISOString() });
     _backupListTrusted = true; _backupRecordsLoaded = true; _backupSent = new Map(); _backupDays = new Map();
-    _backupRetry.clear(); _backupPauseUntil = 0; _backupLastError = ''; _backupSignInNeeded = false;
+    _backupRetry.clear(); _backupPauseUntil = 0; _backupLastError = ''; _backupSignInNeeded = false; _backupWrongAccount = false;
     try { await saveMetadataMany({ backup_sent: {}, backup_days: {} }); } catch (e) {}
   }
   // At every step: the device's records claim only what SharePoint confirmed —
