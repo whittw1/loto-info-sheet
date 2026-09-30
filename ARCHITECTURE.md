@@ -43,9 +43,9 @@ copy. It writes into one SharePoint site only; its settings live in Azure (§6
 | Azure SWA + GitHub Pages (web) | `main` | **102** — promoted 2026-09-30 with the write-once backup API (§9) | Same code; web-only fixes that matter there: the tab claim (one tab writes; the other pauses — and, since 96, a build-94 tab still open during a deploy pauses too; since 99 its final autosave is read back, and since 100 a change made right after opening is kept); a launch waits on the Web Lock of a tab still writing photos, with **Open anyway** after 10 s (99) — §6 "Tabs (web only)"; and the offline export (verified with the server killed after the service worker precached). |
 
 **Build 102** (Panel ID scan; the photo warning; the write-once backup) — released
-2026-09-30: `ios-testflight-scaffold` fast-forwarded to `build-102` and synced (the
-archive and TestFlight upload are the user's; build 101 was never archived, so the
-iPads go from 100 straight to 102), and the web promoted with the new `api/` (write-once:
+2026-09-30: `ios-testflight-scaffold` fast-forwarded to `build-102` (`c9df526`) and synced
+(the archive and TestFlight upload are the user's; build 101 was never archived, so the
+iPads go from 100 straight to 102), and the web promoted (`7b3d02e`) with the new `api/` (write-once:
 from then on no app — build 101 on the web included — can replace a file). The backup
 itself works once the one-time admin setup is done (`api/README.md`).
 
@@ -2279,6 +2279,12 @@ repo on branch `main-promotion`, tracking `origin/main`.
    public static site.
 3. `git commit`, then `git push origin main-promotion:main`. Azure deploys automatically.
 
+> **Build 102 promoted 2026-09-30 (`7b3d02e`)** — the app and the write-once `api/`
+> (8 files changed: the two HTML copies, `sw.js`, `api/upload`, `api/upload-session`,
+> `api/shared/graph.js`, `api/README.md`, the settings example); both deploys green;
+> Azure and GitHub Pages serve `b102` / cache v7.98, `/api/upload` 401 unsigned,
+> `/api/device-token` 401, `/api/device-pass` 503 — the admin setup is still to do
+> (checked after the push). iOS: `ios-testflight-scaffold` at `c9df526`, synced.
 > **Build 101 promoted 2026-09-29 (`2a2ac46`)** — the first promotion with `api/`,
 > `backup-link.html`, `staticwebapp.config.json` and the workflow's `api_location`;
 > the deploy built the functions (1 min 10 s); Azure and GitHub Pages serve `b101` /
