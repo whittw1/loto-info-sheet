@@ -1,0 +1,7 @@
+{
+  "name": "loto-collector-api",
+  "version": "1.0.0",
+  "description": "Live backup for the LOTO Field Collector: writes field data to SharePoint via Microsoft Graph.",
+  "private": true,
+  "engines": { "node": ">=18" }
+}

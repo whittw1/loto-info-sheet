@@ -1,0 +1,16 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "GRAPH_TENANT_ID": "<the HGS Entra tenant id>",
+    "GRAPH_CLIENT_ID": "<this app registration's client id>",
+    "GRAPH_CLIENT_SECRET": "<its client secret — never commit>",
+    "GRAPH_SITE_ID": "hgsengineeringinc.sharepoint.com,<site-collection-guid>,<site-guid>",
+    "GRAPH_DRIVE_ID": "",
+    "GRAPH_ROOT_FOLDER": "LOTO Backups",
+    "ALLOWED_DOMAIN": "hgsengineeringinc.com",
+    "DEVICE_PASS_SECRET": "<a long random string — never commit>",
+    "DEVICE_PASS_DAYS": "30",
+    "DEVICE_PASS_NOT_BEFORE": ""
+  }
+}

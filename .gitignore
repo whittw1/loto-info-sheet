@@ -3,3 +3,6 @@ package-lock.json
 .DS_Store
 .vscode/
 .idea/
+
+# Azure Functions local settings — real secrets, never committed (build 101)
+local.settings.json

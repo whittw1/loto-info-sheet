@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>LOTO Collector — sign in for backup</title>
+<style>
+  :root { --bg: #16181c; --card: #22252b; --text: #e8eaed; --dim: #9aa0a6; --accent: #e0a44a; --ok: #4ab86a; --bad: #d34141; }
+  @media (prefers-color-scheme: light) { :root { --bg: #f4f5f7; --card: #fff; --text: #1d2126; --dim: #5f6368; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 440px; margin: 12vh auto 0; padding: 24px 20px; background: var(--card); border-radius: 12px; }
+  h1 { font-size: 19px; margin: 0 0 12px; }
+  p { margin: 0 0 12px; color: var(--dim); }
+  #msg { color: var(--text); }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  a.btn, button { display: inline-block; margin: 6px 8px 0 0; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--accent);
+    background: var(--accent); color: #111; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
+  a.btn.outline, button.outline { background: transparent; color: var(--accent); }
+  #actions:empty { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>☁ LOTO Collector — SharePoint backup</h1>
+  <p id="msg">Checking your sign-in…</p>
+  <div id="actions"></div>
+</main>
+<script>
+// Opened by the iPad app (Settings → SharePoint backup → Sign in) in an in-app
+// browser sheet. Signs in with Microsoft (Static Web Apps), asks the API for a
+// one-time code bound to the app's challenge, and hands the code back to the
+// app through its link scheme. The app trades it for its device pass with a
+// verifier that never left the app — see api/shared/graph.js, "The device pass".
+(async function () {
+  const q = new URLSearchParams(location.search);
+  const device = (q.get('device') || '').replace(/[^\w.-]/g, '').slice(0, 64);
+  const challenge = q.get('challenge') || '';
+  const msg = document.getElementById('msg'), actions = document.getElementById('actions');
+  const say = (text, cls) => { msg.textContent = text; msg.className = cls || ''; };
+  const button = (label, onclick, outline) => {
+    const b = document.createElement('button'); b.textContent = label; if (outline) b.className = 'outline';
+    b.onclick = onclick; actions.appendChild(b); return b;
+  };
+  // One trip to the Microsoft sign-in per visit: the page comes back marked, and
+  // if the sign-in still didn't take it says so instead of going round again.
+  const tried = q.get('signin') === '1';
+  const clean = new URLSearchParams(q); clean.delete('signin');
+  const marked = new URLSearchParams(clean); marked.set('signin', '1');
+  const signIn = () => location.replace('/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(location.pathname + '?' + marked));
+  const signOut = () => location.replace('/.auth/logout?post_logout_redirect_uri=' + encodeURIComponent(location.pathname + '?' + clean));
+  const stuck = (text) => { say(text, 'bad'); button('Sign in again', signIn); };
+
+  if (!/^[A-Za-z0-9_-]{43}$/.test(challenge)) {
+    say('Open this page from the LOTO Collector app: Settings → SharePoint backup → Sign in with Microsoft.', 'bad');
+    return;
+  }
+  let me = null;
+  try {
+    const r = await fetch('/.auth/me', { cache: 'no-store', credentials: 'include' });
+    const j = await r.json();
+    me = j && j.clientPrincipal ? j.clientPrincipal.userDetails : null;
+  } catch (e) {
+    say('Could not reach the sign-in service. Check the connection, then try again.', 'bad');
+    button('Try again', () => location.reload());
+    return;
+  }
+  if (!me) {
+    if (tried) { stuck('The Microsoft sign-in did not complete.'); return; }
+    say('Opening the Microsoft sign-in…'); signIn(); return;
+  }
+
+  let r = null, j = {};
+  try {
+    r = await fetch('/api/device-token?device=' + encodeURIComponent(device) + '&challenge=' + encodeURIComponent(challenge),
+      { cache: 'no-store', credentials: 'include' });
+    j = await r.json().catch(() => ({}));
+  } catch (e) { r = null; }
+  if (!r) {
+    say('Could not reach the backup service. Check the connection, then try again.', 'bad');
+    button('Try again', () => location.reload());
+    return;
+  }
+  if (r.status === 403) {
+    say('Signed in as ' + me + ', which is not allowed to back up here. Sign in with your company Microsoft account.', 'bad');
+    button('Use another account', signOut);
+    return;
+  }
+  if (r.status === 401) {
+    if (tried) { stuck('Signed in as ' + me + ', but the backup service did not accept the sign-in. If this happens again, ask the administrator to check the setup (api/README.md).'); return; }
+    say('Opening the Microsoft sign-in…'); signIn(); return;
+  }
+  if (!r.ok || !j.code) {
+    say((r.status === 503 ? 'SharePoint backup is not set up yet — ask the administrator. ' : 'Something went wrong: ') + (j.error || r.status), 'bad');
+    button('Try again', () => location.reload(), true);
+    return;
+  }
+  const back = 'lotocollector://backup-link?code=' + encodeURIComponent(j.code) + '&user=' + encodeURIComponent(j.user || me);
+  say('Signed in as ' + (j.user || me) + '. Returning to LOTO Collector…', 'ok');
+  const a = document.createElement('a'); a.className = 'btn'; a.href = back; a.textContent = 'Open LOTO Collector'; actions.appendChild(a);
+  location.href = back;
+})();
+</script>
+</body>
+</html>

@@ -478,10 +478,11 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b100</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b101</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
+    <span id="backupBadge" onclick="openBackupSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;color:#fff;" title="SharePoint backup. Tap for settings."></span>
     <span id="integrityBadge" onclick="runIntegrityCheck(true)" style="display:none;font-size:11px;font-weight:600;margin-left:10px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Photo storage health. Tap to re-check and list any missing photos."></span>
   </div>
   <div class="header-actions">
@@ -726,6 +727,7 @@ if ('serviceWorker' in navigator) {
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button class="btn btn-outline btn-sm" onclick="closeExportDialog()">Cancel</button>
       <button class="btn btn-success btn-sm" onclick="runCombinedExport()">&#128230; Export ZIP + Info Sheet</button>
+      <button class="btn btn-accent btn-sm" id="exportCloudBtn" style="display:none;" onclick="runCombinedExport({ toSharePoint: true })" title="Sends the export into the SharePoint backup folder; units are marked exported only once SharePoint confirms it">&#9729; Export to SharePoint</button>
     </div>
   </div>
 </div>
@@ -850,6 +852,22 @@ if ('serviceWorker' in navigator) {
       <button class="btn btn-outline btn-sm" onclick="showPhotoStoreReport()" style="width:100%;">&#128451; Photo Store Report (migration &amp; quarantine)</button>
       <div style="font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.4;">Run the Audit before leaving site: it hashes every photo and proves no two pieces of equipment share an image unless it was an intentional recorded reuse.</div>
     </div>
+    <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
+    <div style="margin-bottom:16px;" id="backupSettings">
+      <label style="display:block;font-size:13px;color:var(--text-label);margin-bottom:6px;">&#9729; SharePoint backup</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--text);cursor:pointer;">
+        <input type="checkbox" id="backupOn" style="width:18px;height:18px;" onchange="setBackupOn(this.checked)">
+        Back up to SharePoint while the app is open
+      </label>
+      <div id="backupWho" style="font-size:12px;color:var(--text);margin:8px 0 6px;line-height:1.4;"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-accent btn-sm" id="backupSignInBtn" onclick="signInForBackup()">Sign in with Microsoft</button>
+        <button class="btn btn-outline btn-sm" id="backupSignOutBtn" onclick="signOutBackup()">Sign out</button>
+        <button class="btn btn-outline btn-sm" onclick="testBackup()">Test</button>
+        <button class="btn btn-outline btn-sm" onclick="backupEverythingAgain()">Send everything again</button>
+      </div>
+      <div id="backupStatus" style="font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.4;"></div>
+    </div>
     <div class="dialog-actions">
       <button class="btn btn-outline btn-sm" onclick="resetPhotoSettings()">Reset Defaults</button>
       <button class="btn btn-sm" onclick="closeSettings()" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Cancel</button>
@@ -958,6 +976,7 @@ function showSettings() {
   document.getElementById('qualityLabel').textContent = Math.round(s.quality * 100) + '%';
   document.getElementById('customResGroup').style.display = s.preset === 'custom' ? 'block' : 'none';
   updateEstimates();
+  paintBackupSettings();
   document.getElementById('settingsOverlay').style.display = 'flex';
 }
 
@@ -2301,6 +2320,8 @@ function init() {
   };
   loadAll().then(() => {
     settleBoot();
+    _backupListTrusted = true;   // the unit files may mirror the list from here (see drainBackup)
+    startBackup();
     renderSavedPanel();
     renderSources();
     updateHeaderBadge();
@@ -2322,6 +2343,7 @@ function init() {
       .then(() => runIntegrityCheck(false));
   }).catch(() => {
     settleBoot();
+    startBackup();               // photos only: a launch that failed never rewrites the unit files
     renderSavedPanel();
     renderSources();
     updateHeaderBadge();
@@ -9408,6 +9430,8 @@ function showExportDialog() {
   populateExportFacilityFilter();
   updateExportDateSummary();
   updateHPreview();
+  const cloudBtn = document.getElementById('exportCloudBtn');
+  if (cloudBtn) cloudBtn.style.display = backupCfg.on && backupAvailable() && backupSignedIn() ? '' : 'none';
   document.getElementById('exportOverlay').style.display = 'flex';
   setTimeout(() => document.getElementById('photoSeqStart').focus(), 100);
 }
@@ -9506,7 +9530,8 @@ function reservePhotoSeq(datePrefix, next) {
   if (inp) inp.value = next;
 }
 
-async function runCombinedExport() {
+async function runCombinedExport(opts) {
+  opts = opts || {};
   if (refuseIfPhotoWritesBusy('export')) return;
   let startNum = parseInt(document.getElementById('photoSeqStart').value, 10);
   if (isNaN(startNum) || startNum < 0 || startNum > 99999) {
@@ -9849,6 +9874,7 @@ async function runCombinedExport() {
   // export is one sheet named for that date, as before. Undated units go in a
   // sheet with no date in its name, so loto-web doesn't scope them to a day.
   const infoSheetGroups = [];
+  const cloudSheets = [];   // each day's Information Sheet bytes, for Export to SharePoint
   {
     const byName = new Map();
     const fixedDay = (dateFilter && /^\d{4}-\d{2}-\d{2}$/.test(dateFilter)) ? dateFilter : null;
@@ -10020,6 +10046,7 @@ async function runCombinedExport() {
       // Generate xlsx bytes
       const xlsxBuffer = await ewb.xlsx.writeBuffer();
       zip.file('info_sheets/' + sheetGroup.name, xlsxBuffer);
+      cloudSheets.push({ name: sheetGroup.name, day: sheetGroup.day || '', bytes: xlsxBuffer });   // Export to SharePoint files each in its day's folder
    }
   }
 
@@ -10150,7 +10177,16 @@ async function runCombinedExport() {
     const exportFilename = 'FieldExport_' + codeSan + '_' + dateStamp + '_' + deviceShort + '.zip';
     // Reserve these photo numbers BEFORE the ZIP leaves the device.
     if (seqCounter > startNum) reservePhotoSeq(datePrefix, seqCounter);
-    const saveResult = await saveOrShare(zipBlob, exportFilename, 'application/zip');
+    // Export to SharePoint files the ZIP by the data: the facility every unit in
+    // it shares (else the export's facility) and the filtered day (else today).
+    let saveResult;
+    if (opts.toSharePoint) {
+      const facs = new Set(allEntries.map(en => en && en.hospitalCode).filter(Boolean));
+      saveResult = await sendExportToSharePoint(zipBlob, exportFilename, {
+        facility: facs.size === 1 ? Array.from(facs)[0] : (effectiveFacilityCode || ''),
+        day: /^\d{4}-\d{2}-\d{2}$/.test(dateFilter) ? dateFilter : localDateStr(new Date()),
+        sheets: cloudSheets });
+    } else saveResult = await saveOrShare(zipBlob, exportFilename, 'application/zip');
     const firstName = formatPhotoName(datePrefix, startNum);
     const lastName = formatPhotoName(datePrefix, seqCounter - 1);
     if (saveResult && saveResult.cancelled) {
@@ -10158,11 +10194,17 @@ async function runCombinedExport() {
     } else if (saveResult && saveResult.unconfirmed) {
       showToast('Export NOT marked done — the file save was not confirmed. Export again if it did not save.', true);
       return;
+    } else if (saveResult && saveResult.sharepoint && saveResult.saved === false) {
+      // The ZIP only ever existed in memory: nothing was marked exported, and it
+      // can simply be sent again.
+      showToast('\u26a0 Not sent to SharePoint: ' + saveResult.error + '. Nothing was marked exported \u2014 send it again, or use Export ZIP.', true);
+      return;
     } else if (saveResult && saveResult.saved === false) {
       showToast('Export error - file did not save', true);
       return;
     } else {
-      showToast(`Exported ${allEntries.length} equipment, ${photoCount} photos${misses ? ' (⚠️ ' + misses + ' missing)' : ''} (${firstName} – ${lastName}). Next start: ${seqCounter}`);
+      showToast(`Exported ${allEntries.length} equipment, ${photoCount} photos${misses ? ' (⚠️ ' + misses + ' missing)' : ''} (${firstName} – ${lastName}). Next start: ${seqCounter}`
+        + (saveResult && saveResult.sharepoint ? '\n\u2601 In SharePoint: ' + saveResult.path + (saveResult.sheetFails ? ' (' + saveResult.sheetFails + ' Information Sheet copy not sent \u2014 it is in the ZIP)' : '') : ''));
       logDataEvent({
         kind: 'export',
         facility: effectiveFacilityCode,
@@ -10174,7 +10216,8 @@ async function runCombinedExport() {
         seqLast: lastName,
         dateFilter: dateFilter,
         exportId: exportId,
-        filename: exportFilename
+        filename: exportFilename,
+        sharepoint: (saveResult && saveResult.sharepoint && saveResult.path) || undefined
       });
       // Stamp each exported entry so deletion decisions are self-evident — but
       // ONLY entries whose photos all made it into the ZIP (build 89). "Export
@@ -10692,6 +10735,7 @@ function autoSaveCurrent() {
       noteWipWritten(toAlt, session);
       checkStorage();
       setAutosaveStatus('saved');
+      scheduleBackup();
     }).catch(() => {
       // Fallback to localStorage if IDB fails (even after reconnecting) — not
       // from a tab that lost the claim meanwhile (build 97)
@@ -10701,6 +10745,7 @@ function autoSaveCurrent() {
         _wipWrittenSinceBoot = true;
         noteWipWritten(toAlt, session);
         setAutosaveStatus('saved');
+        scheduleBackup();
       } catch(e2) {
         setAutosaveStatus('error');
         showToast('Storage issue - export soon', true);
@@ -11117,12 +11162,13 @@ function saveAll() {
     checkStorage();
     refreshAfterMerge();
     releaseWipHold(hold);
+    scheduleBackup();
     return true;
   }, () => {
     if (_tabPaused || st.paused) return false;
     const ok = writeFallback();   // unreadable / unwritable — never a partial list over the store
     refreshAfterMerge();
-    if (ok) releaseWipHold(hold);
+    if (ok) { releaseWipHold(hold); scheduleBackup(); }
     return ok;
   });
 }
@@ -11713,6 +11759,670 @@ function clearAllData() {
     showToast('All data cleared');
   }
 }
+
+// ============================================================================
+// SHAREPOINT LIVE BACKUP (build 101)
+// While the app is open and online, the work is copied into SharePoint, inside
+// the backup folder the API is set up with ("LOTO Backups"):
+//   <facility>/<YYYY-MM-DD>/photos/<file>.jpg    each photo, once safely stored here
+//   <facility>/<YYYY-MM-DD>/units_<collector>.json  that day's saved units, kept current
+//   <facility>/<YYYY-MM-DD>/photos_<collector>.csv  which of their photos is which unit / source
+//   <facility>/<today>/inprogress_<collector>.json  the unit on the form (its own small
+//                                                   file: typing never re-sends the day)
+//   <facility>/<YYYY-MM-DD>/export/…             exports sent with "Export to SharePoint"
+// A safety net: capture, save and export never wait for it, and it stays off
+// until the tech turns it on and signs in with Microsoft (Settings). Ported from
+// the NPS Audit Photo Collector's live backup (v4.12) and the rules it learned:
+//  • Never in the way. A failure leaves the file waiting; nothing blocks.
+//  • No Microsoft credentials on the device. The web app signs in with
+//    Microsoft (Static Web Apps); the iPad app holds only an expiring,
+//    upload-only device pass — api/shared/graph.js, "The device pass".
+//  • The queue is not the record. What is waiting is worked out from the data
+//    on every pass: every stored photo SharePoint hasn't confirmed, every day
+//    file that changed since SharePoint last confirmed it. Nothing to drift.
+//  • "Backed up" means SharePoint CONFIRMED it (beyond NPS, whose badge once
+//    said backed up with 32 photos missing): the API checks the bytes' SHA-256
+//    against what was sent, and SharePoint's own size and QuickXorHash of what
+//    it stored; only then is a file counted.
+//  • Nothing on SharePoint is ever deleted — only written, or replaced by a
+//    newer copy of the same file. A deleted unit leaves its day file rewritten
+//    without it.
+//  • Filed by the data: each unit's own facility stamp and survey date, each
+//    photo's day taken — never the facility picked on screen.
+// Foreground only: iOS runs nothing while the app is closed or in the
+// background, so the badge says what is still waiting.
+// ============================================================================
+// The iPad app's endpoint; the web app uses its own origin (where the sign-in
+// cookie lives). Not the GitHub Pages copy, which has no API.
+const BACKUP_HOST = 'https://delightful-bay-02569820f.7.azurestaticapps.net';
+// Only the Simulator end-to-end check points the app elsewhere (a local stand-in).
+function backupHost() { return window.__backupTestHost || BACKUP_HOST; }
+const BACKUP_CFG_KEY = 'loto_backup_cfg';
+const BACKUP_LINK = 'lotocollector://backup-link';
+const BACKUP_CHUNK = 16 * 327680;   // 5 MiB — Graph wants upload chunks in multiples of 320 KiB
+let backupCfg = { on: false, user: '', pass: '', passExpires: '', root: '' };
+let _backupSent = new Map();         // photo key → { f: folder, s: SHA-256 } of the copy SharePoint confirmed there
+let _backupDays = new Map();         // "<folder>/<file>" → { h: text hash, sha } SharePoint confirmed ({ h: '', sha: '' }: sent, not yet confirmed)
+let _backupRecordsLoaded = false, _backupSentDirty = false, _backupDaysDirty = false;   // each record saved only when it changed
+let _backupBusy = false, _backupPauseUntil = 0, _backupLastError = '', _backupSignInNeeded = false;
+let _backupWrongAccount = false;   // signed in, but with an account that may not back up here (403)
+let _backupState = { waiting: 0, unreadable: 0, checked: false };
+const _backupRetry = new Map();      // item id → { n, until }: one file SharePoint keeps refusing
+let _backupSoon = null, _backupPkce = null, _backupStarted = false;
+// The unit files mirror the saved list, so they are written only from a list
+// the launch read in full — never after a failed launch, nor while the store
+// couldn't be read (the list on screen may then be partial, and would replace
+// good copies on SharePoint). Photos only ever add files, so they always go.
+let _backupListTrusted = false;
+
+function backupNative() { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }
+function backupAvailable() {
+  if (backupNative()) return true;
+  return /\.azurestaticapps\.net$/i.test(location.hostname) || /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+}
+function loadBackupCfg() {
+  try { Object.assign(backupCfg, JSON.parse(localStorage.getItem(BACKUP_CFG_KEY) || '{}') || {}); } catch (e) {}
+}
+function saveBackupCfg() { try { localStorage.setItem(BACKUP_CFG_KEY, JSON.stringify(backupCfg)); } catch (e) {} }
+function backupPassValid() { return !!backupCfg.pass && Date.parse(backupCfg.passExpires || '') > Date.now(); }
+function backupSignedIn() { return backupNative() ? backupPassValid() : !!backupCfg.user; }
+
+// What SharePoint has confirmed, kept in IndexedDB (thousands of photo keys).
+// Unreadable right now: no pass runs — it can't know what is waiting.
+async function loadBackupRecords() {
+  if (_backupRecordsLoaded) return true;
+  try {
+    const r = await getMetadataMany(['backup_sent', 'backup_days']);
+    _backupSent = new Map(Object.entries(r.backup_sent || {}).filter(([k, v]) => v && typeof v === 'object' && v.f && v.s));
+    _backupDays = new Map(Object.entries(r.backup_days || {}));
+    _backupRecordsLoaded = true;
+  } catch (e) { return false; }
+  return true;
+}
+// true: the records on the device are current. Each is written only when it
+// changed: the photo record grows with every photo on the device, and the day
+// files are marked before every send — often, while the form is typed in.
+async function saveBackupRecords() {
+  if (!_backupSentDirty && !_backupDaysDirty) return true;
+  if (!tabMayWrite()) return false;
+  const rec = {}, sent = _backupSentDirty, days = _backupDaysDirty;
+  if (sent) rec.backup_sent = Object.fromEntries(_backupSent);
+  if (days) rec.backup_days = Object.fromEntries(_backupDays);
+  _backupSentDirty = false; _backupDaysDirty = false;
+  try { await saveMetadataMany(rec); return true; }
+  catch (e) { if (sent) _backupSentDirty = true; if (days) _backupDaysDirty = true; return false; }
+}
+
+// ---- Talking to the API ------------------------------------------------------
+// The web app calls its own origin with its sign-in cookie; the iPad app calls
+// BACKUP_HOST with its device pass over native HTTP (no browser cross-origin
+// rules). Tests replace these two functions.
+const backupTransport = {
+  // One API call → { status, body }. Throws only when the network failed.
+  async api(method, path, body) {
+    if (backupNative()) {
+      const H = window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp;
+      if (!H) throw new Error('native HTTP unavailable');
+      const headers = { 'Content-Type': 'application/json' };
+      if (backupCfg.pass) headers['x-loto-pass'] = backupCfg.pass;
+      const r = await H.request({ url: backupHost() + path, method, headers, data: body ? JSON.stringify(body) : undefined, readTimeout: 180000 });   // (a connect timeout would cap the whole request)
+      let j = r.data;
+      if (typeof j === 'string') { try { j = JSON.parse(j); } catch (e) { j = {}; } }
+      return { status: r.status, body: j || {} };
+    }
+    const r = await fetch(path, { method, credentials: 'include', cache: 'no-store',
+      headers: body ? { 'content-type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+    let j = {};
+    try { j = await r.json(); } catch (e) {}
+    return { status: r.status, body: j };
+  },
+  // One request to a pre-authorised upload-session URL (SharePoint itself).
+  async session(url, method, bytes, range) {
+    if (backupNative()) {
+      const H = window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp;
+      if (!H) throw new Error('native HTTP unavailable');
+      const opts = { url, method, headers: {}, readTimeout: 300000 };
+      if (bytes) {
+        opts.headers['Content-Type'] = 'application/octet-stream';   // without it no body is sent
+        opts.headers['Content-Range'] = range;
+        opts.data = uint8ToBase64(bytes);
+        opts.dataType = 'file';                                       // base64 → the raw bytes
+      }
+      const r = await H.request(opts);
+      let j = r.data;
+      if (typeof j === 'string') { try { j = JSON.parse(j); } catch (e) { j = {}; } }
+      return { status: r.status, body: j || {} };
+    }
+    const r = await fetch(url, { method, headers: bytes ? { 'Content-Range': range } : undefined, body: bytes || undefined });
+    let j = {};
+    try { j = await r.json(); } catch (e) {}
+    return { status: r.status, body: j };
+  },
+};
+function backupError(message, status) { const e = new Error(message); e.status = status; return e; }
+// What a refused request means for the account. 401: the sign-in is gone —
+// sign in again. 403: signed in, but with an account that may not back up here
+// (a personal Microsoft account, say): it stays shown, with its Sign out — the
+// way to switch — rather than looking signed out while a Sign in would only come
+// back as the same account.
+function backupRefused(status) {
+  _backupSignInNeeded = true;
+  _backupWrongAccount = status === 403;
+  if (status === 401) {
+    if (backupNative()) { backupCfg.pass = ''; backupCfg.passExpires = ''; }
+    else backupCfg.user = '';
+    saveBackupCfg();
+  }
+  return backupError(status === 403 ? 'that account may not back up here — sign out, then sign in with your company account' : 'sign in with Microsoft to back up', status);
+}
+// Sends one file (up to 8 MB). Resolves only once SharePoint confirmed these
+// exact bytes; throws (with .status) otherwise.
+async function backupSend(folder, path, bytes, contentType) {
+  const sha = await sha256HexOfBytes(bytes);
+  if (!sha) throw backupError('could not fingerprint the file', 400);
+  let r;
+  try { r = await backupTransport.api('POST', '/api/upload', { folder, path, contentType, contentBase64: uint8ToBase64(bytes), sha256: sha }); }
+  catch (e) { throw backupError('no connection to the backup service', 0); }
+  if (r.status === 401 || r.status === 403) throw backupRefused(r.status);
+  const j = r.body || {};
+  if (r.status !== 200 || !j.ok) throw backupError(j.error || ('upload failed (' + r.status + ')'), r.status);
+  if (j.sha256 !== sha || Number(j.size) !== bytes.length) throw backupError('SharePoint confirmed something other than what was sent', 502);
+  return sha;
+}
+
+// ---- What goes where -----------------------------------------------------------
+function backupFolderOf(fac, day) { return (String(fac || '').trim().replace(/[\\/]+/g, '-') || 'No facility') + '/' + (day || 'Undated'); }
+// A photo's file name: its reversible storage-file name (p.<unit>.<slot>.<rev>.jpg),
+// so a file can always be traced back to its unit.
+function backupPhotoName(key) { return photoFsRelPath(key).replace(/^loto_photos\//, ''); }
+function backupFormFacility() {
+  const saved = currentEntryId ? savedEquipment.find(e => e && sameEntryId(e.id, currentEntryId)) : null;
+  return (saved && saved.hospitalCode) || getHospitalCode() || '';
+}
+// Every photo this device still refers to that is safely stored — never one
+// still saving, nor one whose save failed — and where it goes.
+function backupPhotoList() {
+  const out = new Map();
+  const add = (ref, unit, slot, fac, unitDay) => {
+    if (!ref || !ref.dbKey || out.has(ref.dbKey) || ref.saving || ref.unsaved) return;
+    const day = localDateStr(ref.timestamp) || unitDay || localDateStr(new Date());
+    out.set(ref.dbKey, { key: ref.dbKey, ref, unit, slot, fac, day, taken: Date.parse(ref.timestamp) || 0, folder: backupFolderOf(fac, day) });
+  };
+  savedEquipment.forEach(e => {
+    if (!e) return;
+    const fac = e.hospitalCode || '', d = getEntryDate(e);
+    Object.keys(e.photos || {}).forEach(s => add(e.photos[s], e, s, fac, d));
+    (e.miscPhotos || []).forEach((m, i) => add(m, e, 'misc_' + (i + 1), fac, d));
+  });
+  const form = { id: currentEntryId, equipName: (document.getElementById('equipName') || {}).value || '', equipType: getEquipType(),
+    equipBuilding: getBuilding(), equipRoom: (document.getElementById('equipRoom') || {}).value || '', sources, inProgress: true };
+  const ff = backupFormFacility();
+  Object.keys(photos).forEach(s => add(photos[s], form, s, ff, null));
+  miscPhotos.forEach((m, i) => add(m, form, 'misc_' + (i + 1), ff, null));
+  return out;
+}
+// A unit as it goes into its day file: everything but the photo previews
+// (sketches stay), each photo carrying where its file is.
+function backupSlimRef(ref, info) {
+  if (!ref || typeof ref !== 'object') return ref;
+  const c = Object.assign({}, ref);
+  delete c.thumbnail;
+  const p = ref.dbKey && info.get(ref.dbKey);
+  if (p) c.backupFile = p.folder + '/photos/' + backupPhotoName(p.key);
+  return c;
+}
+function backupSlimUnit(e, info) {
+  const c = Object.assign({}, e);
+  if (e.photos) { c.photos = {}; Object.keys(e.photos).forEach(k => { c.photos[k] = backupSlimRef(e.photos[k], info); }); }
+  if (Array.isArray(e.miscPhotos)) c.miscPhotos = e.miscPhotos.map(m => backupSlimRef(m, info));
+  return c;
+}
+function backupIndexCsv(list) {
+  const rows = [['File', 'Unit', 'Equipment type', 'Building', 'Room', 'Unit date', 'Slot', 'Source', 'Energy', 'Device', 'Taken', 'SHA-256 at capture'].join(',')];
+  list.slice().sort((a, b) => String(a.unit.equipName || '').localeCompare(String(b.unit.equipName || ''), 'en', { numeric: true })
+      || String(a.slot).localeCompare(String(b.slot), 'en', { numeric: true }))
+    .forEach(p => {
+      const u = p.unit, m = /^source_(\d+)$/.exec(p.slot), src = m ? (u.sources || [])[+m[1]] || {} : {};
+      rows.push([backupPhotoName(p.key), u.equipName || '', u.equipType || '', u.equipBuilding || '',
+        u.equipRoom || '', getEntryDate(u) || '', p.slot, m ? +m[1] + 1 : '', src.energySource || '', src.deviceType || '',
+        p.ref.timestamp || '', p.ref.sha256 || ''].map(v => quote(v)).join(','));   // the export CSV's own quoting
+    });
+  return '﻿' + rows.join('\r\n') + '\r\n';
+}
+// A quick fingerprint of a day file's text, to tell whether it changed since
+// SharePoint confirmed it (cyrb53).
+function backupTextHash(s) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(36) + '-' + (h1 >>> 0).toString(36) + '-' + s.length;
+}
+// The day files as they should be now: for each facility / day, its saved units
+// (by survey date) and the index of their photos (by the day taken); and the
+// unit on the form, in its own small file in today's folder of the facility it
+// will be saved under — so typing re-sends that one unit, never the whole day
+// (the form autosaves at every keystroke). A file SharePoint has from before
+// whose units or photos have all gone (deleted, moved, saved) is written again,
+// empty — never left saying they exist.
+function backupDayFiles(info) {
+  const tag = getCollectorTag(), groups = new Map();
+  const group = (fac, day) => {
+    const f = backupFolderOf(fac, day);
+    if (!groups.has(f)) groups.set(f, { folder: f, fac: String(fac || '').trim(), day: day || '', units: [], photos: [], inProgress: null });
+    return groups.get(f);
+  };
+  savedEquipment.forEach(e => { if (e) group(e.hospitalCode || '', getEntryDate(e)).units.push(backupSlimUnit(e, info)); });
+  const st = buildWipState();
+  if (wipHasContent(st)) group(backupFormFacility(), localDateStr(new Date())).inProgress = backupSlimUnit(Object.assign({}, st, { at: undefined }), info);
+  info.forEach(p => { if (!p.unit.inProgress) group(p.fac, p.day).photos.push(p); });   // the form's photos: in its own file
+  const unitsName = 'units_' + tag + '.json', csvName = 'photos_' + tag + '.csv', wipName = 'inprogress_' + tag + '.json';
+  // (no app version here: an update would change every file ever written, and send them all again)
+  const head = (fac, day) => ({ version: 1, collector: tag, device: ensureDeviceId(), facility: fac, date: day });
+  const files = new Map();
+  const put = (folder, path, type, text) => files.set(folder + '/' + path, { folder, path, type, text });
+  groups.forEach(g => {
+    if (g.units.length) put(g.folder, unitsName, 'application/json', JSON.stringify(Object.assign(head(g.fac, g.day), { units: g.units }), null, 1));
+    if (g.inProgress) put(g.folder, wipName, 'application/json', JSON.stringify(Object.assign(head(g.fac, g.day), { unit: g.inProgress }), null, 1));
+    if (g.photos.length) put(g.folder, csvName, 'text/csv', backupIndexCsv(g.photos));
+  });
+  _backupDays.forEach((v, id) => {
+    if (files.has(id)) return;
+    const at = id.lastIndexOf('/'), folder = id.slice(0, at), path = id.slice(at + 1);
+    const cut = folder.lastIndexOf('/'), f0 = folder.slice(0, cut), d0 = folder.slice(cut + 1);
+    const h = head(f0 === 'No facility' ? '' : f0, d0 === 'Undated' ? '' : d0);
+    if (/^units_.*\.json$/.test(path)) put(folder, path, 'application/json', JSON.stringify(Object.assign(h, { units: [] }), null, 1));
+    else if (/^inprogress_.*\.json$/.test(path)) put(folder, path, 'application/json', JSON.stringify(Object.assign(h, { unit: null }), null, 1));
+    else if (/^photos_.*\.csv$/.test(path)) put(folder, path, 'text/csv', backupIndexCsv([]));
+  });
+  return Array.from(files.values());
+}
+
+// ---- The pass ------------------------------------------------------------------
+function scheduleBackup(ms) {
+  if (!backupCfg.on) return;
+  clearTimeout(_backupSoon);
+  _backupSoon = setTimeout(() => drainBackup(), ms == null ? 3000 : ms);
+}
+function backupRetryWaiting(id) { const r = _backupRetry.get(id); return !!(r && r.until > Date.now()); }
+// One file's attempt. true: confirmed. false: skip it this pass (it keeps
+// failing — tried again later). 'stop': the account, the service or the
+// network — the next file would fail the same way.
+async function backupAttempt(id, send) {
+  try {
+    await send();
+    _backupRetry.delete(id);
+    _backupLastError = ''; _backupWrongAccount = false;
+    return true;
+  } catch (e) {
+    _backupLastError = e.message;
+    const st = e.status;
+    // About this one file: bad input, too large, or SharePoint refused / stored it wrong.
+    const thisFile = st === 400 || st === 413 || st === 502;
+    if (!thisFile) {
+      _backupPauseUntil = Date.now() + (st === 401 || st === 403 || st === 404 || st === 503 ? 10 * 60000 : 60000);
+      return 'stop';
+    }
+    const r = _backupRetry.get(id) || { n: 0 };
+    r.n++; r.until = Date.now() + Math.min(60, Math.pow(2, r.n - 1)) * 60000;
+    _backupRetry.set(id, r);
+    return false;
+  }
+}
+async function drainBackup() {
+  if (_backupBusy || !backupCfg.on || !backupAvailable()) { paintBackupBadge(); return; }
+  if (!tabMayWrite()) return;   // the tab that may save is the one that backs up
+  _backupBusy = true;
+  try {
+    if (!await loadBackupRecords()) return;
+    const info = backupPhotoList(), listed = _backupListTrusted && !_entryStoreUnread;
+    const files = (listed ? backupDayFiles(info) : []).map(f => Object.assign(f, { h: backupTextHash(f.text) }))
+      .filter(f => { const d = _backupDays.get(f.folder + '/' + f.path); return !(d && d.sha && d.h === f.h); });
+    // Sent means SharePoint holds it in the folder it belongs in now: a photo
+    // whose unit changed facility (one taken before the facility was chosen,
+    // say) goes again, to the new folder. Records of photos no longer here go.
+    if (listed) _backupSent.forEach((v, k) => { if (!info.has(k)) { _backupSent.delete(k); _backupSentDirty = true; } });
+    const todo = Array.from(info.values()).filter(p => { const s = _backupSent.get(p.key); return !(s && s.f === p.folder); })
+      .sort((a, b) => b.taken - a.taken);   // newest first
+    _backupState = { waiting: files.length + todo.length, unreadable: 0, checked: true };
+    paintBackupBadge();
+    if (!_backupState.waiting) { _backupLastError = ''; return; }
+    if (!navigator.onLine || Date.now() < _backupPauseUntil) return;
+    if (!backupSignedIn()) {
+      if (!backupNative()) await refreshBackupUser();
+      if (!backupSignedIn()) { _backupSignInNeeded = true; return; }
+    }
+    _backupSignInNeeded = false;
+    // The unit files first: small, and all that is needed to rebuild the work.
+    // Each is recorded on the device as sent-not-confirmed BEFORE it goes: from
+    // that send on, SharePoint may hold it — even when the answer is lost, or the
+    // app is closed before it saves its records again. A confirmation that never
+    // reached the device's records must not leave an older one standing: were
+    // the day to go back to that older text (its units deleted again), the file
+    // would be skipped while SharePoint holds the newer one.
+    const dayTodo = files.filter(f => !backupRetryWaiting('day:' + f.folder + '/' + f.path));
+    let marked = false;
+    dayTodo.forEach(f => { const rec = f.folder + '/' + f.path, d = _backupDays.get(rec); if (!d || d.h || d.sha) { _backupDays.set(rec, { h: '', sha: '' }); marked = true; } });
+    if (marked) _backupDaysDirty = true;
+    if (_backupDaysDirty && !await saveBackupRecords()) dayTodo.length = 0;   // not on the device (this pass's marks or an earlier one's): not sent — photos still go
+    for (const f of dayTodo) {
+      const rec = f.folder + '/' + f.path, id = 'day:' + rec;
+      const ok = await backupAttempt(id, async () => {
+        const sha = await backupSend(f.folder, f.path, new TextEncoder().encode(f.text), f.type);
+        _backupDays.set(rec, { h: f.h, sha });
+        _backupDaysDirty = true;
+      });
+      if (ok === 'stop') return;
+      if (ok) { _backupState.waiting--; paintBackupBadge(); }
+    }
+    if (dayTodo.length) await saveBackupRecords();   // their confirmations, before the photos (which may take minutes)
+    let sinceSave = 0;
+    for (const p of todo) {
+      if (!tabMayWrite() || !navigator.onLine || Date.now() < _backupPauseUntil) break;
+      const id = 'photo:' + p.key;
+      if (backupRetryWaiting(id)) continue;
+      let pd = null;
+      try { pd = await loadPhotoBytes(p.key, p.ref.fileType || 'image/jpeg'); } catch (e) { pd = null; }
+      if (!pd || !pd.bytes) { _backupState.unreadable++; paintBackupBadge(); continue; }   // stays waiting — said so
+      const ok = await backupAttempt(id, async () => {
+        _backupSent.set(p.key, { f: p.folder, s: await backupSend(p.folder, 'photos/' + backupPhotoName(p.key), pd.bytes, pd.type || 'image/jpeg') });
+        _backupSentDirty = true;
+      });
+      if (ok === 'stop') return;
+      if (ok) {
+        _backupState.waiting--; paintBackupBadge();
+        if (++sinceSave >= 10) { sinceSave = 0; await saveBackupRecords(); }
+      }
+    }
+  } finally {
+    _backupBusy = false;
+    await saveBackupRecords();
+    paintBackupBadge();
+    const ov = document.getElementById('settingsOverlay');
+    if (ov && ov.style.display === 'flex') paintBackupSettings(true);
+  }
+}
+
+// ---- Export straight to SharePoint --------------------------------------------
+// The ZIP is too big for the API, so the API asks SharePoint for an upload
+// session and the bytes go there directly, a chunk at a time, picking up where
+// they left off when the wifi drops. The finished file's size and QuickXorHash
+// (computed here as the chunks go) must match what SharePoint reports before
+// anything is marked exported.
+async function backupUploadBig(blob, folder, path, onProgress) {
+  let start;
+  try { start = await backupTransport.api('POST', '/api/upload-session', { folder, path, size: blob.size }); }
+  catch (e) { throw backupError('no connection to the backup service', 0); }
+  if (start.status === 401 || start.status === 403) throw backupRefused(start.status);
+  if (start.status !== 200 || !start.body || !start.body.uploadUrl) throw backupError((start.body && start.body.error) || ('could not start the upload (' + start.status + ')'), start.status);
+  const url = start.body.uploadUrl, hash = qxhCreate();
+  let sent = 0, hashed = 0, fails = 0, item = null;
+  while (sent < blob.size) {
+    const end = Math.min(sent + BACKUP_CHUNK, blob.size);
+    const bytes = new Uint8Array(await blob.slice(sent, end).arrayBuffer());
+    if (end > hashed) { hash.update(bytes.subarray(hashed - sent)); hashed = end; }
+    let r = null;
+    try { r = await backupTransport.session(url, 'PUT', bytes, 'bytes ' + sent + '-' + (end - 1) + '/' + blob.size); } catch (e) { r = null; }
+    if (r && (r.status === 200 || r.status === 201)) { item = r.body || {}; sent = blob.size; if (onProgress) onProgress(sent, blob.size); break; }
+    if (r && r.status === 202) {
+      const next = ((r.body && r.body.nextExpectedRanges) || [])[0];
+      sent = next ? parseInt(next.split('-')[0], 10) : end;
+      fails = 0;
+      if (onProgress) onProgress(sent, blob.size);
+      continue;
+    }
+    if (r && (r.status === 404 || r.status === 410)) throw backupError('the upload expired — send it again', r.status);
+    if (++fails > 5) throw backupError(r ? 'SharePoint refused a piece (' + r.status + ')' : 'the connection dropped', r ? r.status : 0);
+    await new Promise(w => setTimeout(w, 1000 * fails));
+    try {   // ask the session where it got to rather than assume
+      const q = await backupTransport.session(url, 'GET');
+      const nx = ((q && q.body && q.body.nextExpectedRanges) || [])[0];
+      if (q && q.status === 200 && nx) { sent = parseInt(nx.split('-')[0], 10); if (onProgress) onProgress(sent, blob.size); }
+    } catch (e) {}
+  }
+  const want = uint8ToBase64(hash.digest());
+  const got = item && item.file && item.file.hashes && item.file.hashes.quickXorHash;
+  if (!item || Number(item.size) !== blob.size || (got && got !== want))
+    throw backupError('SharePoint’s copy does not match the export (' + (item ? item.size : 0) + ' of ' + blob.size + ' bytes)', 502);
+  return { quickXorHash: want, hashChecked: !!got };
+}
+// Sends the export ZIP into <facility>/<day>/export/, and each day's
+// Information Sheet into that day's export/. { saved, sharepoint, path, error }
+async function sendExportToSharePoint(zipBlob, name, meta) {
+  const folder = backupFolderOf(meta.facility, meta.day);
+  const mb = n => (n / 1048576).toFixed(1);
+  const say = (t) => showStickyBanner('exportCloudBanner', html`&#9729; ${t}`);
+  try {
+    say('Sending ' + name + ' (' + mb(zipBlob.size) + ' MB) to SharePoint — keep the app open…');
+    await backupUploadBig(zipBlob, folder, 'export/' + name, (done, total) =>
+      say('Sending ' + name + ' to SharePoint: ' + Math.floor(done / total * 100) + '% (' + mb(done) + ' of ' + mb(total) + ' MB) — keep the app open…'));
+    let sheetFails = 0;
+    for (const s of (meta.sheets || [])) {
+      try { await backupSend(backupFolderOf(meta.facility, s.day), 'export/' + s.name, new Uint8Array(s.bytes), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); }
+      catch (e) { sheetFails++; }
+    }
+    hideStickyBanner('exportCloudBanner');
+    return { saved: true, sharepoint: true, path: (backupCfg.root || 'LOTO Backups') + '/' + folder + '/export/' + name, sheetFails };
+  } catch (e) {
+    hideStickyBanner('exportCloudBanner');
+    return { saved: false, sharepoint: true, error: e.message };
+  }
+}
+
+// ---- Signing in ------------------------------------------------------------------
+// Web: Static Web Apps' Microsoft sign-in, on this origin.
+async function refreshBackupUser() {
+  if (backupNative() || !backupAvailable()) return;
+  try {
+    const r = await fetch('/.auth/me', { credentials: 'include', cache: 'no-store' });
+    if (!r.ok) return;                         // no answer: keep the account known — no signal is not a sign-out
+    const j = await r.json();
+    const p = j && j.clientPrincipal;
+    backupCfg.user = (p && p.userDetails) || '';
+    saveBackupCfg();
+  } catch (e) {}
+}
+// The web sign-in and sign-out leave the page (tests replace this).
+function backupGo(url) { location.href = url; }
+function backupB64url(bytes) { return uint8ToBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+// iPad: the link page in an in-app browser sheet signs in with Microsoft and
+// hands back a one-time code; the app trades it — with a verifier that never
+// left the app — for its device pass (OAuth PKCE; api/shared/graph.js).
+async function signInForBackup() {
+  if (!backupAvailable()) { showToast('SharePoint backup works in the iPad app and at the Azure web address', true); return; }
+  if (!backupNative()) {
+    if (refuseIfPhotoWritesBusy('sign in')) return;   // leaving the page would cut a photo write off
+    backupGo('/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(location.pathname + location.search)); return;
+  }
+  const B = window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
+  if (!B) { showToast('⚠ This build cannot open the sign-in page — update the app', true); return; }
+  const raw = new Uint8Array(32);
+  crypto.getRandomValues(raw);
+  const verifier = backupB64url(raw);
+  const hex = await sha256HexOfBytes(new TextEncoder().encode(verifier));
+  if (!hex) { showToast('⚠ This device could not prepare the sign-in — try again', true); return; }
+  const challenge = backupB64url(new Uint8Array(hex.match(/../g).map(h => parseInt(h, 16))));
+  _backupPkce = { verifier, at: Date.now() };
+  try { await B.open({ url: backupHost() + '/backup-link.html?device=' + encodeURIComponent(getCollectorTag()) + '&challenge=' + challenge }); }   // full screen: the Microsoft sign-in runs to several pages
+  catch (e) { _backupPkce = null; showToast('⚠ Could not open the sign-in page: ' + e.message, true); }
+}
+async function finishBackupSignIn(url) {
+  let code = '';
+  try { code = new URL(url).searchParams.get('code') || ''; } catch (e) {}
+  try { const B = window.Capacitor.Plugins && window.Capacitor.Plugins.Browser; if (B) await B.close(); } catch (e) {}
+  const pk = _backupPkce;
+  _backupPkce = null;
+  if (!code || !pk || Date.now() - pk.at > 10 * 60000) { showToast('⚠ That sign-in was not started here — sign in again from Settings', true); return false; }
+  let r = null;
+  try { r = await backupTransport.api('POST', '/api/device-pass', { code, verifier: pk.verifier }); } catch (e) { r = null; }
+  if (!r || r.status !== 200 || !r.body || !r.body.pass) {
+    showToast('⚠ Sign-in for backup failed: ' + ((r && r.body && r.body.error) || 'no connection'), true);
+    return false;
+  }
+  backupCfg.pass = r.body.pass; backupCfg.user = r.body.user || ''; backupCfg.passExpires = r.body.expires || '';
+  saveBackupCfg();
+  _backupSignInNeeded = false; _backupWrongAccount = false; _backupPauseUntil = 0;
+  showToast('☁ Signed in for backup as ' + backupCfg.user);
+  paintBackupBadge(); paintBackupSettings(true); scheduleBackup(500);
+  return true;
+}
+function signOutBackup() {
+  if (!backupNative()) {
+    if (refuseIfPhotoWritesBusy('sign out')) return;
+    backupCfg.user = ''; saveBackupCfg();
+    backupGo('/.auth/logout?post_logout_redirect_uri=' + encodeURIComponent(location.pathname + location.search));
+    return;
+  }
+  _backupWrongAccount = false;
+  backupCfg.pass = ''; backupCfg.user = ''; backupCfg.passExpires = '';
+  saveBackupCfg();
+  paintBackupBadge(); paintBackupSettings(true);
+  showToast('Signed out of SharePoint backup on this iPad');
+}
+
+// ---- Badge and Settings ----------------------------------------------------------
+function paintBackupBadge() {
+  const b = document.getElementById('backupBadge');
+  if (!b) return;
+  if (!backupCfg.on || !backupAvailable()) { b.style.display = 'none'; return; }
+  b.style.display = 'inline-block';
+  const w = _backupState.waiting, un = _backupState.unreadable;
+  const amber = 'rgba(224,164,74,0.95)', grey = 'rgba(90,100,112,0.9)', green = 'rgba(74,184,106,0.9)';
+  let text, bg, tip;
+  if (_backupWrongAccount && backupSignedIn()) { text = '☁ account not allowed'; bg = amber; tip = backupCfg.user + ' may not back up here. Tap for Settings: Sign out, then sign in with your company account.'; }
+  else if (!backupSignedIn() || _backupSignInNeeded) { text = '☁ sign in to back up'; bg = amber; tip = 'Tap for Settings, then Sign in with Microsoft.'; }
+  else if (!_backupState.checked) { text = '☁ checking…'; bg = grey; tip = 'Working out what SharePoint still needs.'; }
+  else if (w) {
+    text = '☁ ' + w + ' waiting' + (navigator.onLine ? '' : ' (offline)');
+    bg = (_backupLastError || un) ? amber : grey;
+    tip = un ? un + ' photo' + (un === 1 ? '' : 's') + ' could not be read on this device yet — still trying.' : (_backupLastError ? 'Last try: ' + _backupLastError : 'Keep the app open until this says backed up.');
+  } else { text = '☁ backed up'; bg = green; tip = 'SharePoint has confirmed every photo and unit file.'; }
+  b.textContent = text; b.style.background = bg; b.title = tip;
+}
+function openBackupSettings() {
+  showSettings();
+  const s = document.getElementById('backupSettings');
+  if (s) setTimeout(() => s.scrollIntoView({ block: 'center' }), 50);
+}
+function paintBackupSettings(later) {
+  const on = document.getElementById('backupOn');
+  if (!on) return;
+  if (!later) on.checked = !!backupCfg.on;
+  const avail = backupAvailable(), signed = backupSignedIn();
+  const who = document.getElementById('backupWho');
+  if (who) who.textContent = !avail ? 'SharePoint backup works in the iPad app and at the Azure web address — not in this copy of the web app.'
+    : signed && _backupWrongAccount ? 'Signed in as ' + backupCfg.user + ', which may not back up here. Sign out, then sign in with your company Microsoft account.'
+    : signed ? 'Signed in as ' + backupCfg.user + (backupNative() && backupCfg.passExpires ? ' — until ' + new Date(backupCfg.passExpires).toLocaleDateString() : '')
+    : (backupCfg.pass && !backupPassValid() ? 'The sign-in has expired. ' : 'Not signed in. ') + 'Tap Sign in with Microsoft.';
+  const inBtn = document.getElementById('backupSignInBtn'), outBtn = document.getElementById('backupSignOutBtn');
+  if (inBtn) inBtn.style.display = avail && !signed ? '' : 'none';
+  if (outBtn) outBtn.style.display = avail && signed ? '' : 'none';
+  const s = document.getElementById('backupStatus');
+  if (!s) return;
+  const w = _backupState.waiting, un = _backupState.unreadable;
+  const where = (backupCfg.root || 'LOTO Backups') + '/' + backupFolderOf(getHospitalCode(), localDateStr(new Date())) + '/';
+  s.textContent = !backupCfg.on ? 'Off. Nothing leaves this device except the exports you make.'
+    : (!_backupState.checked ? 'Checking…' : w ? w + ' file' + (w === 1 ? '' : 's') + ' waiting'
+        + (un ? ' — ' + un + ' photo' + (un === 1 ? '' : 's') + ' not readable yet' : '') + (_backupLastError ? ' — ' + _backupLastError : '')
+      : 'Up to date — SharePoint has confirmed everything.')
+      + ' Today’s work goes to ' + where + '. Keep the app open until the badge says backed up; nothing on SharePoint is ever deleted.';
+}
+function setBackupOn(on) {
+  if (on && !backupAvailable()) {
+    const el = document.getElementById('backupOn'); if (el) el.checked = false;
+    showToast('SharePoint backup works in the iPad app and at the Azure web address', true);
+    return;
+  }
+  backupCfg.on = !!on;
+  saveBackupCfg();
+  _backupPauseUntil = 0; _backupLastError = '';
+  paintBackupBadge(); paintBackupSettings(true);
+  if (on) {
+    if (!backupSignedIn()) showToast('Now sign in with Microsoft to start the backup');
+    scheduleBackup(300);
+  }
+}
+async function testBackup() {
+  const s = document.getElementById('backupStatus');
+  if (s) s.textContent = 'Checking…';
+  try {
+    if (!backupNative()) await refreshBackupUser();
+    let r;
+    try { r = await backupTransport.api('GET', '/api/upload'); } catch (e) { throw backupError('no connection to the backup service', 0); }
+    if (r.status === 401 || r.status === 403) throw backupRefused(r.status);
+    if (r.status !== 200) throw backupError((r.body && r.body.error) || ('the backup service answered ' + r.status), r.status);
+    if (!r.body.configured) throw backupError('the backup service is there but not set up yet — ask the administrator', 503);
+    const t = (r.body.targets || [])[0];
+    if (t && t.root) { backupCfg.root = t.root; saveBackupCfg(); }
+    const folder = backupFolderOf(getHospitalCode(), localDateStr(new Date()));
+    await backupSend(folder, 'test_' + getCollectorTag() + '.txt', new TextEncoder().encode('LOTO Collector backup test ' + new Date().toISOString() + ' by ' + (r.body.signedInAs || '') + '\r\n'), 'text/plain');
+    _backupSignInNeeded = false;
+    if (s) s.textContent = 'Working, as ' + (r.body.signedInAs || backupCfg.user) + '. Today’s work goes to ' + (backupCfg.root || 'LOTO Backups') + '/' + folder + '/';
+    scheduleBackup(300);
+  } catch (e) {
+    if (s) s.textContent = 'No: ' + e.message;
+  }
+  paintBackupBadge();
+}
+// Everything again, photos already confirmed included: "confirmed" is this
+// device's record, and a file can be removed from SharePoint by hand. Nothing
+// on SharePoint is deleted; a file already there is written again.
+function backupEverythingAgain() {
+  if (!backupCfg.on) { const s = document.getElementById('backupStatus'); if (s) s.textContent = 'Turn it on first.'; return; }
+  const n = backupPhotoList().size;
+  if (!confirm('Send all ' + n + ' photo' + (n === 1 ? '' : 's') + ' and every unit file to SharePoint again, including those already confirmed?\n\n'
+    + 'Each goes to its own facility and day folder. Nothing on SharePoint is deleted. Keep the app open until the badge says backed up.')) return;
+  _backupSent.clear();
+  _backupDays.forEach(v => { if (v) v.sha = ''; });
+  _backupSentDirty = true; _backupDaysDirty = true;
+  _backupRetry.clear();
+  _backupPauseUntil = 0; _backupLastError = '';
+  scheduleBackup(0);
+}
+function startBackup() {
+  if (_backupStarted) return;
+  _backupStarted = true;
+  loadBackupCfg();
+  const A = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+  if (A && A.addListener) A.addListener('appUrlOpen', ev => { const u = String((ev && ev.url) || ''); if (u.indexOf(BACKUP_LINK) === 0) finishBackupSignIn(u); });
+  paintBackupBadge();
+  if (!backupNative() && backupCfg.on) refreshBackupUser().then(paintBackupBadge);
+  window.addEventListener('online', () => { _backupPauseUntil = 0; scheduleBackup(500); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') scheduleBackup(1000); });
+  setInterval(() => { if (backupCfg.on) drainBackup(); }, 30000);
+  scheduleBackup(2000);
+}
+// >>> qxhCreate — the same function as api/shared/qxh.js (tests/api checks they agree)
+function qxhCreate() {
+  const lanes = new Uint8Array(160);   // XOR of every byte at index ≡ r (mod 160)
+  let length = 0;
+  return {
+    update(bytes) {
+      const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      let r = length % 160;
+      for (let i = 0; i < b.length; i++) {
+        lanes[r] ^= b[i];
+        if (++r === 160) r = 0;
+      }
+      length += b.length;
+      return this;
+    },
+    digest() {
+      const out = new Uint8Array(20);
+      for (let r = 0; r < 160; r++) {
+        const v = lanes[r];
+        if (!v) continue;
+        const bit = (11 * r) % 160, at = bit >> 3, sh = bit & 7;
+        out[at] ^= (v << sh) & 0xff;
+        if (sh) out[(at + 1) % 20] ^= v >> (8 - sh);
+      }
+      let n = length;
+      for (let i = 0; i < 8; i++) { out[12 + i] ^= n % 256; n = Math.floor(n / 256); }
+      return out;
+    },
+  };
+}
+// <<< qxhCreate
 
 // ============================================================================
 // TOAST

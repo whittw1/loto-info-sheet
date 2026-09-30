@@ -1,4 +1,4 @@
-const CACHE_NAME = 'loto-collector-v7.96';
+const CACHE_NAME = 'loto-collector-v7.97';
 const URLS_TO_CACHE = [
   './',
   './index.html',
@@ -37,6 +37,11 @@ self.addEventListener('activate', event => {
 // never replace the app's cached copy.
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+  // The Microsoft sign-in, the backup API and anything on another site (a
+  // SharePoint upload session) are never answered from — or kept in — the
+  // cache: a stale "who is signed in" or upload status would lie (build 101).
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/.auth/')) return;
   event.respondWith(
     fetch(event.request).then(response => {
       if (response && (response.ok || response.type === 'opaque')) {

@@ -1,6 +1,12 @@
 {
   "routes": [
     {
+      "route": "/api/device-token",
+      "allowedRoles": [
+        "authenticated"
+      ]
+    },
+    {
       "route": "/sw.js",
       "headers": {
         "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -32,11 +38,22 @@
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "content-type": "application/manifest+json"
       }
+    },
+    {
+      "route": "/backup-link.html",
+      "headers": {
+        "Cache-Control": "no-cache, no-store, must-revalidate"
+      }
     }
   ],
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/sw.js", "/*.json", "/*.html", "/*.{png,jpg,ico,svg,webp}"]
+    "exclude": [
+      "/sw.js",
+      "/*.json",
+      "/*.html",
+      "/*.{png,jpg,ico,svg,webp}"
+    ]
   },
   "mimeTypes": {
     ".json": "application/json",
@@ -46,5 +63,13 @@
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin"
+  },
+  "platform": {
+    "apiRuntime": "node:20"
+  },
+  "responseOverrides": {
+    "401": {
+      "statusCode": 401
+    }
   }
 }
