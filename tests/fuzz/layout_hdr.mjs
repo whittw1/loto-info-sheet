@@ -21,6 +21,17 @@ try {
     const r = await ev(`(() => { const ha = document.querySelector('.header-actions'); const btns = [...(ha ? ha.children : [])].map(b => { const r = b.getBoundingClientRect(); return (b.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 10) + '@' + Math.round(r.left) + '-' + Math.round(r.right); }); return { vw: innerWidth, scrollWidth: document.documentElement.scrollWidth, offscreen: btns.filter(s => +s.split('-').pop() > innerWidth), headerActions: btns }; })()`);
     console.log(w + 'x' + h, JSON.stringify(r));
     if (w === 390) { const shot = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(path.join(process.argv[2] || tmpdir(), 'iphone_header.png'), Buffer.from(shot.result.data, 'base64')); }
+    // the title row at its widest (build 101 added the backup badge): every badge on, long texts
+    const t = await ev(`(() => {
+      const show = (id, text) => { const e = document.getElementById(id); if (!e) return; e.style.display = 'inline-block'; e.textContent = text; };
+      show('headerBadge', '888 saved'); show('facilityBadge', '\u{1F3E5} Atlanta - Fort McPherson'); show('autosaveStatus', '\u{1F4BE} Autosaved 10:42 PM');
+      show('backupBadge', '\u2601 888 waiting (offline)'); show('integrityBadge', '\u26A0 88 of 888 photos MISSING');
+      document.getElementById('backupBadge').style.background = 'rgba(224,164,74,0.95)';   // as paintBackupBadge paints it (white text)
+      const kids = [...document.querySelector('.header-title').children].map(c => { const q = c.getBoundingClientRect(); return { id: c.id || c.tagName, l: Math.round(q.left), r: Math.round(q.right), t: Math.round(q.top) }; });
+      return { vw: innerWidth, scrollWidth: document.documentElement.scrollWidth, offscreen: kids.filter(k => k.r > innerWidth || k.l < 0).map(k => k.id) };
+    })()`);
+    console.log(w + 'x' + h + ' every title badge', JSON.stringify(t));
+    if (w === 390) { const shot = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(path.join(process.argv[2] || tmpdir(), 'iphone_header_badges.png'), Buffer.from(shot.result.data, 'base64')); }
   }
   sock.close();
 } finally { chrome.kill('SIGKILL'); await sleep(300); try { rmSync(prof, { recursive: true, force: true }); } catch (e) {} }

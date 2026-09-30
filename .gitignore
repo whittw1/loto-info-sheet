@@ -37,3 +37,6 @@ LOTO_Improvement_Recommendations.docx
 
 # Facility-identifying scan output stays local — repo is public
 tests/production-scan/
+
+# Azure Functions local settings — real secrets, never committed (build 101; the .example is the template)
+local.settings.json

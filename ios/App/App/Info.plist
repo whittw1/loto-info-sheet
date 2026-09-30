@@ -55,5 +55,16 @@
 	<string>Used to save exported LOTO photo bundles to your photo library.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.hgsengineering.lotofieldcollector.backup</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>lotocollector</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

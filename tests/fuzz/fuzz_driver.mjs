@@ -100,6 +100,7 @@ async function worker(w) {
   const seeds = process.env.SEEDS ? process.env.SEEDS.split(',').map(Number).filter((_, i) => i % +workers === w) : Array.from({ length: +perWorker }, (_, i) => +seedStart + w * +perWorker + i);
   const opts = { steps: +steps, faults: +faults, iUnderstandThisErasesAllData: true, keepTraces: !!process.env.KEEP, streamTrace: true };
   if (uploadTo) opts.uploadTo = uploadTo;
+  if (process.env.BACKUP) opts.backup = true;   // the SharePoint backup on, against a flaky stand-in (build 101)
   const out = { violations: [], actions: 0, actionCounts: {}, infos: [], seedTraces: [], heapMB: 0 };
   const t0 = Date.now();
   let p = null;
@@ -111,6 +112,7 @@ async function worker(w) {
         out.violations.push(...r.violations); out.actions += r.actions;
         out.infos.push(...(r.infos || [])); out.seedTraces.push(...(r.seedTraces || []));
         for (const k of Object.keys(r.actionCounts || {})) out.actionCounts[k] = (out.actionCounts[k] || 0) + r.actionCounts[k];
+        if (r.backupStats) { out.backupStats = out.backupStats || {}; for (const k of Object.keys(r.backupStats)) out.backupStats[k] = (out.backupStats[k] || 0) + r.backupStats[k]; }
         try { const h = await p.c.send('Runtime.getHeapUsage'); out.heapMB = Math.max(out.heapMB, Math.round(((h.result && h.result.usedSize) || 0) / 1048576)); } catch (e) {}
       } catch (e) {
         // the page crashed or hung: reported for this seed; the next seed gets a fresh browser
@@ -120,7 +122,7 @@ async function worker(w) {
       }
     }
   } finally { if (p) await closePage(p); }
-  console.log(`worker ${w}: seeds ${seeds[0]}-${seeds[seeds.length - 1]} → ${new Set(out.violations.map(v => v.inv)).size} violation kinds, ${out.actions} actions, ${Math.round((Date.now() - t0) / 1000)} s, heap ≤ ${out.heapMB} MB`);
+  console.log(`worker ${w}: seeds ${seeds[0]}-${seeds[seeds.length - 1]} → ${new Set(out.violations.map(v => v.inv)).size} violation kinds, ${out.actions} actions, ${Math.round((Date.now() - t0) / 1000)} s, heap ≤ ${out.heapMB} MB${out.backupStats ? ', backup compared ' + JSON.stringify(out.backupStats) : ''}`);
   return out;
 }
 
@@ -129,7 +131,7 @@ function writeOut() {
   const all = results.flatMap(r => r.violations || []);
   const byInv = {};
   for (const v of all) (byInv[v.inv] = byInv[v.inv] || []).push(v);
-  writeFileSync(outJson, JSON.stringify({ byInv, actionCounts: results.map(r => r.actionCounts), infos: results.flatMap(r => r.infos || []).slice(0, 400), seedTraces: process.env.KEEP ? results.flatMap(r => r.seedTraces || []) : undefined }, null, 1));
+  writeFileSync(outJson, JSON.stringify({ byInv, actionCounts: results.map(r => r.actionCounts), backupStats: results.map(r => r.backupStats).filter(Boolean), infos: results.flatMap(r => r.infos || []).slice(0, 400), seedTraces: process.env.KEEP ? results.flatMap(r => r.seedTraces || []) : undefined }, null, 1));
   return byInv;
 }
 await Promise.all(Array.from({ length: +workers }, (_, w) => worker(w).catch(e => ({ error: String((e && e.stack) || e), violations: [] })).then(r => {

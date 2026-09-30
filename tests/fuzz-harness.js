@@ -245,7 +245,9 @@
       sketch: (typeof sketchStrokes !== 'undefined' ? sketchStrokes.length : 0) + '/' + (typeof sketchLabels !== 'undefined' ? sketchLabels.length : 0),
     };
   }
-  const formHasContent = (f) => !!(f.name || f.src.length || f.photos || f.misc);
+  // the app's rule (wipHasContent): a name that is only the equipment type,
+  // filled in from the type, is not a unit — a type-only form is an empty form
+  const formHasContent = (f) => !!((f.name && !((DATA && DATA.equipmentTypes) || []).includes(f.name)) || f.src.length || f.photos || f.misc);
   // What differs between two signatures, field by field, from the first
   // differing character (build 99: a whole signature ran past the 700-character
   // detail and the difference itself was cut off)
@@ -260,6 +262,7 @@
 
   // ---------- invariants ----------------------------------------------------------
   function checkCheap() {
+    backupRecordsTruthful('step');
     for (const k of Object.keys(photos)) {
       const m = /^source_(\d+)$/.exec(k);
       if (m && +m[1] >= sources.length && photos[k] && photos[k].dbKey) viol('stale-source-ref', k + ' with ' + sources.length + ' sources');
@@ -370,7 +373,10 @@
     dsel.value = df; populateExportFacilityFilter(); document.getElementById('exportFacilityFilter').value = 'all';
     const filtered = getExportFilteredEntries();
     const isEdit = formOk && currentEntryId && savedEquipment.some(e => sameEntryId(e.id, currentEntryId));
-    const formIncluded = formOk && (isEdit ? filtered.some(e => sameEntryId(e.id, currentEntryId)) || currentEntryPassesExportFilters() : currentEntryPassesExportFilters());
+    // an edit goes out in place of its saved copy — when that copy passes the
+    // filters (a unit from another day stays out of this day's export); a new
+    // unit is today's work (build 101: units from earlier days made this matter)
+    const formIncluded = formOk && (isEdit ? filtered.some(e => sameEntryId(e.id, currentEntryId)) : currentEntryPassesExportFilters());
     const truth = new Map();
     for (const e of filtered) truth.set(String(e.id), { name: e.equipName || '', sources: JSON.parse(JSON.stringify(e.sources || [])), photos: Object.assign({}, e.photos || {}), room: e.equipRoom, building: e.equipBuilding });
     const formTruth = formIncluded ? { name: formNow.name, sources: JSON.parse(JSON.stringify(sources)), photos: Object.assign({}, photos), form: true, notes: (document.getElementById('equipNotes') || {}).value || '' } : null;
@@ -400,7 +406,11 @@
     const man = JSON.parse(files['manifest.json'] || '{}');
     const unsafe = new Set((man.unsafe || []).map(u => String(u.entryId) + '|' + u.slot));
     const gotIds = new Set(ej.entries.map(e => String(e.id)));
-    for (const id of truth.keys()) if (!gotIds.has(id)) viol('export-missing-entry', 'filter ' + df + ': entry ' + id + ' ("' + truth.get(id).name + '") not in entries.json');
+    for (const id of truth.keys()) if (!gotIds.has(id)) {
+      const le = savedEquipment.find(e => sameEntryId(e.id, id));
+      viol('export-missing-entry', 'filter ' + df + ': entry ' + id + ' ("' + truth.get(id).name + '") not in entries.json'
+        + ' [list savedAt ' + (le && le.savedAt) + ', the form ' + (sameEntryId(currentEntryId, id) ? 'holds it' + (editingEntry ? ' as an edit (savedAt ' + editingEntry.savedAt + ')' : '') : 'does not hold it') + ']');
+    }
     // A form never photographed has no entry id until the export mints one.
     if (formTruth && !formIdBefore && currentEntryId) truth.set(String(currentEntryId), formTruth);
     for (const id of gotIds) if (!truth.has(id)) viol('export-extra-entry', 'filter ' + df + ': unexpected entry ' + id);
@@ -528,6 +538,7 @@
       document.getElementById('equipName').value = lateName;
       trace.push('  late launch (form "' + lateName + '" in use)');
     }
+    if (bk) _backupRecordsLoaded = false;   // a real launch reads the backup's records again
     try { await loadAll(); } catch (e) { viol('exception', 'loadAll: ' + ((e && e.stack) || e)); }
     if (late) _bootLoadTimedOut = false;
     _bootWipSettled = true;
@@ -556,6 +567,147 @@
     warnedSinceRelaunch = false;
     document.querySelectorAll('.container > div[style*="rgba(200,40,40"], .sticky-banner').forEach(x => x.remove());   // load banners (b95: .sticky-banner)
     return 'relaunch';
+  }
+
+  // ---------- SharePoint live backup (build 101) -------------------------------------------
+  // opts.backup: the backup is on, against a stand-in SharePoint that — while
+  // faults are on — refuses, drops or wrongly confirms a file now and then. With
+  // storage healthy again (end of a sequence, after the relaunch) a clean pass
+  // must leave SharePoint holding every stored photo byte for byte, and each
+  // facility/day unit file listing exactly that day's units (a deleted unit's
+  // file rewritten without it), the unit in progress in today's file.
+  let bk = null;
+  let bkStats = { photos: 0, unitFiles: 0, emptied: 0, inProgress: 0 };   // what the checks compared (not vacuous)
+  function installBackupStandIn() {
+    const real = { api: backupTransport.api, session: backupTransport.session };
+    bk = { files: new Map(), hist: new Map(), flaky: false, real };   // hist: path → every SHA-256 it ever stored there
+    backupTransport.api = async (method, path, body) => {
+      let lose = false;
+      if (bk.flaky && faultsOn && Math.random() < faultP) {
+        const k = Math.random();
+        if (k < 0.25) throw new Error('offline (fuzz)');
+        if (k < 0.5) return { status: 502, body: { ok: false, error: 'SharePoint refused the file (fuzz)' } };
+        if (k < 0.75 && path === '/api/upload' && method === 'POST') return { status: 200, body: { ok: true, size: 1, sha256: '0'.repeat(64) } };   // a wrong confirmation
+        lose = true;                                        // stored — but the answer never arrives
+      }
+      if (path === '/api/upload' && method === 'POST') {
+        const bytes = base64ToUint8Array(body.contentBase64);
+        const sha = await sha256HexOfBytes(bytes);
+        if (body.sha256 !== sha) return { status: 400, body: { ok: false, error: 'damaged (fuzz)' } };
+        const at = body.folder + '/' + body.path;
+        bk.files.set(at, { bytes, sha });
+        if (!bk.hist.has(at)) bk.hist.set(at, new Set());
+        bk.hist.get(at).add(sha);
+        if (lose) throw new Error('the answer was lost (fuzz)');
+        return { status: 200, body: { ok: true, size: bytes.length, sha256: sha } };
+      }
+      if (path === '/api/upload' && method === 'GET') return { status: 200, body: { ok: true, configured: true, signedInAs: 'fuzz@hgsengineeringinc.com', targets: [] } };
+      return { status: 404, body: { ok: false } };
+    };
+  }
+  function removeBackupStandIn() {
+    if (!bk) return;
+    backupTransport.api = bk.real.api; backupTransport.session = bk.real.session;
+    Object.assign(backupCfg, { on: false, user: '', pass: '', passExpires: '' });
+    clearTimeout(_backupSoon);
+    bk = null;
+  }
+  async function backupFresh() {
+    if (!bk) return;
+    bk.files = new Map(); bk.hist = new Map(); bk.flaky = true;
+    Object.assign(backupCfg, { on: true, user: 'fuzz@hgsengineeringinc.com', pass: 'v1.fuzz.pass', passExpires: new Date(Date.now() + 86400000).toISOString() });
+    _backupListTrusted = true; _backupRecordsLoaded = true; _backupSent = new Map(); _backupDays = new Map();
+    _backupRetry.clear(); _backupPauseUntil = 0; _backupLastError = ''; _backupSignInNeeded = false;
+    try { await saveMetadataMany({ backup_sent: {}, backup_days: {} }); } catch (e) {}
+  }
+  // At every step: the device's records claim only what SharePoint confirmed —
+  // each photo at its recorded folder with those bytes, each day file a version
+  // SharePoint stored there.
+  function backupRecordsTruthful(tag) {
+    if (!bk) return;
+    _backupSent.forEach((v, k) => {
+      const at = v && v.f + '/photos/' + backupPhotoName(k), h = at && bk.hist.get(at);
+      if (!h || !h.has(v.s)) viol('backup-record-untrue', 'photo ' + k + ' recorded at ' + (v && v.f) + ' (' + tag + ')');
+    });
+    _backupDays.forEach((v, k) => {
+      if (!v || !v.sha) return;                             // sent, not confirmed: claims nothing
+      const h = bk.hist.get(k);
+      if (!h || !h.has(v.sha)) viol('backup-record-untrue', 'day file ' + k + ' (' + tag + ')');
+    });
+  }
+  async function backupCheck(tag) {
+    if (!bk) return;
+    // Offline the app holds everything back, as it should: a Wi-Fi drop on the
+    // computer running this is not a backup bug (one looked like one, 2026-09-29)
+    if (!navigator.onLine) { info('backup check skipped at ' + tag + ': this computer is offline'); return; }
+    const fo = faultsOn; faultsOn = false; bk.flaky = false;
+    try {
+      _backupRetry.clear(); _backupPauseUntil = 0; _backupSignInNeeded = false;
+      for (let i = 0; i < 4; i++) {
+        while (_backupBusy) await sleep(20);
+        await drainBackup();
+        while (_backupBusy) await sleep(20);
+        if (!_backupState.waiting) break;
+      }
+      // the backup's own state goes with the first violation of this check
+      let said = false;
+      const diag = () => said ? '' : (said = true, ' [backup: ' + JSON.stringify({ busy: _backupBusy, on: backupCfg.on, may: tabMayWrite(), paused: _tabPaused,
+        loaded: _backupRecordsLoaded, trusted: _backupListTrusted, unread: _entryStoreUnread, state: _backupState, err: _backupLastError,
+        paused10: Date.now() < _backupPauseUntil, signIn: _backupSignInNeeded, retry: _backupRetry.size, online: navigator.onLine }) + ']');
+      const bviol = (inv, detail) => viol(inv, detail + diag());
+      if (!_backupRecordsLoaded) { bviol('backup-records-unread@' + tag, 'the sent / day records could not be read with storage healthy'); return; }
+      // every stored photo the list or the form refers to
+      for (const p of backupPhotoList().values()) {
+        const pd = await loadPhotoBytes(p.key, 'image/jpeg');
+        if (!pd || !pd.bytes) continue;                       // unreadable: waits, and other oracles speak for it
+        const got = bk.files.get(p.folder + '/photos/' + backupPhotoName(p.key));
+        if (!got) {
+          const name = '/photos/' + backupPhotoName(p.key), elsewhere = Array.from(bk.files.keys()).filter(k => k.endsWith(name));
+          bviol('backup-missing-photo@' + tag, p.key + ' → ' + p.folder + (elsewhere.length ? ' (SharePoint has it at ' + elsewhere.join(', ') + ')' : ''));
+          continue;
+        }
+        if (got.sha !== await sha256HexOfBytes(pd.bytes)) bviol('backup-photo-differs@' + tag, p.key);
+        bkStats.photos++;
+      }
+      if (_entryStoreUnread) return;                          // the unit files wait for a list read in full
+      const tagName = getCollectorTag(), want = new Map();
+      savedEquipment.forEach(e => { if (!e) return; const f = backupFolderOf(e.hospitalCode || '', getEntryDate(e)); if (!want.has(f)) want.set(f, []); want.get(f).push(String(e.id)); });
+      const unitsOf = (f) => { const x = bk.files.get(f + '/units_' + tagName + '.json'); try { return x ? JSON.parse(new TextDecoder().decode(x.bytes)) : null; } catch (e) { return { bad: true }; } };
+      for (const [f, ids] of want) {
+        const j = unitsOf(f);
+        if (!j || j.bad) { bviol('backup-missing-unit-file@' + tag, f); continue; }
+        const got = (j.units || []).map(u => String(u.id)).sort(), exp = ids.slice().sort();
+        if (got.join() !== exp.join()) bviol('backup-unit-file-mismatch@' + tag, f + ': has ' + got.length + ', list ' + exp.length);
+        bkStats.unitFiles++;
+      }
+      for (const [path, x] of bk.files) {
+        if (!/\/units_[^/]+\.json$/.test(path)) continue;
+        const f = path.slice(0, path.lastIndexOf('/'));
+        if (want.has(f)) continue;
+        let j = null; try { j = JSON.parse(new TextDecoder().decode(x.bytes)); } catch (e) {}
+        if (j && (j.units || []).length) bviol('backup-stale-unit-file@' + tag, path + ' still lists ' + j.units.length + ' unit(s)');
+        else if (j) bkStats.emptied++;                           // a vanished day's file, written again empty
+      }
+      // and each file holds what the device would write now, to the letter
+      for (const f of backupDayFiles(backupPhotoList())) {
+        const x = bk.files.get(f.folder + '/' + f.path);
+        if (!x) bviol('backup-day-file-missing@' + tag, f.folder + '/' + f.path);
+        else {
+          const had = new TextDecoder('utf-8', { ignoreBOM: true }).decode(x.bytes);   // the index's byte-order mark is part of the file
+          if (had !== f.text) {
+            let i = 0; while (i < had.length && had[i] === f.text[i]) i++;
+            bviol('backup-day-file-stale@' + tag, f.folder + '/' + f.path + ' — from char ' + i + ' SharePoint has ' + JSON.stringify(had.slice(Math.max(0, i - 80), i + 60)) + ', the device ' + JSON.stringify(f.text.slice(Math.max(0, i - 80), i + 60)));
+          }
+        }
+      }
+      const st = buildWipState();
+      if (wipHasContent(st)) {
+        const w = bk.files.get(backupFolderOf(backupFormFacility(), localDateStr(new Date())) + '/inprogress_' + tagName + '.json');
+        let j = null; try { j = w ? JSON.parse(new TextDecoder().decode(w.bytes)) : null; } catch (e) {}
+        if (!j || !j.unit || !sameEntryId(j.unit.entryId, st.entryId)) bviol('backup-form-missing@' + tag, JSON.stringify(st.entryId));
+        bkStats.inProgress++;
+      }
+    } finally { faultsOn = fo; if (bk) bk.flaky = true; }
   }
 
   // ---------- actions ----------------------------------------------------------------------
@@ -637,8 +789,17 @@
     }],
     ['export', 3, () => savedEquipment.length > 0 || sources.length > 0, async () => exportOracle()],
     ['relaunch', 3, () => true, async () => relaunchOracle()],
+    ['backupPass', 2, () => !!bk, async () => { await drainBackup(); return 'backup pass'; }],
+    // a unit from an earlier day of the visit (backup mode): day folders that
+    // empty out — and must be written again empty — happen at all
+    ['yesterday', 1, () => !!bk && savedEquipment.length > 0, async () => {
+      const i = savedIdx(), e = savedEquipment[i];
+      e.savedAt = new Date((Date.parse(e.savedAt) || Date.now()) - 86400000).toISOString(); e.updatedAt = new Date().toISOString();
+      await saveAll(); return 'yesterday ' + i + ' → ' + getEntryDate(e);
+    }],
     ['background', 2, () => true, async () => { document.dispatchEvent(new Event('visibilitychange')); autoSaveCurrent(); return 'background'; }],
     ['facility', 1, () => true, async () => { const c = pick(['Atlanta', 'Marion', 'Atlanta - Fort McPherson']); setHospitalCode(c); updateFacilityBadge(); return 'facility=' + c; }],
+    ['refacility', 2, () => !!bk, async () => { const c = pick(['', 'Atlanta', 'Marion']); setHospitalCode(c); updateFacilityBadge(); return 'facility=' + (c || '(none)'); }],
     ['simpleVerif', 1, () => true, async () => { setSimpleVerif(!simpleVerifEnabled()); return 'simpleVerif toggled'; }],
     ['sketch', 2, () => true, async () => {
       setSketchPrefForFacility(getHospitalCode(), true); applySketchVisibility(); setSketchSectionExpanded(true);
@@ -716,12 +877,13 @@
     }
     const seeds = opts.seeds || [1];
     const steps = opts.steps || 40;
-    violations = []; infos = []; seenSig.clear();
+    violations = []; infos = []; seenSig.clear(); bkStats = { photos: 0, unitFiles: 0, emptied: 0, inProgress: 0 };
     window.__FUZZ_ARMED = true;
     installDialogs();
     faultP = +opts.faults || 0;
     uploadTo = opts.uploadTo || null;
     if (faultP > 0) installFaults();
+    if (opts.backup) installBackupStandIn();
     const t0 = Date.now();
     let actionsRun = 0;
     const seedTraces = [];
@@ -734,6 +896,7 @@
         if (opts.streamTrace) { const push = trace.push; trace.push = function (...xs) { for (const x of xs) console.debug('[fuzz] ' + seed + ' ' + x); return push.apply(this, xs); }; }
         faultsOn = false;
         await resetAll();
+        await backupFresh();
         faultsOn = faultP > 0;
         for (let s = 1; s <= steps; s++) {
           stepNow = s;
@@ -751,19 +914,22 @@
         await drainOverlays();
         faultsOn = false;   // the end-of-sequence checks: storage healthy again
         await checkDeep('end');
+        await backupCheck('end');
         if (savedEquipment.length || sources.length) { trace.push('final export'); await exportOracle(); }
         trace.push('final relaunch'); await relaunchOracle();
         checkCheap();
         await checkDeep('after-relaunch');
+        await backupCheck('after-relaunch');
         seedTraces.push({ seed, trace: trace.slice(-120) });
         if (opts.onSeed) try { opts.onSeed(seed, violations.length); } catch (e) {}
       }
     } finally {
       restoreDialogs();
       faultsOn = false; if (faultP > 0) removeFaults();
+      removeBackupStandIn();
       window.__FUZZ_ARMED = false;
     }
-    const report = { seeds: seeds.length, steps, actions: actionsRun, secs: Math.round((Date.now() - t0) / 1000), violations, infos: infos.slice(0, 40), actionCounts, seedTraces: opts.keepTraces ? seedTraces : seedTraces.slice(-2) };
+    const report = { seeds: seeds.length, steps, actions: actionsRun, secs: Math.round((Date.now() - t0) / 1000), violations, infos: infos.slice(0, 40), actionCounts, backupStats: opts.backup ? bkStats : undefined, seedTraces: opts.keepTraces ? seedTraces : seedTraces.slice(-2) };
     window.__FUZZ_REPORT = report;
     return report;
   };

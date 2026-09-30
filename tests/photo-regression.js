@@ -39,6 +39,7 @@
 //   T154 build 99: found by its fault campaign (a failed fallback write removed the fallback)
 //   T155 build 99: found finishing it (an unreadable re-save record let an older delete win)
 //   T156–T157 build 100: the 2026-09-28 low review of build 99
+//   T158–T173 build 101: SharePoint live backup
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -140,6 +141,16 @@
     try { localStorage.removeItem('loto_seq_used'); } catch (e) {}
     try { localStorage.removeItem('loto_saved'); localStorage.removeItem('loto_saved_at'); localStorage.removeItem('loto_saved_deleted'); localStorage.removeItem('loto_wip_superseded'); } catch (e) {}
     try { await saveMetadata('photo_hash_index', {}); } catch (e) {}
+    // build 101: the SharePoint backup off, its records empty, its API real again
+    if (typeof backupCfg !== 'undefined') {
+      Object.assign(backupCfg, { on: false, user: '', pass: '', passExpires: '', root: '' });
+      try { localStorage.removeItem('loto_backup_cfg'); } catch (e) {}
+      _backupSent = new Map(); _backupDays = new Map(); _backupRetry.clear(); _backupPauseUntil = 0; _backupLastError = '';
+      _backupSignInNeeded = false; _backupState = { waiting: 0, unreadable: 0, checked: false };
+      clearTimeout(_backupSoon);
+      if (window.__realBackupTransport) Object.assign(backupTransport, window.__realBackupTransport);
+      try { await saveMetadataMany({ backup_sent: {}, backup_days: {} }); } catch (e) {}
+    }
     // build 95: saveAll merges a list another writer stored — a test's raw
     // write of the store is not "another writer" for the reset
     try { if (typeof _entryStoreAt !== 'undefined') _entryStoreAt = (await rawIdbGet('metadata', 'saved_equipment_at')) || null; } catch (e) {}
@@ -4354,6 +4365,556 @@
     document.getElementById('equipName').value = ''; await clearWipSlots();
   }
 
+  // ---------- SharePoint live backup (build 101) --------------------------------
+  // A stand-in for the backup API and SharePoint: keeps every file it is sent
+  // and answers as the real API does — the SHA-256 of the bytes it got, their
+  // size; an upload session that takes chunks and reports the finished file's
+  // size and QuickXorHash — unless told to misbehave.
+  function backupStub(opts) {
+    opts = opts || {};
+    if (!window.__realBackupTransport) window.__realBackupTransport = { api: backupTransport.api, session: backupTransport.session };
+    const files = new Map(), posts = [], sessions = new Map();
+    backupTransport.api = async (method, path, body) => {
+      posts.push({ method, path, folder: body && body.folder, file: body && body.path });
+      if (opts.offline) throw new Error('offline (test)');
+      if (opts.status) return { status: opts.status, body: { ok: false, error: 'test ' + opts.status } };
+      if (path === '/api/upload' && method === 'GET') return { status: 200, body: { ok: true, configured: true, signedInAs: 'tech@hgsengineeringinc.com', targets: [{ key: 'default', label: 'LOTO Backups', root: 'LOTO Backups' }] } };
+      if (path === '/api/upload') {
+        const bytes = base64ToUint8Array(body.contentBase64);
+        const sha = await sha256HexOfBytes(bytes);
+        if (body.sha256 !== sha) return { status: 400, body: { ok: false, error: 'damaged on the way (test)' } };
+        if (opts.refuse && opts.refuse(body)) return { status: 502, body: { ok: false, error: 'SharePoint refused the file (test)' } };
+        files.set(body.folder + '/' + body.path, { bytes, text: /json|csv|text/.test(body.contentType) ? new TextDecoder().decode(bytes) : null });
+        if (opts.lose && opts.lose(body)) throw new Error('the answer was lost (test)');   // stored — the device never hears
+        return { status: 200, body: { ok: true, size: opts.shortSize ? bytes.length - 1 : bytes.length, sha256: opts.wrongSha ? '0'.repeat(64) : sha } };
+      }
+      if (path === '/api/upload-session') {
+        if (opts.sessionStatus) return { status: opts.sessionStatus, body: { ok: false, error: 'test ' + opts.sessionStatus } };
+        const url = 'stub://session/' + (sessions.size + 1);
+        sessions.set(url, { folder: body.folder, path: body.path, size: body.size, buf: new Uint8Array(body.size), got: 0, puts: 0 });
+        return { status: 200, body: { ok: true, uploadUrl: url } };
+      }
+      if (path === '/api/device-pass') {
+        if (!opts.verifier || body.verifier !== opts.verifier) return { status: 401, body: { ok: false, error: 'that sign-in did not come from this device (test)' } };
+        return { status: 200, body: { ok: true, pass: 'v1.test.pass', user: 'tech@hgsengineeringinc.com', expires: new Date(Date.now() + 30 * 86400000).toISOString() } };
+      }
+      return { status: 404, body: { ok: false } };
+    };
+    backupTransport.session = async (url, method, bytes, range) => {
+      const s = sessions.get(url);
+      if (!s) return { status: 404, body: {} };
+      if (method === 'GET') return { status: 200, body: { nextExpectedRanges: [s.got + '-'] } };
+      s.puts++;
+      const m = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(range), from = +m[1], to = +m[2];
+      if (opts.dropPut && opts.dropPut(s.puts)) throw new Error('connection lost (test)');   // the piece never landed
+      if (from !== s.got) return { status: 416, body: {} };
+      s.buf.set(bytes, from); s.got = to + 1;
+      if (s.got < s.size) return { status: 202, body: { nextExpectedRanges: [s.got + '-'] } };
+      files.set(s.folder + '/' + s.path, { bytes: s.buf });
+      const qxh = opts.badHash ? 'AAAAAAAAAAAAAAAAAAAAAAAAAAA=' : uint8ToBase64(qxhCreate().update(s.buf).digest());
+      return { status: 201, body: { size: s.size, file: { hashes: { quickXorHash: qxh } } } };
+    };
+    return { files, posts, sessions, restore() { Object.assign(backupTransport, window.__realBackupTransport); } };
+  }
+  function backupTestOn() {
+    Object.assign(backupCfg, { on: true, user: 'tech@hgsengineeringinc.com', pass: 'v1.test.pass',
+      passExpires: new Date(Date.now() + 86400000).toISOString(), root: 'LOTO Backups' });
+    _backupListTrusted = true; _backupRecordsLoaded = true; _backupSent = new Map(); _backupDays = new Map();
+    _backupRetry.clear(); _backupPauseUntil = 0; _backupLastError = ''; _backupSignInNeeded = false;
+    _backupState = { waiting: 0, unreadable: 0, checked: false };
+    clearTimeout(_backupSoon);
+  }
+  function backupTestOff(stub) {
+    if (stub) stub.restore();
+    Object.assign(backupCfg, { on: false, user: '', pass: '', passExpires: '' });
+    clearTimeout(_backupSoon);
+    try { localStorage.removeItem('loto_backup_cfg'); } catch (e) {}
+    setHospitalCode('');
+  }
+  async function backupPass() { while (_backupBusy) await sleep(20); await drainBackup(); while (_backupBusy) await sleep(20); }
+  const unitsFile = (stub, folder) => { const f = stub.files.get(folder + '/units_' + getCollectorTag() + '.json'); return f ? JSON.parse(f.text) : null; };
+  const wipFile = (stub, folder) => { const f = stub.files.get(folder + '/inprogress_' + getCollectorTag() + '.json'); return f ? JSON.parse(f.text) : null; };
+  const unitNames = (j) => (j && j.units || []).map(u => u.equipName).sort();
+
+  // T158 — a stored photo goes up, and counts only once SharePoint confirmed it
+  async function t158_aStoredPhotoGoesUpAndCountsOnlyWhenConfirmed() {
+    const N = 'T158 a stored photo goes to its unit\'s facility / day-taken folder under its key name, and is backed up only once SharePoint confirmed those bytes';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    fillForm('Pump-158');
+    await captureInto('equip_main', await makePhotoFile('t158'));
+    const A = saveEntry(), ref = A.photos.equip_main, day = localDateStr(ref.timestamp);
+    const folder = 'Atlanta/' + day, name = 'photos/' + backupPhotoName(ref.dbKey);
+    let stub = backupStub({ shortSize: true });            // SharePoint "confirms" a short copy
+    backupTestOn();
+    let short = null, good = null, same = false, badge = '', units = null, csv = '';
+    try {
+      await backupPass();
+      short = { counted: _backupSent.has(ref.dbKey), badge: document.getElementById('backupBadge').textContent };
+      stub.restore(); stub = backupStub(); _backupRetry.clear();
+      await backupPass();
+      const got = stub.files.get(folder + '/' + name), pd = await loadPhotoBytes(ref.dbKey, 'image/jpeg');
+      same = !!(got && pd && got.bytes.length === pd.bytes.length && got.bytes.every((b, i) => b === pd.bytes[i]));
+      good = _backupSent.get(ref.dbKey);
+      badge = document.getElementById('backupBadge').textContent;
+      units = unitsFile(stub, folder);
+      csv = (stub.files.get(folder + '/photos_' + getCollectorTag() + '.csv') || {}).text || '';
+    } finally { backupTestOff(stub); }
+    const ok = short && !short.counted && /waiting/.test(short.badge) && same && !!good && good.f === folder && good.s === (await sha256HexOfBytes((await loadPhotoBytes(ref.dbKey, 'image/jpeg')).bytes))
+      && /backed up/.test(badge) && unitNames(units).join() === 'Pump-158' && csv.indexOf(backupPhotoName(ref.dbKey)) >= 0 && csv.indexOf('Pump-158') >= 0
+      && units.units[0].photos.equip_main.backupFile === folder + '/' + name && !('thumbnail' in units.units[0].photos.equip_main);
+    record(N, ok, 'short copy counted=' + (short && short.counted) + ' (badge "' + (short && short.badge) + '"); stored at ' + folder + '/' + name + ' byte-identical=' + same
+      + '; counted after a true confirmation=' + !!good + '; badge "' + badge + '"; unit file lists ' + JSON.stringify(unitNames(units)) + '; index lists it=' + (csv.indexOf('Pump-158') >= 0));
+  }
+
+  // T159 — filed by each unit's own facility and day, never the one on screen
+  async function t159_filedByEachUnitsOwnFacilityAndDay() {
+    const N = 'T159 units and photos file by each unit\'s own facility and day — not the facility on screen; the unit in progress goes into its own file in today\'s folder';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    fillForm('AHU-159');
+    await captureInto('equip_main', await makePhotoFile('t159'));
+    const A = saveEntry();
+    const old = mkEntry('June-159', { savedAt: '2026-06-15T14:00:00.000Z' }); old.hospitalCode = 'Atlanta';
+    savedEquipment.push(old); await saveAll();
+    setHospitalCode('Marion');                                // the tech moves on to Marion
+    fillForm('Form-159');
+    await captureInto('equip_main', await makePhotoFile('t159-form'));
+    const today = localDateStr(new Date()), aDay = getEntryDate(A), junDay = getEntryDate(old);
+    const stub = backupStub();
+    backupTestOn();
+    let atl = null, jun = null, mar = null, marW = null, formPhotoAt = '', aPhotoAt = '';
+    try {
+      await backupPass();
+      atl = unitsFile(stub, 'Atlanta/' + aDay); jun = unitsFile(stub, 'Atlanta/' + junDay); mar = unitsFile(stub, 'Marion/' + today); marW = wipFile(stub, 'Marion/' + today);
+      const find = (k) => Array.from(stub.files.keys()).find(p => p.endsWith('/photos/' + backupPhotoName(k))) || '';
+      aPhotoAt = find(A.photos.equip_main.dbKey); formPhotoAt = find(photos.equip_main.dbKey);
+    } finally { backupTestOff(stub); }
+    const ok = unitNames(atl).join() === 'AHU-159' && unitNames(jun).join() === 'June-159' && !!(marW && marW.unit && marW.unit.equipName === 'Form-159')
+      && !mar && aPhotoAt.indexOf('Atlanta/') === 0 && formPhotoAt.indexOf('Marion/' + today + '/') === 0;
+    record(N, ok, 'Atlanta ' + aDay + ': ' + JSON.stringify(unitNames(atl)) + '; Atlanta ' + junDay + ': ' + JSON.stringify(unitNames(jun))
+      + '; Marion today in progress: ' + JSON.stringify(marW && marW.unit && marW.unit.equipName) + ' (a units file there: ' + !!mar + '); saved unit\'s photo at ' + aPhotoAt + '; form photo at ' + formPhotoAt);
+  }
+
+  // T160 — a delete rewrites the day's file; an unchanged file isn't sent again
+  async function t160_aDeletedUnitsDayFileIsRewrittenWithoutIt() {
+    const N = 'T160 a deleted unit\'s day file is rewritten without it (empty when it was the last); an unchanged file is not sent again';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    const a = mkEntry('A-160'), b = mkEntry('B-160'); a.hospitalCode = b.hospitalCode = 'Atlanta';
+    savedEquipment.push(a, b); await saveAll();
+    const folder = 'Atlanta/' + getEntryDate(a), unitsPath = folder + '/units_' + getCollectorTag() + '.json';
+    const stub = backupStub();
+    backupTestOn();
+    let first = null, resends = -1, afterB = null, afterA = null;
+    try {
+      await backupPass();
+      first = unitNames(unitsFile(stub, folder));
+      const n = stub.posts.filter(x => x.folder + '/' + x.file === unitsPath).length;
+      await backupPass();
+      resends = stub.posts.filter(x => x.folder + '/' + x.file === unitsPath).length - n;
+      await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.findIndex(e => e.equipName === 'B-160')); await sleep(300); });
+      await backupPass();
+      afterB = unitNames(unitsFile(stub, folder));
+      await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.findIndex(e => e.equipName === 'A-160')); await sleep(300); });
+      await backupPass();
+      afterA = unitsFile(stub, folder);
+    } finally { backupTestOff(stub); }
+    const ok = first.join() === 'A-160,B-160' && resends === 0 && afterB.join() === 'A-160' && !!afterA && Array.isArray(afterA.units) && afterA.units.length === 0;
+    record(N, ok, 'first ' + JSON.stringify(first) + ', sent again unchanged ' + resends + '×, after deleting B ' + JSON.stringify(afterB) + ', after deleting A ' + JSON.stringify(afterA && afterA.units));
+  }
+
+  // T161 — a photo that can't be read waits (said so); an orphan is never sent
+  async function t161_anUnreadablePhotoWaitsAndAnOrphanIsNeverSent() {
+    const N = 'T161 a photo whose bytes can\'t be read stays waiting and the badge says so; a stored photo nothing refers to is never sent';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    fillForm('Pump-161');
+    await captureInto('equip_main', await makePhotoFile('t161'));
+    const A = saveEntry(), key = A.photos.equip_main.dbKey;
+    const pd = await loadPhotoBytes(key, 'image/jpeg');
+    await deletePhotoFromDB(key); await sleep(200);           // the bytes are gone (for now)
+    const orphan = photoStoreKey(genUuid(), 'main', 'x161');
+    await storePhotoBytes(orphan, 'data:image/jpeg;base64,' + uint8ToBase64(pd.bytes));
+    const stub = backupStub();
+    backupTestOn();
+    let waiting = null, tip = '', orphanSent = false, laterSent = false;
+    try {
+      await backupPass();
+      waiting = { sent: _backupSent.has(key), unreadable: _backupState.unreadable, badge: document.getElementById('backupBadge').textContent };
+      tip = document.getElementById('backupBadge').title;
+      await storePhotoBytes(key, 'data:image/jpeg;base64,' + uint8ToBase64(pd.bytes)); await sleep(200);   // readable again
+      await backupPass();
+      laterSent = _backupSent.has(key);
+      orphanSent = Array.from(stub.files.keys()).some(p => p.indexOf(backupPhotoName(orphan)) >= 0);
+    } finally { backupTestOff(stub); }
+    const ok = waiting && !waiting.sent && waiting.unreadable === 1 && /waiting/.test(waiting.badge) && /could not be read/.test(tip) && laterSent && !orphanSent;
+    record(N, ok, 'while unreadable: sent=' + (waiting && waiting.sent) + ', unreadable=' + (waiting && waiting.unreadable) + ', badge "' + (waiting && waiting.badge) + '" ("' + tip + '"); once readable: sent=' + laterSent + '; orphan sent=' + orphanSent);
+  }
+
+  // T162 — a file SharePoint keeps refusing waits; the rest still go up
+  async function t162_aRefusedFileWaitsWhileTheRestGoUp() {
+    const N = 'T162 a photo SharePoint refuses (or confirms with the wrong fingerprint) is not counted and is tried again later; the other photos still go up';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    fillForm('Pump-162');
+    await captureInto('equip_main', await makePhotoFile('t162-a'));
+    await captureInto('equip_dataplate', await makePhotoFile('t162-b'));
+    const A = saveEntry(), bad = A.photos.equip_main.dbKey, good = A.photos.equip_dataplate.dbKey;
+    let stub = backupStub({ refuse: (b) => b.path.indexOf(backupPhotoName(bad)) >= 0 });
+    backupTestOn();
+    let first = null, wrong = null, fixed = false;
+    try {
+      await backupPass();
+      first = { bad: _backupSent.has(bad), good: _backupSent.has(good), retry: backupRetryWaiting('photo:' + bad), waiting: _backupState.waiting };
+      stub.restore(); stub = backupStub({ wrongSha: true }); _backupRetry.clear();
+      await backupPass();
+      wrong = _backupSent.has(bad);
+      stub.restore(); stub = backupStub(); _backupRetry.clear();
+      await backupPass();
+      fixed = _backupSent.has(bad);
+    } finally { backupTestOff(stub); }
+    const ok = first && !first.bad && first.good && first.retry && first.waiting === 1 && !wrong && fixed;
+    record(N, ok, 'refused: counted=' + (first && first.bad) + ', the other photo counted=' + (first && first.good) + ', tried again later=' + (first && first.retry)
+      + ', waiting=' + (first && first.waiting) + '; wrong fingerprint counted=' + wrong + '; accepted later=' + fixed);
+  }
+
+  // T163 — no signal is not a sign-in problem; a refusal is
+  async function t163_noSignalIsNotASignInProblem() {
+    const N = 'T163 no signal leaves the backup waiting (not "sign in"); a refused account says sign in; an expired iPad pass asks to sign in again';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    const a = mkEntry('A-163'); a.hospitalCode = 'Atlanta'; savedEquipment.push(a); await saveAll();
+    let stub = backupStub({ offline: true });
+    backupTestOn();
+    let offline = null, refused = null, lapsed = null;
+    try {
+      await backupPass();
+      offline = { badge: document.getElementById('backupBadge').textContent, signIn: _backupSignInNeeded, paused: _backupPauseUntil > Date.now() };
+      stub.restore(); stub = backupStub({ status: 401 }); _backupPauseUntil = 0;
+      await backupPass();
+      refused = { badge: document.getElementById('backupBadge').textContent, signIn: _backupSignInNeeded };
+      Object.assign(backupCfg, { pass: 'v1.old.pass', passExpires: new Date(Date.now() - 1000).toISOString() });
+      lapsed = backupPassValid();
+    } finally { backupTestOff(stub); }
+    const ok = offline && /waiting/.test(offline.badge) && !offline.signIn && offline.paused && refused && refused.signIn && /sign in/.test(refused.badge) && lapsed === false;
+    record(N, ok, 'offline: badge "' + (offline && offline.badge) + '", sign-in asked=' + (offline && offline.signIn) + '; refused: badge "' + (refused && refused.badge) + '"; expired pass valid=' + lapsed);
+  }
+
+  // T164 — only the tab that holds the claim backs up
+  async function t164_onlyTheTabThatMaySaveBacksUp() {
+    const N = 'T164 a tab that lost the claim to another tab sends nothing to SharePoint';
+    await resetAppState();
+    if (typeof tabLockActive === 'function' && !tabLockActive()) return record(N, true, 'single-window app (iOS) — no tabs');
+    setHospitalCode('Atlanta');
+    const a = mkEntry('A-164'); a.hospitalCode = 'Atlanta'; savedEquipment.push(a); await saveAll();
+    const stub = backupStub();
+    backupTestOn();
+    let paused = -1, live = -1, had = null;
+    try {
+      try { had = localStorage.getItem('loto_tab_claim'); } catch (e) {}
+      otherTabClaims();
+      await backupPass();
+      paused = stub.posts.length;
+      releaseOtherTabClaim(had);
+      await backupPass();
+      live = stub.posts.length;
+    } finally { backupTestOff(stub); }
+    record(N, paused === 0 && live > 0, 'sent while another tab held the claim: ' + paused + '; after it came back: ' + live);
+  }
+
+  // T165 — Export to SharePoint: pieces, a dropped piece, and only then "exported"
+  async function t165_exportToSharePointMarksExportedOnlyWhenConfirmed() {
+    const N = 'T165 Export to SharePoint lands in the facility/day export folder (each day\'s sheet too), resumes after a dropped piece, and marks units exported only once SharePoint confirmed the file';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    fillForm('Pump-165');
+    await captureInto('equip_main', await makePhotoFile('t165'));
+    const A = saveEntry();
+    const runCloud = async (stub) => {
+      const real = { c: window.confirm, a: window.alert, ch: window.__askChoiceAuto };
+      window.confirm = () => true; window.alert = () => {};
+      window.__askChoiceAuto = (o) => (o && o.id === 'export-blank-energy') ? 'export' : ((o && o.defaultValue) || 'cancel');
+      try {
+        showExportDialog();
+        document.getElementById('exportDateFilter').value = 'all'; populateExportFacilityFilter();
+        document.getElementById('exportFacilityFilter').value = 'all';
+        document.getElementById('photoSeqStart').value = '1';
+        return await withToasts(async () => { await runCombinedExport({ toSharePoint: true }); });
+      } finally { window.confirm = real.c; window.alert = real.a; window.__askChoiceAuto = real.ch; }
+    };
+    // (a) the service refuses to start: nothing marked
+    let stub = backupStub({ sessionStatus: 503 });
+    backupTestOn();
+    let refusedMsgs = [], refusedStamp = true, zipAt = '', sheetAt = '', stamped = false, big = null, badHashErr = '';
+    try {
+      refusedMsgs = await runCloud(stub);
+      refusedStamp = !!savedEquipment.find(e => e.id === A.id).exportedAt;
+      // (b) it works: the ZIP and the day's sheet land, then the unit is marked
+      stub.restore(); stub = backupStub();
+      await runCloud(stub);
+      const today = localDateStr(new Date());
+      zipAt = Array.from(stub.files.keys()).find(p => /^Atlanta\/\d{4}-\d{2}-\d{2}\/export\/FieldExport_Atlanta_.*\.zip$/.test(p)) || '';
+      sheetAt = Array.from(stub.files.keys()).find(p => /\/export\/Information_Sheet_\d{6}\.xlsx$/.test(p)) || '';
+      stamped = !!savedEquipment.find(e => e.id === A.id).exportedAt && zipAt.indexOf('Atlanta/' + today + '/') === 0;
+      // (c) a 12 MB file in 5 MiB pieces, the second piece lost once: resumed, and its hash checked
+      stub.restore(); stub = backupStub({ dropPut: (n) => n === 2 });
+      const bytes = new Uint8Array(12 * 1048576); for (let i = 0; i < bytes.length; i += 4093) bytes[i] = (i * 31) & 255;
+      const res = await backupUploadBig(new Blob([bytes]), 'Atlanta/' + today, 'export/big.zip');
+      const got = stub.files.get('Atlanta/' + today + '/export/big.zip');
+      big = { checked: res.hashChecked, same: !!got && got.bytes.length === bytes.length && got.bytes.every((b, i) => b === bytes[i]), puts: Array.from(stub.sessions.values())[0].puts };
+      // (d) SharePoint's hash differs: not accepted
+      stub.restore(); stub = backupStub({ badHash: true });
+      try { await backupUploadBig(new Blob([bytes.subarray(0, 100000)]), 'Atlanta/' + today, 'export/bad.zip'); } catch (e) { badHashErr = e.message; }
+    } finally { backupTestOff(stub); }
+    const ok = refusedMsgs.some(m => /Not sent to SharePoint/.test(m)) && !refusedStamp && !!zipAt && !!sheetAt && stamped
+      && big && big.checked && big.same && big.puts === 4 && /does not match/.test(badHashErr);
+    record(N, ok, 'refused: said "' + (refusedMsgs.find(m => /SharePoint/.test(m)) || '') + '", marked exported=' + refusedStamp + '; sent: ' + zipAt + ' + ' + sheetAt + ', marked exported=' + stamped
+      + '; 12 MB with a lost piece: complete=' + (big && big.same) + ' in ' + (big && big.puts) + ' puts, hash checked=' + (big && big.checked) + '; wrong hash: "' + badHashErr + '"');
+  }
+
+  // T166 — Send everything again sends everything, and asks first
+  async function t166_sendEverythingAgainResendsAll() {
+    const N = 'T166 "Send everything again" asks first, then sends every photo and unit file again — confirmed ones included';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    fillForm('Pump-166');
+    await captureInto('equip_main', await makePhotoFile('t166'));
+    saveEntry();
+    const stub = backupStub();
+    backupTestOn();
+    let declined = -1, again = -1, asked = '';
+    try {
+      await backupPass();
+      const n0 = stub.posts.filter(x => x.method === 'POST').length;
+      await withDialogs({ confirm: false }, async () => { backupEverythingAgain(); await backupPass(); });
+      declined = stub.posts.filter(x => x.method === 'POST').length - n0;
+      const r = await withDialogs({ confirm: true }, async () => { backupEverythingAgain(); await sleep(50); await backupPass(); });
+      asked = (r.log[0] || '');
+      again = stub.posts.filter(x => x.method === 'POST').length - n0;
+    } finally { backupTestOff(stub); }
+    record(N, declined === 0 && again >= 3 && /Send all 1 photo/.test(asked), 'declined: sent ' + declined + '; agreed: sent ' + again + ' (photo, unit file, index) after "' + asked.slice(0, 70) + '…"');
+  }
+
+  // T167 — the iPad sign-in: only the verifier this app made turns the code into a pass
+  async function t167_theIPadSignInNeedsTheVerifierThisAppMade() {
+    const N = 'T167 the sign-in code becomes a pass only with the verifier this app made; a code this app didn\'t ask for, or one from a sign-in started over 10 minutes ago, is refused before the server is asked';
+    await resetAppState();
+    const verifier = 'V'.repeat(43);
+    const stub = backupStub({ verifier });
+    let stray = null, stale = null, asked = -1, good = null, pass = '';
+    try {
+      Object.assign(backupCfg, { on: true, user: '', pass: '', passExpires: '' });
+      _backupPkce = null;
+      stray = await finishBackupSignIn('lotocollector://backup-link?code=c1.a.b&user=x');   // nothing started here
+      _backupPkce = { verifier, at: Date.now() - 11 * 60000 };                           // started long ago
+      stale = await finishBackupSignIn('lotocollector://backup-link?code=c1.a.b&user=x');
+      asked = stub.posts.filter(x => x.path === '/api/device-pass').length;
+      _backupPkce = { verifier, at: Date.now() };
+      good = await finishBackupSignIn('lotocollector://backup-link?code=c1.a.b&user=tech');
+      pass = backupCfg.pass;
+    } finally { backupTestOff(stub); }
+    record(N, stray === false && stale === false && asked === 0 && good === true && pass === 'v1.test.pass',
+      'stray code accepted=' + stray + '; stale sign-in accepted=' + stale + ' (server asked ' + asked + '×); own sign-in accepted=' + good + ', pass kept=' + (pass === 'v1.test.pass'));
+  }
+
+  // T168 — a list the launch couldn't read in full never rewrites the unit files
+  async function t168_aPartialListNeverRewritesTheUnitFiles() {
+    const N = 'T168 while the saved list may be partial (the store unread, or a failed launch) photos still go up but no unit file is rewritten';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    fillForm('Pump-168');
+    await captureInto('equip_main', await makePhotoFile('t168'));
+    const A = saveEntry();
+    const b = mkEntry('B-168'); b.hospitalCode = 'Atlanta'; savedEquipment.push(b); await saveAll();
+    const folder = 'Atlanta/' + getEntryDate(A), unitsPath = folder + '/units_' + getCollectorTag() + '.json';
+    const stub = backupStub();
+    backupTestOn();
+    let before = null, unread = -1, untrusted = -1, photoWent = false;
+    try {
+      await backupPass();
+      before = unitNames(unitsFile(stub, folder));
+      const n = () => stub.posts.filter(x => x.folder + '/' + x.file === unitsPath).length;
+      const n0 = n();
+      const keep = savedEquipment.slice();
+      savedEquipment = savedEquipment.filter(e => e.equipName !== 'B-168');   // a partial list in memory
+      _entryStoreUnread = true;
+      _backupSent.delete(A.photos.equip_main.dbKey);
+      await backupPass();
+      unread = n() - n0; photoWent = _backupSent.has(A.photos.equip_main.dbKey);
+      _entryStoreUnread = false; _backupListTrusted = false;
+      await backupPass();
+      untrusted = n() - n0;
+      savedEquipment = keep;
+    } finally { _entryStoreUnread = false; _backupListTrusted = true; backupTestOff(stub); }
+    record(N, before.join() === 'B-168,Pump-168' && unread === 0 && untrusted === 0 && photoWent,
+      'unit file first ' + JSON.stringify(before) + '; rewritten while the store was unread: ' + unread + '×, after a failed launch: ' + untrusted + '×; the photo still went=' + photoWent);
+  }
+
+  // T169 — "backed up" means in the folder it belongs in now
+  async function t169_aPhotoWhoseFacilityChangesGoesAgain() {
+    const N = 'T169 a photo backed up before its unit\'s facility was chosen goes again, to that facility\'s folder, once it is; nothing in the old folder still claims it';
+    await resetAppState();
+    setHospitalCode('');                                    // not chosen yet
+    fillForm('Pump-169');
+    await captureInto('equip_main', await makePhotoFile('t169'));
+    const key = photos.equip_main.dbKey, day = localDateStr(photos.equip_main.timestamp), name = 'photos/' + backupPhotoName(key);
+    const stub = backupStub();
+    backupTestOn();
+    let first = false, second = false, units = null, oldCsv = null, oldWip = null, sentTo = '';
+    try {
+      await backupPass();                                   // the form's photo goes, under "No facility"
+      first = stub.files.has('No facility/' + day + '/' + name);
+      setHospitalCode('Atlanta');                           // then the facility is chosen and the unit saved
+      const A = saveEntry();
+      await backupPass();
+      second = stub.files.has('Atlanta/' + day + '/' + name);
+      units = unitsFile(stub, 'Atlanta/' + getEntryDate(A));
+      oldCsv = (stub.files.get('No facility/' + day + '/photos_' + getCollectorTag() + '.csv') || {}).text;
+      oldWip = wipFile(stub, 'No facility/' + day);
+      sentTo = (_backupSent.get(key) || {}).f;
+    } finally { backupTestOff(stub); }
+    const ref = units && units.units && units.units[0] && units.units[0].photos.equip_main;
+    record(N, first && second && !!ref && ref.backupFile === 'Atlanta/' + day + '/' + name && sentTo === 'Atlanta/' + day
+      && (oldCsv == null || oldCsv.indexOf(backupPhotoName(key)) < 0) && !!oldWip && oldWip.unit === null,
+      'first under No facility=' + first + '; again under Atlanta=' + second + '; the unit file points to ' + (ref && ref.backupFile) + '; recorded at ' + sentTo
+      + '; the old folder\'s index lists it=' + (oldCsv == null ? '(no index)' : oldCsv.indexOf(backupPhotoName(key)) >= 0)
+      + ', its in-progress file now holds ' + JSON.stringify(oldWip && oldWip.unit && oldWip.unit.equipName));
+  }
+
+  // T170 — a day file is remembered before it is sent
+  async function t170_aDayFileIsRememberedBeforeItIsSent() {
+    const N = 'T170 a day file is remembered on the device before it is sent: SharePoint stored it but the answer was lost, the app restarted, the day\'s units were deleted — the file is still written again empty';
+    await resetAppState();
+    setHospitalCode('Marion');
+    const a = mkEntry('A-170'); a.hospitalCode = 'Marion';
+    savedEquipment.push(a); await saveAll();
+    const folder = 'Marion/' + getEntryDate(a), unitsPath = folder + '/units_' + getCollectorTag() + '.json';
+    let stub = backupStub({ lose: (b) => b.folder + '/' + b.path === unitsPath });
+    backupTestOn();
+    let stored = null, after = null;
+    try {
+      await backupPass();
+      stored = unitNames(unitsFile(stub, folder));
+      // closed and opened again: the backup's records come from the device
+      const had = stub.files; stub.restore(); stub = backupStub(); had.forEach((v, k) => stub.files.set(k, v));
+      _backupRecordsLoaded = false; _backupSent = new Map(); _backupDays = new Map(); _backupPauseUntil = 0; _backupRetry.clear();
+      await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.findIndex(e => e.equipName === 'A-170')); await sleep(300); });
+      await backupPass();
+      after = unitsFile(stub, folder);
+    } finally { backupTestOff(stub); }
+    record(N, stored.join() === 'A-170' && !!after && Array.isArray(after.units) && after.units.length === 0,
+      'stored with the answer lost: ' + JSON.stringify(stored) + '; after a restart and deleting it, SharePoint\'s file lists ' + JSON.stringify(after && after.units));
+  }
+
+  // T171 — records of photos no longer on the device go; never on a partial list
+  async function t171_sentRecordsFollowTheListNeverAPartialOne() {
+    const N = 'T171 a deleted unit\'s photos leave the device\'s backup record; while the saved list may be partial the record keeps them (no mass re-upload)';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    fillForm('A-171'); await captureInto('equip_main', await makePhotoFile('t171a')); const A = saveEntry();
+    fillForm('B-171'); await captureInto('equip_main', await makePhotoFile('t171b')); const B = saveEntry();
+    const ka = A.photos.equip_main.dbKey, kb = B.photos.equip_main.dbKey;
+    const stub = backupStub();
+    backupTestOn();
+    let both = false, keptWhileUnread = false, afterDelete = null, resent = -1;
+    try {
+      await backupPass();
+      both = _backupSent.has(ka) && _backupSent.has(kb);
+      const keep = savedEquipment.slice();
+      savedEquipment = savedEquipment.filter(e => e.equipName !== 'B-171');   // a partial list in memory
+      _entryStoreUnread = true;
+      await backupPass();
+      keptWhileUnread = _backupSent.has(kb);
+      savedEquipment = keep; _entryStoreUnread = false;
+      const n = stub.posts.length;
+      await backupPass();
+      resent = stub.posts.filter((x, i) => i >= n && String(x.file || '').startsWith('photos/')).length;
+      await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.findIndex(e => e.equipName === 'B-171')); await sleep(300); });
+      await backupPass();
+      afterDelete = { a: _backupSent.has(ka), b: _backupSent.has(kb) };
+    } finally { _entryStoreUnread = false; backupTestOff(stub); }
+    record(N, both && keptWhileUnread && resent === 0 && !!afterDelete && afterDelete.a && !afterDelete.b,
+      'both recorded=' + both + '; B kept while the list was partial=' + keptWhileUnread + '; photos sent again once it was whole: ' + resent + '; after deleting B ' + JSON.stringify(afterDelete));
+  }
+
+  // T172 — typing re-sends the unit in progress, never the whole day
+  async function t172_editingTheFormSendsOnlyItsOwnFile() {
+    const N = 'T172 editing the unit on the form sends only its own small file (and a new photo) — never the day\'s units file or photo index again; saving it moves it into them and empties its file';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    fillForm('A-172'); await captureInto('equip_main', await makePhotoFile('t172a')); saveEntry();
+    fillForm('Form-172'); await captureInto('equip_main', await makePhotoFile('t172f'));
+    const folder = 'Atlanta/' + localDateStr(new Date()), tag = getCollectorTag();
+    const unitsName = 'units_' + tag + '.json', csvName = 'photos_' + tag + '.csv', wipName = 'inprogress_' + tag + '.json';
+    const stub = backupStub();
+    backupTestOn();
+    let first = null, typed = [], wip = null, saved = [], units = [], wipAfter;
+    try {
+      await backupPass();
+      first = { units: unitNames(unitsFile(stub, folder)), wip: ((wipFile(stub, folder) || {}).unit || {}).equipName };
+      const n1 = stub.posts.length;
+      document.getElementById('equipName').value = 'Form-172 typed'; autoSaveCurrent();
+      await captureInto('equip_dataplate', await makePhotoFile('t172g'));
+      await sleep(300);
+      await backupPass();
+      typed = stub.posts.slice(n1).map(x => x.file);
+      wip = wipFile(stub, folder);
+      const n2 = stub.posts.length;
+      saveEntry();
+      await sleep(300);
+      await backupPass();
+      saved = stub.posts.slice(n2).map(x => x.file);
+      units = unitNames(unitsFile(stub, folder));
+      wipAfter = (wipFile(stub, folder) || {}).unit;
+    } finally { backupTestOff(stub); }
+    const ok = first && first.units.join() === 'A-172' && first.wip === 'Form-172'
+      && typed.includes(wipName) && typed.some(f => /^photos\//.test(f)) && !typed.includes(unitsName) && !typed.includes(csvName)
+      && !!(wip && wip.unit && wip.unit.equipName === 'Form-172 typed')
+      && saved.includes(unitsName) && saved.includes(csvName) && saved.includes(wipName)
+      && units.join() === 'A-172,Form-172 typed' && wipAfter === null;
+    record(N, ok, 'first pass: units ' + JSON.stringify(first && first.units) + ', in progress ' + JSON.stringify(first && first.wip)
+      + '; typing + a photo sent ' + JSON.stringify(Array.from(new Set(typed))) + '; saving sent ' + JSON.stringify(Array.from(new Set(saved)))
+      + ' — units ' + JSON.stringify(units) + ', in progress now ' + JSON.stringify(wipAfter));
+  }
+
+  // T173 — a confirmation the device never saved leaves no older one standing
+  async function t173_anUnsavedConfirmationNeverLeavesAnOlderOneStanding() {
+    const N = 'T173 a day file SharePoint confirmed but the device never recorded (the app closed first) is sent again after the restart — even when the day goes back to text an older record says SharePoint has';
+    await resetAppState();
+    setHospitalCode('Marion');
+    const a = mkEntry('A-173'); a.hospitalCode = 'Marion';
+    savedEquipment.push(a); await saveAll();
+    const folder = 'Marion/' + getEntryDate(a), unitsPath = folder + '/units_' + getCollectorTag() + '.json';
+    let stub = backupStub();
+    backupTestOn();
+    const realSave = window.saveMetadataMany;
+    let emptied = null, withB = null, after = null;
+    try {
+      await backupPass();                                    // [A]
+      await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.findIndex(e => e.equipName === 'A-173')); await sleep(300); });
+      await backupPass();                                    // [] — confirmed and recorded
+      emptied = unitNames(unitsFile(stub, folder));
+      const b = mkEntry('B-173'); b.hospitalCode = 'Marion'; b.savedAt = a.savedAt;
+      savedEquipment.push(b); await saveAll();
+      // SharePoint confirms [B]; the app is closed before it saves that confirmation
+      let closed = false;
+      const had = stub.files; stub.restore(); stub = backupStub({ lose: (x) => { if (x.folder + '/' + x.path === unitsPath) closed = true; return false; } });
+      had.forEach((v, k) => stub.files.set(k, v));
+      window.saveMetadataMany = function (o) { if (closed && o && ('backup_sent' in o || 'backup_days' in o)) return Promise.reject(new Error('the app was closed (test)')); return realSave.apply(this, arguments); };
+      await backupPass();
+      withB = unitNames(unitsFile(stub, folder));
+      window.saveMetadataMany = realSave;
+      // opened again: the records come from the device; B is deleted — the day is back to []
+      _backupRecordsLoaded = false; _backupSent = new Map(); _backupDays = new Map(); _backupPauseUntil = 0; _backupRetry.clear(); _backupRecordsDirty = false;
+      await withDialogs({ confirm: true }, async () => { deleteSaved(savedEquipment.findIndex(e => e.equipName === 'B-173')); await sleep(300); });
+      await backupPass();
+      after = unitNames(unitsFile(stub, folder));
+    } finally { window.saveMetadataMany = realSave; backupTestOff(stub); }
+    record(N, emptied && emptied.length === 0 && withB && withB.join() === 'B-173' && after && after.length === 0,
+      'emptied first: ' + JSON.stringify(emptied) + '; then SharePoint confirmed ' + JSON.stringify(withB) + ' but the app closed before recording it; after the restart and deleting B, SharePoint lists ' + JSON.stringify(after));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -4421,7 +4982,13 @@
     t148_waitingForAnotherTabsPhotosHasAWayOut, t149_anUnreadableDeleteRecordNeverHidesTheList, t150_theFallbackCarriesOnlyTheDeletesTheStoreLacks,
     t151_theHashIndexIsNeverWrittenAfterTheClaimMoved, t152_theFallbackListStaysAPlainList, t153_aWarningIsNeverReplacedBeforeItsTime,
     t154_aFailedFallbackWriteNeverRemovesTheUnitsItHolds, t155_aReSavedUnitSurvivesALaunchThatCantReadItsReSaveRecord,
-    t156_aLateLaunchWaitsForTheKeptUnitBeforeItsSlotTakesTheForm, t157_aChangeNotYetAutosavedIsNeverReloadedAway];
+    t156_aLateLaunchWaitsForTheKeptUnitBeforeItsSlotTakesTheForm, t157_aChangeNotYetAutosavedIsNeverReloadedAway,
+    t158_aStoredPhotoGoesUpAndCountsOnlyWhenConfirmed, t159_filedByEachUnitsOwnFacilityAndDay, t160_aDeletedUnitsDayFileIsRewrittenWithoutIt,
+    t161_anUnreadablePhotoWaitsAndAnOrphanIsNeverSent, t162_aRefusedFileWaitsWhileTheRestGoUp, t163_noSignalIsNotASignInProblem,
+    t164_onlyTheTabThatMaySaveBacksUp, t165_exportToSharePointMarksExportedOnlyWhenConfirmed, t166_sendEverythingAgainResendsAll,
+    t167_theIPadSignInNeedsTheVerifierThisAppMade, t168_aPartialListNeverRewritesTheUnitFiles,
+    t169_aPhotoWhoseFacilityChangesGoesAgain, t170_aDayFileIsRememberedBeforeItIsSent, t171_sentRecordsFollowTheListNeverAPartialOne,
+    t172_editingTheFormSendsOnlyItsOwnFile, t173_anUnsavedConfirmationNeverLeavesAnOlderOneStanding];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
