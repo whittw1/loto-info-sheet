@@ -45,6 +45,7 @@
 //             names, the form every 5 min, build 101's days), a scan asks before replacing a typed value
 //   T191      build 102's medium review: new collector initials never empty the old initials' files
 //   T192      build 103: with the backup off, Settings shows only its switch (no Sign in / Test / …)
+//   T193      build 104: Save & New warns about a unit without its Main Photo (never the Data Plate / EE Number)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -5117,7 +5118,7 @@
     sources.forEach(ensureSourceId);
     renderSources();
     await captureInto('source_1', await makePhotoFile('t181'));
-    const flagged = collectIncompleteFields().filter(m => /Photo/.test(m));
+    const flagged = collectIncompleteFields().filter(m => /^Source #/.test(m) && /Photo/.test(m));   // the Main Photo is T193's
     const flaggedNums = flagged.map(m => +(/Source #(\d+)/.exec(m) || [])[1]).sort();
     // the card shows a photo slot exactly where a photo is expected (or held)
     renderSources();
@@ -5485,6 +5486,49 @@
       'off: ' + JSON.stringify(off) + '; turned on: ' + JSON.stringify(onState) + '; off again: ' + JSON.stringify(offAgain) + '; unavailable: ' + JSON.stringify(unavailable));
   }
 
+  // T193 — Save & New warns about a unit without its Main Photo (build 104)
+  async function t193_aUnitWithoutItsMainPhotoIsFlagged() {
+    const N = 'T193 Save & New warns when the Main Photo is missing, even with everything else filled in, and when it did not save — never about the Data Plate or EE Number photos; with the Main Photo taken it saves at once';
+    await resetAppState();
+    fillForm('EF-193');
+    document.getElementById('equipType').value = 'Exhaust Fan';
+    filterTemplateDropdown('Exhaust Fan');
+    document.getElementById('equipTemplate').value = 'Exhaust Fan';
+    sources.forEach(ensureSourceId);
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('t193-src'));
+    const setup = getEquipType() + ' / ' + getTemplate() + ' / ' + getBuilding() + ' / source photo ' + sourcePhotoTaken(0);
+    const overlayText = () => { const o = document.getElementById('incompleteWarningOverlay'); return o ? o.textContent.replace(/\s+/g, ' ').trim() : ''; };
+    const named = 'EF-193';
+    // everything but the Main Photo (the Data Plate and EE Number slots are empty too)
+    const noMain = collectIncompleteFields();
+    let warnNoMain = '';
+    await withDialogs({ confirm: true }, async () => { saveAndNew(); warnNoMain = overlayText(); closeIncompleteWarning(); await sleep(100); });
+    const savedEarly = savedEquipment.some(e => e.equipName === named);
+    // a Main Photo whose save failed ("NOT SAVED" on the slot) is still missing
+    const realStore = window.storePhotoBytes;
+    window.storePhotoBytes = async () => ({ ok: false, where: 'none' });
+    try { await withDialogs({}, async () => { handlePhoto({ files: [await makePhotoFile('t193-bad')] }, 'equip_main'); await waitForPhotoWritesIdle(15000); await sleep(400); }); }
+    finally { window.storePhotoBytes = realStore; }
+    const failedRef = !!(photos.equip_main && photos.equip_main.dbKey && photos.equip_main.unsaved);
+    const unsavedMain = collectIncompleteFields();
+    // the Main Photo taken: nothing flagged, Save & New saves without asking
+    const main = await captureInto('equip_main', await makePhotoFile('t193-main'));
+    const withMain = collectIncompleteFields();
+    let warnWithMain = '';
+    await withDialogs({ confirm: true }, async () => { saveAndNew(); warnWithMain = overlayText(); closeIncompleteWarning(); await sleep(200); });
+    const saved = savedEquipment.find(e => e.equipName === named);
+    const savedMain = !!(saved && saved.photos && saved.photos.equip_main && saved.photos.equip_main.dbKey === main.dbKey);
+    const only = (list) => JSON.stringify(list) === JSON.stringify(['Main info — Main Photo']);
+    record(N, setup === 'Exhaust Fan / Exhaust Fan / Main / source photo true'
+      && only(noMain) && /1 item is still missing/.test(warnNoMain) && /Main info — Main Photo/.test(warnNoMain) && !savedEarly
+      && failedRef && only(unsavedMain)
+      && withMain.length === 0 && warnWithMain === '' && savedMain,
+      'setup ' + setup + '; without the Main Photo flagged ' + JSON.stringify(noMain) + ', warning "' + warnNoMain + '", saved anyway=' + savedEarly
+      + '; Main Photo not saved (ref unsaved=' + failedRef + ') flagged ' + JSON.stringify(unsavedMain)
+      + '; with it flagged ' + JSON.stringify(withMain) + ', warning "' + warnWithMain + '", saved with its Main Photo=' + savedMain);
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -5565,7 +5609,8 @@
     t182_clearAllDataNeverEmptiesTheBackup, t183_panelIdReadTopToBottom, t184_aSecondReturnLinkIsNotAnError,
     t185_marksPlacedForAnOldShapeAreNotSaved, t186_nothingOnSharePointIsEverReplaced, t187_twoExportsTheSameDayKeepBoth,
     t188_theFormIsSnapshottedAtMostEveryFiveMinutes, t189_aScanAsksBeforeReplacingATypedValue, t190_aDayBackedUpByBuild101GetsItsFirstSnapshot,
-    t191_aNewCollectorTagNeverEmptiesTheOldTagsFiles, t192_theBackupsButtonsShowOnlyWhileItIsOn];
+    t191_aNewCollectorTagNeverEmptiesTheOldTagsFiles, t192_theBackupsButtonsShowOnlyWhileItIsOn,
+    t193_aUnitWithoutItsMainPhotoIsFlagged];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
