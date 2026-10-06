@@ -46,6 +46,7 @@
 //   T191      build 102's medium review: new collector initials never empty the old initials' files
 //   T192      build 103: with the backup off, Settings shows only its switch (no Sign in / Test / …)
 //   T193      build 104: Save & New warns about a unit without its Main Photo (never the Data Plate / EE Number)
+//   T194      build 106: one Device ID per unit when Quantity is 2+ (saved as one "a; b" string; Split 1 takes the last tag)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -5529,6 +5530,39 @@
       + '; with it flagged ' + JSON.stringify(withMain) + ', warning "' + warnWithMain + '", saved with its Main Photo=' + savedMain);
   }
 
+  // T194 — one Device ID per unit when Quantity is 2+ (build 106)
+  async function t194_eachUnitGetsItsOwnDeviceId() {
+    const N = 'T194 Quantity 2+ shows one Device ID box per unit (unit 1 first, In before Out) and saves them as one "a; b" string; a pasted list fills the boxes; a typed space survives; Quantity 1 keeps the single box; Split 1 gives the split-off source the last unit\'s tag';
+    await resetAppState();
+    fillForm('AHU-194');
+    sources.length = 0;
+    sources.push({ energySource: 'Electrical 480V', deviceType: 'VFD', quantity: 2, location: 'On Wall', verification: '', duplicate: 'No' });
+    sources.push({ energySource: 'CHW In/Out', deviceType: 'Butterfly Valve', quantity: 2, location: 'Front of Equipment', verification: '', duplicate: 'No' });
+    sources.forEach(ensureSourceId);
+    renderSources();
+    const box = (s, k) => document.getElementById('src_deviceId_' + s + '_' + k);
+    const label = (s, k) => { const b = box(s, k); const sp = b && b.parentElement.querySelector('span'); return sp ? sp.textContent.replace(/\s+/g, ' ').trim() : ''; };
+    const type = (s, k, v) => { const b = box(s, k); b.value = v; b.dispatchEvent(new Event('input', { bubbles: true })); };
+    const labels = [label(0, 0), label(0, 1), label(1, 0), label(1, 1)].join(' | ');
+    const single = !document.getElementById('src_deviceId_0');
+    type(0, 0, '3-SF-50'); const one = sources[0].deviceId;
+    type(0, 1, '3-RF-50'); const both = sources[0].deviceId;
+    type(1, 0, 'BV-1; BV-2'); await sleep(100);
+    const pasted = sources[1].deviceId + ' / boxes ' + [box(1, 0) && box(1, 0).value, box(1, 1) && box(1, 1).value].join(',');
+    type(1, 1, 'Pump '); const typing = sources[1].deviceId;
+    sources[1].quantity = 1; renderSources();
+    const qty1 = !!document.getElementById('src_deviceId_1') && !box(1, 0);
+    sources[1].quantity = 2; renderSources();
+    await withDialogs({ confirm: true }, async () => { splitSource(0); await sleep(300); });
+    const split = sources.slice(0, 2).map(x => (x.quantity || 1) + ':' + (x.deviceId || '')).join(' / ');
+    record(N, labels === 'Unit 1 #1.1 | Unit 2 #1.2 | In #2 | Out #2' && single
+      && one === '3-SF-50' && both === '3-SF-50; 3-RF-50'
+      && pasted === 'BV-1; BV-2 / boxes BV-1,BV-2' && typing === 'BV-1; Pump '
+      && qty1 && split === '1:3-SF-50 / 1:3-RF-50',
+      'labels ' + labels + '; single box gone=' + single + '; typed ' + JSON.stringify(one) + ' then ' + JSON.stringify(both)
+      + '; pasted ' + pasted + '; typing a space ' + JSON.stringify(typing) + '; Quantity 1 single box=' + qty1 + '; after Split 1 ' + split);
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -5610,7 +5644,7 @@
     t185_marksPlacedForAnOldShapeAreNotSaved, t186_nothingOnSharePointIsEverReplaced, t187_twoExportsTheSameDayKeepBoth,
     t188_theFormIsSnapshottedAtMostEveryFiveMinutes, t189_aScanAsksBeforeReplacingATypedValue, t190_aDayBackedUpByBuild101GetsItsFirstSnapshot,
     t191_aNewCollectorTagNeverEmptiesTheOldTagsFiles, t192_theBackupsButtonsShowOnlyWhileItIsOn,
-    t193_aUnitWithoutItsMainPhotoIsFlagged];
+    t193_aUnitWithoutItsMainPhotoIsFlagged, t194_eachUnitGetsItsOwnDeviceId];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

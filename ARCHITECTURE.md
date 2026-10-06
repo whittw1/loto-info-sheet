@@ -222,7 +222,8 @@ interface EnergySource {
                                  // Maps to loto-web EnergySource identity.
   energySource: string;          // e.g. "Electrical 208V", "LPS 10 PSI", "Condensate In"
   deviceType: string;            // e.g. "Disconnect", "Gate Valve", "Rotating"
-  deviceId: string;              // free-text device identifier (e.g. "Pump 3", "V-201")
+  deviceId: string;              // free-text device identifier (e.g. "Pump 3", "V-201"); with quantity 2+ one tag
+                                 // per unit joined by "; " ("3-SF-50; 3-RF-50", unit 1 first) — build 106
   quantity: number;              // 1..8
   location: string;              // e.g. "On Equipment", "Building A / MCC", or a custom string
   verification: string;          // e.g. "Controls", "GaugeOnly - Hot"
@@ -1182,6 +1183,44 @@ unit in it whose delete is no later than the list's stamp had been re-saved by t
 
 ---
 
+### Build 106 — one Device ID per unit when Quantity is 2+
+
+A field request (2026-10-06, VA comment WI-29 on ATL-LOTO-072): a source with
+quantity 2 — two VFDs, two breakers, an In/Out valve pair — had ONE Device ID
+box, and loto-web printed that one tag on every device it expanded the source
+into, so the second drive's lockout step named the first drive's disconnect.
+With quantity 2 or more the Device ID field now shows **one box per unit**
+(`Unit 1 #n.1`, `Unit 2 #n.2`, … — the same numbering as the valve marks; an
+In/Out pair shows **In** and **Out**), each with its own Scan button. The boxes
+save as ONE string in `deviceId`, joined by `"; "` — `"3-SF-50; 3-RF-50"` — so
+the CSV and XLSX Device ID columns, `entries.json` and loto-web's importer carry
+it unchanged (no export or schema change). loto-web (live 2026-10-06,
+`app/services/unit_ids.py`) gives unit *i* of the expanded source the *i*-th tag:
+unit 1 is its lowest ID, the photo's `#n.1` mark, the IN valve of an In/Out pair.
+
+- One tag with no `;` still covers every unit (unit 2's box reads "same as
+  Unit 1"); a blank entry in a list means that unit has no tag of its own.
+- Commas are **not** a unit separator — they list one breaker's poles
+  ("1, 3, 5") and stay inside a box.
+- A pasted `"a; b"` fills that box and the ones after it. The boxes keep the
+  raw text while typing (trimming would eat the space in "Pump 3"); loto-web
+  trims each tag.
+- **Split 1** gives the split-off source the LAST unit's tag and the original
+  keeps the rest, in order (a single tag stays on the original; the new valve
+  starts blank, as since build 93).
+- Quantity 1 is unchanged: the single box.
+
+**Build 105 does not exist as a release.** An archive was taken at 1.4 (105) on
+2026-10-06 before `npm run sync` had copied the new page into
+`ios/App/App/public/`, so the build Apple received under 105 carries build
+104's page (header `b104`, cache v7.100) — identical to 104, harmless, never
+promoted to the web. The change ships as **106**. Before every archive, check
+`grep -o "b[0-9]*</span>" ios/App/App/public/index.html` reads the new build.
+
+| Test | What it holds |
+|---|---|
+| T194 | quantity 2 shows two boxes labelled `Unit 1 #1.1` / `Unit 2 #1.2` (an In/Out pair `In #2` / `Out #2`) instead of the single box; typing saves `"3-SF-50"` then `"3-SF-50; 3-RF-50"`; a pasted `"BV-1; BV-2"` fills both boxes; a typed trailing space survives; quantity 1 brings the single box back; Split 1 leaves `1:3-SF-50` and gives the new source `1:3-RF-50` |
+
 ### Build 104 — the Main Photo in the Save & New warning
 
 A field request (2026-10-01): a unit with every field and every source photo
@@ -2103,7 +2142,7 @@ The cleanest way to ingest a field export: read `entries.json` instead of parsin
     {
       "id": "…", "lotoId": "BATH-AHU-001", "hospitalCode": "Atlanta",
       "equipName": "AHU-1", "sources": [
-        { "sourceId": "…", "energySource": "Electrical 208V", "deviceId": "D3",
+        { "sourceId": "…", "energySource": "Electrical 208V", "deviceId": "D3",   // qty 2+: "D3; D4" (build 106)
           "valveState": "normally_closed", "photoFile": "photos/0713_00003.jpg",
           "photoMarks": [ { "x": 0.412, "y": 0.633 } ] }
       ],
@@ -2286,7 +2325,7 @@ Required by Apple even though the app only uses `<input type="file" capture="env
 ### Versioning
 
 - `MARKETING_VERSION` — user-facing (currently `1.4`); bump for user-visible releases
-- `CURRENT_PROJECT_VERSION` — build number (currently **104**); **must be strictly increasing** for the same `MARKETING_VERSION` or Apple rejects the upload. Bumped by +1 on every commit that goes to TestFlight. Both Debug + Release entries in `project.pbxproj` must match.
+- `CURRENT_PROJECT_VERSION` — build number (currently **106**); **must be strictly increasing** for the same `MARKETING_VERSION` or Apple rejects the upload. Bumped by +1 on every commit that goes to TestFlight. Both Debug + Release entries in `project.pbxproj` must match.
 
 ### Service worker cache
 
@@ -2295,7 +2334,7 @@ an error page or a Wi-Fi captive portal never replaces the cached app — and fa
 back to the cached `index.html` for navigations offline). It precaches the app,
 JSZip **and ExcelJS** (build 91). It does not run inside the iOS app (no
 App-Bound Domains). **`CACHE_NAME` must be bumped every time cached files
-change.** Currently `loto-collector-v7.100` (build 104 ↔ v7.100; build 103 was v7.99). It leaves alone
+change.** Currently `loto-collector-v7.102` (build 106 ↔ v7.102; build 104 was v7.100 — 105 was an archive of 104's page, and v7.101 never shipped). It leaves alone
 anything cross-origin, `/api/…` and `/.auth/…` (build 101: the backup's calls and
 the Microsoft sign-in must always reach the network, never a cached answer).
 
