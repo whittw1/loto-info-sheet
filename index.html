@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b104</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b106</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -5179,14 +5179,38 @@ function renderSources() {
               <input type="text" id="src_device_custom_${i}" value="${src.deviceType||''}" placeholder="Enter custom device type"
                 oninput="updateSourceCustomField(${i},'deviceType',this.value)">
             </div>` : html`<div id="customDeviceGroup_${i}" style="display:none;"></div>`}
-            <div class="form-group">
+            ${(() => {
+              // Per-unit Device IDs (build 106): with Quantity 2+ each unit gets its
+              // own tag box. They save as ONE string, "3-SF-50; 3-RF-50", so every
+              // export and loto-web's importer carry it unchanged; loto-web tags its
+              // unit 1 (lowest ID, photo mark #n.1, the IN valve of an In/Out pair)
+              // with the first entry. One tag with no ';' still covers every unit.
+              const n = valveMarkSlots(src);
+              if (n < 2) return html`<div class="form-group">
               <label>Device ID</label>
               <div class="scan-input-row">
                 <input type="text" id="src_deviceId_${i}" value="${src.deviceId||''}" placeholder="e.g. Pump 3, V-201"
                   oninput="updateSource(${i},'deviceId',this.value)">
                 <button type="button" class="scan-btn" onclick="scanTextToField('src_deviceId_${i}')" title="Scan label">&#128247;</button>
               </div>
-            </div>
+            </div>`;
+              const parts = splitUnitIds(src.deviceId);
+              const isList = String(src.deviceId || '').includes(';');
+              const inOut = isInOutPair(src);
+              const name = k => inOut ? (k ? 'Out' : 'In') : 'Unit ' + (k + 1);
+              const extra = parts.slice(n).filter(x => x.trim());
+              return html`<div class="form-group">
+              <label>Device ID <span style="font-weight:400;color:var(--text-dim);">&mdash; one per unit</span></label>
+              ${Array.from({ length: n }, (_, k) => html`<div class="scan-input-row" style="margin-bottom:6px;align-items:center;">
+                <span style="min-width:64px;font-size:12px;color:var(--text-dim);">${name(k)} <span style="opacity:.7;">#${i + 1}${inOut ? '' : '.' + (k + 1)}</span></span>
+                <input type="text" id="src_deviceId_${i}_${k}" value="${parts[k] || ''}"
+                  placeholder="${k === 0 ? 'e.g. Pump 3, V-201' : (!isList && parts[0].trim() ? 'same as ' + name(0) : 'no tag')}"
+                  oninput="updateUnitDeviceId(${i},${k},this.value)">
+                <button type="button" class="scan-btn" onclick="scanTextToField('src_deviceId_${i}_${k}')" title="Scan label">&#128247;</button>
+              </div>`)}
+              ${extra.length ? html`<div style="font-size:11px;color:#b5451b;">More tags than Quantity, not printed: ${extra.join('; ')}</div>` : ''}
+            </div>`;
+            })()}
             <div class="form-group">
               <label>Location</label>
               <select onchange="handleLocationChange(${i},this.value)" id="src_loc_${i}">
@@ -5341,6 +5365,29 @@ function updateSource(index, field, value) {
   autoSaveCurrent();
 }
 
+// Per-unit Device IDs (build 106) — the boxes in renderSources. Raw text in and
+// out: the boxes re-render from this string, so trimming here would eat the
+// space while someone types "Pump 3" (loto-web trims each tag). Commas stay
+// inside a unit — they list one breaker's poles ("1, 3, 5").
+function splitUnitIds(v) {
+  return String(v || '').split(';').map((x, k) => k ? x.replace(/^ /, '') : x);
+}
+function joinUnitIds(parts) {
+  const p = parts.map(x => String(x || ''));
+  while (p.length && !p[p.length - 1].trim()) p.pop();
+  return p.join('; ');
+}
+function updateUnitDeviceId(index, unit, value) {
+  const src = sources[index];
+  const parts = splitUnitIds(src.deviceId);
+  const next = Array.from({ length: Math.max(valveMarkSlots(src), parts.length) }, (_, k) => parts[k] || '');
+  // A pasted "a; b" fills this unit and the ones after it.
+  const pieces = String(value).split(';');
+  pieces.forEach((piece, k) => { next[unit + k] = k === 0 ? piece : piece.trim(); });
+  updateSource(index, 'deviceId', joinUnitIds(next));
+  if (pieces.length > 1) renderSources();
+}
+
 // Pull one physical valve out of a multi-quantity source into its own quantity-1
 // source so the tech can state and photograph it individually. This is the
 // reliable way to flag a single bypass / normally-closed valve when a source has
@@ -5350,6 +5397,9 @@ function splitSource(index) {
   const src = sources[index];
   const qty = parseInt(src.quantity, 10) || 1;
   if (qty < 2) { showToast('Increase quantity to 2+ before splitting', true); return; }
+  // Per-unit tags "a; b" (build 106): the split-off valve takes the LAST unit's
+  // tag and the original keeps the rest, in order.
+  const unitIds = String(src.deviceId || '').includes(';') ? splitUnitIds(src.deviceId) : null;
 
   // Original keeps the remaining valves
   src.quantity = qty - 1;
@@ -5366,6 +5416,10 @@ function splitSource(index) {
   delete newSrc.sourceId;      // a distinct valve: fresh UUID minted at capture/save
   delete newSrc.priorSourceIds;
   newSrc.deviceId = '';        // a distinct valve → its own tag (build 93)
+  if (unitIds) {
+    newSrc.deviceId = (unitIds[qty - 1] || '').trim();
+    src.deviceId = joinUnitIds(unitIds.slice(0, qty - 1));
+  }
   const prev = sources.slice();
   sources.splice(index + 1, 0, newSrc);
   rebindSourcePhotos(prev);    // photos follow their sources; the split valve starts empty
