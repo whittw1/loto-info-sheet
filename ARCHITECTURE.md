@@ -35,12 +35,18 @@ own origin, so the backup works on the Azure address and not on the GitHub Pages
 copy. It writes into one SharePoint site only; its settings live in Azure (§6
 "Build 101", `api/README.md`).
 
-### Which build each channel carries (checked 2026-10-01)
+### Which build each channel carries (checked 2026-10-06)
 
 | Channel | Source branch | Build | Photo-safety status |
 |---|---|---|---|
-| iOS / TestFlight | `ios-testflight-scaffold` | **104** (cache v7.100; the Main Photo warning) — **uploaded to TestFlight 2026-10-01**; **103** (cache v7.99) — uploaded 2026-09-30 (101 and 102 were never archived); **100** (archived 2026-09-28) is the last build uploaded before it | The iPad was last known on **90**; the upgrade chain installs b88 → b90 → 102 over each other (all intact). Installing 100 over 90 is exactly the path the upgrade chain (`tests/fuzz/upgrade/`, b88 → b90 → 100 installed over each other on a Simulator) verified: every unit and every photo byte intact, the June numeric-id photos readable again ("✓ N photos safe"), the June units flagged "⚠ export again (photos)" until one export by this build ships them. **Export before deleting anything.** |
-| Azure SWA + GitHub Pages (web) | `main` | **104** — promoted 2026-10-01 (`e1fd2ce`; the write-once backup API since 102) (§9) | Same code; web-only fixes that matter there: the tab claim (one tab writes; the other pauses — and, since 96, a build-94 tab still open during a deploy pauses too; since 99 its final autosave is read back, and since 100 a change made right after opening is kept); a launch waits on the Web Lock of a tab still writing photos, with **Open anyway** after 10 s (99) — §6 "Tabs (web only)"; and the offline export (verified with the server killed after the service worker precached). |
+| iOS / TestFlight | `ios-testflight-scaffold` | **106** (cache v7.102; one Device ID per unit) — synced for archive 2026-10-06 (`eb113af`; the archive and upload are the user's); **105** — uploaded 2026-10-06 but an archive of build 104's page, taken before the sync (skip it); **104** (cache v7.100; the Main Photo warning) — **uploaded to TestFlight 2026-10-01**; **103** (cache v7.99) — uploaded 2026-09-30 (101 and 102 were never archived); **100** (archived 2026-09-28) is the last build uploaded before it | The iPad was last known on **90**; the upgrade chain installs b88 → b90 → 102 over each other (all intact). Installing 100 over 90 is exactly the path the upgrade chain (`tests/fuzz/upgrade/`, b88 → b90 → 100 installed over each other on a Simulator) verified: every unit and every photo byte intact, the June numeric-id photos readable again ("✓ N photos safe"), the June units flagged "⚠ export again (photos)" until one export by this build ships them. **Export before deleting anything.** |
+| Azure SWA + GitHub Pages (web) | `main` | **106** — promoted 2026-10-06 (`01e772f`); before it **104** — promoted 2026-10-01 (`e1fd2ce`; the write-once backup API since 102) (§9) | Same code; web-only fixes that matter there: the tab claim (one tab writes; the other pauses — and, since 96, a build-94 tab still open during a deploy pauses too; since 99 its final autosave is read back, and since 100 a change made right after opening is kept); a launch waits on the Web Lock of a tab still writing photos, with **Open anyway** after 10 s (99) — §6 "Tabs (web only)"; and the offline export (verified with the server killed after the service worker precached). |
+
+**Build 106** (one Device ID per unit) — released 2026-10-06: the web promoted
+(`01e772f`; the app files only) and `ios-testflight-scaffold` at `eb113af` synced
+for archive (the archive and TestFlight upload are the user's). **Build 105** was
+archived and uploaded the same morning before the sync — it carries build 104's
+page (§6 "Build 106"), so skip it.
 
 **Build 104** (the Main Photo warning) — released 2026-10-01: archived and uploaded to
 TestFlight by the user (`ios-testflight-scaffold` `0a3575a`), and the web promoted
@@ -2385,6 +2391,10 @@ repo on branch `main-promotion`, tracking `origin/main`.
    public static site.
 3. `git commit`, then `git push origin main-promotion:main`. Azure deploys automatically.
 
+> **Build 106 promoted 2026-10-06 (`01e772f`)** — the app only (the two HTML copies, `sw.js`): one Device ID per
+> unit when Quantity is 2+; both deploys green; Azure and GitHub Pages serve `b106` / cache v7.102; the API unchanged
+> (`/api/upload` 401 unsigned, `POST /api/device-pass` 503 — checked after the push; a GET there is 404, the function
+> binds POST only). iOS: `ios-testflight-scaffold` at `eb113af`, synced for archive (105 was archived before the sync).
 > **Build 104 promoted 2026-10-01 (`e1fd2ce`)** — the app only (the two HTML copies, `sw.js`): Save & New warns about a
 > missing Main Photo; both deploys green; Azure and GitHub Pages serve `b104` / cache v7.100; the API unchanged
 > (`/api/upload` 401 unsigned, `/api/device-pass` 503 — checked after the push). iOS: `ios-testflight-scaffold` at
