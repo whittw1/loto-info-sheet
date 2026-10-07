@@ -47,6 +47,8 @@
 //   T192      build 103: with the backup off, Settings shows only its switch (no Sign in / Test / …)
 //   T193      build 104: Save & New warns about a unit without its Main Photo (never the Data Plate / EE Number)
 //   T194      build 106: one Device ID per unit when Quantity is 2+ (saved as one "a; b" string; Split 1 takes the last tag)
+//   T195      build 107: no Kinetic on pumps; a fan unit's Kinetic row names its fan (Supply / Return / Exhaust)
+//   T196      build 107: Save & New flags a missing Electrical source, only on kinds of equipment that always have one
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -2820,14 +2822,15 @@
   // T97 — Condensate Pump reuses the HHW pump template, which gained an HHW In
   // source (build 22) that a condensate pump doesn't have
   async function t97_condensatePumpHasNoHhwSupply() {
-    const N = 'T97 a new Condensate Pump gets no phantom HHW In source';
+    const N = 'T97 a new Condensate Pump gets no phantom HHW In source (and, since build 107, no Kinetic — just its Electrical)';
     await resetAppState();
     fillFormNoSources('CP-97');
     document.getElementById('equipType').value = 'Condensate Pump';
     await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
     closeAllPrompts();
     const names = sources.map(x => x.energySource);
-    record(N, !names.some(n => /^HHW In/.test(n || '')) && names.some(n => /^Kinetic/.test(n || '')), 'sources: ' + names.join(', '));
+    record(N, !names.some(n => /^HHW In/.test(n || '')) && !names.some(n => /^Kinetic/.test(n || ''))
+      && names.some(n => /^Electrical/.test(n || '')), 'sources: ' + names.join(', '));
   }
 
   // T98 — the template-change dialog promises that sources holding the user's
@@ -5563,6 +5566,104 @@
       + '; pasted ' + pasted + '; typing a space ' + JSON.stringify(typing) + '; Quantity 1 single box=' + qty1 + '; after Split 1 ' + split);
   }
 
+  // T195 — no Kinetic on pumps; a fan unit's Kinetic row names its fan (build 107)
+  async function t195_pumpsGetNoKineticAndFansNameTheirFan() {
+    const N = 'T195 pump types and pump templates add no Kinetic (a custom "Booster Pump" too); an AHU template starts its Kinetic row "At Supply Fan" and a second one added by hand "At Return Fan"; an Exhaust Fan starts "At Exhaust Fan"; a Unit Heater keeps "On Equipment"; the location list offers Exhaust and Relief fans';
+    await resetAppState();
+    const pumpTypes = ['CHW Pump', 'Heating HW Pump', 'Domestic HW Pump', 'Domestic Water Pump', 'Condensate Pump', 'Chemical Feed Pump', 'Vacuum Pump', 'Chemical Pump'];
+    const pumpTemplates = ['Medical Vacuum', 'Chilled Water Pump', 'Heating Hot Water Pump', 'Standard Pump', 'Feedwater Pump', 'Glycol Pump'];
+    const typeK = pumpTypes.filter(t => (EQUIPMENT_AUTO_SOURCES[t] || []).some(x => x.energySource === 'Kinetic'));
+    const tmplK = pumpTemplates.filter(t => (TEMPLATE_AUTO_SOURCES[t] || []).some(x => x.energySource === 'Kinetic'));
+    const kinetic = () => sources.filter(x => x.energySource === 'Kinetic').map(x => x.location).join(',');
+    // a custom pump type picks the Standard Pump template
+    fillFormNoSources('BP-195');
+    document.getElementById('equipType').value = '** New Equipment Type **';
+    document.getElementById('equipTypeCustom').value = 'Booster Pump';
+    await withDialogs({ confirm: true }, async () => { handleCustomEquipTypeChange(); });
+    closeAllPrompts();
+    const custom = getTemplate() + ': ' + sources.map(x => x.energySource).join(', ');
+    // an AHU template; then a second Kinetic row added by hand
+    fillFormNoSources('AHU-195');
+    document.getElementById('equipType').value = 'Air Handler'; filterTemplateDropdown('Air Handler');
+    document.getElementById('equipTemplate').value = 'AHU - HHW';
+    await withDialogs({ confirm: true }, async () => { handleTemplateChange(); });
+    closeAllPrompts();
+    const ahu = kinetic();
+    addSource();
+    handleEnergySourceChange(sources.length - 1, 'Kinetic');
+    const ahuTwo = kinetic();
+    // an Exhaust Fan
+    fillFormNoSources('EF-195');
+    document.getElementById('equipType').value = 'Exhaust Fan'; filterTemplateDropdown('Exhaust Fan');
+    document.getElementById('equipTemplate').value = 'Exhaust Fan';
+    await withDialogs({ confirm: true }, async () => { handleTemplateChange(); });
+    closeAllPrompts();
+    const ef = kinetic();
+    // a non-fan unit keeps the old default, by hand too
+    fillFormNoSources('UH-195');
+    document.getElementById('equipType').value = 'Unit Heater'; filterTemplateDropdown('Unit Heater');
+    addSource();
+    handleEnergySourceChange(sources.length - 1, 'Kinetic');
+    const uh = kinetic();
+    const offered = ['At Supply Fan', 'At Return Fan', 'At Exhaust Fan', 'At Relief Fan'].every(l => DATA.locations.includes(l));
+    record(N, typeK.length === 0 && tmplK.length === 0
+      && /^Standard Pump: /.test(custom) && !/Kinetic/.test(custom) && /Electrical/.test(custom)
+      && ahu === 'At Supply Fan' && ahuTwo === 'At Supply Fan,At Return Fan' && ef === 'At Exhaust Fan' && uh === 'On Equipment' && offered,
+      'pump types with Kinetic ' + JSON.stringify(typeK) + '; pump templates with Kinetic ' + JSON.stringify(tmplK) + '; custom ' + custom
+      + '; AHU ' + ahu + ' then ' + ahuTwo + '; Exhaust Fan ' + ef + '; Unit Heater ' + uh + '; fan locations offered=' + offered);
+  }
+
+  // T196 — a missing Electrical source is flagged only where the kind always has one (build 107)
+  async function t196_aMissingElectricalSourceIsFlaggedOnlyWhereExpected() {
+    const N = 'T196 Save & New flags "no Electrical source" for an Air Handler, an electric Condensate Return Unit, a steam Domestic Water Heater and a custom "Booster Pump" — not for a steam Condensate Return Unit, a Heat Exchanger, a DA Tank or a custom "Expansion Tank"; any voltage or a linked Electrical source clears it, Stored Electrical Energy does not; a blank type is flagged as before, without the electrical item; the warning shows and nothing saves';
+    await resetAppState();
+    const valve = () => ({ energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: 'Above Equipment', verification: 'Temp Only - Hot', duplicate: 'No' });
+    const elec = (v, extra) => Object.assign({ energySource: 'Electrical ' + v, deviceType: 'Disconnect', quantity: 1, location: 'Panel LP-1', verification: 'Controls', duplicate: 'No' }, extra || {});
+    const cap = () => ({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', quantity: 1, location: 'At Capacitor Bank', verification: '', duplicate: 'No' });
+    const setUnit = (type, template, srcs) => {
+      fillFormNoSources('U-196');
+      const known = DATA.equipmentTypes.includes(type);
+      document.getElementById('equipType').value = known ? type : (type ? '** New Equipment Type **' : '');
+      document.getElementById('equipTypeCustom').value = known ? '' : type;
+      filterTemplateDropdown(known ? type : '');
+      document.getElementById('equipTemplate').value = template;
+      sources = srcs; sources.forEach(ensureSourceId); renderSources();
+    };
+    const flagged = () => collectIncompleteFields().filter(m => /^Energy sources/.test(m));
+    const cases = [
+      ['Air Handler', 'AHU - Steam', () => [valve()], true],
+      ['Condensate Return Unit', 'Condensate Return Unit', () => [valve()], true],
+      ['Condensate Return Unit', 'Condensate Return Unit - Steam', () => [valve()], false],
+      ['Domestic Water Heater', 'Water Heater - Steam', () => [valve()], true],
+      ['Heat Exchanger', 'Heat Exchanger - Steam', () => [valve()], false],
+      ['DA Tank', '', () => [valve()], false],
+      ['Booster Pump', 'Standard Pump', () => [valve()], true],
+      ['Expansion Tank', '', () => [valve()], false],
+      ['Air Handler', 'AHU - Steam', () => [valve(), elec('480V')], false],
+      ['Air Handler', 'AHU - Steam', () => [valve(), elec('208V', { linkedTo: 'other-unit-source' })], false],
+      ['Condensing Unit', 'Condensing Unit', () => [cap()], true],
+    ];
+    const wrong = [];
+    for (const [type, template, srcs, expect] of cases) {
+      setUnit(type, template, srcs());
+      const f = flagged();
+      const want = expect ? ['Energy sources — no Electrical source (expected for ' + type + ')'] : [];
+      if (JSON.stringify(f) !== JSON.stringify(want) || getTemplate() !== template) wrong.push(type + ' / ' + getTemplate() + ': ' + JSON.stringify(f));
+    }
+    // a blank type: the old Equipment Type item, never the electrical one
+    setUnit('', '', [valve()]);
+    const blank = collectIncompleteFields();
+    const blankOk = blank.includes('Main info — Equipment Type') && !blank.some(m => /^Energy sources/.test(m));
+    // the dialog lists it, and "Go back" saves nothing
+    setUnit('Air Handler', 'AHU - Steam', [valve()]);
+    const overlayText = () => { const o = document.getElementById('incompleteWarningOverlay'); return o ? o.textContent.replace(/\s+/g, ' ').trim() : ''; };
+    let warn = '';
+    await withDialogs({ confirm: true }, async () => { saveAndNew(); warn = overlayText(); closeIncompleteWarning(); await sleep(100); });
+    const saved = savedEquipment.some(e => e.equipName === 'U-196');
+    record(N, wrong.length === 0 && blankOk && /Energy sources — no Electrical source \(expected for Air Handler\)/.test(warn) && !saved,
+      'wrong cases ' + JSON.stringify(wrong) + '; blank type flagged ' + JSON.stringify(blank) + '; warning "' + warn + '"; saved=' + saved);
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -5644,7 +5745,8 @@
     t185_marksPlacedForAnOldShapeAreNotSaved, t186_nothingOnSharePointIsEverReplaced, t187_twoExportsTheSameDayKeepBoth,
     t188_theFormIsSnapshottedAtMostEveryFiveMinutes, t189_aScanAsksBeforeReplacingATypedValue, t190_aDayBackedUpByBuild101GetsItsFirstSnapshot,
     t191_aNewCollectorTagNeverEmptiesTheOldTagsFiles, t192_theBackupsButtonsShowOnlyWhileItIsOn,
-    t193_aUnitWithoutItsMainPhotoIsFlagged, t194_eachUnitGetsItsOwnDeviceId];
+    t193_aUnitWithoutItsMainPhotoIsFlagged, t194_eachUnitGetsItsOwnDeviceId,
+    t195_pumpsGetNoKineticAndFansNameTheirFan, t196_aMissingElectricalSourceIsFlaggedOnlyWhereExpected];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
