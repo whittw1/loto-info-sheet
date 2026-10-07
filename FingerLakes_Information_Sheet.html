@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b106</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b107</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1117,7 +1117,7 @@ const DATA = {
     "Left of Equipment","Right of Equipment","In Ceiling",
     "Front Left Corner of Equipment","Front Right Corner of Equipment",
     "Back Left Corner of Equipment","Back Right Corner of Equipment",
-    "At Supply Fan","At Return Fan",
+    "At Supply Fan","At Return Fan","At Exhaust Fan","At Relief Fan",
     "Front of","Above","** Custom Location **"
   ],
   verificationTypes: [
@@ -1702,40 +1702,33 @@ const EQUIPMENT_AUTO_SOURCES = {
     { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
   ],
   'CHW Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Heating HW Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Domestic HW Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Domestic Water Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensate Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Chemical Feed Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Vacuum Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Exhaust Fan': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'At Exhaust Fan', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Air Handler': [
     // noPhoto deliberately omitted on AHU Kinetic — field crews want a fan-housing photo.
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'At Supply Fan', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
   'Air Compressor': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
@@ -1761,7 +1754,6 @@ const EQUIPMENT_AUTO_SOURCES = {
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   'Chemical Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 120V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
 };
@@ -4367,7 +4359,8 @@ const EQUIPMENT_EXTRA_SOURCES = {
   ],
   // Fire pumps: suction + discharge water lines as SEPARATE sources (each
   // gets its own valve/photo/ID — per wilkins 2026-08-01, not a combined
-  // In/Out row). Kinetic + Electrical come from the Standard Pump template.
+  // In/Out row). Electrical comes from the Standard Pump template (no Kinetic
+  // on pumps since build 107 — loto-web dropped it from the pump matrices 10-05).
   'Fire Pump': [
     { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '' },
     { energySource: 'DW Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '' },
@@ -4609,28 +4602,28 @@ const TEMPLATE_AUTO_SOURCES = {
   // noPhoto deliberately omitted on AHU Kinetic across all three AHU templates —
   // field crews want a fan-housing photo for the kinetic source.
   'AHU - Steam': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'At Supply Fan', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'VFD', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'AHU - HHW': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'At Supply Fan', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'VFD', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   // Geothermal AHU: standard AHU auto-population (Kinetic + Electrical VFD)
   // plus the geothermal coil. Quantity 2 on the In/Out source matches the
   // app's manual In/Out behavior (one valve on each side).
   'AHU - Geothermal': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'At Supply Fan', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'VFD', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Geothermal Water In/Out', deviceType: 'Ball Valve', quantity: 2, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank', verification: '', quantity: 1, duplicate: 'No', detail: '', auto: true, noPhoto: true },
   ],
   'AHU - Steam, CHW, HHW': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'At Supply Fan', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'VFD', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Exhaust Fan': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'At Exhaust Fan', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   'Air Compressor': [
@@ -4646,10 +4639,9 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Compressed Air Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
-  // Medical Vacuum: base unit (pump motor + disconnect). Voltage prompt +
+  // Medical Vacuum: base unit (the pump's disconnect; no Kinetic since build 107). Voltage prompt +
   // "how many units? 1-4". Tech adds the vacuum-line source as needed.
   'Medical Vacuum': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensing Unit': [
@@ -4665,30 +4657,25 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   'Chilled Water Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'CHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly - CHW', duplicate: 'No', detail: '', auto: true },
   ],
   'Heating Hot Water Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'HHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   'Standard Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
-  // Mirrors Heating Hot Water Pump (Kinetic + Electrical, voltage is prompted)
+  // Mirrors Heating Hot Water Pump (Electrical, voltage is prompted; no Kinetic since build 107)
   // and adds a Feedwater In source pre-configured with Gate Valve / GaugeOnly - Hot.
   'Feedwater Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Feedwater In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
   ],
-  // Glycol Pump: standard pump shape but with the Electrical pre-set to
+  // Glycol Pump: standard pump shape (no Kinetic since build 107) but with the Electrical pre-set to
   // Disconnect / Controls so the user doesn't have to fill those each time.
   'Glycol Pump': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   // Day Tank: 120V control circuit + Fuel Oil In. Electrical is fixed at
@@ -5329,13 +5316,28 @@ function renderSources() {
   autoSaveCurrent();
 }
 
+// Build 107: a Kinetic row on an air handler or exhaust fan names its fan.
+// loto-web pairs each Kinetic row with the matrix's fan column, and captions its
+// photo, by the fan named in the location ("At Return Fan" → "Return Fan"); a
+// location that names no fan ("On Equipment") gets a warning there. Pumps get no
+// Kinetic at all (loto-web removed it from the pump matrices, 2026-10-05).
+function kineticDefaultLocation() {
+  const type = getEquipType(), tmpl = getTemplate();
+  if (type === 'Exhaust Fan' || tmpl === 'Exhaust Fan') return 'At Exhaust Fan';
+  if (type === 'Air Handler' || /^AHU\b/.test(tmpl)) {
+    const supplyNamed = sources.some(s => s.energySource === 'Kinetic' && s.location === 'At Supply Fan');
+    return supplyNamed ? 'At Return Fan' : 'At Supply Fan';
+  }
+  return SOURCE_DEFAULTS['Kinetic'].location;
+}
+
 function updateSource(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
   if (field === 'energySource' && value && SOURCE_DEFAULTS[value]) {
     const defaults = SOURCE_DEFAULTS[value];
     if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
-    if (!sources[index].location) sources[index].location = defaults.location;
+    if (!sources[index].location) sources[index].location = value === 'Kinetic' ? kineticDefaultLocation() : defaults.location;
     if (!sources[index].verification) sources[index].verification = defaults.verification;
     applyNoPhotoDefault(index);
     const cleared = reconcileSourceMarks(index, true);
@@ -5482,7 +5484,7 @@ function handleEnergySourceChange(index, value) {
     if (value && SOURCE_DEFAULTS[value]) {
       const defaults = SOURCE_DEFAULTS[value];
       if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
-      if (!sources[index].location) sources[index].location = defaults.location;
+      if (!sources[index].location) sources[index].location = value === 'Kinetic' ? kineticDefaultLocation() : defaults.location;
       if (!sources[index].verification) sources[index].verification = defaults.verification;
       showToast(`Auto-filled defaults for ${value}`);
     }
@@ -8355,12 +8357,45 @@ function renderMiscPhotos() {
 // SAVE & NEW - Core multi-equipment feature
 // ============================================================================
 // Fields checked before saving (and, since build 102, each source's photo
-// where its slot is shown; since build 104, the Main Photo). Deliberately NOT
+// where its slot is shown; since build 104, the Main Photo; since build 107, an
+// Electrical source on a unit whose kind always has one). Deliberately NOT
 // flagged, because they're optional by design: LOTO ID (often not assigned in
 // the field), Notes, Tied To, Device ID, Detail, the Data Plate and EE Number
 // photos (not every unit has a plate or an EE tag), and Quantity / Duplicate /
 // Valve State (which always carry a value). Linked sources are skipped
 // entirely — their details come from the equipment they point at.
+// Build 107: the kinds of equipment that always have an electrical feed, so a
+// unit of one of them with no Electrical source gets a warning at Save & New.
+// Scoped on purpose: heat exchangers, steam (pressure-powered) condensate
+// return units, PRV stations and plain vessels (DA Tank, Condensate Surge Tank)
+// have none. The template decides first (it tells the steam condensate return
+// unit from the electric one), then the type; a custom type is judged by the
+// words in its name. A warning only, like everything else in this list.
+const TYPES_WITH_ELECTRICAL_FEED = new Set([
+  'Air Handler','Mini Split','Condensing Unit','Exhaust Fan','Cooling Tower','Chiller',
+  'Heating HW Pump','CHW Pump','Domestic HW Pump','Domestic Water Pump','Feedwater Pump','Glycol Pump',
+  'Fire Pump','Fire Jockey Pump','Condensate Pump','Chemical Feed Pump','Chemical Pump','Vacuum Pump',
+  'Condensate Return Unit','Unit Heater','Domestic Water Heater','Boiler','Humidifier',
+  'Air Compressor','Air Dryer','ATS','Generator','Transformer','Day Tank','Elevator',
+  'Dishwasher','Refrigerator'
+]);
+const TEMPLATES_WITHOUT_ELECTRICAL_FEED = new Set([
+  'Condensate Return Unit - Steam','Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol','Steam PRV Station'
+]);
+const CUSTOM_TYPE_ELECTRICAL_WORDS = /pump|fan|blower|air ?handler|\bahu\b|\brtu\b|rooftop|compressor|motor|chiller|boiler|heater|generator|\bats\b|transfer switch|transformer|elevator|\blift\b|dryer|\bvfd\b|panel|switchgear|\bmcc\b|dishwasher|washer|refrigerat|freezer|cooler|humidifier|ice machine|conveyor|condensing unit|mini ?split|cooling tower/i;
+function expectsElectricalSource(type, template) {
+  if (!type || TEMPLATES_WITHOUT_ELECTRICAL_FEED.has(template)) return false;
+  if (TYPES_WITH_ELECTRICAL_FEED.has(type)) return true;
+  if (DATA.equipmentTypes.includes(type)) return false;   // a listed kind with no feed
+  return CUSTOM_TYPE_ELECTRICAL_WORDS.test(type);
+}
+// An Electrical source, whatever its voltage (a linked one counts); the
+// capacitor's Stored Electrical Energy is not a feed.
+function isElectricalSource(s) {
+  const name = (s && s.energySource) || '';
+  return /electric/i.test(name) && !/^stored/i.test(name);
+}
+
 function collectIncompleteFields() {
   const missing = [];
   const val = id => (document.getElementById(id) || {}).value || '';
@@ -8375,6 +8410,11 @@ function collectIncompleteFields() {
   }
   // build 104: the Main Photo — empty, or one whose save failed (the slot shows "NOT SAVED")
   if (!photoSlotTaken('equip_main')) missing.push('Main info — Main Photo');
+  // build 107: the unit's kind always has an electrical feed, but no source is Electrical
+  const equipType = getEquipType();
+  if (sources.length && expectsElectricalSource(equipType, getTemplate()) && !sources.some(isElectricalSource)) {
+    missing.push(`Energy sources — no Electrical source (expected for ${equipType})`);
+  }
 
   sources.forEach((s, i) => {
     if (s.linkedTo) {
