@@ -49,6 +49,8 @@
 //   T194      build 106: one Device ID per unit when Quantity is 2+ (saved as one "a; b" string; Split 1 takes the last tag)
 //   T195      build 107: no Kinetic on pumps; a fan unit's Kinetic row names its fan (Supply / Return / Exhaust)
 //   T196      build 107: Save & New flags a missing Electrical source, only on kinds of equipment that always have one
+//   T197      build 108: Fire Pump is a template of its own (exported as the template; a jockey pump stays Standard Pump)
+//   T198      build 108: a saved unit keeps its template on edit when its type's list no longer offers it
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -5571,7 +5573,7 @@
     const N = 'T195 pump types and pump templates add no Kinetic (a custom "Booster Pump" too); an AHU template starts its Kinetic row "At Supply Fan" and a second one added by hand "At Return Fan"; an Exhaust Fan starts "At Exhaust Fan"; a Unit Heater keeps "On Equipment"; the location list offers Exhaust and Relief fans';
     await resetAppState();
     const pumpTypes = ['CHW Pump', 'Heating HW Pump', 'Domestic HW Pump', 'Domestic Water Pump', 'Condensate Pump', 'Chemical Feed Pump', 'Vacuum Pump', 'Chemical Pump'];
-    const pumpTemplates = ['Medical Vacuum', 'Chilled Water Pump', 'Heating Hot Water Pump', 'Standard Pump', 'Feedwater Pump', 'Glycol Pump'];
+    const pumpTemplates = ['Medical Vacuum', 'Chilled Water Pump', 'Heating Hot Water Pump', 'Standard Pump', 'Fire Pump', 'Feedwater Pump', 'Glycol Pump'];
     const typeK = pumpTypes.filter(t => (EQUIPMENT_AUTO_SOURCES[t] || []).some(x => x.energySource === 'Kinetic'));
     const tmplK = pumpTemplates.filter(t => (TEMPLATE_AUTO_SOURCES[t] || []).some(x => x.energySource === 'Kinetic'));
     const kinetic = () => sources.filter(x => x.energySource === 'Kinetic').map(x => x.location).join(',');
@@ -5664,6 +5666,98 @@
       'wrong cases ' + JSON.stringify(wrong) + '; blank type flagged ' + JSON.stringify(blank) + '; warning "' + warn + '"; saved=' + saved);
   }
 
+  // T197 — Fire Pump is a template of its own (build 108)
+  async function t197_firePumpIsItsOwnTemplate() {
+    const N = 'T197 a Fire Pump unit picks the new Fire Pump template (its Electrical feed and the suction / discharge lines, no Kinetic) and exports "Fire Pump" as the template on the sheet and in entries.json; a Fire Jockey Pump stays a Standard Pump; a custom "Diesel Fire Pump" gets Fire Pump, a custom "Fire Pump Jockey" and "Booster Pump" Standard Pump; both fire pump kinds still expect an Electrical source';
+    await resetAppState();
+    const names = () => sources.map(x => x.energySource);
+    const pickType = async (name, type) => {
+      fillFormNoSources(name);
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = type;
+      await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+      closeAllPrompts();
+      return { template: getTemplate(), names: names(),
+               offered: [...document.getElementById('equipTemplate').options].map(o => o.value).filter(v => v && v !== '** New Template **') };
+    };
+    const fp = await pickType('FP-197', 'Fire Pump');
+    const jockey = await pickType('FJP-197', 'Fire Jockey Pump');
+    const shapeOk = (r, template) => r.template === template && r.offered.join() === template
+      && r.names.some(n => /^Electrical /.test(n)) && r.names.includes('DW In') && r.names.includes('DW Out')
+      && !r.names.some(n => /^Kinetic/.test(n));
+    // custom equipment type names
+    const custom = async (typed) => {
+      fillFormNoSources('C-197');
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = '** New Equipment Type **';
+      document.getElementById('equipTypeCustom').value = typed;
+      await withDialogs({ confirm: true }, async () => { handleCustomEquipTypeChange(); });
+      closeAllPrompts();
+      return getTemplate();
+    };
+    const customs = { 'Diesel Fire Pump': await custom('Diesel Fire Pump'), 'Fire Pump Jockey': await custom('Fire Pump Jockey'),
+                      'Booster Pump': await custom('Booster Pump') };
+    const customOk = customs['Diesel Fire Pump'] === 'Fire Pump' && customs['Fire Pump Jockey'] === 'Standard Pump'
+      && customs['Booster Pump'] === 'Standard Pump';
+    const elecOk = expectsElectricalSource('Fire Pump', 'Fire Pump') && expectsElectricalSource('Diesel Fire Pump', 'Fire Pump');
+    // the export carries the template loto-web stores as the unit's type (an
+    // empty form, so the export holds this one unit only)
+    await resetAppState();
+    const A = mkEntry('Fire Pump 1', { sources: [
+      Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Disconnect', location: 'FP Controller' }),
+      Object.assign(mkSrc('DW In'), { sourceId: genUuid(), deviceType: 'Ball Valve' }),
+      Object.assign(mkSrc('DW Out'), { sourceId: genUuid(), deviceType: 'Ball Valve' })] });
+    A.equipType = 'Fire Pump'; A.template = 'Fire Pump';
+    savedEquipment = [A]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    const sheetTemplates = [];
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      const ws = wb.worksheets[0];
+      ws.eachRow(row => {
+        if (String(row.getCell(1).value || '') === 'Tied to Equipment') sheetTemplates.push(String(ws.getRow(row.number + 1).getCell(8).value || ''));
+      });
+    }
+    record(N, shapeOk(fp, 'Fire Pump') && shapeOk(jockey, 'Standard Pump') && customOk && elecOk
+      && ((u.entriesJson && u.entriesJson.entries) || []).length === 1 && je.template === 'Fire Pump' && sheetTemplates.join() === 'Fire Pump',
+      'Fire Pump ' + JSON.stringify(fp) + '; Fire Jockey Pump ' + JSON.stringify(jockey) + '; custom ' + JSON.stringify(customs)
+      + '; expects Electrical=' + elecOk + '; entries.json template "' + je.template + '"; sheet templates ' + JSON.stringify(sheetTemplates));
+  }
+
+  // T198 — a saved unit keeps its template when its type's list no longer offers it (build 108)
+  async function t198_editKeepsATemplateItsTypeNoLongerOffers() {
+    const N = 'T198 a Fire Pump saved on the Standard Pump template before build 108 opens for edit on Standard Pump (Fire Pump offered beside it) and saves back unchanged; Duplicate and a reload mid-edit keep it the same way';
+    await resetAppState();
+    const A = mkEntry('FP-198', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Disconnect', location: 'FP Controller' })] });
+    A.equipType = 'Fire Pump'; A.template = 'Standard Pump';
+    savedEquipment = [A]; saveAll();
+    const sel = () => document.getElementById('equipTemplate');
+    const offered = () => [...sel().options].map(o => o.value).filter(v => v && v !== '** New Template **').join(',');
+    await withDialogs({ confirm: true }, async () => { editSaved(0); });
+    const onEdit = sel().value, onEditOffered = offered();
+    // a reload mid-edit restores it from the unit in progress
+    autoSaveCurrent();
+    await sleep(400);
+    editingEntry = null; savedEquipment = []; sources = []; photos = {}; miscPhotos = [];   // what a reload loses
+    await loadAll();
+    const afterReload = sel().value;
+    document.getElementById('equipNotes').value = 'edited';
+    performSaveAndNew();
+    const saved = savedEquipment.find(e => e.id === A.id) || {};
+    // Duplicate
+    let dupTemplate = null;
+    await withDialogs({ confirm: true }, async () => { await executeDuplicate(savedEquipment.indexOf(saved), false); });
+    dupTemplate = sel().value;
+    record(N, onEdit === 'Standard Pump' && /Fire Pump/.test(onEditOffered) && /Standard Pump/.test(onEditOffered)
+      && afterReload === 'Standard Pump' && saved.template === 'Standard Pump' && saved.notes === 'edited' && dupTemplate === 'Standard Pump',
+      'on edit "' + onEdit + '" (offered ' + onEditOffered + '); after reload "' + afterReload + '"; saved template "' + saved.template
+      + '", notes "' + saved.notes + '"; duplicate "' + dupTemplate + '"');
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -5746,7 +5840,8 @@
     t188_theFormIsSnapshottedAtMostEveryFiveMinutes, t189_aScanAsksBeforeReplacingATypedValue, t190_aDayBackedUpByBuild101GetsItsFirstSnapshot,
     t191_aNewCollectorTagNeverEmptiesTheOldTagsFiles, t192_theBackupsButtonsShowOnlyWhileItIsOn,
     t193_aUnitWithoutItsMainPhotoIsFlagged, t194_eachUnitGetsItsOwnDeviceId,
-    t195_pumpsGetNoKineticAndFansNameTheirFan, t196_aMissingElectricalSourceIsFlaggedOnlyWhereExpected];
+    t195_pumpsGetNoKineticAndFansNameTheirFan, t196_aMissingElectricalSourceIsFlaggedOnlyWhereExpected,
+    t197_firePumpIsItsOwnTemplate, t198_editKeepsATemplateItsTypeNoLongerOffers];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

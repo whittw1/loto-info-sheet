@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b107</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b108</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1147,7 +1147,7 @@ const DATA = {
   templates: [
     "** New Template **",
     "AHU - Steam","AHU - HHW","AHU - Geothermal","AHU - Steam, CHW, HHW",
-    "Chilled Water Pump","Heating Hot Water Pump","Standard Pump","Feedwater Pump","Glycol Pump",
+    "Chilled Water Pump","Heating Hot Water Pump","Standard Pump","Fire Pump","Feedwater Pump","Glycol Pump",
     "Day Tank",
     "Condensate Return Unit","Condensate Return Unit - Steam",
     "Exhaust Fan","Water Heater - Steam","Water Heater - Gas","Water Heater - Electric",
@@ -2657,7 +2657,11 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Dishwasher': ['Water Heater - Electric', 'Water Heater - Steam'],
   'Chemical Feed Pump': ['Standard Pump'],
   'Chemical Pump': ['Standard Pump'],
-  'Fire Pump': ['Standard Pump'],
+  // Fire Pump has its own template since build 108: loto-web stores the
+  // exported template as the unit's type, and its Fire Pump procedure (the
+  // Standard Pump one plus the fire protection impairment NOTEs) and Fire Pump
+  // matrix follow that type. A jockey pump stays a Standard Pump.
+  'Fire Pump': ['Fire Pump'],
   'Fire Jockey Pump': ['Standard Pump'],
   'Condensate Pump': ['Heating Hot Water Pump'],
   'Condensate Return Unit': ['Condensate Return Unit','Condensate Return Unit - Steam'],
@@ -2703,6 +2707,18 @@ function filterTemplateDropdown(equipType) {
   if (currentVal && templates.includes(currentVal)) sel.value = currentVal;
 }
 
+// A saved unit keeps its template when its type's list no longer offers it
+// (build 108: a Fire Pump saved on the Standard Pump template before Fire Pump
+// had its own). Without the option the select took the value as "nothing",
+// and the next save cleared the unit's template.
+function keepTemplateOption(template) {
+  const sel = document.getElementById('equipTemplate');
+  if (!template || !DATA.templates.includes(template) || [...sel.options].some(o => o.value === template)) return;
+  const o = document.createElement('option');
+  o.value = template; o.textContent = template;
+  sel.insertBefore(o, [...sel.options].find(x => x.value === '** New Template **') || null);
+}
+
 // ============================================================================
 // SKETCH SYSTEM — SVG Diagrams + Canvas Drawing + Labels
 // ============================================================================
@@ -2710,7 +2726,7 @@ function filterTemplateDropdown(equipType) {
 // Template-to-diagram mapping
 const TEMPLATE_DIAGRAM_MAP = {
   'AHU - Steam': 'ahu', 'AHU - HHW': 'ahu', 'AHU - Geothermal': 'ahu', 'AHU - Steam, CHW, HHW': 'ahu',
-  'Chilled Water Pump': 'pump', 'Heating Hot Water Pump': 'pump', 'Standard Pump': 'pump', 'Feedwater Pump': 'pump', 'Glycol Pump': 'pump',
+  'Chilled Water Pump': 'pump', 'Heating Hot Water Pump': 'pump', 'Standard Pump': 'pump', 'Fire Pump': 'pump', 'Feedwater Pump': 'pump', 'Glycol Pump': 'pump',
   'Day Tank': 'general',
   'Emergency Generator': 'generator',
   'Chiller': 'chiller', 'Refrigerator': 'general',
@@ -4359,8 +4375,9 @@ const EQUIPMENT_EXTRA_SOURCES = {
   ],
   // Fire pumps: suction + discharge water lines as SEPARATE sources (each
   // gets its own valve/photo/ID — per wilkins 2026-08-01, not a combined
-  // In/Out row). Electrical comes from the Standard Pump template (no Kinetic
-  // on pumps since build 107 — loto-web dropped it from the pump matrices 10-05).
+  // In/Out row). Electrical comes from the template — Fire Pump since build
+  // 108, Standard Pump for the jockey pump (no Kinetic on pumps since build
+  // 107 — loto-web dropped it from the pump matrices 10-05).
   'Fire Pump': [
     { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '' },
     { energySource: 'DW Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '' },
@@ -4392,6 +4409,7 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Chilled Water Pump':      ['120V', '208V', '240V', '480V'],
   'Heating Hot Water Pump':  ['120V', '208V', '240V', '480V'],
   'Standard Pump':           ['120V', '208V', '240V', '480V'],
+  'Fire Pump':               ['120V', '208V', '240V', '480V'],
   // AHUs, Cooling Tower, Exhaust Fan: only 120/208/480 per spec (no 240, no 4160).
   'AHU - Steam':             ['120V', '208V', '277V', '480V'],
   'AHU - HHW':               ['120V', '208V', '277V', '480V'],
@@ -4667,6 +4685,12 @@ const TEMPLATE_AUTO_SOURCES = {
   'Standard Pump': [
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
+  // Fire Pump (build 108): the Standard Pump shape — its Electrical feed (the
+  // controller's), no Kinetic. The suction and discharge lines come from the
+  // Fire Pump type's EQUIPMENT_EXTRA_SOURCES, as before.
+  'Fire Pump': [
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+  ],
   // Mirrors Heating Hot Water Pump (Electrical, voltage is prompted; no Kinetic since build 107)
   // and adds a Feedwater In source pre-configured with Gate Valve / GaugeOnly - Hot.
   'Feedwater Pump': [
@@ -4840,7 +4864,10 @@ function handleEquipTypeChange() {
 
 // Keyword → template suggestion for custom ("** New Equipment Type **") names.
 // First match wins; applied only when no template is chosen yet, and always overridable.
+// "fire pump" comes ahead of "pump" (build 108), never for a jockey pump: only
+// the main fire pump gets loto-web's fire protection impairment NOTEs.
 const CUSTOM_EQUIP_KEYWORD_TEMPLATE = [
+  { keyword: 'fire pump', unless: 'jockey', template: 'Fire Pump' },
   { keyword: 'pump', template: 'Standard Pump' },
 ];
 
@@ -4854,7 +4881,7 @@ function handleCustomEquipTypeChange() {
   const tmplSel = document.getElementById('equipTemplate');
   if (tmplSel.value) return; // respect a template the user already chose
   const lower = name.toLowerCase();
-  const match = CUSTOM_EQUIP_KEYWORD_TEMPLATE.find(e => lower.includes(e.keyword));
+  const match = CUSTOM_EQUIP_KEYWORD_TEMPLATE.find(e => lower.includes(e.keyword) && !(e.unless && lower.includes(e.unless)));
   if (match && [...tmplSel.options].some(o => o.value === match.template)) {
     tmplSel.value = match.template;
     handleTemplateChange(); // applies the template's auto-sources + diagram
@@ -9146,6 +9173,7 @@ function editSaved(index) {
     document.getElementById('equipTemplateCustom').value = entry.template;
     document.getElementById('customTemplateGroup').style.display = 'flex';
   } else {
+    keepTemplateOption(entry.template);
     templateSel.value = entry.template || '';
     document.getElementById('equipTemplateCustom').value = '';
     document.getElementById('customTemplateGroup').style.display = 'none';
@@ -9272,6 +9300,7 @@ async function executeDuplicate(index, withPhotos) {
     document.getElementById('equipTemplateCustom').value = entry.template;
     document.getElementById('customTemplateGroup').style.display = 'flex';
   } else {
+    keepTemplateOption(entry.template);
     templateSel.value = entry.template || '';
     document.getElementById('equipTemplateCustom').value = '';
     document.getElementById('customTemplateGroup').style.display = 'none';
@@ -11829,6 +11858,7 @@ async function loadAll() {
         document.getElementById('equipTemplateCustom').value = state.template;
         document.getElementById('customTemplateGroup').style.display = 'flex';
       } else {
+        keepTemplateOption(state.template);
         templateSel.value = state.template;
       }
     }
