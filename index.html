@@ -1079,7 +1079,7 @@ const DATA = {
     "CHW Pump","Domestic HW Pump","Domestic Water Pump","Feedwater Pump","Glycol Pump",
     "Fire Pump","Fire Jockey Pump","Heat Exchanger",
     "Condensate Return Unit","Condensate Pump","Unit Heater",
-    "Domestic Water Heater","Air Compressor","Air Dryer","Vacuum Pump","ATS",
+    "Domestic Water Heater","Air Compressor","Air Dryer","Vacuum Pump","Lab Vacuum","ATS",
     "Generator","Transformer","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
     "Chiller","Refrigerator","Boiler","Steam PRV Station","Humidifier",
     "** New Equipment Type **"
@@ -1152,7 +1152,7 @@ const DATA = {
     "Condensate Return Unit","Condensate Return Unit - Steam",
     "Exhaust Fan","Water Heater - Steam","Water Heater - Gas","Water Heater - Electric",
     "Unit Heater - Steam","Unit Heater - HHW","Unit Heater - Natural Gas",
-    "Air Compressor","Medical Air","Air Dryer","Vacuum Pump","Medical Vacuum","Condensing Unit","Mini Split",
+    "Air Compressor","Medical Air","Air Dryer","Vacuum Pump","Medical Vacuum","Lab Vacuum","Condensing Unit","Mini Split",
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
     "Elevator - Traction","Elevator - Hydraulic",
     "ATS - Generic","Humidifier",
@@ -2669,7 +2669,11 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Domestic Water Heater': ['Water Heater - Steam','Water Heater - Gas','Water Heater - Electric'],
   'Air Compressor': ['Air Compressor','Medical Air'],
   'Air Dryer': ['Air Dryer'],
-  'Vacuum Pump': ['Vacuum Pump','Medical Vacuum'],
+  // Lab Vacuum (build 108): loto-web's Lab_Vacuum procedure (2026-10-08) for a
+  // laboratory vacuum plant, mostly clinical labs — one unit = the receiver
+  // tank and every pump on it. No patient-care / NFPA 99 text; no matrix.
+  'Vacuum Pump': ['Vacuum Pump','Medical Vacuum','Lab Vacuum'],
+  'Lab Vacuum': ['Lab Vacuum'],
   'Cooling Tower': ['Cooling Tower'],
   'Generator': ['Emergency Generator'],
   'Chiller': ['Chiller'],
@@ -2745,7 +2749,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Cooling Tower': 'cooling_tower',
   'Condensate Return Unit': 'condensate_return', 'Condensate Return Unit - Steam': 'condensate_return',
   'Elevator - Traction': 'traction_elevator', 'Elevator - Hydraulic': 'hydraulic_elevator',
-  'Vacuum Pump': 'medical_vacuum', 'Medical Vacuum': 'medical_vacuum',
+  'Vacuum Pump': 'medical_vacuum', 'Medical Vacuum': 'medical_vacuum', 'Lab Vacuum': 'medical_vacuum',
   'Standard Electrical': 'general', 'UPS': 'ups',
   'Steam PRV Station': 'general',
   'Medical Air Compressor': 'medical_air_compressor',
@@ -4397,7 +4401,7 @@ const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water H
 // up to 4 units). See promptForElectricalCount.
 const TEMPLATE_ASK_ELECTRICAL_COUNT = {
   'AHU - Steam': 2, 'AHU - HHW': 2, 'AHU - Geothermal': 2, 'AHU - Steam, CHW, HHW': 2,
-  'Medical Air': 4, 'Medical Vacuum': 4,
+  'Medical Air': 4, 'Medical Vacuum': 4, 'Lab Vacuum': 4,
 };
 
 // Per-template voltage option overrides. Falls back to all available
@@ -4428,6 +4432,7 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Air Compressor':          ['120V', '208V', '240V', '480V'],
   'Medical Air':             ['120V', '208V', '240V', '480V'],
   'Medical Vacuum':          ['120V', '208V', '240V', '480V'],
+  'Lab Vacuum':              ['120V', '208V', '240V', '480V'],
   // Condensate Return Unit (the electric variant): standard pump-scale voltages.
   'Condensate Return Unit':  ['120V', '208V', '240V', '480V'],
   // Condensing Unit: drop 24V (control voltage, not a disconnect) and 4160V
@@ -4507,6 +4512,12 @@ function closeTemplateVoltagePrompt() {
 }
 
 // ---- Electrical-source count prompt (AHUs) --------------------------------
+// Per-template wording (build 108): a lab vacuum receiver carries several
+// pumps, each with its own disconnect, and every one must be recorded.
+const TEMPLATE_ELECTRICAL_COUNT_PROMPT = {
+  'Lab Vacuum': { title: 'Pumps on this receiver',
+                  ask: 'How many pumps are on this receiver tank? Count every pump: each one gets its own disconnect (one Electrical source each).' },
+};
 function maybePromptElectricalCount() {
   const max = TEMPLATE_ASK_ELECTRICAL_COUNT[getTemplate()];
   if (max) promptForElectricalCount(getTemplate(), max);
@@ -4520,10 +4531,11 @@ function promptForElectricalCount(template, max) {
   const buttons = [];
   for (let i = 1; i <= max; i++) buttons.push(html`<button class="btn btn-primary" onclick="applyElectricalCountChoice(${i})" style="flex:1;padding:16px;font-size:20px;">${i}</button>`);
   const hint = max > 2 ? 'e.g. duplex / triplex / quadruplex units' : 'e.g. dual supply / return fans';
+  const own = TEMPLATE_ELECTRICAL_COUNT_PROMPT[template];
   overlay.innerHTML = html`
     <div class="dialog" style="max-width:${max > 2 ? 420 : 340}px;">
-      <h3 style="margin:0 0 6px 0;color:var(--accent);">Electrical Sources</h3>
-      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">How many electrical sources for <strong>${template}</strong>? (${hint})</p>
+      <h3 style="margin:0 0 6px 0;color:var(--accent);">${own ? own.title : 'Electrical Sources'}</h3>
+      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">${own ? own.ask : html`How many electrical sources for <strong>${template}</strong>? (${hint})`}</p>
       <div style="display:flex;gap:10px;">${buttons}</div>
     </div>
   `;
@@ -4661,6 +4673,15 @@ const TEMPLATE_AUTO_SOURCES = {
   // "how many units? 1-4". Tech adds the vacuum-line source as needed.
   'Medical Vacuum': [
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Lab Vacuum (build 108): one Electrical row per pump disconnect (480V
+  // typical; the count prompt asks how many pumps are on the receiver — KC-LOTO-018
+  // came in with 1 of its 3) and the ball valve that isolates the receiver from
+  // the lab vacuum main. No Kinetic (no pump carries one since build 107) and no
+  // Thermal row: loto-web adds its own T row.
+  'Lab Vacuum': [
+    { energySource: 'Electrical 480V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'SW (Hand/Off/Auto)', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Vacuum Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensing Unit': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
@@ -4865,9 +4886,13 @@ function handleEquipTypeChange() {
 // Keyword → template suggestion for custom ("** New Equipment Type **") names.
 // First match wins; applied only when no template is chosen yet, and always overridable.
 // "fire pump" comes ahead of "pump" (build 108), never for a jockey pump: only
-// the main fire pump gets loto-web's fire protection impairment NOTEs.
+// the main fire pump gets loto-web's fire protection impairment NOTEs. "lab vac"
+// / "laboratory vacuum" go to Lab Vacuum ahead of "pump" (build 108); a medical
+// vacuum stays on the Vacuum Pump type's Medical Vacuum template.
 const CUSTOM_EQUIP_KEYWORD_TEMPLATE = [
   { keyword: 'fire pump', unless: 'jockey', template: 'Fire Pump' },
+  { keyword: 'lab vac', template: 'Lab Vacuum' },
+  { keyword: 'laboratory vacuum', template: 'Lab Vacuum' },
   { keyword: 'pump', template: 'Standard Pump' },
 ];
 
@@ -8401,7 +8426,7 @@ function renderMiscPhotos() {
 const TYPES_WITH_ELECTRICAL_FEED = new Set([
   'Air Handler','Mini Split','Condensing Unit','Exhaust Fan','Cooling Tower','Chiller',
   'Heating HW Pump','CHW Pump','Domestic HW Pump','Domestic Water Pump','Feedwater Pump','Glycol Pump',
-  'Fire Pump','Fire Jockey Pump','Condensate Pump','Chemical Feed Pump','Chemical Pump','Vacuum Pump',
+  'Fire Pump','Fire Jockey Pump','Condensate Pump','Chemical Feed Pump','Chemical Pump','Vacuum Pump','Lab Vacuum',
   'Condensate Return Unit','Unit Heater','Domestic Water Heater','Boiler','Humidifier',
   'Air Compressor','Air Dryer','ATS','Generator','Transformer','Day Tank','Elevator',
   'Dishwasher','Refrigerator'

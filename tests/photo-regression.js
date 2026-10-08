@@ -51,6 +51,7 @@
 //   T196      build 107: Save & New flags a missing Electrical source, only on kinds of equipment that always have one
 //   T197      build 108: Fire Pump is a template of its own (exported as the template; a jockey pump stays Standard Pump)
 //   T198      build 108: a saved unit keeps its template on edit when its type's list no longer offers it
+//   T199      build 108: Lab Vacuum — the receiver and every pump on it (a pump-count prompt), exported as "Lab Vacuum"
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -5573,7 +5574,7 @@
     const N = 'T195 pump types and pump templates add no Kinetic (a custom "Booster Pump" too); an AHU template starts its Kinetic row "At Supply Fan" and a second one added by hand "At Return Fan"; an Exhaust Fan starts "At Exhaust Fan"; a Unit Heater keeps "On Equipment"; the location list offers Exhaust and Relief fans';
     await resetAppState();
     const pumpTypes = ['CHW Pump', 'Heating HW Pump', 'Domestic HW Pump', 'Domestic Water Pump', 'Condensate Pump', 'Chemical Feed Pump', 'Vacuum Pump', 'Chemical Pump'];
-    const pumpTemplates = ['Medical Vacuum', 'Chilled Water Pump', 'Heating Hot Water Pump', 'Standard Pump', 'Fire Pump', 'Feedwater Pump', 'Glycol Pump'];
+    const pumpTemplates = ['Medical Vacuum', 'Lab Vacuum', 'Chilled Water Pump', 'Heating Hot Water Pump', 'Standard Pump', 'Fire Pump', 'Feedwater Pump', 'Glycol Pump'];
     const typeK = pumpTypes.filter(t => (EQUIPMENT_AUTO_SOURCES[t] || []).some(x => x.energySource === 'Kinetic'));
     const tmplK = pumpTemplates.filter(t => (TEMPLATE_AUTO_SOURCES[t] || []).some(x => x.energySource === 'Kinetic'));
     const kinetic = () => sources.filter(x => x.energySource === 'Kinetic').map(x => x.location).join(',');
@@ -5758,6 +5759,77 @@
       + '", notes "' + saved.notes + '"; duplicate "' + dupTemplate + '"');
   }
 
+  // T199 — Lab Vacuum: one unit = the receiver and every pump on it (build 108)
+  async function t199_labVacuumRecordsEveryPump() {
+    const N = 'T199 a Lab Vacuum unit picks the Lab Vacuum template and asks how many pumps are on the receiver — 3 gives three Disconnect / SW (Hand/Off/Auto) Electrical rows plus the receiver\'s Vacuum Air In ball valve (Gauge/Drain), no Kinetic, no Thermal; the Vacuum Pump type offers Lab Vacuum beside Medical Vacuum; custom "Lab Vac Pump" and "Laboratory Vacuum System" get Lab Vacuum, "Booster Pump" Standard Pump; an Electrical source is expected; the export says "Lab Vacuum"';
+    await resetAppState();
+    fillFormNoSources('LV-199');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'Lab Vacuum';
+    let countAsk = '';
+    await withDialogs({ confirm: true }, async () => {
+      handleEquipTypeChange();
+      const volt = !!document.getElementById('templateVoltageOverlay');
+      applyTemplateVoltageChoice('480V');
+      const o = document.getElementById('electricalCountOverlay');
+      countAsk = (volt ? 'voltage asked; ' : 'NO voltage prompt; ') + (o ? o.textContent.replace(/\s+/g, ' ').trim() : 'NO count prompt');
+      applyElectricalCountChoice(3);
+    });
+    closeAllPrompts();
+    const template = getTemplate();
+    const elec = sources.filter(x => /^Electrical /.test(x.energySource || ''));
+    const vac = sources.filter(x => /^Vacuum Air/.test(x.energySource || ''));
+    const rows = sources.map(x => [x.energySource, x.deviceType, x.verification].join('/'));
+    const shapeOk = template === 'Lab Vacuum' && elec.length === 3
+      && elec.every(x => x.energySource === 'Electrical 480V' && x.deviceType === 'Disconnect' && x.verification === 'SW (Hand/Off/Auto)')
+      && new Set(elec.map(x => x.sourceId).filter(Boolean)).size === elec.filter(x => x.sourceId).length
+      && vac.length === 1 && vac[0].energySource === 'Vacuum Air In' && vac[0].deviceType === 'Ball Valve' && vac[0].verification === 'Gauge/Drain'
+      && sources.length === 4 && !sources.some(x => /kinetic|thermal/i.test(x.energySource || ''));
+    const askOk = /pumps are on this receiver/i.test(countAsk) && /each one gets its own disconnect/i.test(countAsk);
+    // the Vacuum Pump type offers it; the medical template is untouched
+    const vpOffers = (EQUIPMENT_TEMPLATE_MAP['Vacuum Pump'] || []).join();
+    const medOk = vpOffers === 'Vacuum Pump,Medical Vacuum,Lab Vacuum'
+      && (TEMPLATE_AUTO_SOURCES['Medical Vacuum'] || []).map(x => x.energySource).join() === 'Electrical 208V';
+    // custom type names
+    const custom = async (typed) => {
+      fillFormNoSources('C-199');
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = '** New Equipment Type **';
+      document.getElementById('equipTypeCustom').value = typed;
+      await withDialogs({ confirm: true }, async () => { handleCustomEquipTypeChange(); });
+      closeAllPrompts();
+      return getTemplate();
+    };
+    const customs = { 'Lab Vac Pump': await custom('Lab Vac Pump'), 'Laboratory Vacuum System': await custom('Laboratory Vacuum System'),
+                      'Booster Pump': await custom('Booster Pump') };
+    const customOk = customs['Lab Vac Pump'] === 'Lab Vacuum' && customs['Laboratory Vacuum System'] === 'Lab Vacuum'
+      && customs['Booster Pump'] === 'Standard Pump';
+    const elecOk = expectsElectricalSource('Lab Vacuum', 'Lab Vacuum') && expectsElectricalSource('Vacuum Pump', 'Lab Vacuum');
+    // the export (an empty form, so it holds this one unit only)
+    await resetAppState();
+    const A = mkEntry('Vacuum Pump MVP-01-SB-04', { sources: [
+      Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Disconnect', location: 'LAB VAC PUMP 1' }),
+      Object.assign(mkSrc('Vacuum Air In'), { sourceId: genUuid(), deviceType: 'Ball Valve' })] });
+    A.equipType = 'Lab Vacuum'; A.template = 'Lab Vacuum';
+    savedEquipment = [A]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    const sheetTemplates = [];
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      const ws = wb.worksheets[0];
+      ws.eachRow(row => {
+        if (String(row.getCell(1).value || '') === 'Tied to Equipment') sheetTemplates.push(String(ws.getRow(row.number + 1).getCell(8).value || ''));
+      });
+    }
+    record(N, shapeOk && askOk && medOk && customOk && elecOk && je.template === 'Lab Vacuum' && sheetTemplates.join() === 'Lab Vacuum',
+      'template "' + template + '"; rows ' + JSON.stringify(rows) + '; prompts: ' + countAsk + '; Vacuum Pump offers ' + vpOffers
+      + '; custom ' + JSON.stringify(customs) + '; expects Electrical=' + elecOk + '; entries.json "' + je.template + '"; sheet ' + JSON.stringify(sheetTemplates));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -5841,7 +5913,7 @@
     t191_aNewCollectorTagNeverEmptiesTheOldTagsFiles, t192_theBackupsButtonsShowOnlyWhileItIsOn,
     t193_aUnitWithoutItsMainPhotoIsFlagged, t194_eachUnitGetsItsOwnDeviceId,
     t195_pumpsGetNoKineticAndFansNameTheirFan, t196_aMissingElectricalSourceIsFlaggedOnlyWhereExpected,
-    t197_firePumpIsItsOwnTemplate, t198_editKeepsATemplateItsTypeNoLongerOffers];
+    t197_firePumpIsItsOwnTemplate, t198_editKeepsATemplateItsTypeNoLongerOffers, t199_labVacuumRecordsEveryPump];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
