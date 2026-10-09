@@ -19,23 +19,25 @@ A progressive web app (PWA) for field data collection of Lockout/Tagout (LOTO) i
 
 - **Equipment Documentation** — Log equipment type (28+ presets), name, building, room, and location
 - **Energy Source Tracking** — Up to 10 sources per equipment with 40+ energy types (Electrical 120V–4160V, Steam, Glycol, Hydraulic, etc.), device types, quantities, and verification methods
-- **Photo Capture** — Three equipment photo slots (Main, Data Plate, EE Number) plus per-source photos, with configurable resolution and compression; tap existing photo to view before retaking
+- **Photo Capture** — Three equipment photo slots (Main, Data Plate, EE Number) plus per-source photos, with configurable resolution and compression (default 2560 × 1440; the limit turns with the photo, so a portrait shot keeps its long side); each new photo carries the time it was taken inside the JPEG (EXIF — no location); tap existing photo to view before retaking
 - **Templates** — Pre-configured templates (AHU variants, Pumps, Boilers, Chillers, Elevators, ATS models, Water Heater variants, etc.) that auto-populate energy sources; supports custom templates
 - **Conditional Dropdown Filtering** — Device types filter based on selected energy source (e.g., steam shows valves only, electrical shows breakers/disconnects). Verification methods filter based on device type with temperature variants (Hot/CHW) auto-resolved from energy source
 - **Template Filtering by Equipment Type** — Template dropdown shows only relevant templates for the selected equipment type (e.g., Air Handler shows only AHU templates, ATS shows only ATS variants)
 - **Custom Source Keyword Matching** — Custom energy sources (e.g., "HV Water") are matched by keyword to determine appropriate devices, verifications, and label prefixes
 - **Voltage Prompt System** — ATS, Generator, and Chiller equipment types prompt for voltage selection (208V/480V) to auto-populate Electrical sources
-- **Auto-Source Injection** — Equipment types auto-add standard energy sources (e.g., Elevator → Gravity/Potential; pumps → Kinetic + Electrical 208V; Condensing Unit → Electrical 208V + Disconnect)
+- **Auto-Source Injection** — Equipment types auto-add standard energy sources (e.g., Elevator → Gravity/Potential; pumps → Electrical 208V; Condensing Unit → Electrical 208V + Disconnect)
 - **Condensate Auto-Fill** — Condensate sources on AHUs, Heat Exchangers, Water Heaters, and Unit Heaters auto-fill Gate Valve + Temp Only - Hot
 - **Duplicate Energy Source** — Clone any source card within an equipment entry
+- **Reuse a Photo / Duplicate** — Reusing a photo on a source sets its Duplicate to Yes and the card says whose photo it is; setting Duplicate = Yes by hand on a source with no photo asks which photo shows it (Skip keeps it as is)
 - **Reorder Energy Sources** — ▲/▼ arrows on each source card (both collapsed and expanded views) to nudge sources into the right order; photos move with their source
 - **Link Shared Sources** — Link a source to another equipment's source (for shared valves, breakers, etc.). Room/building/all scope filter. Linked source hides its photo slot (photo lives on the referenced source) and inherits the diagram label
-- **Preserved Edit State** — Editing a saved entry no longer removes it from the saved list. The entry shows an **EDITING** badge and the original is preserved until Save & New replaces it in place
+- **Preserved Edit State** — Editing a saved entry no longer removes it from the saved list. The entry shows an **EDITING** badge and the original is preserved until Save & New replaces it in place; **✕ Cancel edit** drops the changes and leaves the saved entry exactly as it was, and **✕ Discard** clears a new, unsaved unit
 - **Offline Support** — Service Worker with network-first caching strategy; works without internet after first load
 - **Installable** — PWA manifest allows "Add to Home Screen" on mobile devices
 - **Import / Backup** — JSON-based backup and restore with merge-or-replace on import and duplicate detection
 - **Tied-To Equipment** — Track interdependent systems across entries
-- **Export Date Filter** — Export dialog lets you pick a specific date's entries, all dates, or undated entries. Filename includes the date suffix for specific-day exports.
+- **Survey Date** — Each unit's survey date is on the form (blank = the day it is saved) and decides which day's Information Sheet it goes on; changing it on a unit already exported asks first
+- **Export Date Filter** — Export dialog lets you pick a specific date's entries, all dates, **not yet exported** (every day holding an unexported unit, each as its whole sheet), or undated entries; a unit with no date is asked for one. Filename includes the date suffix for specific-day exports.
 
 ### Overhead Sketch System
 

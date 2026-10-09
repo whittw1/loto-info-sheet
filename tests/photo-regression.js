@@ -52,6 +52,13 @@
 //   T197      build 108: Fire Pump is a template of its own (exported as the template; a jockey pump stays Standard Pump)
 //   T198      build 108: a saved unit keeps its template on edit when its type's list no longer offers it
 //   T199      build 108: Lab Vacuum — the receiver and every pump on it (a pump-count prompt), exported as "Lab Vacuum"
+//   T200–T213 build 109: the field-app side of the 2026-10-08 gap review — the "Equipment Type" cell (3.3),
+//             template Cancel, saved values off their lists, custom boxes keeping focus, Valve State on valves
+//             and In/Out splits, scans bound to their form, Cancel edit / Discard, the survey date and "Not yet
+//             exported" (4.3), Duplicate following Reuse (3.2), the turning photo size, the capture time in the
+//             JPEG, empty slots with a photo taken for them (4.4), app-lists.json (3.4)
+//   T214–T215 build 109's code review: Cancel after an app-made template pick, Copy Source on a reused
+//             photo, "changed since export", a half-typed survey year, Duplicate on a linked source
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -2682,7 +2689,10 @@
     const N = 'T90 a Split or a lower quantity clears the source\'s valve marks (no arrow on the wrong valve)';
     await resetAppState();
     fillFormNoSources('Q-90');
-    sources.push(Object.assign(mkSrc('HHW In/Out'), { deviceType: 'Ball Valve', quantity: 2, collapsed: false }));
+    // a PLAIN two-valve row: which marked valve a Split takes is unknown. (An
+    // In/Out pair splits by direction and keeps the In valve's mark since
+    // build 109 — T204.)
+    sources.push(Object.assign(mkSrc('HHW In'), { deviceType: 'Ball Valve', quantity: 2, collapsed: false }));
     sources.push(Object.assign(mkSrc('CHW In/Out'), { deviceType: 'Ball Valve', quantity: 2, collapsed: false }));
     renderSources();
     await captureInto('source_0', await makePhotoFile('q90a'));
@@ -3352,19 +3362,22 @@
 
   // T119 — b94's "the open form is today's work" also moved an open EDIT of an
   // undated saved unit onto today's Information Sheet
+  // Build 109: the export now ASKS the day of a unit with none (T208); left
+  // undated it stays on the undated sheet — never quietly on today's.
   async function t119_undatedUnitOpenForEditStaysUndated() {
-    const N = 'T119 an undated saved unit open for edit stays on the undated Information Sheet';
+    const N = 'T119 an undated saved unit open for edit is never put on today\'s Information Sheet: the export asks its day, and left undated it stays on the undated sheet';
     await resetAppState();
     const U = mkEntry('Undated-119'); delete U.savedAt;
     const D = mkEntry('Dated-119', { savedAt: new Date(2026, 8, 22, 10).toISOString() });
     savedEquipment = [U, D]; saveAll();
     editSaved(0); await sleep(100);
-    const { zip, confirms } = await runExport({ confirmResponse: true, dateFilter: 'all' });
+    const { zip, confirms } = await runExport({ confirmResponse: true, dateFilter: 'all', choice: { 'survey-date': 'undated' } });
     if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
     const u = await unzipExport(zip.blob);
     const units = {};
     for (const q of Object.keys(u.files).filter(x => /^info_sheets\/Information_Sheet_.*\.xlsx$/.test(x)).sort()) units[q.replace('info_sheets/', '')] = await sheetUnits(u.files[q]);
-    record(N, (units['Information_Sheet_undated.xlsx'] || []).includes('Undated-119'), JSON.stringify(units));
+    const asked = confirms.some(m => /CHOICE survey-date/.test(m));
+    record(N, asked && (units['Information_Sheet_undated.xlsx'] || []).includes('Undated-119'), 'asked=' + asked + '; ' + JSON.stringify(units));
   }
 
   // T120 — with IndexedDB failing, the "emergency copy — export now" warning
@@ -3991,7 +4004,11 @@
   async function t143_aLateLaunchKeepsTheNewerCopyOfAUnit() {
     const N = 'T143 a launch that finishes after the timeout keeps the NEWER of two stored copies of the same unit';
     await resetAppState(); await clearWipSlots();
-    const id = genUuid(), ago = (s) => new Date(Date.now() - s * 1000).toISOString();
+    // Both copies are from an EARLIER session: timed before this page loaded
+    // (build 109 — "300 s ago" was this session's own copy once the page had
+    // been open over 5 minutes, and the test failed on a second run).
+    const base = Date.parse(PAGE_LOADED_AT) || Date.now();
+    const id = genUuid(), ago = (s) => new Date(base - s * 1000).toISOString();
     await rawIdbPut('metadata', 'current_wip', wipOf('U-143', id, { at: ago(600), notes: 'old' }));
     await rawIdbPut('metadata', 'current_wip_alt', wipOf('U-143', id, { at: ago(300), notes: 'new' }));
     forgetSessionMemory();
@@ -5830,6 +5847,595 @@
       + '; custom ' + JSON.stringify(customs) + '; expects Electrical=' + elecOk + '; entries.json "' + je.template + '"; sheet ' + JSON.stringify(sheetTemplates));
   }
 
+  // ==========================================================================
+  // BUILD 109 — the field-app side of the 2026-10-08 gap review (fixes 3.2,
+  // 3.3, 3.4, 4.3, 4.4; loto-web's side is done there). Each test was written
+  // before its fix and fails on build 108.
+  // ==========================================================================
+  // Every row of an export's Information Sheets: { sheet, n, cells[13] }
+  async function sheetRowsOf(u) {
+    const out = [];
+    for (const xp of Object.keys(u.files).filter(p => /Information_Sheet_.*\.xlsx$/.test(p)).sort()) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xp]);
+      wb.worksheets[0].eachRow(row => {
+        const cells = [];
+        for (let c = 1; c <= 13; c++) { const v = row.getCell(c).value; cells.push(v == null ? '' : String(v)); }
+        out.push({ sheet: xp.replace('info_sheets/', ''), n: row.number, cells });
+      });
+    }
+    return out;
+  }
+  const dayAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return localDateStr(d); };
+  const sheetName = (isoDay) => 'Information_Sheet_' + getDateStamp(exportDateFrom(isoDay)) + '.xlsx';
+
+  // T200 — 3.3: the type's cell said "Details"; loto-web stored it as the main photo's position
+  async function t200_equipmentTypeCellIsLabelledEquipmentType() {
+    const N = 'T200 the equipment row\'s col-6 header reads "Equipment Type" (it read "Details") over the surveyed type; the labels loto-web matches are unchanged';
+    await resetAppState();
+    const A = mkEntry('AHU-200', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Disconnect' })] });
+    A.equipType = 'Air Handler'; A.template = 'AHU - Steam';
+    savedEquipment = [A]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const rows = await sheetRowsOf(await unzipExport(zip.blob));
+    const hdr = rows.find(r => r.cells[0] === 'Equipment ID/Name');
+    const data = hdr && rows.find(r => r.sheet === hdr.sheet && r.n === hdr.n + 1);
+    const srcLabel = rows.find(r => r.cells[0] === 'Energy Source #1');
+    record(N, !!hdr && hdr.cells[5] === 'Equipment Type' && !!data && data.cells[5] === 'Air Handler' && data.cells[0] === 'AHU-200'
+      && !!srcLabel && srcLabel.cells[2] === 'Device ID',
+      'header ' + JSON.stringify(hdr && hdr.cells.slice(0, 6)) + '; data ' + JSON.stringify(data && data.cells.slice(0, 6)) + '; source label ' + JSON.stringify(srcLabel && srcLabel.cells.slice(0, 3)));
+  }
+
+  // T201 — 4.3 c: Cancel on "Change Template?" blanked the template
+  async function t201_cancellingATemplateChangeKeepsTheTemplate() {
+    const N = 'T201 Cancel on "Change Template?" keeps the template the unit had — a listed one and a custom one — and the unit saves with it, never with none';
+    await resetAppState();
+    fillFormNoSources('T-201');
+    const sel = document.getElementById('equipTemplate');
+    sel.dispatchEvent(new Event('focus'));
+    sel.value = 'Standard Pump';
+    await withDialogs({ confirm: true }, async () => { handleTemplateChange(); });
+    closeAllPrompts();
+    if (!sources.length) return record(N, false, 'Standard Pump gave no sources');
+    sources[0].deviceId = 'P-201'; sources[0].userEdited = true;
+    const n0 = sources.length;
+    sel.dispatchEvent(new Event('focus'));
+    sel.value = 'Chilled Water Pump';
+    handleTemplateChange();
+    const asked = !!document.getElementById('templateConfirmOverlay');
+    cancelTemplateChange();
+    const listed = { sel: sel.value, tmpl: getTemplate(), n: sources.length, tag: sources[0].deviceId };
+    sel.dispatchEvent(new Event('focus'));
+    sel.value = '** New Template **';
+    handleTemplateChange();
+    document.getElementById('equipTemplateCustom').value = 'Booster Skid 201';
+    sel.dispatchEvent(new Event('focus'));
+    sel.value = 'Chilled Water Pump';
+    handleTemplateChange();
+    cancelTemplateChange();
+    const custom = { sel: sel.value, tmpl: getTemplate(), shown: document.getElementById('customTemplateGroup').style.display };
+    performSaveAndNew();
+    const saved = savedEquipment.find(e => e.equipName === 'T-201') || {};
+    record(N, asked && listed.sel === 'Standard Pump' && listed.tmpl === 'Standard Pump' && listed.n === n0 && listed.tag === 'P-201'
+      && custom.sel === '** New Template **' && custom.tmpl === 'Booster Skid 201' && custom.shown === 'flex' && saved.template === 'Booster Skid 201',
+      'asked=' + asked + '; after Cancel ' + JSON.stringify(listed) + '; custom after Cancel ' + JSON.stringify(custom) + '; saved template ' + JSON.stringify(saved.template));
+  }
+
+  // T202 — 4.3 e: a saved value its list lacked showed as "-- Select --"
+  async function t202_savedValuesOffTheListShowAsThemselves() {
+    const N = 'T202 a saved value its list lacks shows as itself, not "-- Select --" (Energy Source "Electrical", Location "At Capacitor Bank" and a typed one, Quantity 12, Tied To) and saves back unchanged; "At Capacitor Bank" and "Button (Start/Stop)" are in the lists';
+    await resetAppState();
+    const A = mkEntry('ATS-202', { sources: [
+      Object.assign(mkSrc('Electrical'), { sourceId: genUuid(), deviceType: 'Breaker', location: 'On Wall', collapsed: false }),
+      Object.assign(mkSrc('Stored Electrical Energy'), { sourceId: genUuid(), deviceType: 'Capacitor', location: 'At Capacitor Bank', collapsed: false }),
+      Object.assign(mkSrc('DW In'), { sourceId: genUuid(), deviceType: 'Ball Valve', location: 'Behind the Lab Sink', quantity: 12, collapsed: false })] });
+    A.tiedTo = 'Shut down boiler first';
+    savedEquipment = [A]; saveAll();
+    await withDialogs({ confirm: true }, async () => { editSaved(0); });
+    sources.forEach(s => { s.collapsed = false; }); renderSources();
+    const val = id => (document.getElementById(id) || {}).value;
+    const shown = { energy0: val('src_energy_0'), loc1: val('src_loc_1'), loc2: val('src_loc_2'), tied: val('equipTiedTo') };
+    const card2 = document.querySelectorAll('#sourcesContainer > .source-card')[2];
+    const qty = card2 ? [...card2.querySelectorAll('select')].map(x => x.value).find(v => v === '12') || '' : '';
+    performSaveAndNew();
+    const s = savedEquipment.find(e => e.id === A.id) || {};
+    const kept = (s.sources || []).map(x => x.energySource + '|' + x.location + '|' + x.quantity).join(' / ');
+    record(N, shown.energy0 === 'Electrical' && shown.loc1 === 'At Capacitor Bank' && shown.loc2 === 'Behind the Lab Sink' && shown.tied === 'Shut down boiler first' && qty === '12'
+      && s.tiedTo === 'Shut down boiler first' && kept === 'Electrical|On Wall|1 / Stored Electrical Energy|At Capacitor Bank|1 / DW In|Behind the Lab Sink|12'
+      && DATA.locations.includes('At Capacitor Bank') && DATA.verificationTypes.includes('Button (Start/Stop)'),
+      'shown ' + JSON.stringify(shown) + ', quantity ' + JSON.stringify(qty) + '; saved tiedTo ' + JSON.stringify(s.tiedTo) + ', sources ' + kept);
+  }
+
+  // T203 — 4.3 a: the custom boxes were rebuilt on every keystroke (focus lost on the iPad)
+  async function t203_customBoxesAreNotRebuiltWhileTyping() {
+    const N = 'T203 typing in a custom Energy Source / Device box keeps the same box (it was rebuilt on every keystroke, losing focus on the iPad); leaving it refreshes the Device list and Valve State in place';
+    await resetAppState();
+    fillFormNoSources('C-203');
+    sources.push(Object.assign(mkSrc(''), { deviceType: '', verification: '', location: '', collapsed: false }));
+    renderSources();
+    handleEnergySourceChange(0, '** Custom Energy **');
+    const box = document.getElementById('src_energy_custom_0');
+    if (!box) return record(N, false, 'no custom energy box');
+    let same = true;
+    for (const t of ['S', 'St', 'Steam 5', 'Steam 50 PSI']) {
+      box.value = t; box.dispatchEvent(new Event('input', { bubbles: true }));
+      if (document.getElementById('src_energy_custom_0') !== box) same = false;
+    }
+    const devSel = document.getElementById('src_device_0');
+    box.dispatchEvent(new Event('change', { bubbles: true }));
+    const stillSame = document.getElementById('src_energy_custom_0') === box && document.getElementById('src_device_0') === devSel;
+    const devOpts = [...document.getElementById('src_device_0').options].map(o => o.value);
+    const valveListed = devOpts.includes('Gate Valve') && !devOpts.includes('Breaker');
+    handleDeviceTypeChange(0, '** Custom Device **');
+    const dbox = document.getElementById('src_device_custom_0');
+    let dsame = !!dbox;
+    for (const t of ['W', 'Wheel', 'Wheel Valve']) {
+      if (!dbox) break;
+      dbox.value = t; dbox.dispatchEvent(new Event('input', { bubbles: true }));
+      if (document.getElementById('src_device_custom_0') !== dbox) dsame = false;
+    }
+    if (dbox) dbox.dispatchEvent(new Event('change', { bubbles: true }));
+    const vs = !!document.getElementById('src_valvestate_0');
+    record(N, same && stillSame && valveListed && dsame && document.getElementById('src_device_custom_0') === dbox && vs
+      && sources[0].energySource === 'Steam 50 PSI' && sources[0].deviceType === 'Wheel Valve',
+      'energy box kept=' + same + ', after leaving it=' + stillSame + ', device list ' + JSON.stringify(devOpts.slice(0, 6)) + '; device box kept=' + dsame + ', Valve State shown=' + vs + '; saved ' + sources[0].energySource + ' / ' + sources[0].deviceType);
+  }
+
+  // T204 — 4.3 f: Valve State on every row; an In/Out pair split into two "In/Out" rows
+  async function t204_valveStateOnValvesAndInOutSplitsByDirection() {
+    const N = 'T204 Valve State shows on valve rows only (never on a breaker or a Kinetic row unless it already holds Normally Closed); a Split of "HHW In/Out" x2 gives "HHW In" + "HHW Out" (tags and the In valve\'s mark follow, the Out valve keeps the pair\'s state); a plain valve row still splits off a Normally Closed valve, a breaker row never does';
+    await resetAppState();
+    fillFormNoSources('V-204');
+    sources.push(Object.assign(mkSrc('Electrical 208V'), { deviceType: 'Breaker', collapsed: false }));
+    sources.push(Object.assign(mkSrc('Kinetic'), { deviceType: 'Rotating', collapsed: false }));
+    sources.push(Object.assign(mkSrc('HHW In'), { deviceType: 'Ball Valve', collapsed: false }));
+    sources.push(Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Disconnect', valveState: 'normally_closed', collapsed: false }));
+    renderSources();
+    const shown = [0, 1, 2, 3].map(i => !!document.getElementById('src_valvestate_' + i)).join(',');
+    await resetAppState();
+    fillFormNoSources('S-204');
+    sources.push(Object.assign(mkSrc('HHW In/Out'), { deviceType: 'Ball Valve', quantity: 2, deviceId: 'V-IN; V-OUT', collapsed: false }));
+    sources.push(Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', quantity: 3, collapsed: false }));
+    sources.push(Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Breaker', quantity: 2, collapsed: false }));
+    sources.forEach(ensureSourceId);
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('s204'));
+    openValveMarkDialog('source_0'); await markDialogReady(); tapMark(0.25, 0.5); tapMark(0.75, 0.5); clickById('valveMarkSave');
+    const inMark = (photos.source_0.marks || [])[0];
+    splitSource(0);
+    const a = sources[0], b = sources[1];
+    const ref0 = photos.source_0 || {};
+    const pairOk = a.energySource === 'HHW In' && a.quantity === 1 && a.deviceId === 'V-IN'
+      && b.energySource === 'HHW Out' && b.quantity === 1 && b.deviceId === 'V-OUT' && (b.valveState || 'normal') === 'normal'
+      && (ref0.marks || []).length === 1 && !!inMark && ref0.marks[0].x === inMark.x && !photos.source_1;
+    splitSource(2);
+    const plain = sources[3];
+    splitSource(4);
+    const brk = sources[5];
+    record(N, shown === 'false,false,true,true' && pairOk && plain.energySource === 'CHW In' && plain.valveState === 'normally_closed' && (brk.valveState || 'normal') === 'normal',
+      'Valve State on breaker,Kinetic,valve,NC disconnect = ' + shown + '; after the pair split ' + JSON.stringify(sources.slice(0, 2).map(x => [x.energySource, x.quantity, x.deviceId, x.valveState]))
+      + ', In row marks ' + JSON.stringify(ref0.marks || null) + '; plain split ' + (plain && plain.energySource) + ' ' + (plain && plain.valveState) + '; breaker split ' + (brk && brk.valveState));
+  }
+
+  // T205 — 4.3 b: a scan finishing after Save & New wrote into the next unit
+  async function t205_aScanNeverLandsOnAnotherUnitOrSource() {
+    const N = 'T205 a label scan still reading when the form changes (Save & New) is dropped, not written into the next unit; a scan for a source\'s box follows that source when it moves';
+    await resetAppState();
+    const realPlugins = window.scanPlugins;
+    let release = null;
+    window.scanPlugins = () => ({
+      Camera: { getPhoto: async () => ({ base64String: 'AAAA' }) },
+      TextRecognition: { recognizeText: () => new Promise(r => { release = r; }) }
+    });
+    try {
+      fillForm('A-205');
+      const msgs = await withToasts(async () => {
+        const p = scanTextToField('equipName');
+        await waitFor(() => !!release, 3000, 'the OCR call');
+        performSaveAndNew();
+        release({ text: 'SCANNED 205' }); release = null;
+        await p;
+      });
+      const nextName = document.getElementById('equipName').value;
+      const savedName = (savedEquipment.find(e => e.equipName === 'A-205') || {}).equipName;
+      fillFormNoSources('B-205');
+      sources.push(Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Disconnect', collapsed: false }));
+      sources.push(Object.assign(mkSrc('DW In'), { deviceType: 'Ball Valve', collapsed: false }));
+      renderSources();
+      const target = sources[1];
+      const p2 = scanTextToField('src_deviceId_1');
+      await waitFor(() => !!release, 3000, 'the second OCR call');
+      moveSource(1, -1);
+      release({ text: 'BV-9' }); release = null;
+      await p2;
+      record(N, nextName === '' && savedName === 'A-205' && msgs.some(m => /scan not used/i.test(m))
+        && target.deviceId === 'BV-9' && sources.indexOf(target) === 0 && !sources[1].deviceId,
+        'next unit name ' + JSON.stringify(nextName) + ', messages ' + JSON.stringify(msgs.slice(-2)) + '; moved source tag ' + JSON.stringify(target.deviceId) + ', the other ' + JSON.stringify(sources[1] && sources[1].deviceId));
+    } finally { window.scanPlugins = realPlugins; }
+  }
+
+  // T206 — 4.3 d: no way out of an Edit but to save it again
+  async function t206_cancelEditLeavesTheSavedUnitAsItWas() {
+    const N = 'T206 "Cancel edit" leaves the saved unit exactly as it was (notes, photos, exported stamp) and blanks the form; a photo taken in the discarded edit stays on the device (and is flagged at export); "Discard" clears a new unit only when confirmed';
+    await resetAppState();
+    fillForm('E-206');
+    await captureInto('equip_main', await makePhotoFile('e206'));
+    document.getElementById('equipNotes').value = 'orig';
+    const A = saveEntry();
+    A.exportedAt = new Date().toISOString(); A.exportedAllPhotos = true; A.exportId = 'x206'; saveAll();
+    const btn = () => document.getElementById('discardFormBtn');
+    const hiddenBlank = btn().style.display === 'none';
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(A)); });
+    const label = btn().style.display !== 'none' ? btn().textContent : '(hidden)';
+    document.getElementById('equipNotes').value = 'changed';
+    const dp = await captureInto('equip_dataplate', await makePhotoFile('e206dp'));
+    const dpKey = dp && dp.dbKey;
+    const { log } = await withDialogs({ confirm: true }, async () => { discardForm(); });
+    const a = savedEquipment.find(e => e.id === A.id) || {};
+    const kept = a.notes === 'orig' && !(a.photos && a.photos.equip_dataplate) && entryExportState(a) === 'exported';
+    const formBlank = !document.getElementById('equipName').value && !editingEntry && btn().style.display === 'none';
+    const bytes = dpKey ? await loadPhotoBytes(dpKey, 'image/jpeg') : null;
+    const flagged = await emptySlotsWithUnattachedShots([a]);
+    fillForm('N-206'); autoSaveCurrent();
+    const newLabel = btn().textContent;
+    await withDialogs({ confirm: false }, async () => { discardForm(); });
+    const keptNew = document.getElementById('equipName').value === 'N-206';
+    await withDialogs({ confirm: true }, async () => { discardForm(); });
+    const clearedNew = !document.getElementById('equipName').value && !sources.length;
+    record(N, hiddenBlank && /cancel edit/i.test(label) && log.some(m => /stays exactly as it was/i.test(m)) && kept && formBlank && !!(bytes && bytes.bytes)
+      && flagged.some(f => /Data Plate/.test(f.slot)) && /discard/i.test(newLabel) && keptNew && clearedNew,
+      'button hidden on a blank form=' + hiddenBlank + ', on edit ' + JSON.stringify(label) + '; saved notes ' + JSON.stringify(a.notes) + ', data plate ' + !!(a.photos && a.photos.equip_dataplate)
+      + ', export state ' + entryExportState(a) + '; form blank=' + formBlank + '; discarded shot on device=' + !!(bytes && bytes.bytes) + ', flagged ' + JSON.stringify(flagged)
+      + '; new unit button ' + JSON.stringify(newLabel) + ', kept on No=' + keptNew + ', cleared on Yes=' + clearedNew);
+  }
+
+  // T207 — 4.3 g: the survey date was the first-save date and could not be changed
+  async function t207_theSurveyDateIsOnTheFormAndKeptOnEdit() {
+    const N = 'T207 the Survey Date box sets the unit\'s date (blank = the day it is saved) and so its sheet; a future day is refused; changing it on a unit already exported asks first and says to change loto-web too (never for a unit not exported yet); the first export stays known through an edit';
+    await resetAppState();
+    const box = () => document.getElementById('equipSurveyDate');
+    fillForm('D-207a'); box().value = dayAgo(1); box().dispatchEvent(new Event('change'));
+    const A = saveEntry();
+    fillForm('D-207b');
+    const B = saveEntry();
+    fillForm('D-207c'); box().dispatchEvent(new Event('focus')); box().value = dayAgo(-2); box().dispatchEvent(new Event('change'));
+    const future = box().value;
+    clearForm(false);
+    const { zip } = await runExport({ confirmResponse: true, dateFilter: 'all' });
+    const u = zip ? await unzipExport(zip.blob) : { files: {} };
+    const sheets = Object.keys(u.files).filter(p => /Information_Sheet_/.test(p)).map(p => p.replace('info_sheets/', '')).sort();
+    const exportedOnce = !!(A.firstExportedAt && B.firstExportedAt);
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(B)); });
+    const shownDay = box().value;
+    box().dispatchEvent(new Event('focus'));
+    box().value = dayAgo(3);
+    const r1 = await withDialogs({ confirm: false }, async () => { handleSurveyDateChange(); });
+    const reverted = box().value;
+    box().value = dayAgo(3);
+    await withDialogs({ confirm: true }, async () => { handleSurveyDateChange(); });
+    document.getElementById('equipNotes').value = 'edited';
+    performSaveAndNew();
+    const b = savedEquipment.find(e => e.id === B.id) || {};
+    fillForm('D-207d'); const D = saveEntry();
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(D)); });
+    box().dispatchEvent(new Event('focus'));
+    box().value = dayAgo(2);
+    const r3 = await withDialogs({ confirm: false }, async () => { handleSurveyDateChange(); });
+    const dKept = box().value;
+    clearForm(false);
+    record(N, A.surveyDate === dayAgo(1) && B.surveyDate === dayAgo(0) && future !== dayAgo(-2) && exportedOnce
+      && sheets.join() === [sheetName(dayAgo(1)), sheetName(dayAgo(0))].sort().join()
+      && shownDay === dayAgo(0) && r1.log.some(m => /already exported/i.test(m) && /loto-web/i.test(m)) && reverted === dayAgo(0)
+      && b.surveyDate === dayAgo(3) && !b.exportedAt && !!b.firstExportedAt && changedSinceExport(b)
+      && !r3.log.length && dKept === dayAgo(2),
+      'saved dates ' + A.surveyDate + ', ' + B.surveyDate + '; future box ' + JSON.stringify(future) + '; sheets ' + JSON.stringify(sheets)
+      + '; edit shows ' + shownDay + ', asked ' + JSON.stringify(r1.log) + ', after No ' + reverted + '; saved ' + b.surveyDate + ' exportedAt=' + !!b.exportedAt + ' first=' + !!b.firstExportedAt
+      + '; not-exported unit asked ' + JSON.stringify(r3.log) + ', kept ' + dKept);
+  }
+
+  // T208 — 4.3 g: units edited today but first saved earlier were left out; undated units went on a sheet loto-web refuses
+  async function t208_notYetExportedSendsWholeDaysAndUndatedUnitsGetADate() {
+    const N = 'T208 "Not yet exported" sends every date holding an unexported unit as its whole sheet (no other day; today stays the default) and says a change to a unit already in loto-web must be made there too; a unit with no date gets one at export instead of the undated sheet';
+    await resetAppState();
+    const at = n => { const d = new Date(); d.setDate(d.getDate() - n); d.setHours(10, 0, 0, 0); return d.toISOString(); };
+    const X1 = mkEntry('X1-208', { savedAt: at(1) }); X1.exportedAt = at(1); X1.exportedAllPhotos = true; X1.firstExportedAt = at(1);
+    const X2 = mkEntry('X2-208', { savedAt: at(1) });
+    const X3 = mkEntry('X3-208', { savedAt: at(2) }); X3.exportedAt = at(2); X3.exportedAllPhotos = true; X3.firstExportedAt = at(2);
+    const X4 = mkEntry('X4-208', { savedAt: at(0) });
+    const X5 = mkEntry('X5-208', { savedAt: at(3) }); X5.firstExportedAt = at(3);   // exported, then edited
+    savedEquipment = [X1, X2, X3, X4, X5]; saveAll();
+    showExportDialog();
+    const dsel = document.getElementById('exportDateFilter');
+    const opts = [...dsel.options].map(o => o.value);
+    const dflt = dsel.value;
+    dsel.value = 'unexported'; updateExportDateSummary();
+    const summary = (document.getElementById('exportDateSummary') || {}).textContent || '';
+    closeExportDialog();
+    const { zip } = await runExport({ confirmResponse: true, dateFilter: 'unexported' });
+    const units = {};
+    if (zip) { const u = await unzipExport(zip.blob); for (const q of Object.keys(u.files).filter(x => /Information_Sheet_.*\.xlsx$/.test(x)).sort()) units[q.replace('info_sheets/', '')] = await sheetUnits(u.files[q]); }
+    const want = [sheetName(dayAgo(0)), sheetName(dayAgo(1)), sheetName(dayAgo(3))].sort().join();
+    const got = Object.values(units).flat().sort().join();
+    await resetAppState();
+    const U = mkEntry('U-208'); delete U.savedAt;
+    savedEquipment = [U]; saveAll();
+    const r = await runExport({ confirmResponse: true, dateFilter: 'all', choice: { 'survey-date': dayAgo(5) } });
+    const uSheets = r.zip ? Object.keys((await unzipExport(r.zip.blob)).files).filter(x => /Information_Sheet_/.test(x)).map(x => x.replace('info_sheets/', '')) : [];
+    const asked = r.confirms.some(m => /CHOICE survey-date/.test(m));
+    record(N, opts.includes('unexported') && dflt === dayAgo(0) && /not yet exported/i.test(summary) && /make the same change there/i.test(summary)
+      && !!zip && Object.keys(units).sort().join() === want && got === ['X1-208', 'X2-208', 'X4-208', 'X5-208'].sort().join()
+      && asked && uSheets.join() === sheetName(dayAgo(5)) && U.surveyDate === dayAgo(5),
+      'options ' + JSON.stringify(opts) + ', default ' + dflt + '; summary ' + JSON.stringify(summary) + '; sheets ' + JSON.stringify(units) + '; undated unit asked=' + asked + ', sheets ' + JSON.stringify(uSheets) + ', its date ' + U.surveyDate);
+  }
+
+  // T209 — 3.2: Duplicate didn't follow Reuse, and a hand-set Yes didn't say which photo
+  async function t209_duplicateFollowsReuseAndAHandSetYesPicksThePhoto() {
+    const N = 'T209 Reuse sets Duplicate = Yes and the card names whose photo it is; its sheet row says Yes, names the owner\'s file and keeps its own mark; a retake puts an automatic Yes back to No, never a Yes set by hand; a hand-set Yes on a source with no photo opens the picker (Skip keeps it); Duplicate Source marks its shared photo Yes';
+    await resetAppState();
+    fillFormNoSources('R-209');
+    sources.push(Object.assign(mkSrc('HHW In'), { deviceType: 'Ball Valve', collapsed: false }));
+    sources.push(Object.assign(mkSrc('HHW Out'), { deviceType: 'Ball Valve', collapsed: false }));
+    sources.push(Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', collapsed: false }));
+    sources.forEach(ensureSourceId);
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('r209'));
+    const cands = collectTodaysPhotos();
+    _reuseCandidates = cands;
+    await reusePhotoInto('source_1', cands.findIndex(c => c.dbKey === photos.source_0.dbKey));
+    await waitForPhotoWritesIdle(10000);
+    const autoYes = sources[1].duplicate === 'Yes' && sources[1].dupAuto === true;
+    const cardText = (document.querySelectorAll('#sourcesContainer > .source-card')[1] || {}).textContent || '';
+    const named = /Photo from .*Source 1/.test(cardText);
+    photos.source_1 = Object.assign({}, photos.source_1, { marks: [{ x: 0.6, y: 0.4 }], marksFor: { qty: 1, inOut: false } });
+    updateSource(2, 'duplicate', 'Yes');
+    const picker = document.getElementById('reusePickerOverlay');
+    const skipBtn = picker && [...picker.querySelectorAll('button')].find(x => /skip/i.test(x.textContent));
+    if (skipBtn) skipBtn.click();
+    const handYes = sources[2].duplicate === 'Yes' && !sources[2].dupAuto && !document.getElementById('reusePickerOverlay');
+    autoSaveCurrent();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    let rowsOk = false, rowDetail = '';
+    if (zip) {
+      const rows = await sheetRowsOf(await unzipExport(zip.blob));
+      const r1 = rows.find(r => r.cells[0] === 'HHW In'), r2 = rows.find(r => r.cells[0] === 'HHW Out');
+      rowsOk = !!(r1 && r2) && !!r1.cells[5] && r2.cells[5] === r1.cells[5] && r2.cells[7] === 'Yes' && r1.cells[7] === 'No' && r2.cells[11] === '0.600,0.400';
+      rowDetail = JSON.stringify([r1 && r1.cells.slice(0, 12), r2 && r2.cells.slice(0, 12)]);
+    }
+    await captureInto('source_1', await makePhotoFile('r209b'));
+    await captureInto('source_2', await makePhotoFile('r209c'));
+    const afterRetake = [sources[1].duplicate, sources[2].duplicate].join(',');
+    duplicateSource(0);
+    const dupSrc = sources[1];
+    record(N, autoYes && named && !!skipBtn && handYes && rowsOk && afterRetake === 'No,Yes' && dupSrc.duplicate === 'Yes' && dupSrc.dupAuto === true,
+      'auto Yes=' + autoYes + ', card names owner=' + named + '; picker Skip=' + !!skipBtn + ', hand Yes kept=' + handYes
+      + '; sheet rows ' + rowDetail + (zip ? '' : ' (no zip: ' + confirms.join(' | ') + ')') + '; after retakes ' + afterRetake + '; Duplicate Source -> ' + dupSrc.duplicate);
+  }
+
+  // T210 — 4.4 a: a fixed landscape size box cut portrait photos to 810 x 1080
+  async function t210_thePhotoSizeLimitTurnsWithThePhoto() {
+    const N = 'T210 the photo size limit turns with the photo (a portrait shot gets the long side); the default is 2560 x 1440, and a device still on the old 1920 x 1080 default moves to it once (a later 1920 pick and a custom size are kept)';
+    const cv = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.fillStyle = '#468'; x.fillRect(0, 0, w, h); return c; };
+    const box = { maxWidth: 400, maxHeight: 225, quality: 0.8 };
+    const land = renderCapture(cv(800, 600), box), port = renderCapture(cv(600, 800), box);
+    const dflt = renderCapture(cv(1512, 2016), { quality: 0.8 });
+    let had = null, hadFlag = null, moved = null, keptLater = null, keptCustom = null;
+    try { had = localStorage.getItem('loto_photo_settings'); hadFlag = localStorage.getItem(PHOTO_DEFAULT_MOVE_FLAG); } catch (e) {}
+    try {
+      localStorage.removeItem(PHOTO_DEFAULT_MOVE_FLAG);
+      localStorage.setItem('loto_photo_settings', JSON.stringify({ maxWidth: 1920, maxHeight: 1080, quality: 0.8, preset: '1920x1080' }));
+      moved = getPhotoSettings();
+      localStorage.setItem('loto_photo_settings', JSON.stringify({ maxWidth: 1920, maxHeight: 1080, quality: 0.8, preset: '1920x1080' }));
+      keptLater = getPhotoSettings();
+      localStorage.removeItem(PHOTO_DEFAULT_MOVE_FLAG);
+      localStorage.setItem('loto_photo_settings', JSON.stringify({ maxWidth: 1600, maxHeight: 900, quality: 0.7, preset: 'custom' }));
+      keptCustom = getPhotoSettings();
+    } finally {
+      try { if (had === null) localStorage.removeItem('loto_photo_settings'); else localStorage.setItem('loto_photo_settings', had); } catch (e) {}
+      try { if (hadFlag === null) localStorage.removeItem(PHOTO_DEFAULT_MOVE_FLAG); else localStorage.setItem(PHOTO_DEFAULT_MOVE_FLAG, hadFlag); } catch (e) {}
+    }
+    record(N, !!land && land.w === 300 && land.h === 225 && !!port && port.w === 225 && port.h === 300 && !!dflt && dflt.w === 1440 && dflt.h === 1920
+      && !!moved && moved.maxWidth === 2560 && moved.maxHeight === 1440 && !!keptLater && keptLater.maxWidth === 1920 && !!keptCustom && keptCustom.maxWidth === 1600,
+      'landscape ' + (land && land.w + 'x' + land.h) + ', portrait ' + (port && port.w + 'x' + port.h) + ', default portrait ' + (dflt && dflt.w + 'x' + dflt.h)
+      + '; old default -> ' + JSON.stringify(moved) + '; 1920 picked later -> ' + (keptLater && keptLater.maxWidth) + '; custom -> ' + (keptCustom && keptCustom.maxWidth));
+  }
+
+  // T211 — 4.4 b: no capture time survived the re-encode
+  async function t211_newPhotosCarryTheirCaptureTime() {
+    const N = 'T211 a new photo carries its capture time inside the stored JPEG (EXIF DateTimeOriginal + offset, Orientation 1, no GPS): the original\'s own time when it has one, else the camera\'s now; a library pick without one gets none; the export ships those bytes and lists the time in manifest.json and entries.json; an older photo ships unchanged';
+    await resetAppState();
+    const toDataUrl = (blob) => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+    const fileOf = async (du, name) => new File([await (await fetch(du)).blob()], name, { type: 'image/jpeg' });
+    const exifTags = (b) => {
+      const out = { tags: [], orientation: null };
+      if (!b || b[0] !== 0xFF || b[1] !== 0xD8) return out;
+      let p = 2;
+      while (p + 4 <= b.length && b[p] === 0xFF) {
+        const m = b[p + 1], len = (b[p + 2] << 8) | b[p + 3];
+        if (m === 0xDA) break;
+        if (m === 0xE1 && b[p + 4] === 0x45 && b[p + 5] === 0x78) {
+          const t = p + 10, le = b[t] === 0x49;
+          const u16 = o => le ? (b[t + o] | (b[t + o + 1] << 8)) : ((b[t + o] << 8) | b[t + o + 1]);
+          const u32 = o => le ? ((b[t + o] | (b[t + o + 1] << 8) | (b[t + o + 2] << 16) | (b[t + o + 3] << 24)) >>> 0) : (((b[t + o] << 24) | (b[t + o + 1] << 16) | (b[t + o + 2] << 8) | b[t + o + 3]) >>> 0);
+          const ifd = u32(4), n = u16(ifd);
+          for (let k = 0; k < n; k++) { const e = ifd + 2 + k * 12, tag = u16(e); out.tags.push(tag); if (tag === 0x0112) out.orientation = u16(e + 8); }
+          return out;
+        }
+        p += 2 + len;
+      }
+      return out;
+    };
+    const plainDu = await toDataUrl(await makePhotoFile('t211'));
+    // The iPad's encoder (WebKit) writes its OWN EXIF block — color space and
+    // size, no time — into every canvas JPEG; a desktop browser writes none.
+    // Ours must replace it, not be skipped because of it (the Simulator run
+    // of build 109 stored no time at all).
+    const exifBlocks = (b) => { let n = 0, p = 2; while (b && p + 4 <= b.length && b[p] === 0xFF && b[p + 1] !== 0xDA) { if (b[p + 1] === 0xE1 && b[p + 4] === 0x45 && b[p + 5] === 0x78) n++; p += 2 + ((b[p + 2] << 8) | b[p + 3]); } return n; };
+    const encoderStyle = jpegWithExif(plainDu, null);   // an EXIF block without a time, like WebKit's
+    const replaced = dataUrlToUint8Array(jpegWithExif(encoderStyle, { dt: '2026:01:02 03:04:05', offset: '+00:00' }));
+    const replacedOk = exifBlocks(dataUrlToUint8Array(encoderStyle)) === 1 && exifBlocks(replaced) === 1
+      && (readJpegExifTime(replaced) || {}).dt === '2026:01:02 03:04:05';
+    fillForm('P-211');
+    await captureInto('equip_main', await fileOf(jpegWithExif(plainDu, { dt: '2026:09:15 10:20:30', offset: '-05:00' }), 'exif.jpg'));
+    const before = Date.now();
+    await captureInto('equip_dataplate', await makePhotoFile('t211b'));
+    handlePhoto({ files: [await makePhotoFile('t211c')], hasAttribute: () => false }, 'equip_ee');   // the library picker's input: no capture attribute
+    await waitFor(() => photos.equip_ee && photos.equip_ee.dbKey && photos.equip_ee.unsaved === false, 15000, 'the library pick');
+    await waitForPhotoWritesIdle(15000);
+    const bytesOf = async slot => { const r = await loadPhotoBytes(photos[slot].dbKey, 'image/jpeg', photos[slot].sha256 || undefined); return r && r.bytes; };
+    const mainB = await bytesOf('equip_main'), dpB = await bytesOf('equip_dataplate'), eeB = await bytesOf('equip_ee');
+    const tMain = readJpegExifTime(mainB), tDp = readJpegExifTime(dpB), tEe = readJpegExifTime(eeB);
+    const dpAt = Date.parse(photos.equip_dataplate.capturedAt || '');
+    const exifOk = !!tMain && tMain.dt === '2026:09:15 10:20:30' && tMain.offset === '-05:00'
+      && photos.equip_main.capturedAt === '2026-09-15T10:20:30-05:00' && photos.equip_main.capturedFrom === 'exif'
+      && !!tDp && photos.equip_dataplate.capturedFrom === 'camera' && Math.abs(dpAt - before) < 120000 && tDp.offset === tzOffsetText(new Date())
+      && !tEe && !photos.equip_ee.capturedAt
+      && [mainB, dpB, eeB].every(b => { const x = exifTags(b); return x.orientation === 1 && !x.tags.includes(0x8825); });
+    const old = mkEntry('Old-211');
+    const oldKey = photoStoreKey(old.id, 'main');
+    const oldDu = dataUrlFromBytesSeed('t211-old');
+    await storePhotoBytes(oldKey, oldDu);
+    const oldHash = await sha256HexOfDataUrl(oldDu);
+    old.photos = { equip_main: { dbKey: oldKey, thumbnail: TINY_THUMB, timestamp: new Date().toISOString(), fileType: 'image/jpeg', sha256: oldHash } };
+    savedEquipment = [old]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const je = (u.entriesJson.entries || []).find(e => e.equipName === 'P-211') || {};
+    const mainFile = je.photoFiles && je.photoFiles.main;
+    const mainRec = (u.manifest.photos || []).find(r => 'photos/' + r.filename === mainFile) || {};
+    const shipped = mainFile && u.files[mainFile];
+    const oldJe = (u.entriesJson.entries || []).find(e => e.equipName === 'Old-211') || {};
+    const oldFile = oldJe.photoFiles && oldJe.photoFiles.main;
+    const exportOk = !!shipped && (readJpegExifTime(shipped) || {}).dt === '2026:09:15 10:20:30'
+      && mainRec.capturedAt === '2026-09-15T10:20:30-05:00' && mainRec.capturedFrom === 'exif'
+      && !!(je.photoCaptured && je.photoCaptured.main) && je.photoCaptured.main.capturedAt === '2026-09-15T10:20:30-05:00' && je.photoCaptured.ee === null
+      && !u.manifest.counts.hashMismatches && !!oldFile && u.hashes[oldFile] === oldHash && !readJpegExifTime(u.files[oldFile]);
+    record(N, replacedOk && exifOk && exportOk, 'an encoder\'s own EXIF block replaced=' + replacedOk + '; stored: main ' + JSON.stringify(tMain) + ' ' + photos.equip_main.capturedAt + '; camera ' + JSON.stringify(tDp) + ' ' + photos.equip_dataplate.capturedAt
+      + '; library ' + JSON.stringify(tEe) + '; exported main record ' + JSON.stringify({ at: mainRec.capturedAt, from: mainRec.capturedFrom }) + ', entries.json ' + JSON.stringify(je.photoCaptured)
+      + ', hash mismatches ' + (u.manifest.counts || {}).hashMismatches + ', older photo unchanged=' + (!!oldFile && u.hashes[oldFile] === oldHash));
+  }
+
+  // T212 — 4.4 d: nothing flagged a photo taken for a slot that stayed empty
+  async function t212_anEmptySlotWithAPhotoTakenForItIsFlaggedAtExport() {
+    const N = 'T212 the export warns when a unit\'s empty photo slot has a photo taken for it on the device (it never attached), never for a retaken slot\'s older shot, and Cancel stops it; the 11+ sources warning no longer says nothing is lost';
+    await resetAppState();
+    const A = mkEntry('U-212', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Disconnect' }), Object.assign(mkSrc('DW In'), { sourceId: genUuid(), deviceType: 'Ball Valve' })] });
+    await storePhotoBytes(photoStoreKey(A.id, A.sources[1].sourceId), dataUrlFromBytesSeed('t212-lost'));
+    const k1old = photoStoreKey(A.id, A.sources[0].sourceId), k1new = photoStoreKey(A.id, A.sources[0].sourceId);
+    await storePhotoBytes(k1old, dataUrlFromBytesSeed('t212-old'));
+    const du = dataUrlFromBytesSeed('t212-new'); await storePhotoBytes(k1new, du);
+    A.photos = { source_0: { dbKey: k1new, thumbnail: TINY_THUMB, timestamp: new Date().toISOString(), fileType: 'image/jpeg', sha256: await sha256HexOfDataUrl(du) } };
+    savedEquipment = [A]; saveAll();
+    const stop = await runExport({ confirmResponse: true, choice: { 'export-unattached': 'cancel' } });
+    const asked = stop.confirms.filter(m => /CHOICE export-unattached/.test(m));
+    const flagged = await emptySlotsWithUnattachedShots([A]);
+    const go = await runExport({ confirmResponse: true });
+    await resetAppState();
+    const B = mkEntry('Big-212', { sources: Array.from({ length: 11 }, (_, i) => Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), location: 'P' + i })) });
+    savedEquipment = [B]; saveAll();
+    const big = await runExport({ confirmResponse: true });
+    const bigMsg = big.confirms.find(m => /more than 10 energy sources/i.test(m)) || '';
+    record(N, !stop.zip && asked.length === 1 && flagged.length === 1 && /^Source #2/.test(flagged[0].slot) && !!go.zip
+      && /will NOT reach loto-web/.test(bigMsg) && !/nothing is lost/i.test(bigMsg),
+      'asked ' + JSON.stringify(asked) + ', zip after Cancel=' + !!stop.zip + '; flagged ' + JSON.stringify(flagged) + '; zip by default=' + !!go.zip + '; 11+ message ' + JSON.stringify(bigMsg.slice(0, 220)));
+  }
+
+  // T213 — 3.4: loto-web compared its lists with an August copy of the app
+  async function t213_appListsJsonMatchesTheApp() {
+    const N = 'T213 app-lists.json (the lists loto-web checks its own against) matches this build\'s lists — run node tools/gen-app-lists.js (npm run sync does) when they change';
+    if (typeof appListsSnapshot !== 'function') return record(N, false, 'the app has no appListsSnapshot');
+    let text = null;
+    try { const r = await fetch('app-lists.json', { cache: 'no-store' }); if (r.ok) text = await r.text(); } catch (e) {}
+    if (text === null || text.trim().charAt(0) !== '{') return record(N, true, 'not served here (the app bundle) — checked in the browser runs');
+    const label = /b(\d+)/.exec((document.querySelector('h1 span') || {}).textContent || '');
+    const want = JSON.stringify(appListsSnapshot(label ? parseInt(label[1], 10) : null), null, 2) + '\n';
+    const lists = JSON.parse(text);
+    record(N, text === want && lists.templates.length === DATA.templates.length - 1,
+      text === want ? 'matches (build ' + (label && label[1]) + ', ' + lists.templates.length + ' templates)' : 'STALE: the file has ' + text.length + ' chars, the app ' + want.length);
+  }
+
+
+  // ---------- build 109's code review (medium, 2026-10-09) ------------------
+  // T214 — review #1: a template the APP picked (a custom type's keyword, a
+  // type's only template, the template prompt, the voltage choice) asked
+  // "Change Template?" and Cancel put back what an EARLIER tap on the list had
+  // recorded — possibly on another unit — instead of this unit's template
+  async function t214_cancelAfterAnAppMadeTemplatePickKeepsThisUnitsTemplate() {
+    const N = 'T214 Cancel on "Change Template?" after a template the APP picked puts back this unit\'s own template (here none), never one an earlier tap on the list recorded on another unit';
+    await resetAppState();
+    fillFormNoSources('A-214');
+    const sel = document.getElementById('equipTemplate');
+    sel.value = 'Chilled Water Pump';
+    sel.dispatchEvent(new Event('focus'));                 // recorded on unit A
+    const B = mkEntry('B-214', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Disconnect', deviceId: 'D-214', userEdited: true })] });
+    B.equipType = 'Booster Pump'; B.template = '';           // a custom type, no template yet
+    savedEquipment = [B]; saveAll();
+    await withDialogs({ confirm: true }, async () => { editSaved(0); });
+    let asked = false;
+    await withDialogs({ confirm: true }, async () => {
+      handleCustomEquipTypeChange();                         // "pump" → the app picks Standard Pump and asks
+      asked = !!document.getElementById('templateConfirmOverlay');
+      if (asked) cancelTemplateChange();
+    });
+    closeAllPrompts();
+    const after = { sel: sel.value, tmpl: getTemplate(), tag: (sources[0] || {}).deviceId };
+    record(N, asked && after.sel === '' && after.tmpl === '' && after.tag === 'D-214',
+      'asked=' + asked + '; after Cancel ' + JSON.stringify(after));
+  }
+
+  // T215 — review #2-#5: Copy Source onto a source with a reused photo dropped
+  // its Duplicate; an incomplete export never edited counted as "changed";
+  // typing a year in the Survey Date box acted on 0002 / 0202; Duplicate = Yes
+  // on a linked source opened the photo picker
+  async function t215_reviewFixesForDuplicateDatesAndLinks() {
+    const N = 'T215 Copy Source keeps Duplicate = Yes on a source whose photo is a reuse; an incomplete export never edited is not "changed"; a half-typed year in the Survey Date box asks nothing and is put back when the box is left; Duplicate = Yes on a linked source opens no picker';
+    await resetAppState();
+    // (a) Copy Source onto a reused photo
+    const X = mkEntry('X-215', { sources: [Object.assign(mkSrc('CHW In'), { sourceId: genUuid(), deviceType: 'Ball Valve', duplicate: 'No' })] });
+    savedEquipment = [X]; saveAll();
+    fillFormNoSources('R-215');
+    sources.push(Object.assign(mkSrc('HHW In'), { deviceType: 'Ball Valve', collapsed: false }));
+    sources.push(Object.assign(mkSrc('HHW Out'), { deviceType: 'Ball Valve', collapsed: false }));
+    sources.push(Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Disconnect', collapsed: false }));
+    sources.forEach(ensureSourceId); renderSources();
+    await captureInto('source_0', await makePhotoFile('r215'));
+    const cands = collectTodaysPhotos(); _reuseCandidates = cands;
+    await reusePhotoInto('source_1', cands.findIndex(c => c.dbKey === photos.source_0.dbKey));
+    await waitForPhotoWritesIdle(10000);
+    showCopySourceDialog(1);
+    applyCopySource(0, 0);
+    const copied = { dup: sources[1].duplicate, auto: !!sources[1].dupAuto, es: sources[1].energySource };
+    // (d) a linked source: Duplicate = Yes opens no picker
+    sources[2].linkedTo = { entryId: X.id, sourceId: X.sources[0].sourceId, equipName: 'X-215', sourceIndex: 0, sourceLabel: 'CHW In' };
+    renderSources();
+    updateSource(2, 'duplicate', 'Yes');
+    const pickerOnLinked = !!document.getElementById('reusePickerOverlay');
+    closeReusePicker();
+    // (b) "changed since export"
+    const inc = { firstExportedAt: '2026-10-01T10:00:00Z', exportIncompleteAt: '2026-10-01T10:00:00Z', exportId: 'e1' };
+    const edited = { firstExportedAt: '2026-10-01T10:00:00Z' };
+    const changedOk = !changedSinceExport(inc) && changedSinceExport(edited) && !changedSinceExport({ exportedAt: '2026-10-01T10:00:00Z', exportedAllPhotos: true });
+    // (c) typing a year: no question until the date is whole; a half-typed one is put back on leaving
+    await resetAppState();
+    const E = mkEntry('E-215', { savedAt: new Date(Date.now() - 2 * 86400000).toISOString() });
+    E.exportedAt = new Date(Date.now() - 86400000).toISOString(); E.exportedAllPhotos = true; E.firstExportedAt = E.exportedAt;
+    savedEquipment = [E]; saveAll();
+    await withDialogs({ confirm: true }, async () => { editSaved(0); });
+    const box = document.getElementById('equipSurveyDate');
+    const orig = box.value;
+    box.dispatchEvent(new Event('focus'));
+    const typing = await withDialogs({ confirm: true }, async () => {
+      for (const v of ['0002-10-05', '0020-10-05', '0202-10-05']) { box.value = v; box.dispatchEvent(new Event('change')); }
+    });
+    box.dispatchEvent(new Event('blur'));
+    const settled = box.value;
+    clearForm(false);
+    record(N, copied.dup === 'Yes' && copied.auto && copied.es === 'CHW In' && !pickerOnLinked && changedOk
+      && typing.log.length === 0 && settled === orig && isIsoDay(orig),
+      'after Copy Source ' + JSON.stringify(copied) + '; picker on a linked source=' + pickerOnLinked + '; changedSinceExport ok=' + changedOk
+      + '; questions while typing the year ' + JSON.stringify(typing.log) + '; box after leaving ' + JSON.stringify(settled) + ' (was ' + JSON.stringify(orig) + ')');
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -5913,7 +6519,15 @@
     t191_aNewCollectorTagNeverEmptiesTheOldTagsFiles, t192_theBackupsButtonsShowOnlyWhileItIsOn,
     t193_aUnitWithoutItsMainPhotoIsFlagged, t194_eachUnitGetsItsOwnDeviceId,
     t195_pumpsGetNoKineticAndFansNameTheirFan, t196_aMissingElectricalSourceIsFlaggedOnlyWhereExpected,
-    t197_firePumpIsItsOwnTemplate, t198_editKeepsATemplateItsTypeNoLongerOffers, t199_labVacuumRecordsEveryPump];
+    t197_firePumpIsItsOwnTemplate, t198_editKeepsATemplateItsTypeNoLongerOffers, t199_labVacuumRecordsEveryPump,
+    t200_equipmentTypeCellIsLabelledEquipmentType, t201_cancellingATemplateChangeKeepsTheTemplate,
+    t202_savedValuesOffTheListShowAsThemselves, t203_customBoxesAreNotRebuiltWhileTyping,
+    t204_valveStateOnValvesAndInOutSplitsByDirection, t205_aScanNeverLandsOnAnotherUnitOrSource,
+    t206_cancelEditLeavesTheSavedUnitAsItWas, t207_theSurveyDateIsOnTheFormAndKeptOnEdit,
+    t208_notYetExportedSendsWholeDaysAndUndatedUnitsGetADate, t209_duplicateFollowsReuseAndAHandSetYesPicksThePhoto,
+    t210_thePhotoSizeLimitTurnsWithThePhoto, t211_newPhotosCarryTheirCaptureTime,
+    t212_anEmptySlotWithAPhotoTakenForItIsFlaggedAtExport, t213_appListsJsonMatchesTheApp,
+    t214_cancelAfterAnAppMadeTemplatePickKeepsThisUnitsTemplate, t215_reviewFixesForDuplicateDatesAndLinks];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

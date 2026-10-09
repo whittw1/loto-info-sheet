@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b108</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b109</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -516,7 +516,9 @@ if ('serviceWorker' in navigator) {
 
   <!-- Current Equipment Form -->
   <div class="equipment-section">
-    <h2>&#128221; Current Equipment</h2>
+    <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;"><span>&#128221; Current Equipment</span>
+      <button type="button" id="discardFormBtn" class="btn btn-sm" onclick="discardForm()" style="display:none;text-transform:none;letter-spacing:0;padding:6px 12px;font-size:13px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">&#10005; Discard</button>
+    </h2>
     <div class="form-grid">
       <div class="form-group">
         <label>Equipment Type</label>
@@ -557,7 +559,7 @@ if ('serviceWorker' in navigator) {
       </div>
       <div class="form-group">
         <label>Template</label>
-        <select id="equipTemplate" onchange="handleTemplateChange()">
+        <select id="equipTemplate" onfocus="rememberTemplateBefore()" onpointerdown="rememberTemplateBefore()" onchange="handleTemplateChange()">
           <option value="">-- Select --</option>
         </select>
       </div>
@@ -574,6 +576,10 @@ if ('serviceWorker' in navigator) {
       <div class="form-group" id="tiedToNameGroup" style="display:none;">
         <label>Equipment Name to Shut Down</label>
         <input type="text" id="equipTiedToName" placeholder="e.g. Boiler 1, AHU-3000" oninput="autoSaveCurrent()">
+      </div>
+      <div class="form-group">
+        <label>Survey Date <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-dim);">&mdash; blank = the day you save</span></label>
+        <input type="date" id="equipSurveyDate" onfocus="rememberSurveyDateBefore()" onchange="handleSurveyDateChange()" onblur="settleSurveyDate()">
       </div>
     </div>
 
@@ -815,12 +821,13 @@ if ('serviceWorker' in navigator) {
     <div style="margin-bottom:16px;">
       <label style="display:block;font-size:13px;color:var(--text-label);margin-bottom:6px;">Resolution Preset</label>
       <select id="photoPreset" onchange="applyPhotoPreset()" style="width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
-        <option value="1920x1080">1920 x 1080 (Full HD) - Default</option>
-        <option value="1280x720">1280 x 720 (HD) - Smaller files</option>
-        <option value="2560x1440">2560 x 1440 (QHD) - Higher detail</option>
+        <option value="2560x1440">2560 x 1440 (QHD) - Default</option>
+        <option value="1920x1080">1920 x 1080 (Full HD) - Smaller files</option>
+        <option value="1280x720">1280 x 720 (HD) - Smallest files</option>
         <option value="custom">Custom...</option>
         <option value="original">Original (no resize)</option>
       </select>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">The size turns with the photo: the long side gets the larger number, so a portrait shot is saved 1440 &times; 2560. Each new photo also carries the time it was taken.</div>
     </div>
     <div id="customResGroup" style="display:none;margin-bottom:16px;">
       <div style="display:flex;gap:10px;">
@@ -882,7 +889,10 @@ if ('serviceWorker' in navigator) {
 // ============================================================================
 // PHOTO SETTINGS (persisted in localStorage)
 // ============================================================================
-const PHOTO_DEFAULTS = { maxWidth: 1920, maxHeight: 1080, quality: 0.80, preset: '1920x1080' };
+// Build 109: 2560 × 1440 (wilkins, 2026-10-09; it was 1920 × 1080) — and the
+// box turns with the photo (photoSizeLimit), so a portrait shot is 1440 × 2560.
+const PHOTO_DEFAULTS = { maxWidth: 2560, maxHeight: 1440, quality: 0.80, preset: '2560x1440' };
+const PHOTO_DEFAULT_MOVE_FLAG = 'loto_photo_default_b109';
 // Inline display thumbnails. Source-card tiles render at 140px and saved-list
 // thumbs at 50px, so 240px stays sharp on a Retina iPad (the old 80px @ 0.4 was
 // being upscaled ~2x and looked mushy). Full-resolution photos live in
@@ -894,7 +904,20 @@ const THUMB_QUALITY = 0.72;
 function getPhotoSettings() {
   try {
     const saved = localStorage.getItem('loto_photo_settings');
-    if (saved) return JSON.parse(saved);
+    // A device whose saved setting is still the OLD default (1920 × 1080 —
+    // saved with the facility, as everything in Settings is) moves to the new
+    // one once (build 109). Any other choice is kept, and so is 1920 picked
+    // again afterwards.
+    const moved = localStorage.getItem(PHOTO_DEFAULT_MOVE_FLAG);
+    if (!moved) localStorage.setItem(PHOTO_DEFAULT_MOVE_FLAG, '1');
+    if (saved) {
+      const s = JSON.parse(saved);
+      if (!moved && s && s.preset === '1920x1080' && +s.maxWidth === 1920 && +s.maxHeight === 1080) {
+        Object.assign(s, { maxWidth: PHOTO_DEFAULTS.maxWidth, maxHeight: PHOTO_DEFAULTS.maxHeight, preset: PHOTO_DEFAULTS.preset });
+        localStorage.setItem('loto_photo_settings', JSON.stringify(s));
+      }
+      return s;
+    }
   } catch(e) {}
   return { ...PHOTO_DEFAULTS };
 }
@@ -969,7 +992,7 @@ function showSettings() {
   }
   const sketchChk = document.getElementById('settingsSketchShow');
   if (sketchChk) sketchChk.checked = sketchEnabledForFacility(hc);
-  document.getElementById('photoPreset').value = s.preset || '1920x1080';
+  document.getElementById('photoPreset').value = s.preset || PHOTO_DEFAULTS.preset;
   document.getElementById('photoMaxW').value = s.maxWidth;
   document.getElementById('photoMaxH').value = s.maxHeight;
   document.getElementById('photoQuality').value = Math.round(s.quality * 100);
@@ -1002,8 +1025,8 @@ function applyPhotoPreset() {
 }
 
 function updateEstimates() {
-  const w = parseInt(document.getElementById('photoMaxW').value) || 1920;
-  const h = parseInt(document.getElementById('photoMaxH').value) || 1080;
+  const w = parseInt(document.getElementById('photoMaxW').value) || PHOTO_DEFAULTS.maxWidth;
+  const h = parseInt(document.getElementById('photoMaxH').value) || PHOTO_DEFAULTS.maxHeight;
   const q = parseInt(document.getElementById('photoQuality').value) || 80;
   const preset = document.getElementById('photoPreset').value;
 
@@ -1035,8 +1058,8 @@ function savePhotoSettings() {
   // later photo's size — unreadable — and a negative one a black image.
   const clampInt = (v, lo, hi, dflt) => { const n = parseInt(v, 10); return isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt; };
   const settings = {
-    maxWidth: clampInt(document.getElementById('photoMaxW').value, 640, 8192, 1920),
-    maxHeight: clampInt(document.getElementById('photoMaxH').value, 480, 8192, 1080),
+    maxWidth: clampInt(document.getElementById('photoMaxW').value, 640, 8192, PHOTO_DEFAULTS.maxWidth),
+    maxHeight: clampInt(document.getElementById('photoMaxH').value, 480, 8192, PHOTO_DEFAULTS.maxHeight),
     quality: clampInt(document.getElementById('photoQuality').value, 30, 100, 80) / 100,
     preset: preset
   };
@@ -1118,6 +1141,7 @@ const DATA = {
     "Front Left Corner of Equipment","Front Right Corner of Equipment",
     "Back Left Corner of Equipment","Back Right Corner of Equipment",
     "At Supply Fan","At Return Fan","At Exhaust Fan","At Relief Fan",
+    "At Capacitor Bank",   // the Stored Electrical Energy default (build 109: it showed as "-- Select --")
     "Front of","Above","** Custom Location **"
   ],
   verificationTypes: [
@@ -1129,7 +1153,7 @@ const DATA = {
     "Zero Flow",
     "SW (On/Off)","SW (Hand/Off/Auto)","SW (H/O/A)",
     "SW (Drive/Off/Bypass)","SW (VFD/Off/Bypass)","SW (Other)",
-    "Screen","Button (Start/Stop) - VFD","Button (Hand/Off/Auto) - VFD",
+    "Screen","Button (Start/Stop)","Button (Start/Stop) - VFD","Button (Hand/Off/Auto) - VFD",
     "Button (FWD/STOP) - VFD","Button (Start/Stop) - Retractable","Button (Other)",
     "Controls","Meter","Rotating","Block"
   ],
@@ -1207,6 +1231,35 @@ const DEVICE_VERIFICATION_MAP = {
   'Bag':                  ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)',
                            'Button (Start/Stop) - VFD','Button (Start/Stop) - Retractable','Button (Other)'],
 };
+
+// The app's vocabulary as loto-web checks it (build 109, gap review 3.4):
+// app-lists.json in the repo root holds exactly this. tools/gen-app-lists.js
+// writes it at every `npm run sync` by evaluating THIS function with the
+// literal DATA, HOSPITALS, EQUIPMENT_TEMPLATE_MAP and DEVICE_VERIFICATION_MAP
+// (nothing else of the page runs there — keep it to those four, no regex or
+// template literals), and the suite fails when the committed file is stale.
+// Template names are a contract: loto-web stores a unit's template as its
+// type, so a name is never changed, and a new one is agreed with loto-web.
+function appListsSnapshot(build) {
+  const strip = function (arr, sentinel) { return arr.filter(function (x) { return x !== sentinel; }); };
+  const verifications = [];
+  const addV = function (v) { if (v && v.charAt(0) !== '_' && verifications.indexOf(v) < 0) verifications.push(v); };
+  DATA.verificationTypes.forEach(addV);
+  Object.keys(DEVICE_VERIFICATION_MAP).forEach(function (d) { (DEVICE_VERIFICATION_MAP[d] || []).forEach(addV); });
+  return {
+    schema: 'loto-collector-lists',
+    version: 1,
+    build: build,
+    hospitals: HOSPITALS.map(function (h) { return { code: h.code, name: h.name }; }),
+    equipmentTypes: strip(DATA.equipmentTypes, '** New Equipment Type **'),
+    typeToTemplates: JSON.parse(JSON.stringify(EQUIPMENT_TEMPLATE_MAP)),
+    templates: strip(DATA.templates, '** New Template **'),
+    energySources: DATA.energySources.slice(),
+    devices: DATA.deviceTypes.slice(),
+    verifications: verifications,
+    locations: strip(DATA.locations, '** Custom Location **')
+  };
+}
 
 // Energy sources that get "- Hot" suffix on gauge/drain verifications.
 // NOTE: 'DW' (Domestic Water) is intentionally NOT here — that's cold tap
@@ -1674,6 +1727,25 @@ function templateSourceOverride(table, energySource) {
   return best;
 }
 
+// Valve State belongs to valves (build 109). It was offered on every row, so a
+// breaker or a Kinetic row could be set "Normally Closed" and loto-web would
+// print "Verify valve closed" for it. Shown when the row's device is a valve
+// (a valve lock — chain, cable — counts; a custom device naming a valve too),
+// or, before a device is picked, when the energy source is isolated with
+// valves. A row that already holds a non-normal state always shows it, so
+// nothing saved is ever hidden.
+function isValveDevice(device) {
+  const d = String(device || '').trim();
+  if (!d) return false;
+  return VALVE_DEVICES_WITH_CKT.includes(d) || VALVE_DEVICES_NO_CKT.includes(d) || /valve/i.test(d);
+}
+function sourceTakesValveState(src) {
+  if (!src) return false;
+  if (src.valveState && src.valveState !== 'normal') return true;
+  if (src.deviceType) return isValveDevice(src.deviceType);
+  return getFilteredDevices(src.energySource).some(isValveDevice);
+}
+
 function getFilteredDevices(energySource) {
   const override = templateSourceOverride(TEMPLATE_SOURCE_DEVICE_OVERRIDES, energySource);
   if (override) return override;
@@ -1901,6 +1973,49 @@ function askChoice(opts) {
     box.appendChild(col);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
+  });
+}
+// The day units with NO survey date were surveyed (build 109) — asked at
+// export. Resolves "YYYY-MM-DD", 'undated' (keep the old undated sheet) or
+// 'cancel'. No date is pre-filled: today would quietly put an older unit on
+// today's sheet, where loto-web could bind it to a same-named unit surveyed
+// today (the build 95 rule). The suite answers through __askChoiceAuto.
+function askSurveyDate(units) {
+  const names = units.slice(0, 8).map(e => e.equipName || '(unnamed)');
+  const opts = { id: 'survey-date', defaultValue: 'undated', count: units.length, names: names };
+  if (typeof window.__askChoiceAuto === 'function') {
+    try { return Promise.resolve(window.__askChoiceAuto(opts)); } catch (e) { return Promise.resolve('cancel'); }
+  }
+  return new Promise(resolve => {
+    const old = document.getElementById('surveyDateOverlay');
+    if (old) old.remove();
+    const overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+    overlay.id = 'surveyDateOverlay';
+    overlay.style.display = 'flex';
+    const done = (v) => { overlay.remove(); resolve(v); };
+    const n = units.length;
+    overlay.innerHTML = html`
+      <div class="dialog" style="max-width:440px;">
+        <h3 style="margin:0 0 8px 0;">&#128197; ${n} unit${n === 1 ? ' has' : 's have'} no survey date</h3>
+        <div style="font-size:13px;color:var(--text-dim);margin:0 0 12px;line-height:1.45;">
+          ${names.map((x, k) => html`${k ? raw('<br>') : ''}&bull; ${x}`)}${n > names.length ? raw('<br>&hellip;') : ''}
+          <br><br>They were saved before the app recorded one. Which day were they surveyed? They go on that day&rsquo;s Information Sheet &mdash; loto-web reads the day from the sheet&rsquo;s name.
+        </div>
+        <input type="date" id="surveyDateAsk" max="${localDateStr(new Date())}" style="width:100%;padding:10px;margin-bottom:12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:15px;">
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <button class="btn btn-primary" id="surveyDateUse" disabled style="padding:11px;font-size:14px;">Use this date</button>
+          <button class="btn btn-outline" id="surveyDateKeep" style="padding:11px;font-size:14px;">Leave them undated (loto-web can&rsquo;t import that sheet)</button>
+          <button class="btn btn-outline" id="surveyDateCancel" style="padding:11px;font-size:14px;">Cancel</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('#surveyDateAsk'), use = overlay.querySelector('#surveyDateUse');
+    const ok = () => isIsoDay(input.value) && input.value <= localDateStr(new Date());
+    input.oninput = input.onchange = () => { use.disabled = !ok(); };
+    use.onclick = () => { if (ok()) done(input.value); };
+    overlay.querySelector('#surveyDateKeep').onclick = () => done('undated');
+    overlay.querySelector('#surveyDateCancel').onclick = () => done('cancel');
   });
 }
 let miscPhotos = [];       // Current equipment's misc photos [{dbKey, thumbnail, fileType, timestamp}]
@@ -2421,8 +2536,7 @@ function equipTypeChanged(equipType) {
   if (equipType && EQUIPMENT_TEMPLATE_MAP[equipType]) {
     const templates = EQUIPMENT_TEMPLATE_MAP[equipType];
     if (templates.length === 1) {
-      document.getElementById('equipTemplate').value = templates[0];
-      handleTemplateChange();
+      pickTemplate(templates[0]);
     } else if (EQUIPMENT_PROMPT_FOR_TEMPLATE.has(equipType) && templates.length > 1) {
       showTemplatePrompt(equipType, templates);
     }
@@ -2497,10 +2611,7 @@ function showTemplatePrompt(equipType, templates) {
 function applyTemplatePromptChoice(template) {
   closeTemplatePrompt();
   const sel = document.getElementById('equipTemplate');
-  if (sel) {
-    sel.value = template;
-    handleTemplateChange();
-  }
+  if (sel) pickTemplate(template);
 }
 
 function closeTemplatePrompt() {
@@ -2600,8 +2711,7 @@ function applyVoltageChoice(voltage) {
   if (equipType && EQUIPMENT_TEMPLATE_MAP[equipType]) {
     const templates = EQUIPMENT_TEMPLATE_MAP[equipType];
     if (templates.length === 1) {
-      document.getElementById('equipTemplate').value = templates[0];
-      handleTemplateChange();
+      pickTemplate(templates[0]);
     }
   }
 
@@ -2721,6 +2831,22 @@ function keepTemplateOption(template) {
   const o = document.createElement('option');
   o.value = template; o.textContent = template;
   sel.insertBefore(o, [...sel.options].find(x => x.value === '** New Template **') || null);
+}
+
+// Set a <select> to a saved value it may not list (build 109). A value the
+// list lacks selected nothing: the field showed "-- Select --" and the next
+// save read it back blank (Tied To). The value gets its own option, which
+// goes again when the select is set to anything else.
+function selectKeepingValue(sel, value) {
+  if (!sel) return;
+  value = value == null ? '' : String(value);
+  [...sel.options].forEach(o => { if (o.dataset.kept && o.value !== value) o.remove(); });
+  if (value && ![...sel.options].some(o => o.value === value)) {
+    const o = document.createElement('option');
+    o.value = value; o.textContent = value; o.dataset.kept = '1';
+    sel.appendChild(o);
+  }
+  sel.value = value;
 }
 
 // ============================================================================
@@ -4189,13 +4315,39 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => { try { autoSaveCurrent(); } catch (e) {} });
 
+// The template the form held when the user opened the Template list (build
+// 109): Cancel on "Change Template?" puts it back. Cancel used to blank the
+// template, and "Save anyway" then saved and exported the unit with none —
+// loto-web guessed its type from the name. Taken on focus (the select's own
+// value, before the pick) and after every template the user commits.
+let _templateBefore = null;   // { value, custom } or null = not known
+function rememberTemplateBefore() {
+  _templateBefore = {
+    value: document.getElementById('equipTemplate').value,
+    custom: document.getElementById('equipTemplateCustom').value
+  };
+}
+// A template the APP picks — a type's only template, the template prompt, the
+// voltage choice, a custom type's keyword — goes through here, so Cancel on
+// "Change Template?" puts back what the form held then, not what an earlier
+// tap on the list recorded, maybe on another unit (build 109 review). Loading
+// a unit into the form records its template too (editSaved, executeDuplicate,
+// the launch restore, clearForm).
+function pickTemplate(value) {
+  rememberTemplateBefore();
+  document.getElementById('equipTemplate').value = value;
+  handleTemplateChange();
+}
+
 function handleTemplateChange() {
   const val = document.getElementById('equipTemplate').value;
   const customGroup = document.getElementById('customTemplateGroup');
+  const before = _templateBefore;
   if (val === '** New Template **') {
     customGroup.style.display = 'flex';
     document.getElementById('equipTemplateCustom').focus();
     autoSaveCurrent();
+    rememberTemplateBefore();
     return;
   } else {
     customGroup.style.display = 'none';
@@ -4204,11 +4356,12 @@ function handleTemplateChange() {
 
   // Check if existing sources have user-entered data before replacing
   if (sources.length > 0 && sourcesHaveData()) {
-    showTemplateConfirmDialog(val);
+    showTemplateConfirmDialog(val, before);
     return;
   }
 
   applyTemplate(val);
+  rememberTemplateBefore();
 }
 
 // Does this source hold the user's own data? Anything they typed or picked
@@ -4237,7 +4390,9 @@ function sourcesHaveData() {
 // Record that the user changed a source (build 91) — see sourceHasUserData.
 function markSourceEdited(index) { if (sources[index]) sources[index].userEdited = true; }
 
-function showTemplateConfirmDialog(templateVal) {
+let _templateCancelTo = null;   // what Cancel restores (build 109)
+function showTemplateConfirmDialog(templateVal, before) {
+  _templateCancelTo = before || null;
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.id = 'templateConfirmOverlay';
@@ -4258,14 +4413,28 @@ function showTemplateConfirmDialog(templateVal) {
 function confirmTemplateChange(templateVal) {
   const overlay = document.getElementById('templateConfirmOverlay');
   if (overlay) overlay.remove();
+  _templateCancelTo = null;
   applyTemplate(templateVal);
+  rememberTemplateBefore();
 }
 
+// Cancel keeps the template the unit had (build 109) — the list, the custom
+// name and its box exactly as before the pick. Nothing else was changed yet:
+// the sources are only replaced on Change Template.
 function cancelTemplateChange() {
   const overlay = document.getElementById('templateConfirmOverlay');
   if (overlay) overlay.remove();
-  // Revert dropdown to empty since we're cancelling
-  document.getElementById('equipTemplate').value = '';
+  const sel = document.getElementById('equipTemplate');
+  const before = _templateCancelTo
+    || { value: (editingEntry && editingEntry.template && DATA.templates.includes(editingEntry.template)) ? editingEntry.template : '', custom: '' };
+  _templateCancelTo = null;
+  if (before.value && before.value !== '** New Template **') keepTemplateOption(before.value);
+  sel.value = before.value || '';
+  const custom = before.value === '** New Template **';
+  document.getElementById('equipTemplateCustom').value = custom ? (before.custom || '') : '';
+  document.getElementById('customTemplateGroup').style.display = custom ? 'flex' : 'none';
+  rememberTemplateBefore();
+  autoSaveCurrent();
 }
 
 function applyTemplate(val) {
@@ -4908,8 +5077,7 @@ function handleCustomEquipTypeChange() {
   const lower = name.toLowerCase();
   const match = CUSTOM_EQUIP_KEYWORD_TEMPLATE.find(e => lower.includes(e.keyword) && !(e.unless && lower.includes(e.unless)));
   if (match && [...tmplSel.options].some(o => o.value === match.template)) {
-    tmplSel.value = match.template;
-    handleTemplateChange(); // applies the template's auto-sources + diagram
+    pickTemplate(match.template); // applies the template's auto-sources + diagram
     showToast(`Auto-selected ${match.template} template — change it if needed`);
   }
 }
@@ -5102,7 +5270,16 @@ function renderSources() {
   const container = document.getElementById('sourcesContainer');
   container.innerHTML = '';
 
-  sources.forEach((src, i) => {
+  sources.forEach((src, i) => { container.appendChild(buildSourceCard(src, i)); });
+
+  document.getElementById('sourceCountNum').textContent = sources.length;
+  autoSaveCurrent();
+}
+
+// One source card. Split out of renderSources (build 109) so a custom Energy
+// Source / Device can refresh the lists that follow it without rebuilding the
+// box being typed in (refreshSourceDependents).
+function buildSourceCard(src, i) {
     const card = document.createElement('div');
     card.className = 'source-card';
 
@@ -5196,13 +5373,14 @@ function renderSources() {
               <select onchange="handleEnergySourceChange(${i},this.value)" id="src_energy_${i}">
                 <option value="">-- Select --</option>
                 ${DATA.energySources.map(s => html`<option value="${s}" ${src.energySource===s&&!src._customEnergy?'selected':''}>${s}</option>`)}
+                ${src.energySource && !src._customEnergy && !DATA.energySources.includes(src.energySource) ? html`<option value="${src.energySource}" selected>${src.energySource}</option>` : ''}
                 <option value="** Custom Energy **" ${src._customEnergy?'selected':''}>Custom...</option>
               </select>
             </div>
             ${src._customEnergy ? html`<div class="form-group" id="customEnergyGroup_${i}">
               <label>Custom Energy Source</label>
               <input type="text" id="src_energy_custom_${i}" value="${src.energySource||''}" placeholder="Enter custom energy source"
-                oninput="updateSourceCustomField(${i},'energySource',this.value)">
+                oninput="updateSourceCustomField(${i},'energySource',this.value)" onchange="refreshSourceDependents(${i})">
             </div>` : html`<div id="customEnergyGroup_${i}" style="display:none;"></div>`}
             <div class="form-group">
               <label>Device Type</label>
@@ -5216,7 +5394,7 @@ function renderSources() {
             ${src._customDevice ? html`<div class="form-group" id="customDeviceGroup_${i}">
               <label>Custom Device Type</label>
               <input type="text" id="src_device_custom_${i}" value="${src.deviceType||''}" placeholder="Enter custom device type"
-                oninput="updateSourceCustomField(${i},'deviceType',this.value)">
+                oninput="updateSourceCustomField(${i},'deviceType',this.value)" onchange="refreshSourceDependents(${i})">
             </div>` : html`<div id="customDeviceGroup_${i}" style="display:none;"></div>`}
             ${(() => {
               // Per-unit Device IDs (build 106): with Quantity 2+ each unit gets its
@@ -5258,6 +5436,7 @@ function renderSources() {
                   const sel = !src._customLoc && (src.location===s || (LOCATION_ID_PREFIXES.includes(s) && (locationIdInfo(src.location)||{}).prefix===s));
                   return html`<option value="${s}" ${sel?'selected':''}>${s}</option>`;
                 })}
+                ${src.location && !src._customLoc && !DATA.locations.includes(src.location) && !locationIdInfo(src.location) ? html`<option value="${src.location}" selected>${src.location}</option>` : ''}
                 <option value="** Custom Location **" ${src._customLoc?'selected':''}>Custom...</option>
               </select>
             </div>
@@ -5310,16 +5489,18 @@ function renderSources() {
               </select>
             </div>`;
             })()}
-            <div class="form-group">
+            ${sourceTakesValveState(src) ? html`<div class="form-group" id="valveStateGroup_${i}">
               <label>Valve State</label>
               <select onchange="updateSource(${i},'valveState',this.value)" id="src_valvestate_${i}">
                 ${DATA.valveStateOptions.map(o => html`<option value="${o.value}" ${(src.valveState||'normal')===o.value?'selected':''}>${o.label}</option>`)}
+                ${src.valveState && !DATA.valveStateOptions.some(o => o.value === src.valveState) ? html`<option value="${src.valveState}" selected>${src.valveState}</option>` : ''}
               </select>
-            </div>
+            </div>` : html`<div id="valveStateGroup_${i}" style="display:none;"></div>`}
             <div class="form-group">
               <label>Quantity</label>
               <select onchange="updateSource(${i},'quantity',parseInt(this.value))">
-                ${DATA.quantities.map(q => html`<option value="${q}" ${src.quantity===q?'selected':''}>${q}</option>`)}
+                ${DATA.quantities.map(q => html`<option value="${q}" ${Number(src.quantity)===q?'selected':''}>${q}</option>`)}
+                ${src.quantity != null && src.quantity !== '' && !DATA.quantities.includes(Number(src.quantity)) ? html`<option value="${src.quantity}" selected>${src.quantity}</option>` : ''}
               </select>
             </div>
             <div class="form-group">
@@ -5346,6 +5527,8 @@ function renderSources() {
                 html`<div style="font-size:11px;color:var(--text-dim);margin-top:4px;text-align:center;">
                   &#128247; ${new Date(photos['source_'+i].timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}
                 </div>` : ''}
+              ${photos['source_'+i] && photos['source_'+i].dbKey && photos['source_'+i].dupOf ?
+                html`<div style="font-size:11px;color:var(--accent);margin-top:2px;text-align:center;max-width:160px;word-break:break-word;">&#8635; Photo from ${dupOwnerLabel(photos['source_'+i])}</div>` : ''}
               ${photoToggleBtn ? html`<div style="margin-top:8px;text-align:center;">${photoToggleBtn}</div>` : ''}
             </div>
             <div style="flex:0 0 auto;">
@@ -5361,11 +5544,37 @@ function renderSources() {
         </div>
       `;
     }
-    container.appendChild(card);
-  });
+    return card;
+}
 
-  document.getElementById('sourceCountNum').textContent = sources.length;
-  autoSaveCurrent();
+// A custom Energy Source or Device box is saved as it is typed but never
+// re-rendered (build 109): renderSources replaced the box on every keystroke,
+// so on the iPad it lost focus after each letter. When the box is left, only
+// what depends on it is refreshed in place — the Device list, the Verification
+// field and the Valve State row — from a freshly built copy of the card, so
+// the box itself and any control the tech tapped next stay where they are.
+function refreshSourceDependents(index) {
+  const src = sources[index];
+  const live = document.querySelectorAll('#sourcesContainer > .source-card')[index];
+  if (!src || src.collapsed || !live) return;
+  const fresh = buildSourceCard(src, index);
+  const swapInner = (id) => {
+    const a = live.querySelector('#' + id), b = fresh.querySelector('#' + id);
+    if (a && b && a.tagName === b.tagName && a.innerHTML !== b.innerHTML) {
+      const v = b.value;
+      a.innerHTML = b.innerHTML;
+      if (a.tagName === 'SELECT') a.value = v;
+    }
+  };
+  const swapNode = (a, b) => { if (a && b && a.outerHTML !== b.outerHTML) a.replaceWith(b); };
+  swapInner('src_device_' + index);
+  // Verification: the same <select> → its options; a different control (the
+  // drain / gauge boxes ⇄ the list) → the whole field, which is not being typed in
+  const groupOf = (root) => { const el = root.querySelector('#src_ver_' + index) || root.querySelector('.simple-verif-check'); return el ? el.closest('.form-group') : null; };
+  const va = groupOf(live), vb = groupOf(fresh);
+  if (va && vb && live.querySelector('#src_ver_' + index) && fresh.querySelector('#src_ver_' + index)) swapInner('src_ver_' + index);
+  else swapNode(va, vb);
+  swapNode(live.querySelector('#valveStateGroup_' + index), fresh.querySelector('#valveStateGroup_' + index));
 }
 
 // Build 107: a Kinetic row on an air handler or exhaust fan names its fan.
@@ -5405,7 +5614,14 @@ function updateSource(index, field, value) {
     return;
   }
   if (field === 'duplicate') {
+    // The tech's own answer (build 109): never changed by a later retake. A Yes
+    // on a source with no photo asks which photo shows it — the sheet then
+    // names that photo, and loto-web lays this source's box on it (a "Y" row
+    // with no photo gets its box on the photo BEFORE it, right only by luck).
+    delete sources[index].dupAuto;
     renderSources();
+    const slot = 'source_' + index;
+    if (value === 'Yes' && !sources[index].linkedTo && !(photos[slot] && photos[slot].dbKey)) showReusePhotoPicker(slot, { forDuplicate: true });
     return;
   }
   if (field === 'quantity') {
@@ -5447,6 +5663,20 @@ function updateUnitDeviceId(index, unit, value) {
 // reliable way to flag a single bypass / normally-closed valve when a source has
 // quantity > 1 — the split-off source gets its own photo marker and its
 // valveState defaults to "normally_closed" (the common reason to split).
+//
+// An "X In/Out" pair splits by DIRECTION (build 109): the row stays as "X In"
+// (its first unit — the In valve, as loto-web and the valve marks number them)
+// and the split-off row is "X Out". It used to leave two "X In/Out" rows of
+// one valve each, and loto-web, which tells In from Out by the unit number of
+// one In/Out row, lost which valve was which. The Out valve keeps the pair's
+// valve state — this split separates the two lines, it is not the bypass case
+// — and the In valve keeps its own mark. A row that is not a valve (breakers)
+// never becomes "Normally Closed" by a split.
+function inOutSplitNames(energySource) {
+  const es = String(energySource || '');
+  if (!/In\/Out/i.test(es)) return null;
+  return { inName: es.replace(/In\/Out/i, 'In'), outName: es.replace(/In\/Out/i, 'Out') };
+}
 function splitSource(index) {
   const src = sources[index];
   const qty = parseInt(src.quantity, 10) || 1;
@@ -5454,15 +5684,27 @@ function splitSource(index) {
   // Per-unit tags "a; b" (build 106): the split-off valve takes the LAST unit's
   // tag and the original keeps the rest, in order.
   const unitIds = String(src.deviceId || '').includes(';') ? splitUnitIds(src.deviceId) : null;
+  const pair = isInOutPair(src) ? inOutSplitNames(src.energySource) : null;
+  const pairRef = pair ? photos['source_' + index] : null;
+  const pairInMark = (pairRef && pairRef.marksFor && pairRef.marksFor.inOut) ? cleanValveMarks(pairRef.marks).slice(0, 1) : [];
+  const takesState = sourceTakesValveState(Object.assign({}, src, { valveState: 'normal' }));
 
   // Original keeps the remaining valves
   src.quantity = qty - 1;
+  src.userEdited = true;
 
   // New quantity-1 source, copied from the original but as its own photographable valve
   const newSrc = JSON.parse(JSON.stringify(src));
   newSrc.quantity   = 1;
-  newSrc.valveState = 'normally_closed';
+  newSrc.valveState = (pair || !takesState) ? (src.valveState || 'normal') : 'normally_closed';
+  if (pair) {
+    src.energySource = pair.inName;
+    newSrc.energySource = pair.outName;
+    delete src._autoQty2;
+    delete newSrc._autoQty2;
+  }
   newSrc.duplicate  = 'No';
+  delete newSrc.dupAuto;
   newSrc.noPhoto    = false;   // distinct physical valve → capture its own photo
   newSrc.auto       = false;
   newSrc.collapsed  = false;
@@ -5477,13 +5719,21 @@ function splitSource(index) {
   const prev = sources.slice();
   sources.splice(index + 1, 0, newSrc);
   rebindSourcePhotos(prev);    // photos follow their sources; the split valve starts empty
+  // The In valve's mark of a pair stays on the In row's photo (a NEW reference — see VALVE MARKS)
+  if (pair && pairInMark.length && photos['source_' + index] === pairRef) {
+    photos['source_' + index] = Object.assign({}, pairRef, { marks: pairInMark, marksFor: marksShapeOf(src) });
+    paintPhotoSlot('source_' + index);
+  }
   const marksCleared = reconcileSourceMarks(index, true); // which of the marked valves left is unknown — re-mark
 
   renderSources();
   autoSaveCurrent();
   // One message (build 97): the 10-source heads-up used to replace this one
   // in the same tick, "marks cleared" with it.
-  showSourceToast(['Split out 1 valve — set as Normally Closed. State & photograph it.', marksCleared ? MARKS_CLEARED_NOTE : ''].filter(Boolean).join('\n'), marksCleared);
+  const splitMsg = pair
+    ? 'Split into “' + pair.inName + '” and “' + pair.outName + '” — photograph the Out valve.'
+    : (newSrc.valveState === 'normally_closed' ? 'Split out 1 valve — set as Normally Closed. State & photograph it.' : 'Split out 1 — photograph it.');
+  showSourceToast([splitMsg, marksCleared ? MARKS_CLEARED_NOTE : ''].filter(Boolean).join('\n'), marksCleared);
   setTimeout(() => {
     const cards = document.querySelectorAll('.source-card');
     if (cards[index + 1]) cards[index + 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -5586,14 +5836,13 @@ function handleDeviceTypeChange(index, value) {
   }
 }
 
+// Typing in a custom Energy Source / Device box (build 109): saved per
+// keystroke, never re-rendered — see refreshSourceDependents, which runs when
+// the box is left (its change event).
 function updateSourceCustomField(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
   if (field === 'energySource') reconcileSourceMarks(index);
-  if (field === 'energySource' || field === 'deviceType') {
-    // Re-render to update device/verification dropdowns for custom entries
-    renderSources();
-  }
   autoSaveCurrent();
 }
 
@@ -5758,6 +6007,12 @@ function applyCopySource(entryIndex, sourceIndex) {
   for (const k of carry) {
     if (src[k] !== undefined) dest[k] = src[k];
   }
+  // Duplicate follows THIS source's own photo (build 109): a copy never brings
+  // the other source's photo. A reused photo here keeps it Yes (automatic);
+  // without one, an automatic Yes — copied, or this source's own — is dropped.
+  const ownRef = photos['source_' + targetIndex];
+  if (ownRef && ownRef.dbKey && ownRef.dupOf) { dest.duplicate = 'Yes'; dest.dupAuto = true; }
+  else if (src.dupAuto || dest.dupAuto) { dest.duplicate = 'No'; delete dest.dupAuto; }
   // The source is now user-configured (not auto) and expanded so the copy
   // is visible to the user immediately.
   dest.auto = false;
@@ -5811,8 +6066,12 @@ function duplicateSource(index) {
     delete copy.marks;             // a different device: mark it on the same photo
     delete copy.marksFor;
     photos[`source_${index + 1}`] = copy;
+    // the copy shows the original's photo: a shared photo, so Duplicate = Yes (build 109)
+    newSrc.duplicate = 'Yes';
+    newSrc.dupAuto = true;
   } else {
     delete photos[`source_${index + 1}`];
+    if (newSrc.dupAuto) { newSrc.duplicate = 'No'; delete newSrc.dupAuto; }   // no photo came with it
   }
   renderSources();
   autoSaveCurrent();
@@ -6106,7 +6365,8 @@ function collectTodaysPhotos() {
   const add = (ph, label, ownerEntryId) => {
     if (!ph || !ph.dbKey || !ph.thumbnail || seen.has(ph.dbKey)) return;
     seen.add(ph.dbKey);
-    out.push({ dbKey: ph.dbKey, thumbnail: ph.thumbnail, timestamp: ph.timestamp, fileType: ph.fileType, label, ownerEntryId: ownerEntryId || null, sha256: ph.sha256 || null });
+    out.push({ dbKey: ph.dbKey, thumbnail: ph.thumbnail, timestamp: ph.timestamp, fileType: ph.fileType, label, ownerEntryId: ownerEntryId || null, sha256: ph.sha256 || null,
+      capturedAt: ph.capturedAt || '', capturedFrom: ph.capturedFrom || '' });
   };
   const curName = (document.getElementById('equipName').value || '').trim() || 'Current';
   for (const k of Object.keys(photos)) add(photos[k], curName + ' \u00b7 ' + photoSlotLabel(k), currentEntryId);
@@ -6121,10 +6381,21 @@ function collectTodaysPhotos() {
   return out;
 }
 let _reuseCandidates = [];
-function showReusePhotoPicker(slotId) {
+// opts.forDuplicate (build 109): opened by setting Duplicate = Yes on a source
+// with no photo — "which photo shows this device?", this unit's photos first,
+// and Skip keeps the Yes with no photo (as before).
+function showReusePhotoPicker(slotId, opts) {
+  opts = opts || {};
   if (refuseIfDuplicateCopying()) return;
   _reuseCandidates = collectTodaysPhotos();
-  if (!_reuseCandidates.length) { showToast('No photos taken today to reuse', true); return; }
+  if (opts.forDuplicate) {
+    const own = (p) => (currentEntryId && sameEntryId(p.ownerEntryId, currentEntryId)) ? 0 : 1;
+    _reuseCandidates = _reuseCandidates.map((p, k) => ({ p, k })).sort((x, y) => own(x.p) - own(y.p) || x.k - y.k).map(x => x.p);
+  }
+  if (!_reuseCandidates.length) {
+    showToast(opts.forDuplicate ? 'No photo taken today to pick \u2014 Duplicate stays Yes with no photo of its own' : 'No photos taken today to reuse', true);
+    return;
+  }
   closeReusePicker();
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
@@ -6137,10 +6408,12 @@ function showReusePhotoPicker(slotId) {
     </div>`);
   overlay.innerHTML = html`
     <div class="dialog" style="max-width:min(94vw,560px);max-height:82vh;display:flex;flex-direction:column;">
-      <h3>&#8635; Reuse a Photo</h3>
-      <p style="color:var(--text-dim);font-size:12px;margin:0 0 10px;">Tap a photo taken today to attach it here. It stays one shared photo (same file in the export), so use it when several sources appear in the same shot.</p>
+      <h3>${opts.forDuplicate ? raw('&#8635; Which photo shows this device?') : raw('&#8635; Reuse a Photo')}</h3>
+      <p style="color:var(--text-dim);font-size:12px;margin:0 0 10px;">${opts.forDuplicate
+        ? 'Duplicate = Yes: this source is in another source\u2019s photo. Tap that photo to share it here \u2014 the sheet then names it, and you can mark where this valve is in it. Skip leaves it with no photo: the procedure then draws its ID on the photo BEFORE it, or nowhere if there is none (an Electrical row comes first) \u2014 so pick the photo when you can.'
+        : 'Tap a photo taken today to attach it here. It stays one shared photo (same file in the export), so use it when several sources appear in the same shot.'}</p>
       <div style="overflow-y:auto;flex:1;display:flex;flex-wrap:wrap;gap:12px;justify-content:center;padding:4px 0 12px;">${grid}</div>
-      <button class="btn" onclick="closeReusePicker()" style="padding:10px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Cancel</button>
+      <button class="btn" onclick="closeReusePicker()" style="padding:10px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">${opts.forDuplicate ? 'Skip' : 'Cancel'}</button>
     </div>`;
   document.body.appendChild(overlay);
   overlay.style.display = 'flex';
@@ -6148,6 +6421,22 @@ function showReusePhotoPicker(slotId) {
 function closeReusePicker() {
   const o = document.getElementById('reusePickerOverlay');
   if (o) o.remove();
+}
+// Whose photo a shared (reused / duplicated) source photo is (build 109): the
+// unit and slot holding the original NOW, else the name recorded at reuse.
+function dupOwnerLabel(ref) {
+  const d = ref && ref.dupOf;
+  if (!d) return '';
+  if (d.dbKey) {
+    const curName = ((document.getElementById('equipName') || {}).value || '').trim() || 'this unit';
+    for (const k of Object.keys(photos)) if (photos[k] && photos[k] !== ref && photos[k].dbKey === d.dbKey) return curName + ' \u00b7 ' + photoSlotLabel(k);
+    for (const e of savedEquipment) {
+      if (currentEntryId && sameEntryId(e.id, currentEntryId)) continue;   // the unit open for edit: its form copy above
+      const ep = e.photos || {};
+      for (const k of Object.keys(ep)) if (ep[k] && ep[k].dbKey === d.dbKey) return (e.equipName || '(unnamed)') + ' \u00b7 ' + photoSlotLabel(k);
+    }
+  }
+  return d.label && d.label !== 'duplicated source' ? d.label : 'another source';
 }
 // Intentional photo reuse ("Dup Photo"). The bytes are COPIED to a key owned
 // by THIS entry and the share is recorded as {dupOf} provenance on the photo
@@ -6198,6 +6487,15 @@ async function reusePhotoInto(slotId, idx) {
       fileType: p.fileType, shared: true, sha256: hash, unsaved: false,
       dupOf: { entryId: p.ownerEntryId || null, dbKey: p.dbKey, label: p.label || '' }
     };
+    if (p.capturedAt) { photos[slot].capturedAt = p.capturedAt; photos[slot].capturedFrom = p.capturedFrom; }
+    // Duplicate follows Reuse (build 109): this source's photo IS another
+    // source's, so its sheet row says "Dup Photo: Yes" — loto-web reads it as
+    // Y and lays this source's box on that photo, named in its Photo # cell.
+    // A retake on the source puts an automatic Yes back to No (handlePhoto).
+    if (sm) {
+      const s = sources[parseInt(slot.split('_')[1], 10)];
+      if (s && s.duplicate !== 'Yes') { s.duplicate = 'Yes'; s.dupAuto = true; }
+    }
     if (hash) { try { await recordPhotoHash(hash, entryId, newKey, true); } catch (e) {} }
     if (sm) renderSources(); else paintPhotoSlot(slot);
     autoSaveCurrent();
@@ -8049,16 +8347,175 @@ async function runPhotoAudit(scope) {
   document.body.appendChild(overlay);
 }
 
+// ---- The capture time, inside the photo (build 109) --------------------------
+// The canvas re-encode drops the original's EXIF, so a stored photo carried no
+// capture time. loto-web imports the photo FILES — never manifest.json or
+// entries.json — so the time goes INTO the JPEG: an EXIF block with
+// DateTimeOriginal + OffsetTimeOriginal and Orientation = 1 (the pixels are
+// already upright). No location (wilkins, 2026-10-09). Written once, at
+// capture: an older photo's bytes are never rewritten — its sha256 and the
+// write-once resends depend on them.
+// Which time: the original's own EXIF DateTimeOriginal when it has one (a
+// library pick keeps the time it was taken); else, from the camera, now;
+// else (a library pick without one) none — never a made-up time.
+function _exU16(b, o, le) { return le ? (b[o] | (b[o + 1] << 8)) : ((b[o] << 8) | b[o + 1]); }
+function _exU32(b, o, le) { return le ? ((b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0) : (((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0); }
+// → { dt: "YYYY:MM:DD HH:MM:SS", offset: "+HH:MM" | "" } from a JPEG's EXIF, or null
+function readJpegExifTime(bytes) {
+  try {
+    if (!bytes || bytes.length < 4 || bytes[0] !== 0xFF || bytes[1] !== 0xD8) return null;
+    let p = 2;
+    while (p + 4 <= bytes.length && bytes[p] === 0xFF) {
+      const m = bytes[p + 1];
+      if (m === 0xD9 || m === 0xDA) return null;   // no EXIF before the image data
+      const len = (bytes[p + 2] << 8) | bytes[p + 3];
+      if (len < 2) return null;
+      if (m === 0xE1 && p + 10 <= bytes.length && bytes[p + 4] === 0x45 && bytes[p + 5] === 0x78 && bytes[p + 6] === 0x69 && bytes[p + 7] === 0x66 && !bytes[p + 8] && !bytes[p + 9]) {
+        const t = p + 10, end = Math.min(bytes.length, p + 2 + len);
+        const le = bytes[t] === 0x49;
+        if (!le && bytes[t] !== 0x4D) return null;
+        const r16 = o => (o >= 0 && t + o + 2 <= end) ? _exU16(bytes, t + o, le) : -1;
+        const r32 = o => (o >= 0 && t + o + 4 <= end) ? _exU32(bytes, t + o, le) : -1;
+        const ascii = (o, n) => { let x = ''; for (let k = 0; k < n && t + o + k < end; k++) { const c = bytes[t + o + k]; if (!c) break; x += String.fromCharCode(c); } return x; };
+        const tags = (ifd) => {
+          const out = {}; const n = r16(ifd);
+          if (n < 0 || n > 512) return out;
+          for (let k = 0; k < n; k++) {
+            const e = ifd + 2 + k * 12, tag = r16(e), type = r16(e + 2), cnt = r32(e + 4);
+            if (tag < 0) break;
+            if (type === 2) out[tag] = cnt <= 4 ? ascii(e + 8, cnt) : ascii(r32(e + 8), cnt);
+            else if (type === 3) out[tag] = r16(e + 8);
+            else if (type === 4) out[tag] = r32(e + 8);
+          }
+          return out;
+        };
+        const ifd0 = tags(r32(4));
+        const exif = ifd0[0x8769] > 0 ? tags(ifd0[0x8769]) : {};
+        const dt = String(exif[0x9003] || exif[0x9004] || ifd0[0x0132] || '');
+        const off = String(exif[0x9011] || exif[0x9012] || '');
+        if (!/^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}/.test(dt) || /^0000/.test(dt)) return null;
+        return { dt: dt.slice(0, 19), offset: /^[+-]\d{2}:\d{2}$/.test(off) ? off : '' };
+      }
+      p += 2 + len;
+    }
+  } catch (e) {}
+  return null;
+}
+function tzOffsetText(d) {
+  const o = -d.getTimezoneOffset(), a = Math.abs(o);
+  return (o >= 0 ? '+' : '-') + String(Math.floor(a / 60)).padStart(2, '0') + ':' + String(a % 60).padStart(2, '0');
+}
+function isoLocalWithOffset(d) {
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + tzOffsetText(d);
+}
+function exifTimeOf(d) {
+  const p = n => String(n).padStart(2, '0');
+  return { dt: d.getFullYear() + ':' + p(d.getMonth() + 1) + ':' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()), offset: tzOffsetText(d) };
+}
+function exifTimeToIso(t) {
+  const m = /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec((t && t.dt) || '');
+  if (!m) return '';
+  if (t.offset) return m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':' + m[6] + t.offset;
+  const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);   // the device's own zone
+  return isNaN(d.getTime()) ? '' : isoLocalWithOffset(d);
+}
+// The capture time of one photo as the camera / library handed it over.
+function captureTimeOf(originalDataUrl, fromCamera, now) {
+  let t = null;
+  try {
+    const src = String(originalDataUrl || '');
+    if (/^data:image\/jpe?g/i.test(src)) {
+      const b64 = src.slice(src.indexOf(',') + 1, src.indexOf(',') + 1 + 174760);   // the first ~128 KB: EXIF sits at the front
+      t = readJpegExifTime(base64ToUint8Array(b64));
+    }
+  } catch (e) {}
+  if (t) return { exif: t, capturedAt: exifTimeToIso(t), capturedFrom: 'exif' };
+  if (fromCamera) return { exif: exifTimeOf(now), capturedAt: isoLocalWithOffset(now), capturedFrom: 'camera' };
+  return { exif: null, capturedAt: '', capturedFrom: '' };
+}
+// The EXIF block (APP1) the app writes: Orientation = 1, and the capture time
+// when it is known (ExifVersion 0232, DateTimeOriginal, OffsetTimeOriginal).
+function buildExifApp1(t) {
+  const hasTime = !!(t && /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(t.dt));
+  const hasOff = hasTime && /^[+-]\d{2}:\d{2}$/.test(t.offset || '');
+  const ifd0Count = hasTime ? 2 : 1, ifd0Size = 2 + ifd0Count * 12 + 4;
+  const exifOff = 8 + ifd0Size, exifCount = hasTime ? (hasOff ? 3 : 2) : 0;
+  const dataOff = exifOff + (hasTime ? 2 + exifCount * 12 + 4 : 0);
+  let tiffLen = dataOff + (hasTime ? 20 + (hasOff ? 7 : 0) : 0);
+  if (tiffLen % 2) tiffLen++;
+  const tiff = new Uint8Array(tiffLen), dv = new DataView(tiff.buffer);
+  tiff[0] = 0x49; tiff[1] = 0x49; dv.setUint16(2, 42, true); dv.setUint32(4, 8, true);
+  let o = 8;
+  const entry = (tag, type, count, value) => { dv.setUint16(o, tag, true); dv.setUint16(o + 2, type, true); dv.setUint32(o + 4, count, true); dv.setUint32(o + 8, value, true); o += 12; };
+  dv.setUint16(o, ifd0Count, true); o += 2;
+  entry(0x0112, 3, 1, 1);                       // Orientation: upright
+  if (hasTime) entry(0x8769, 4, 1, exifOff);    // the Exif sub-IFD
+  dv.setUint32(o, 0, true); o += 4;
+  if (hasTime) {
+    dv.setUint16(o, exifCount, true); o += 2;
+    entry(0x9000, 7, 4, 0x32333230);            // ExifVersion "0232"
+    entry(0x9003, 2, 20, dataOff);              // DateTimeOriginal
+    if (hasOff) entry(0x9011, 2, 7, dataOff + 20);   // OffsetTimeOriginal
+    dv.setUint32(o, 0, true); o += 4;
+    for (let k = 0; k < 19; k++) tiff[dataOff + k] = t.dt.charCodeAt(k);
+    if (hasOff) for (let k = 0; k < 6; k++) tiff[dataOff + 20 + k] = t.offset.charCodeAt(k);
+  }
+  const segLen = 2 + 6 + tiffLen, seg = new Uint8Array(2 + segLen);
+  seg[0] = 0xFF; seg[1] = 0xE1; seg[2] = segLen >> 8; seg[3] = segLen & 0xFF;
+  seg.set([0x45, 0x78, 0x69, 0x66, 0, 0], 4);
+  seg.set(tiff, 10);
+  return seg;
+}
+// The resized JPEG with the app's EXIF block in it — after any JFIF header,
+// and IN PLACE OF an EXIF block the encoder wrote itself: WebKit's JPEG
+// encoder (the iPad's) adds one with the color space and size but no time,
+// and leaving that one alone stored no capture time at all on the iPad (the
+// Simulator suite caught it; a desktop browser writes none). Only freshly
+// encoded canvas output comes here — never an original or a stored photo.
+function jpegWithExif(dataUrl, t) {
+  try {
+    const bytes = dataUrlToUint8Array(dataUrl);
+    if (bytes.length < 4 || bytes[0] !== 0xFF || bytes[1] !== 0xD8) return dataUrl;
+    const seg = buildExifApp1(t), parts = [bytes.subarray(0, 2)];
+    let p = 2, placed = false;
+    while (p + 4 <= bytes.length && bytes[p] === 0xFF) {
+      const m = bytes[p + 1];
+      if (m === 0xDA || m === 0xD9) break;                          // the image data: the header is done
+      const end = p + 2 + ((bytes[p + 2] << 8) | bytes[p + 3]);
+      if (end <= p + 2 || end > bytes.length) return dataUrl;
+      const isExif = m === 0xE1 && bytes[p + 4] === 0x45 && bytes[p + 5] === 0x78 && bytes[p + 6] === 0x69 && bytes[p + 7] === 0x66 && !bytes[p + 8] && !bytes[p + 9];
+      if (!placed && m !== 0xE0) { parts.push(seg); placed = true; } // after the JFIF header
+      if (!isExif) parts.push(bytes.subarray(p, end));               // the encoder's own EXIF block is replaced
+      p = end;
+    }
+    if (!placed) parts.push(seg);
+    parts.push(bytes.subarray(p));
+    const out = new Uint8Array(parts.reduce((n, x) => n + x.length, 0));
+    let o = 0;
+    for (const x of parts) { out.set(x, o); o += x.length; }
+    return 'data:image/jpeg;base64,' + uint8ToBase64(out);
+  } catch (e) { return dataUrl; }
+}
+
+const MAX_CANVAS_PIXELS = 16 * 1000 * 1000;   // below iOS WebKit's ~16.7 MP canvas cap
+// The size limit turns with the photo (build 109): the photo's long side gets
+// the setting's long side. The limit was a fixed LANDSCAPE box, so a portrait
+// shot — how most nameplates are taken — was cut to 810 × 1080 (the ATS
+// nameplates came out unreadable). A custom size is turned the same way.
+function photoSizeLimit(settings, w, h) {
+  const a = settings.maxWidth || PHOTO_DEFAULTS.maxWidth, b = settings.maxHeight || PHOTO_DEFAULTS.maxHeight;
+  const long = Math.max(a, b), short = Math.min(a, b);
+  return w >= h ? { maxW: long, maxH: short } : { maxW: short, maxH: long };
+}
 // Resize to the configured maximum, JPEG-encode, and build the thumbnail.
 // Returns null when the browser can't draw it: iOS WebKit returns 'data:,'
 // for a canvas past its size limit (a 24/48 MP library pick at the Original
 // preset) — before build 89 that blank result was saved as a 0-byte "photo".
-const MAX_CANVAS_PIXELS = 16 * 1000 * 1000;   // below iOS WebKit's ~16.7 MP canvas cap
 function renderCapture(img, settings) {
   let w = img.width, h = img.height;
   if (!w || !h) return null;
-  const maxW = settings.maxWidth || PHOTO_DEFAULTS.maxWidth;
-  const maxH = settings.maxHeight || PHOTO_DEFAULTS.maxHeight;
+  const { maxW, maxH } = photoSizeLimit(settings, w, h);
   if (w > maxW || h > maxH) {
     const ratio = Math.min(maxW / w, maxH / h);
     w = Math.round(w * ratio);
@@ -8101,6 +8558,8 @@ function handlePhoto(input, slotId) {
   const sm = /^source_(\d+)$/.exec(slotId);
   const srcObj = sm ? sources[parseInt(sm[1], 10)] : null;
   if (sm && !srcObj) { showToast('⚠ That energy source no longer exists — photo not taken', true); return; }
+  // The camera's inputs carry capture="environment"; the library picker's don't (build 109: the capture time)
+  const fromCamera = !(input && typeof input.hasAttribute === 'function' && !input.hasAttribute('capture'));
   // Key = owning entry id + slot token + capture rev. Never the name.
   const dbKey = photoStoreKey(entryId, sm ? slotTokenForSource(srcObj) : slotTokenForCapture(slotId));
   const settings = getPhotoSettings();
@@ -8128,8 +8587,12 @@ function handlePhoto(input, slotId) {
         if (!out) { fail('⚠ Photo could NOT be processed (image too large for this device?) — nothing was saved. Retake it.'); return; }
         console.log('Photo resized: ' + img.width + 'x' + img.height + ' -> ' + out.w + 'x' + out.h + ' | ' +
           Math.round(file.size / 1024) + 'KB -> ~' + out.kb + 'KB | quality=' + settings.quality);
+        // The capture time goes into the stored JPEG itself (build 109)
+        const when = captureTimeOf(e.target.result, fromCamera, new Date(timestamp));
+        out.dataUrl = jpegWithExif(out.dataUrl, when.exif);
 
         rec = { timestamp: timestamp, thumbnail: out.thumbnail, originalName: file.name || '', fileType: 'image/jpeg', dbKey: dbKey, unsaved: true, saving: true };
+        if (when.capturedAt) { rec.capturedAt = when.capturedAt; rec.capturedFrom = when.capturedFrom; }
         let slot = liveSlot();
         if (slot) {
           prev = photos[slot] || null;
@@ -8146,6 +8609,10 @@ function handlePhoto(input, slotId) {
         if (res.ok) {
           rec.unsaved = false;
           if (current) {
+            // The source has a photo of its own now: an automatic Duplicate =
+            // Yes (it came with a reused photo) goes back to No (build 109)
+            const cs = sm ? sources[parseInt(slot.split('_')[1], 10)] : null;
+            if (cs && cs.dupAuto) { cs.duplicate = 'No'; delete cs.dupAuto; renderSources(); }
             paintPhotoSlot(slot);
             autoSaveCurrent();
             showToast('Photo saved (' + out.w + 'x' + out.h + ', ~' + out.kb + 'KB)');
@@ -8227,6 +8694,43 @@ function handlePhoto(input, slotId) {
 // ============================================================================
 // PHOTO INTEGRITY  —  see, at a glance, that every photo's bytes still exist
 // ============================================================================
+// Photos taken for a slot that is EMPTY on its unit (build 109, gap 4.4): a
+// capture that never attached — the form changed while it saved, or a Reuse
+// copied but couldn't attach. The photo is on the device (Settings → Photo
+// Store Report) but no unit names it, so an export leaves it behind and the
+// office never sees it. Older shots of a retaken slot (the slot holds a newer
+// photo) and photos of removed sources aren't counted — those are left on
+// purpose; a shot from a discarded edit into a slot the unit has empty is
+// (the tech may not have meant to lose it). → [{ name, slot, count }]
+async function emptySlotsWithUnattachedShots(entries) {
+  let present;
+  try { present = await presentPhotoKeySet(); } catch (e) { return []; }
+  const referenced = new Set(allReferencedPhotoKeys());
+  const loose = new Map();   // "<entry id>|<slot token>" → unattached photos
+  for (const k of present) {
+    if (referenced.has(k)) continue;
+    const p = parsePhotoKey(k);
+    if (!p) continue;
+    const key = String(p.entryId) + '|' + p.slotToken;
+    loose.set(key, (loose.get(key) || 0) + 1);
+  }
+  if (!loose.size) return [];
+  const out = [];
+  for (const e of entries || []) {
+    if (!e || e.id == null) continue;
+    const ep = e.photos || {};
+    const check = (slotId, token, label) => {
+      if (ep[slotId] && ep[slotId].dbKey) return;
+      const n = loose.get(String(e.id) + '|' + token);
+      if (n) out.push({ name: e.equipName || '(unnamed)', slot: label, count: n });
+    };
+    check('equip_main', 'main', 'Main Photo');
+    check('equip_dataplate', 'dataplate', 'Data Plate');
+    check('equip_ee', 'ee', 'EE Number');
+    (e.sources || []).forEach((src, i) => { if (src && src.sourceId && !src.linkedTo) check('source_' + i, src.sourceId, 'Source #' + (i + 1) + (src.energySource ? ' (' + src.energySource + ')' : '')); });
+  }
+  return out;
+}
 // Every photo key referenced by saved entries + the in-progress form.
 function allReferencedPhotoKeys() {
   const keys = [];
@@ -8321,6 +8825,8 @@ function handleMiscPhoto(input) {
   // entry's key — where export dropped it as foreign.
   const session = formSession;
   const entryId = ensureCurrentEntryId();
+  const fromCamera = !(input && typeof input.hasAttribute === 'function' && !input.hasAttribute('capture'));
+  const takenAt = new Date();
   // Misc photos get a stable per-photo token (NOT the array index, which
   // shifts on deletion) under the owning entry's id.
   const dbKey = photoStoreKey(entryId, mintMiscSlotToken());
@@ -8337,6 +8843,8 @@ function handleMiscPhoto(input) {
       try {
         const out = renderCapture(img, settings);
         if (!out) { fail('⚠ Misc photo could NOT be processed (image too large for this device?) — nothing was saved.'); return; }
+        const when = captureTimeOf(e.target.result, fromCamera, takenAt);   // into the JPEG (build 109)
+        out.dataUrl = jpegWithExif(out.dataUrl, when.exif);
         const res = await storePhotoBytes(dbKey, out.dataUrl);
         if (session !== formSession) {
           fail(res.ok
@@ -8347,6 +8855,7 @@ function handleMiscPhoto(input) {
         if (!res.ok) { fail('⚠ Misc photo did NOT save — storage problem. Export & clear now.'); return; }
         if (miscPhotos.length >= MAX_MISC_PHOTOS) { fail('Maximum ' + MAX_MISC_PHOTOS + ' misc photos reached — this one was not attached'); return; }
         const miscRec = { dbKey: dbKey, thumbnail: out.thumbnail, fileType: 'image/jpeg', timestamp: new Date().toISOString(), unsaved: false };
+        if (when.capturedAt) { miscRec.capturedAt = when.capturedAt; miscRec.capturedFrom = when.capturedFrom; }
         miscPhotos.push(miscRec);
         renderMiscPhotos();
         autoSaveCurrent();
@@ -8604,14 +9113,25 @@ function performSaveAndNew() {
   // iOS WebView reload loses: that used to append a second entry with the
   // same id. An edit keeps the entry's original date, facility stamp and
   // legacy id; it is NOT stamped exported (its data changed).
+  // The survey date (build 109): the form's box, else the unit's own date on
+  // an edit, else today for a new unit. A unit saved before build 109 with no
+  // date at all stays undated until the tech gives it one (the export asks).
+  const typedDay = surveyDateFieldValue();
   const idx = savedEquipment.findIndex(e => sameEntryId(e.id, entryId));
   if (idx >= 0) {
     const old = savedEquipment[idx];
     if (old.savedAt) entry.savedAt = old.savedAt;
     if (old.hospitalCode) entry.hospitalCode = old.hospitalCode;
     if (old.legacyId) entry.legacyId = old.legacyId;
+    const day = typedDay || getEntryDate(old);
+    if (day) entry.surveyDate = day;
+    // Exported once stays known (build 109): the stamps below are dropped —
+    // the data changed — but this one says loto-web may already hold the unit.
+    const first = firstExportStamp(old, nowIso);
+    if (first) entry.firstExportedAt = first;
     savedEquipment[idx] = entry;
   } else {
+    entry.surveyDate = typedDay || localDateStr(new Date());
     savedEquipment.push(entry);
   }
   editingEntry = null;
@@ -8626,6 +9146,36 @@ function performSaveAndNew() {
   renderSavedPanel();
   updateHeaderBadge();
   showToast(`\u2714 Saved "${equipName}" \u2014 ${savedEquipment.length} total`);   // plain text: the toast shows text, not HTML (build 94)
+}
+
+// "Cancel edit" / "Discard" (build 109). There was no way out of an Edit but
+// to save it again — which also dropped the unit's "exported" stamp — and no
+// way to throw a half-entered unit away. The saved unit is never touched:
+// the form only ever held copies of it, so it stays exactly as it was,
+// exported stamp included. Photos taken on the form stay on the device,
+// unattached (Settings → Photo Store Report lists them) — never deleted.
+function discardForm() {
+  if (refuseIfPhotoWritesBusy('discard')) return;
+  const editing = editingEntry;
+  if (!editing && !formHasData()) { updateDiscardButton(); return; }
+  const name = (editing && editing.equipName) || (document.getElementById('equipName').value || '').trim();
+  const msg = editing
+    ? 'Cancel the edit of “' + (name || 'this unit') + '”?\n\nYour changes are dropped; the saved unit stays exactly as it was.'
+    : 'Discard ' + (name ? '“' + name + '”' : 'this unit') + '?\n\nEverything on the form is cleared. Photos already taken stay on the iPad (Settings → Photo Store Report).';
+  if (!confirm(msg)) return;
+  if (!tabMayWrite()) return;   // another tab took over while the dialog was open
+  clearForm(false);
+  renderSavedPanel();
+  updateHeaderBadge();
+  showToast(editing ? 'Edit cancelled — “' + (name || 'the unit') + '” is unchanged' : 'Unit discarded');
+}
+function updateDiscardButton() {
+  const b = document.getElementById('discardFormBtn');
+  if (!b) return;
+  const editing = !!(editingEntry || (currentEntryId && savedEquipment.some(e => sameEntryId(e.id, currentEntryId))));
+  const show = editing || formHasData();
+  b.style.display = show ? '' : 'none';
+  b.textContent = editing ? '✕ Cancel edit' : '✕ Discard';
 }
 
 function clearForm(confirm_first = true) {
@@ -8659,10 +9209,12 @@ function clearForm(confirm_first = true) {
   document.getElementById('equipTemplate').value = '';
   document.getElementById('equipTemplateCustom').value = '';
   document.getElementById('customTemplateGroup').style.display = 'none';
-  document.getElementById('equipTiedTo').value = '';
+  selectKeepingValue(document.getElementById('equipTiedTo'), '');
   document.getElementById('equipTiedToName').value = '';
   document.getElementById('tiedToNameGroup').style.display = 'none';
   document.getElementById('equipNotes').value = '';
+  setSurveyDateField('');
+  rememberTemplateBefore();   // a blank form: Cancel puts back no template
   paintEquipPhotoSlots();
   // Clear the sketch BEFORE anything autosaves (renderSources does): the old
   // order saved the previous unit's drawing into the blank form, so a reload
@@ -9177,7 +9729,7 @@ function editSaved(index) {
   lastAutoFilledEquipName = null;
   document.getElementById('equipRoom').value = entry.equipRoom || '';
   setBuilding(entry.equipBuilding || '');
-  document.getElementById('equipTiedTo').value = entry.tiedTo || '';
+  selectKeepingValue(document.getElementById('equipTiedTo'), entry.tiedTo || '');
 
   // Restore tied-to equipment name
   if (entry.tiedTo) {
@@ -9190,6 +9742,8 @@ function editSaved(index) {
 
   // Restore notes
   document.getElementById('equipNotes').value = entry.notes || '';
+  // The unit's survey date (build 109; a pre-109 unit shows the day it was saved)
+  setSurveyDateField(getEntryDate(entry) || '');
 
   // Restore template "" check if it's a custom value
   const templateSel = document.getElementById('equipTemplate');
@@ -9203,6 +9757,7 @@ function editSaved(index) {
     document.getElementById('equipTemplateCustom').value = '';
     document.getElementById('customTemplateGroup').style.display = 'none';
   }
+  rememberTemplateBefore();   // the unit's own template is what Cancel puts back (build 109 review)
   
   sources = JSON.parse(JSON.stringify(entry.sources));
   photos = Object.assign({}, entry.photos || {});
@@ -9303,7 +9858,7 @@ async function executeDuplicate(index, withPhotos) {
   lastAutoFilledEquipName = null;
   document.getElementById('equipRoom').value = entry.equipRoom || '';
   setBuilding(entry.equipBuilding || '');
-  document.getElementById('equipTiedTo').value = entry.tiedTo || '';
+  selectKeepingValue(document.getElementById('equipTiedTo'), entry.tiedTo || '');
 
   // Restore tied-to equipment name
   if (entry.tiedTo) {
@@ -9317,6 +9872,8 @@ async function executeDuplicate(index, withPhotos) {
   // Copy notes from the original entry — duplicates inherit the note text
   // and the user can edit/clear as needed.
   document.getElementById('equipNotes').value = entry.notes || '';
+  // A duplicate is another unit, surveyed now: its date is the day it's saved (build 109)
+  setSurveyDateField('');
 
   // Restore template — check if it's a custom value
   const templateSel = document.getElementById('equipTemplate');
@@ -9330,6 +9887,7 @@ async function executeDuplicate(index, withPhotos) {
     document.getElementById('equipTemplateCustom').value = '';
     document.getElementById('customTemplateGroup').style.display = 'none';
   }
+  rememberTemplateBefore();
 
   // Deep copy sources with FRESH source ids — a duplicate is a distinct piece
   // of equipment, not an edit, so it must not share stable ids with the
@@ -9472,7 +10030,20 @@ function exportDateFrom(dateFilter) {
   }
   return new Date();
 }
+// The SURVEY DATE (build 109): shown on the form, saved on every unit as
+// `surveyDate` ("YYYY-MM-DD"). A unit saved before build 109 has none and
+// uses the day it was first saved (savedAt), as before. It decides which day's
+// Information Sheet the unit goes on — loto-web reads the day from the sheet's
+// file name and binds the unit among that day's inventory.
+// From 2000 on (build 109 review): a desktop date box commits every year digit
+// as it is typed — 0002, 0020, 0202 — and those are never a survey date.
+function isIsoDay(s) {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const p = s.split('-').map(Number), d = new Date(p[0], p[1] - 1, p[2]);
+  return p[0] >= 2000 && d.getFullYear() === p[0] && d.getMonth() === p[1] - 1 && d.getDate() === p[2];
+}
 function getEntryDate(entry) {
+  if (entry && isIsoDay(entry.surveyDate)) return entry.surveyDate;
   if (entry.savedAt) return localDateStr(entry.savedAt);
   // Fallback: check photo timestamps
   if (entry.photos) {
@@ -9482,6 +10053,84 @@ function getEntryDate(entry) {
     }
   }
   return null; // undated
+}
+// When a unit first went out in an export, as far as it still says. An edit
+// drops the export stamps (its data changed) — firstExportedAt (build 109) is
+// the one that survives. An export id alone (no time) counts as `now`.
+function firstExportStamp(e, now) {
+  if (!e) return '';
+  return e.firstExportedAt || e.exportedAt || e.exportIncompleteAt || (e.exportId ? (e.savedAt || now || '') : '');
+}
+function entryEverExported(e) {
+  return !!(e && (firstExportStamp(e) || e.exportId));
+}
+// Exported before, then changed: an edit keeps firstExportedAt and drops the
+// stamps of the export itself, so a unit with the one and neither of the others
+// was edited since (an incomplete export never edited still has its stamp).
+// loto-web keeps what it pulled — a later sheet fills only blank fields (gap
+// 3.6) — so such a change must be made there too.
+function changedSinceExport(e) {
+  return !!(e && e.firstExportedAt && !e.exportedAt && !e.exportIncompleteAt);
+}
+const LOTO_WEB_SAME_CHANGE_NOTE = 'Units already in loto-web: make the same change there — a re-export does not change what loto-web already has.';
+
+// The form's Survey Date box. Blank on a new unit = the day it is saved.
+let _surveyDateBefore = '';
+function setSurveyDateField(v) {
+  const el = document.getElementById('equipSurveyDate');
+  if (!el) return;
+  el.value = isIsoDay(v) ? v : '';
+  el.max = localDateStr(new Date());
+  _surveyDateBefore = el.value;
+}
+function rememberSurveyDateBefore() {
+  const el = document.getElementById('equipSurveyDate');
+  if (el) { _surveyDateBefore = el.value; el.max = localDateStr(new Date()); }
+}
+// Leaving the box with a date that isn't one (a year still half-typed) puts
+// the unit's date back — it is never saved as the survey date.
+function settleSurveyDate() {
+  const el = document.getElementById('equipSurveyDate');
+  if (el && el.value && !surveyDateFieldValue()) {
+    el.value = _surveyDateBefore;
+    showToast('Survey date not changed \u2014 enter a full date', true);
+  }
+}
+function surveyDateFieldValue() {
+  const v = ((document.getElementById('equipSurveyDate') || {}).value || '').trim();
+  return isIsoDay(v) ? v : '';
+}
+// A changed date moves the unit to another day's sheet. Before the unit's
+// first export that is all it does. After it, loto-web still holds the unit
+// under the old day (it keeps every sheet, and its inventory date is the
+// office's), so the tech is told to change it there too — or keeps the date.
+function handleSurveyDateChange() {
+  const el = document.getElementById('equipSurveyDate');
+  const v = surveyDateFieldValue(), was = _surveyDateBefore;
+  if (el.value && !v) return;   // still being typed (a year before 2000): settled when the box is left
+  if (!v && editingEntry && was) {
+    // a saved unit keeps a date: clearing the box would not mean "today"
+    el.value = was;
+    showToast('A saved unit keeps its survey date — pick another day to change it', true);
+    return;
+  }
+  if (v && v > localDateStr(new Date())) {
+    showToast('The survey date can’t be after today', true);
+    el.value = was;
+    return;
+  }
+  if (v && v !== was && editingEntry && entryEverExported(editingEntry)) {
+    const name = editingEntry.equipName || 'This unit';
+    const oldDay = getEntryDate(editingEntry);
+    if (!confirm('“' + name + '” was already exported' + (oldDay ? ' on its ' + formatDateLabel(oldDay) + ' sheet' : '') + '.\n\n' +
+        'The new date puts it on the ' + formatDateLabel(v) + ' sheet at the next export, and loto-web keeps the earlier sheet. ' +
+        'If it is already in loto-web, change its survey date in the loto-web inventory too.\n\nChange the survey date?')) {
+      el.value = was;
+      return;
+    }
+  }
+  _surveyDateBefore = el.value;
+  autoSaveCurrent();
 }
 
 function formatDateLabel(isoDate) {
@@ -9505,6 +10154,15 @@ function populateExportDateFilter() {
   const dates = Object.keys(counts).sort().reverse(); // newest first
   const total = savedEquipment.length;
   sel.innerHTML = `<option value="all">All dates — ${total} entr${total === 1 ? 'y' : 'ies'}</option>`;
+  // Not yet exported, whatever its date (build 109) — see unexportedSelection
+  const pend = unexportedSelection();
+  if (pend.pending.length) {
+    const opt = document.createElement('option');
+    opt.value = 'unexported';
+    opt.textContent = `Not yet exported — ${pend.pending.length} entr${pend.pending.length === 1 ? 'y' : 'ies'}` +
+      (pend.days.size > 1 ? `, ${pend.days.size} dates` : '');
+    sel.appendChild(opt);
+  }
   dates.forEach(d => {
     const opt = document.createElement('option');
     opt.value = d;
@@ -9536,14 +10194,49 @@ function updateExportDateSummary() {
   const isEdit = formOk && currentEntryId && savedEquipment.some(e => sameEntryId(e.id, currentEntryId));
   const hasNew = formOk && !isEdit && currentEntryPassesExportFilters();
   const n = filtered.length;
-  el.textContent = hasNew
+  const dateSel = document.getElementById('exportDateFilter');
+  let text = hasNew
     ? `${n} saved + 1 current (unsaved) = ${n + 1} total`
     : `${n} entr${n === 1 ? 'y' : 'ies'} will be exported` + (editingSaved ? ' (the one open for edit goes out with its unsaved changes)' : '');
+  if (dateSel && dateSel.value === 'unexported') {
+    const pend = unexportedSelection();
+    text += `\n${pend.pending.length} not yet exported, on ${pend.days.size} date${pend.days.size === 1 ? '' : 's'} — each of those dates goes out as its whole sheet.`;
+  }
+  // A change to a unit loto-web may already hold doesn't reach it by any
+  // export (build 109; loto-web keeps what it pulled — gap 3.6). Say so.
+  if (filtered.some(changedSinceExport) || (editingSaved && entryEverExported(editingEntry))) text += '\n' + LOTO_WEB_SAME_CHANGE_NOTE;
+  el.style.whiteSpace = 'pre-line';
+  el.textContent = text;
+}
+
+// "Not yet exported", whatever the date (build 109). The export date filter
+// starts on today, so a unit first saved on an earlier day but changed today
+// was left out unless the tech picked its day. Every unit not in a complete
+// export — new, edited since, or exported without some of its photos — goes,
+// and so does the REST of its survey date: a sheet is always the whole day,
+// because it carries the same name as that day's earlier sheet. (loto-web
+// keeps the earlier one and files this one beside it — it never replaces a
+// sheet — and a part-day under the day's name would read as the whole day.)
+function unexportedSelection() {
+  const pending = savedEquipment.filter(e => entryExportState(e) !== 'exported');
+  const days = new Set(pending.map(e => getEntryDate(e) || 'undated'));
+  const formDay = openNewUnitDay();   // a new unit on the form goes too — with the rest of its day
+  if (formDay) days.add(formDay);
+  const entries = savedEquipment.filter(e => days.has(getEntryDate(e) || 'undated'));
+  return { pending, days, entries };
+}
+// The day of a NEW (never saved) unit on the form, or null (none, or an edit).
+function openNewUnitDay() {
+  const name = ((document.getElementById('equipName') || {}).value || '').trim();
+  if (!name || !sources.length) return null;
+  if (currentEntryId && savedEquipment.some(e => sameEntryId(e.id, currentEntryId))) return null;
+  return surveyDateFieldValue() || localDateStr(new Date());
 }
 
 function filterEntriesByExportDate(filterValue) {
   if (filterValue === 'all') return [...savedEquipment];
   if (filterValue === 'undated') return savedEquipment.filter(e => !getEntryDate(e));
+  if (filterValue === 'unexported') return unexportedSelection().entries;
   return savedEquipment.filter(e => getEntryDate(e) === filterValue);
 }
 
@@ -9597,7 +10290,9 @@ function currentEntryPassesExportFilters() {
   const dateFilter = dateSel ? dateSel.value : 'all';
   const facFilter  = facSel ? facSel.value : 'all';
   const todayIso = localDateStr(new Date());
-  const dateOK = (dateFilter === 'all' || dateFilter === todayIso);
+  // A new unit on the form is today's (or its Survey Date box's) work, and never exported
+  const formDay = surveyDateFieldValue() || todayIso;
+  const dateOK = (dateFilter === 'all' || dateFilter === 'unexported' || dateFilter === formDay);
   const facOK  = (facFilter === 'all' || facFilter === getHospitalCode());
   return dateOK && facOK;
 }
@@ -9685,6 +10380,9 @@ function snapshotFormEntry() {
     tiedToName:    document.getElementById('equipTiedToName').value.trim(),
     notes:         document.getElementById('equipNotes').value.trim(),
     savedAt:       (editingEntry && editingEntry.savedAt) || undefined,
+    // the box, else an edited unit's own date, else (a new unit) today — what Save & New would give it
+    surveyDate:    surveyDateFieldValue() || (editingEntry ? (getEntryDate(editingEntry) || undefined) : localDateStr(new Date())),
+    firstExportedAt: firstExportStamp(editingEntry, new Date().toISOString()) || undefined,
     updatedAt:     new Date().toISOString(),   // the live form is the newest version of its entry
     sources:       JSON.parse(JSON.stringify(sources)),
     photos:        Object.assign({}, photos),
@@ -9770,9 +10468,41 @@ async function runCombinedExport(opts) {
   const over = allEntries.filter(e => (e.sources || []).length > MAX_XLSX_SOURCES);
   if (over.length && !confirm('ℹ ' + over.length + ' unit' + (over.length === 1 ? ' has' : 's have') + ' more than ' + MAX_XLSX_SOURCES + ' energy sources:\n\n' +
     over.slice(0, 12).map(e => '• ' + (e.equipName || '(unnamed)') + ' — ' + e.sources.length + ' sources').join('\n') + (over.length > 12 ? '\n…' : '') +
-    '\n\nThe Information Sheet (XLSX) holds ' + MAX_XLSX_SOURCES + ' sources per unit, so sources 11+ are in the CSV and entries.json only (loto-web\'s field import reads entries.json — nothing is lost there).\n\nOK = export\nCancel = stop')) {
+    '\n\nThe Information Sheet (XLSX) holds ' + MAX_XLSX_SOURCES + ' sources per unit, so sources 11+ (and their photos) are in the CSV and entries.json only. loto-web imports the Information Sheet, so they will NOT reach loto-web — add them there by hand, or split the unit into two.\n\nOK = export\nCancel = stop')) {
     showToast('Export cancelled', true);
     return;
+  }
+
+  // A unit with no survey date — saved before the app recorded one — gets a
+  // date now (build 109). It went on "Information_Sheet_undated.xlsx", and
+  // loto-web's field-export import refuses a sheet without a day in its name.
+  const undated = allEntries.filter(e => !getEntryDate(e));
+  if (undated.length) {
+    const ans = await askSurveyDate(undated);
+    if (!(isIsoDay(ans) || ans === 'undated')) { showToast('Export cancelled', true); return; }
+    if (isIsoDay(ans)) {
+      if (!tabMayWrite()) return;
+      undated.forEach(e => {
+        e.surveyDate = ans;
+        const saved = savedEquipment.find(s => sameEntryId(s.id, e.id));
+        if (saved && saved !== e) saved.surveyDate = ans;
+        if (formEntries.has(e)) setSurveyDateField(ans);
+      });
+      saveAll();
+    }
+  }
+
+  // A photo taken for a slot that is empty on its unit (build 109) — see
+  // emptySlotsWithUnattachedShots. Said before the export leaves it behind.
+  const missedShots = await emptySlotsWithUnattachedShots(allEntries);
+  if (missedShots.length) {
+    const go = await askChoice({
+      id: 'export-unattached', defaultValue: 'export',
+      title: '&#9888; ' + missedShots.length + ' empty photo slot' + (missedShots.length === 1 ? ' has a photo' : 's have photos') + ' on this iPad',
+      html: html`${missedShots.slice(0, 12).map((m, k) => html`${k ? raw('<br>') : ''}&bull; ${m.name} &mdash; ${m.slot}`)}${missedShots.length > 12 ? raw('<br>&hellip;') : ''}<br><br>A photo was taken for each of these, but it isn&rsquo;t on the unit (it never attached &mdash; the form changed while it was saving &mdash; or its edit was discarded), so this export leaves it behind. Retake it while you are still there &mdash; or export anyway: Settings &rarr; Photo Store Report can export those photos for the office.`,
+      choices: [{ value: 'export', label: 'Export anyway', primary: true }, { value: 'cancel', label: 'Cancel' }]
+    });
+    if (go !== 'export') { showToast('Export cancelled', true); return; }
   }
 
   // A source with no Energy Source (build 93): loto-web's Information Sheet
@@ -9883,6 +10613,7 @@ async function runCombinedExport(opts) {
     if (hash && hashToRecord[hash]) {
       const rec = hashToRecord[hash];
       rec.entries.push(entryRef);
+      if (!rec.capturedAt && ref.capturedAt) { rec.capturedAt = ref.capturedAt; rec.capturedFrom = ref.capturedFrom || ''; }
       return rec.filename;
     }
     const ext = pd.type.includes('png') ? '.png' : '.jpg';
@@ -9890,6 +10621,8 @@ async function runCombinedExport(opts) {
     photosFolder.file(filename, pd.bytes);
     photoCount++;
     const rec = { filename: filename, sha256: hash || '', entries: [entryRef] };
+    // when the photo was taken (build 109) — also inside the JPEG's EXIF
+    if (ref.capturedAt) { rec.capturedAt = ref.capturedAt; rec.capturedFrom = ref.capturedFrom || ''; }
     exportRecords.push(rec);
     if (hash) hashToRecord[hash] = rec;
     return filename;
@@ -10012,10 +10745,14 @@ async function runCombinedExport(opts) {
     const map = entryMaps[ei];
     // Drop bulky/binary-ish fields; keep all structural data.
     const { photos, miscPhotos, ...rest } = entry;
+    const capOf = (ref, exported) => (exported && ref && ref.capturedAt) ? { capturedAt: ref.capturedAt, capturedFrom: ref.capturedFrom || '' } : null;
     const srcOut = (rest.sources || []).map((src, i) => ({
       ...src,
       valveState: src.valveState || 'normal',   // always present for downstream (loto-web)
       photoFile: map.sourceHs[i] ? 'photos/' + map.sourceHs[i] : '',
+      // when its photo was taken (build 109), as in the JPEG's EXIF
+      photoCapturedAt: (capOf((photos || {})['source_' + i], map.sourceHs[i]) || {}).capturedAt || '',
+      photoCapturedFrom: (capOf((photos || {})['source_' + i], map.sourceHs[i]) || {}).capturedFrom || '',
       // Valve marks (build 92): [{x, y}] fractions of photoFile, one per device
       photoMarks: map.sourceHs[i] ? sourceMarksForExport(entry, i) : []
     }));
@@ -10037,6 +10774,13 @@ async function runCombinedExport(opts) {
         ee:        map.eeH   ? 'photos/' + map.eeH   : '',
         diagram:   diagramFiles[ei] ? 'diagrams/' + diagramFiles[ei] : '',
         misc:      miscOut
+      },
+      // when each equipment photo was taken (build 109) — null where unknown
+      photoCaptured: {
+        main:      capOf((photos || {}).equip_main, map.mainH),
+        dataplate: capOf((photos || {}).equip_dataplate, map.dpH),
+        ee:        capOf((photos || {}).equip_ee, map.eeH),
+        misc:      miscOut.length ? (miscPhotos || []).filter(mp => mp && mp.dbKey).map(mp => capOf(mp, true)) : []
       }
     };
   });
@@ -10134,8 +10878,11 @@ async function runCombinedExport(opts) {
         const pageNum  = pageIdx + 1;
         const location = [entry.equipBuilding, entry.equipRoom].filter(Boolean).join(' ');
 
-        // Equipment header row (light yellow fill like original)
-        const eqHeaderRow = ws.addRow(['Equipment ID/Name','','','Location','Main Photo','Details','','Data Plate Photo','EE Number Photo','Page #','Diagram File','Misc Photo Files']);
+        // Equipment header row (light yellow fill like original). Col 6 holds
+        // the surveyed equipment type, so it says so (build 109; it read
+        // "Details", and loto-web stored the type as the main photo's position).
+        // loto-web reads every cell by position: only the label changed.
+        const eqHeaderRow = ws.addRow(['Equipment ID/Name','','','Location','Main Photo','Equipment Type','','Data Plate Photo','EE Number Photo','Page #','Diagram File','Misc Photo Files']);
         applyRow(eqHeaderRow, headerFont, labelFill, allBorders);
         const eqHdrNum = eqHeaderRow.number;
         ws.mergeCells(eqHdrNum, 1, eqHdrNum, 2); // A:B merge
@@ -10417,6 +11164,7 @@ async function runCombinedExport(opts) {
       allEntries.forEach(en => {
         if (formEntries.has(en)) return;
         en.exportId = exportId;
+        if (!en.firstExportedAt) en.firstExportedAt = stampAt;   // survives later edits (build 109)
         if (incomplete.has(en.id)) { en.exportIncompleteAt = stampAt; delete en.exportedAllPhotos; return; }
         en.exportedAt = stampAt;
         en.exportedAllPhotos = true;    // this build ships every photo — see entryExportState
@@ -10859,6 +11607,7 @@ function buildWipState() {
     tiedTo: document.getElementById('equipTiedTo').value,
     tiedToName: document.getElementById('equipTiedToName').value.trim(),
     notes: document.getElementById('equipNotes').value.trim(),
+    surveyDate: surveyDateFieldValue(),
     sources: sources,
     photos: photos,
     miscPhotos: miscPhotos,
@@ -10899,6 +11648,7 @@ function releaseWipHold(hold) {
   autoSaveCurrent();
 }
 function autoSaveCurrent() {
+  try { updateDiscardButton(); } catch (e) {}   // the form's Discard / Cancel edit follows what it holds (build 109)
   if (!_bootWipSettled || !tabMayWrite()) return;
   setAutosaveStatus('saving');
   if (_wipHold) {
@@ -11500,6 +12250,7 @@ function keepWipAsRecoveredEntry(st) {
     lotoId: st.lotoId || '', hospitalCode: getHospitalCode(),
     equipRoom: st.equipRoom || '', equipBuilding: st.equipBuilding || '',
     template: st.template || '', tiedTo: st.tiedTo || '', tiedToName: st.tiedToName || '', notes: st.notes || '',
+    surveyDate: isIsoDay(st.surveyDate) ? st.surveyDate : (localDateStr(st.at || now) || undefined),
     sources: JSON.parse(JSON.stringify(st.sources || [])),
     photoCount: Object.keys(photosMap).filter(k => photosMap[k] && photosMap[k].timestamp).length,
     timestamp: '', savedAt: st.at || now, updatedAt: now,
@@ -11864,7 +12615,7 @@ async function loadAll() {
     lastAutoFilledEquipName = null;
     document.getElementById('equipRoom').value = state.equipRoom || '';
     setBuilding(state.equipBuilding || '');
-    document.getElementById('equipTiedTo').value = state.tiedTo || '';
+    selectKeepingValue(document.getElementById('equipTiedTo'), state.tiedTo || '');
 
     // Restore tied-to equipment name
     if (state.tiedTo) {
@@ -11874,6 +12625,7 @@ async function loadAll() {
 
     // Restore notes
     document.getElementById('equipNotes').value = state.notes || '';
+    setSurveyDateField(state.surveyDate || (editingEntry ? getEntryDate(editingEntry) : '') || '');
 
     // Restore template
     if (state.template) {
@@ -11887,6 +12639,7 @@ async function loadAll() {
         templateSel.value = state.template;
       }
     }
+    rememberTemplateBefore();
 
     sources = state.sources || [];
     // Apply the same CA → Compressed Air rename to the work-in-progress state
@@ -12903,26 +13656,37 @@ function pickLocationIdFromScan(rawText, blocks) {
   return lines.length ? lines[0] : '';
 }
 
-// pick: how to read the label — '' (the whole text on one line) or
-// 'locationId' (a Panel / MCC ID: pickLocationIdFromScan).
-async function scanTextToField(inputId, pick) {
+// The camera and OCR plugins a label scan uses, or { error } off the iOS app.
+function scanPlugins() {
   const native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-  if (!native) {
-    showToast('Scan only works in the iOS app.', true);
-    return;
-  }
+  if (!native) return { error: 'Scan only works in the iOS app.' };
   const Camera = getCapPlugin('Camera');
   const TextRecognition = getCapPlugin('TextRecognition');
   if (!Camera) {
     console.error('Camera plugin not available. window.Capacitor:', window.Capacitor);
-    showToast('Camera plugin not loaded — try reinstalling the build.', true);
-    return;
+    return { error: 'Camera plugin not loaded — try reinstalling the build.' };
   }
   if (!TextRecognition) {
     console.error('TextRecognition plugin not available. window.Capacitor:', window.Capacitor);
-    showToast('OCR plugin not loaded — try reinstalling the build.', true);
-    return;
+    return { error: 'OCR plugin not loaded — try reinstalling the build.' };
   }
+  return { Camera, TextRecognition };
+}
+
+// pick: how to read the label — '' (the whole text on one line) or
+// 'locationId' (a Panel / MCC ID: pickLocationIdFromScan).
+async function scanTextToField(inputId, pick) {
+  const plugins = scanPlugins();
+  if (plugins.error) { showToast(plugins.error, true); return; }
+  const { Camera, TextRecognition } = plugins;
+  // The scan belongs to THIS form — and, for a source's box, THIS source —
+  // fixed before the first await (build 109). The result used to be written
+  // into whatever box had the id when the OCR came back: a Save & New pressed
+  // while it read put the scanned name or tag on the NEXT unit, silently when
+  // that box was empty, and a source moved meanwhile got another's tag.
+  const session = formSession;
+  const srcBox = /^src_(deviceId|locid|detail)_(\d+)(_\d+)?$/.exec(inputId);
+  const srcObj = srcBox ? sources[parseInt(srcBox[2], 10)] : null;
 
   let photo;
   try {
@@ -12964,8 +13728,19 @@ async function scanTextToField(inputId, pick) {
   // takes the line with the ID, without the word "Panel" / "MCC".
   const text = pick === 'locationId' ? pickLocationIdFromScan(rawText, result && result.blocks) : rawText.replace(/\s+/g, ' ').trim();
 
-  const input = document.getElementById(inputId);
-  if (!input) return;
+  if (session !== formSession) {
+    showToast('Scan not used — the form changed while it was reading (the unit was saved, closed or another one opened). Scan again.', true);
+    return;
+  }
+  let boxId = inputId;
+  if (srcBox) {
+    const idx = sources.indexOf(srcObj);
+    if (idx < 0) { showToast('Scan not used — that energy source was removed while it was reading.', true); return; }
+    boxId = 'src_' + srcBox[1] + '_' + idx + (srcBox[3] || '');
+    if (!document.getElementById(boxId) && srcObj.collapsed) { srcObj.collapsed = false; renderSources(); }
+  }
+  const input = document.getElementById(boxId);
+  if (!input) { showToast('Scan not used — that box is no longer on the form.', true); return; }
 
   if (!text) {
     showToast(pick === 'locationId' && rawText.trim()
