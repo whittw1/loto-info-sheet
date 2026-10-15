@@ -59,6 +59,11 @@
 //             JPEG, empty slots with a photo taken for them (4.4), app-lists.json (3.4)
 //   T214–T215 build 109's code review: Cancel after an app-made template pick, Copy Source on a reused
 //             photo, "changed since export", a half-typed survey year, Duplicate on a linked source
+//   T216–T227 build 110: the 2026-10-15 review of build 109 — an automatic Duplicate = Yes without its
+//             photo, a ";" in a per-unit Device ID, a custom source's shown verification, a big export,
+//             picking the shared photo later, Split keeping extra tags, settling the unattached-shot
+//             warning (+ misc), Today / Yesterday by survey date, misc capture times, a desktop file
+//             pick, the automatic Yes on every path, the survey-date question box
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -158,6 +163,8 @@
     document.getElementById('equipTemplate').value = '';
     try { localStorage.removeItem(PHOTO_KEY_MIGRATION_FLAG); } catch (e) {}
     try { localStorage.removeItem('loto_seq_used'); } catch (e) {}
+    // build 110: no photo marked "don't warn again", and the one-time misc baseline already taken
+    try { localStorage.removeItem('loto_unattached_ok'); localStorage.setItem('loto_unattached_misc_baseline', '1'); } catch (e) {}
     try { localStorage.removeItem('loto_saved'); localStorage.removeItem('loto_saved_at'); localStorage.removeItem('loto_saved_deleted'); localStorage.removeItem('loto_wip_superseded'); } catch (e) {}
     try { await saveMetadata('photo_hash_index', {}); } catch (e) {}
     // build 101: the SharePoint backup off, its records empty, its API real again
@@ -6277,7 +6284,11 @@
     fillForm('P-211');
     await captureInto('equip_main', await fileOf(jpegWithExif(plainDu, { dt: '2026:09:15 10:20:30', offset: '-05:00' }), 'exif.jpg'));
     const before = Date.now();
-    await captureInto('equip_dataplate', await makePhotoFile('t211b'));
+    // a camera shot needs a device that opens a camera for the input (build 110:
+    // a desktop browser opens a file chooser instead) — this run plays the iPad
+    const realCam = window.deviceCameraCapture;
+    window.deviceCameraCapture = () => true;
+    try { await captureInto('equip_dataplate', await makePhotoFile('t211b')); } finally { window.deviceCameraCapture = realCam; }
     handlePhoto({ files: [await makePhotoFile('t211c')], hasAttribute: () => false }, 'equip_ee');   // the library picker's input: no capture attribute
     await waitFor(() => photos.equip_ee && photos.equip_ee.dbKey && photos.equip_ee.unsaved === false, 15000, 'the library pick');
     await waitForPhotoWritesIdle(15000);
@@ -6436,6 +6447,307 @@
       + '; questions while typing the year ' + JSON.stringify(typing.log) + '; box after leaving ' + JSON.stringify(settled) + ' (was ' + JSON.stringify(orig) + ')');
   }
 
+  // ---------- build 110: the 2026-10-15 review of build 109 (xhigh) ----------
+  const typeInto = (id, v) => { const b = document.getElementById(id); if (!b) return false; b.value = v; b.dispatchEvent(new Event('input', { bubbles: true })); return true; };
+  // a source on the form whose photo came by Reuse from source_0 (an automatic Duplicate = Yes)
+  async function formWithReusedSourcePhoto(name, energies) {
+    fillFormNoSources(name);
+    energies.forEach(es => sources.push(Object.assign(mkSrc(es), { deviceType: 'Ball Valve', collapsed: false })));
+    sources.forEach(ensureSourceId); renderSources();
+    await captureInto('source_0', await makePhotoFile(name));
+    const cands = collectTodaysPhotos(); _reuseCandidates = cands;
+    await reusePhotoInto('source_1', cands.findIndex(c => c.dbKey === photos.source_0.dbKey));
+    await waitForPhotoWritesIdle(10000);
+  }
+
+  // T216 — review #1: Duplicate → Info Only kept an automatic Yes with no photo
+  async function t216_aDuplicateNeverKeepsAnAutomaticYesWithoutItsPhoto() {
+    const N = 'T216 Duplicate → Info Only of a unit whose source got its photo by Reuse leaves that source Duplicate = No with its photo slot shown and flagged when empty (it kept an automatic Yes: no camera, no warning, a Y row with no Photo #); With Photos keeps the Yes on the copied photo; a saved unit already holding such a Yes exports "No"';
+    await resetAppState();
+    await formWithReusedSourcePhoto('R-216', ['HHW In', 'HHW Out']);
+    const A = saveEntry();
+    const autoBefore = !!(A.sources[1] && A.sources[1].duplicate === 'Yes' && A.sources[1].dupAuto);
+    await executeDuplicate(savedEquipment.indexOf(A), false);
+    sources.forEach(s => { s.collapsed = false; }); renderSources();
+    const info = { dup: sources[1].duplicate, auto: !!sources[1].dupAuto, slot: !!document.getElementById('photo_source_1'),
+      warned: collectIncompleteFields().some(m => /^Source #2/.test(m) && /Photo/.test(m)) };
+    clearForm(false);
+    await executeDuplicate(savedEquipment.indexOf(A), true);
+    await waitForPhotoWritesIdle(15000);
+    renderSources();
+    const withP = { dup: sources[1].duplicate, dupOf: !!(photos.source_1 && photos.source_1.dbKey && photos.source_1.dupOf) };
+    clearForm(false);
+    await resetAppState();
+    const S = mkEntry('S-216', { sources: [
+      Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Disconnect' }),
+      Object.assign(mkSrc('DW In'), { sourceId: genUuid(), deviceType: 'Ball Valve', duplicate: 'Yes', dupAuto: true })] });
+    savedEquipment = [S]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    let rowDup = null, jsonDup = null;
+    if (zip) {
+      const u = await unzipExport(zip.blob);
+      const row = (await sheetRowsOf(u)).find(r => r.cells[0] === 'DW In');
+      rowDup = row ? row.cells[7] : null;
+      const je = (u.entriesJson.entries || []).find(e => e.equipName === 'S-216') || {};
+      jsonDup = ((je.sources || [])[1] || {}).duplicate;
+    }
+    record(N, autoBefore && info.dup === 'No' && !info.auto && info.slot && info.warned && withP.dup === 'Yes' && withP.dupOf && rowDup === 'No' && jsonDup === 'No',
+      'saved auto Yes=' + autoBefore + '; Info Only ' + JSON.stringify(info) + '; With Photos ' + JSON.stringify(withP)
+      + '; saved stale Yes exports: sheet ' + JSON.stringify(rowDup) + ', entries.json ' + JSON.stringify(jsonDup) + (zip ? '' : ' (no zip: ' + confirms.join(' | ') + ')'));
+  }
+
+  // T217 — review #2: a ";" typed in a per-unit Device ID box replaced the next units' tags
+  async function t217_aSemicolonNeverReplacesAnotherUnitsTag() {
+    const N = 'T217 a ";" typed in a per-unit Device ID box never replaces or blanks a tag already in a later unit\'s box (it stays in this unit as a comma); a pasted "a; b; c" still fills boxes that are empty';
+    await resetAppState();
+    fillFormNoSources('D-217');
+    sources.push(Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Breaker', quantity: 3, deviceId: 'BKR-1; BKR-2; BKR-3', collapsed: false }));
+    sources.push(Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', quantity: 3, deviceId: '', collapsed: false }));
+    renderSources();
+    typeInto('src_deviceId_0_0', 'BKR-1;');
+    const a = splitUnitIds(sources[0].deviceId);
+    typeInto('src_deviceId_0_0', 'BKR-1;3;5');
+    const b = splitUnitIds(sources[0].deviceId);
+    typeInto('src_deviceId_1_0', 'V-1; V-2; V-3');
+    const c = splitUnitIds(sources[1].deviceId);
+    record(N, a[1] === 'BKR-2' && a[2] === 'BKR-3' && !/;/.test(a[0]) && /^BKR-1/.test(a[0])
+      && b[1] === 'BKR-2' && b[2] === 'BKR-3' && b[0] === 'BKR-1,3,5'
+      && c.join('|') === 'V-1|V-2|V-3',
+      'after typing ";" ' + JSON.stringify(a) + '; after "BKR-1;3;5" ' + JSON.stringify(b) + '; pasted into empty boxes ' + JSON.stringify(c));
+  }
+
+  // T218 — review #3: a custom energy source showed a verification it didn't hold
+  async function t218_aCustomEnergySourceSavesTheVerificationItShows() {
+    const N = 'T218 leaving a custom Energy Source box stores the verification the card then shows ("Saves as: …"), and renaming it hot ↔ chilled moves the suffix — the card never shows a value the unit doesn\'t hold';
+    await resetAppState();
+    let had = null;
+    try { had = localStorage.getItem('loto_simple_verification'); localStorage.setItem('loto_simple_verification', '1'); } catch (e) {}
+    try {
+      fillFormNoSources('C-218');
+      sources.push(Object.assign(mkSrc(''), { deviceType: '', verification: '', location: 'On Wall', collapsed: false }));
+      renderSources();
+      handleEnergySourceChange(0, '** Custom Energy **');
+      const leave = (v) => { const box = document.getElementById('src_energy_custom_0'); box.value = v; box.dispatchEvent(new Event('input', { bubbles: true })); box.dispatchEvent(new Event('change', { bubbles: true })); };
+      const shown = () => { const m = /Saves as:\s*([^\n]+?)\s*More options/.exec(((document.querySelectorAll('#sourcesContainer > .source-card')[0] || {}).textContent || '').replace(/\s+/g, ' ')); return m ? m[1].trim() : null; };
+      leave('Chilled glycol loop');
+      const cold = { stored: sources[0].verification, shown: shown() };
+      leave('Hot glycol loop');
+      const hot = { stored: sources[0].verification, shown: shown() };
+      record(N, cold.stored === 'Temp Only - CHW' && cold.shown === cold.stored && hot.stored === 'Temp Only - Hot' && hot.shown === hot.stored,
+        'chilled ' + JSON.stringify(cold) + '; hot ' + JSON.stringify(hot));
+    } finally {
+      try { if (had === null) localStorage.removeItem('loto_simple_verification'); else localStorage.setItem('loto_simple_verification', had); } catch (e) {}
+    }
+  }
+
+  // T219 — review #4: a big export was packed in memory without a word
+  async function t219_aBigExportAsksBeforeItIsPacked() {
+    const N = 'T219 an export whose photos pass the safe size asks before the ZIP is packed (Cancel stops it, nothing marked exported); under the size it asks nothing';
+    if (typeof EXPORT_BIG_BYTES === 'undefined') return record(N, false, 'the export has no size check');
+    await resetAppState();
+    fillForm('B-219');
+    await captureInto('equip_main', await makePhotoFile('b219'));
+    const A = saveEntry();
+    const was = EXPORT_BIG_BYTES;
+    let stop, go, small;
+    try {
+      EXPORT_BIG_BYTES = 1000;
+      stop = await runExport({ confirmResponse: true, choice: { 'export-big': 'cancel' } });
+      const stampedAfterCancel = !!A.exportedAt;
+      go = await runExport({ confirmResponse: true, choice: { 'export-big': 'export' } });
+      EXPORT_BIG_BYTES = was;
+      small = await runExport({ confirmResponse: true });
+      record(N, !stop.zip && stop.confirms.some(m => /CHOICE export-big/.test(m)) && !stampedAfterCancel && !!go.zip && !!small.zip && !small.confirms.some(m => /CHOICE export-big/.test(m)),
+        'asked ' + JSON.stringify(stop.confirms.filter(m => /export-big/.test(m))) + ', zip after Cancel=' + !!stop.zip + ', stamped=' + stampedAfterCancel + '; zip on Export=' + !!(go && go.zip) + '; small export asked=' + small.confirms.some(m => /export-big/.test(m)));
+    } finally { EXPORT_BIG_BYTES = was; }
+  }
+
+  // T220 — review #5: Skip on the "which photo" question left no way back; it opened on no-photo rows
+  async function t220_aYesWithoutItsPhotoCanStillPickIt() {
+    const N = 'T220 a Duplicate = Yes source with no photo keeps a "Pick the shared photo" button that opens the picker (after Skip there was no way back but No → Yes); a row that needs no photo (Stored Electrical Energy) never opens the picker';
+    await resetAppState();
+    fillFormNoSources('P-220');
+    sources.push(Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', collapsed: false }));
+    sources.push(Object.assign(mkSrc('Stored Electrical Energy'), { deviceType: 'Capacitor', location: 'At Capacitor Bank', verification: '', noPhoto: true, collapsed: false }));
+    sources.forEach(ensureSourceId); renderSources();
+    await captureInto('equip_main', await makePhotoFile('p220'));
+    updateSource(0, 'duplicate', 'Yes');
+    const first = document.getElementById('reusePickerOverlay');
+    const skip = first && [...first.querySelectorAll('button')].find(x => /skip/i.test(x.textContent));
+    if (skip) skip.click();
+    const btn = document.getElementById('dupPhotoBtn_0');
+    if (btn) btn.click();
+    const again = document.getElementById('reusePickerOverlay');
+    const reopened = !!again && /which photo/i.test(again.textContent);
+    closeReusePicker();
+    updateSource(1, 'duplicate', 'Yes');
+    const onNoPhoto = !!document.getElementById('reusePickerOverlay');
+    closeReusePicker();
+    record(N, !!skip && !!btn && reopened && !onNoPhoto,
+      'Skip=' + !!skip + ', button after Skip=' + !!btn + ', picker reopened=' + reopened + '; picker on the capacitor row=' + onNoPhoto);
+  }
+
+  // T221 — review #6: Split 1 dropped tags past the quantity
+  async function t221_splitKeepsExtraTags() {
+    const N = 'T221 Split 1 on a row holding more Device IDs than its quantity keeps the extra tags on the original row (they were deleted without a word); the split-off valve still takes the last unit\'s tag';
+    await resetAppState();
+    fillFormNoSources('S-221');
+    sources.push(Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', quantity: 2, deviceId: 'V-1; V-2; V-3', collapsed: false }));
+    sources.forEach(ensureSourceId); renderSources();
+    splitSource(0);
+    const orig = splitUnitIds(sources[0].deviceId), off = sources[1] && sources[1].deviceId;
+    record(N, orig.includes('V-1') && orig.includes('V-3') && !orig.includes('V-2') && off === 'V-2',
+      'original ' + JSON.stringify(sources[0].deviceId) + ', split-off ' + JSON.stringify(off));
+  }
+
+  // T222 — review #7: the unattached-shot warning could never be cleared; misc photos weren't checked
+  async function t222_theUnattachedShotWarningCanBeSettled() {
+    const N = 'T222 the "photo on this iPad but not on the unit" warning offers "Don\'t warn about these again" and then stops asking for those photos; a misc photo that never attached is flagged too, never one the tech removed, and misc photos from before this build are not';
+    await resetAppState();
+    const A = mkEntry('U-222', { sources: [Object.assign(mkSrc('DW In'), { sourceId: genUuid(), deviceType: 'Ball Valve' })] });
+    await storePhotoBytes(photoStoreKey(A.id, A.sources[0].sourceId), dataUrlFromBytesSeed('t222-lost'));
+    await storePhotoBytes(photoStoreKey(A.id, mintMiscSlotToken()), dataUrlFromBytesSeed('t222-misc'));
+    savedEquipment = [A]; saveAll();
+    const flagged = await emptySlotsWithUnattachedShots([A]);
+    const r1 = await runExport({ confirmResponse: true, choice: { 'export-unattached': 'forget' } });
+    const r2 = await runExport({ confirmResponse: true });
+    const askedAgain = r2.confirms.some(m => /CHOICE export-unattached/.test(m));
+    // a misc photo the tech removed is theirs to remove
+    await resetAppState();
+    fillForm('M-222');
+    handleMiscPhoto({ files: [await makePhotoFile('m222')], hasAttribute: () => false });
+    await waitFor(() => miscPhotos.length === 1 && miscPhotos[0].unsaved === false, 15000, 'the misc photo');
+    await waitForPhotoWritesIdle(15000);
+    await withDialogs({ confirm: true }, async () => { removeMiscPhoto(0); });
+    const M = saveEntry();
+    const removedFlagged = (await emptySlotsWithUnattachedShots([M])).length;
+    // misc photos left from before this build: settled once, quietly
+    await resetAppState();
+    try { localStorage.removeItem('loto_unattached_misc_baseline'); } catch (e) {}
+    const B = mkEntry('B-222');
+    await storePhotoBytes(photoStoreKey(B.id, mintMiscSlotToken()), dataUrlFromBytesSeed('t222-old'));
+    savedEquipment = [B]; saveAll();
+    const oldFlagged = (await emptySlotsWithUnattachedShots([B])).length;
+    record(N, flagged.length === 2 && flagged.some(f => /^Source #1/.test(f.slot)) && flagged.some(f => /misc/i.test(f.slot))
+      && !!r1.zip && r1.confirms.some(m => /CHOICE export-unattached/.test(m)) && !!r2.zip && !askedAgain && removedFlagged === 0 && oldFlagged === 0,
+      'flagged ' + JSON.stringify(flagged) + '; zip on "don\'t warn again"=' + !!r1.zip + ', asked on the next export=' + askedAgain + '; removed misc flagged=' + removedFlagged + '; pre-build misc flagged=' + oldFlagged);
+  }
+
+  // T223 — review #9: Today / Yesterday and Reuse went by the day a unit was SAVED
+  async function t223_todayAndYesterdayFollowTheSurveyDate() {
+    const N = 'T223 the saved list\'s Today / Yesterday follow the survey date (the day the unit goes out on), and Reuse offers the photos TAKEN today — also on an older unit — never an older photo of a unit saved today';
+    await resetAppState();
+    const at = n => { const d = new Date(); d.setDate(d.getDate() - n); d.setHours(10, 0, 0, 0); return d.toISOString(); };
+    const U1 = mkEntry('U1-223', { savedAt: at(0) }); U1.surveyDate = dayAgo(1);
+    const U2 = mkEntry('U2-223', { savedAt: at(3) }); U2.surveyDate = dayAgo(0);
+    const k1 = photoStoreKey(U1.id, 'main'), k2 = photoStoreKey(U2.id, 'main');
+    await storePhotoBytes(k1, dataUrlFromBytesSeed('u1-223')); await storePhotoBytes(k2, dataUrlFromBytesSeed('u2-223'));
+    U1.photos = { equip_main: { dbKey: k1, thumbnail: TINY_THUMB, timestamp: at(3), fileType: 'image/jpeg' } };
+    U2.photos = { equip_main: { dbKey: k2, thumbnail: TINY_THUMB, timestamp: new Date().toISOString(), fileType: 'image/jpeg' } };
+    savedEquipment = [U1, U2]; saveAll();
+    const listed = (f) => { setSavedFilter(f); return document.getElementById('savedPanelBody').textContent; };
+    const today = listed('today'), yday = listed('yesterday');
+    setSavedFilter('all');
+    const offered = collectTodaysPhotos().map(p => p.dbKey);
+    record(N, /U2-223/.test(today) && !/U1-223/.test(today) && /U1-223/.test(yday) && !/U2-223/.test(yday) && offered.includes(k2) && !offered.includes(k1),
+      'Today lists ' + JSON.stringify((today.match(/U\d-223/g) || [])) + ', Yesterday ' + JSON.stringify((yday.match(/U\d-223/g) || [])) + '; Reuse offers today\'s photo=' + offered.includes(k2) + ', the older one=' + offered.includes(k1));
+  }
+
+  // T224 — review #8: entries.json's misc capture times stopped lining up with its misc files
+  async function t224_miscCaptureTimesLineUpWithTheirFiles() {
+    const N = 'T224 entries.json lists a capture time for each misc photo FILE it ships, in the same order — a misc photo missing from the export no longer shifts the times';
+    await resetAppState();
+    const M = mkEntry('M-224');
+    const kGone = photoStoreKey(M.id, mintMiscSlotToken()), kOk = photoStoreKey(M.id, mintMiscSlotToken());
+    const du = dataUrlFromBytesSeed('m224'); await storePhotoBytes(kOk, du);
+    M.miscPhotos = [
+      { dbKey: kGone, thumbnail: TINY_THUMB, timestamp: new Date().toISOString(), fileType: 'image/jpeg', unsaved: false, capturedAt: '2026-10-01T08:00:00-04:00', capturedFrom: 'camera' },
+      { dbKey: kOk, thumbnail: TINY_THUMB, timestamp: new Date().toISOString(), fileType: 'image/jpeg', unsaved: false, sha256: await sha256HexOfDataUrl(du), capturedAt: '2026-10-02T09:00:00-04:00', capturedFrom: 'camera' }];
+    savedEquipment = [M]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const je = ((await unzipExport(zip.blob)).entriesJson.entries || []).find(e => e.equipName === 'M-224') || {};
+    const files = (je.photoFiles || {}).misc || [], caps = (je.photoCaptured || {}).misc || [];
+    record(N, files.length === 1 && caps.length === 1 && !!caps[0] && caps[0].capturedAt === '2026-10-02T09:00:00-04:00',
+      'misc files ' + JSON.stringify(files) + '; misc times ' + JSON.stringify(caps));
+  }
+
+  // T225 — review #10: a file picked on a desktop got "now" as a camera time
+  async function t225_aFilePickedOnADesktopIsNotACameraShot() {
+    const N = 'T225 a picture picked through a photo slot on a desktop browser (it opens a file chooser for capture="environment") with no time inside gets no capture time — never "now" as a camera shot; on the iPad a camera shot still does';
+    await resetAppState();
+    fillForm('W-225');
+    const real = window.deviceCameraCapture;
+    const shoot = async (slot, seed) => {
+      handlePhoto({ files: [await makePhotoFile(seed)], hasAttribute: (a) => a === 'capture' }, slot);
+      await waitFor(() => photos[slot] && photos[slot].dbKey && photos[slot].unsaved === false, 15000, 'the ' + slot + ' photo');
+      await waitForPhotoWritesIdle(15000);
+      return { at: photos[slot].capturedAt || '', from: photos[slot].capturedFrom || '' };
+    };
+    let desk, ipad;
+    try {
+      window.deviceCameraCapture = () => false;
+      desk = await shoot('equip_main', 'w225a');
+      window.deviceCameraCapture = () => true;
+      ipad = await shoot('equip_dataplate', 'w225b');
+    } finally { window.deviceCameraCapture = real; }
+    record(N, !desk.at && !desk.from && ipad.from === 'camera' && !!ipad.at,
+      'desktop pick ' + JSON.stringify(desk) + '; iPad camera ' + JSON.stringify(ipad));
+  }
+
+  // T226 — review #11: the automatic Yes was kept in step by hand, path by path
+  async function t226_anAutomaticYesFollowsItsPhotoOnEveryPath() {
+    const N = 'T226 an automatic Duplicate = Yes holds only while its source\'s photo is a borrowed one, on every path — here the pump-count copies of an Electrical row whose photo came by Reuse are No (they copied the Yes with no photo), the photographed row stays Yes';
+    await resetAppState();
+    fillFormNoSources('M-226');
+    await captureInto('equip_main', await makePhotoFile('m226'));
+    const sel = document.getElementById('equipTemplate');
+    sel.value = 'Medical Vacuum';
+    await withDialogs({ confirm: true }, async () => { handleTemplateChange(); });
+    closeAllPrompts();
+    const i0 = sources.findIndex(s => /^Electrical/.test(s.energySource || ''));
+    if (i0 < 0) return record(N, false, 'Medical Vacuum gave no Electrical row');
+    const cands = collectTodaysPhotos(); _reuseCandidates = cands;
+    await reusePhotoInto('source_' + i0, cands.findIndex(c => c.dbKey === photos.equip_main.dbKey));
+    await waitForPhotoWritesIdle(10000);
+    const before = sources[i0].duplicate + '/' + !!sources[i0].dupAuto;
+    applyElectricalCountChoice(3);
+    const elec = sources.map((s, i) => ({ s, i })).filter(x => /^Electrical/.test(x.s.energySource || ''));
+    const states = elec.map(x => x.s.duplicate + (x.s.dupAuto ? '(auto)' : '') + (photos['source_' + x.i] && photos['source_' + x.i].dbKey ? '+photo' : ''));
+    record(N, before === 'Yes/true' && elec.length === 3 && states[0] === 'Yes(auto)+photo' && states[1] === 'No' && states[2] === 'No',
+      'reused row before ' + before + '; Electrical rows after 3 pumps ' + JSON.stringify(states));
+  }
+
+  // T227 — review #12: the survey-date question was a second copy of the question box
+  async function t227_theSurveyDateQuestionIsTheAppsQuestionBox() {
+    const N = 'T227 the "no survey date" question at export is the app\'s own question box with a date field (Use this date stays off until a whole date up to today is entered), and answers with that date';
+    await resetAppState();
+    const rp = window.__askChoiceAuto;
+    window.__askChoiceAuto = undefined;
+    let got = null, ov = null, offAtFirst = null, onAfter = null;
+    try {
+      const p = askSurveyDate([mkEntry('Q-227')]);
+      ov = document.getElementById('choiceDialogOverlay');
+      const input = ov && ov.querySelector('input[type="date"]');
+      const use = ov && [...ov.querySelectorAll('button')].find(b => /use this date/i.test(b.textContent));
+      offAtFirst = !!(use && use.disabled);
+      if (input && use) {
+        input.value = dayAgo(2); input.dispatchEvent(new Event('input', { bubbles: true }));
+        onAfter = !use.disabled;
+        use.click();
+      } else {
+        const any = document.getElementById('surveyDateCancel') || (ov && ov.querySelector('button'));
+        if (any) any.click();
+      }
+      got = await Promise.race([p, sleep(2000).then(() => 'timeout')]);
+    } finally {
+      window.__askChoiceAuto = rp;
+      ['choiceDialogOverlay', 'surveyDateOverlay'].forEach(id => { const o = document.getElementById(id); if (o) o.remove(); });
+    }
+    record(N, !!ov && offAtFirst === true && onAfter === true && got === dayAgo(2),
+      'question box ' + (ov ? ov.id : 'none (a separate dialog)') + '; Use this date off at first=' + offAtFirst + ', on after a date=' + onAfter + '; answered ' + JSON.stringify(got));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -6527,7 +6839,13 @@
     t208_notYetExportedSendsWholeDaysAndUndatedUnitsGetADate, t209_duplicateFollowsReuseAndAHandSetYesPicksThePhoto,
     t210_thePhotoSizeLimitTurnsWithThePhoto, t211_newPhotosCarryTheirCaptureTime,
     t212_anEmptySlotWithAPhotoTakenForItIsFlaggedAtExport, t213_appListsJsonMatchesTheApp,
-    t214_cancelAfterAnAppMadeTemplatePickKeepsThisUnitsTemplate, t215_reviewFixesForDuplicateDatesAndLinks];
+    t214_cancelAfterAnAppMadeTemplatePickKeepsThisUnitsTemplate, t215_reviewFixesForDuplicateDatesAndLinks,
+    t216_aDuplicateNeverKeepsAnAutomaticYesWithoutItsPhoto, t217_aSemicolonNeverReplacesAnotherUnitsTag,
+    t218_aCustomEnergySourceSavesTheVerificationItShows, t219_aBigExportAsksBeforeItIsPacked,
+    t220_aYesWithoutItsPhotoCanStillPickIt, t221_splitKeepsExtraTags, t222_theUnattachedShotWarningCanBeSettled,
+    t223_todayAndYesterdayFollowTheSurveyDate, t224_miscCaptureTimesLineUpWithTheirFiles,
+    t225_aFilePickedOnADesktopIsNotACameraShot, t226_anAutomaticYesFollowsItsPhotoOnEveryPath,
+    t227_theSurveyDateQuestionIsTheAppsQuestionBox];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
