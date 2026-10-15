@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b109</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b110</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1600,6 +1600,39 @@ function photoSlotTaken(slot) {
 }
 function sourcePhotoTaken(i) { return photoSlotTaken('source_' + i); }
 
+// The Duplicate answer a source carries (build 110). The tech's own Yes / No
+// always stands. An AUTOMATIC Yes (dupAuto — set when the source's photo came
+// from another source: Reuse, Duplicate source, Copy Source onto a reused
+// photo) holds only while the source's photo IS such a borrowed one; without
+// it the answer is No. One rule for the form and every export: each copy path
+// used to keep the flag in step by hand, and Duplicate → Info Only (and the
+// pump-count copies) kept a Yes with no photo — no camera on the card, no
+// warning, and a "Y" sheet row loto-web laid on the photo before it.
+function effectiveDuplicate(src, ref) {
+  if (!src) return '';
+  if (src.duplicate === 'Yes' && src.dupAuto && !(ref && ref.dbKey && isRecordedDup(ref))) return 'No';
+  return src.duplicate || '';
+}
+// Bring the form's automatic answers in line with their photos (renderSources
+// runs it). Never while a photo is still landing in that slot, nor while a
+// Duplicate is still copying the unit's photos in.
+function settleAutoDuplicates() {
+  if (photoWriteKindBusy('duplicate')) return;
+  sources.forEach((s, i) => {
+    if (!s || !s.dupAuto) return;
+    if (s.duplicate !== 'Yes') { delete s.dupAuto; return; }
+    const ref = photos['source_' + i];
+    if (ref && ref.saving) return;
+    if (effectiveDuplicate(s, ref) === 'No') { s.duplicate = 'No'; delete s.dupAuto; }
+  });
+}
+// A source of a kind that takes a photo of its own — what it would expect
+// with Duplicate = No (the shared-photo picker is for these only).
+function sourceKindTakesPhoto(src) {
+  return !!src && !src.linkedTo && sourceExpectsPhoto(Object.assign({}, src, { duplicate: 'No' }));
+}
+function pickSharedPhoto(i) { showReusePhotoPicker('source_' + i, { forDuplicate: true }); }
+
 // User-toggled per-source photo visibility. Flips src.noPhoto for a
 // toggleable source and re-renders. A slot that holds a photo is never hidden
 // (build 91): hiding it used to drop the photo from the export while the unit
@@ -1940,7 +1973,9 @@ function jsArg(v) { return new RawHtml(escHtml(JSON.stringify(v === undefined ? 
 // Promise-based multi-choice dialog: resolves with the chosen choice's value,
 // or 'cancel' when dismissed. Used where OK/Cancel would be ambiguous — a
 // native confirm() whose Cancel button does something destructive is a trap.
-// Tests answer through window.__askChoiceAuto.
+// opts.input (build 110): a field above the buttons — { type, max, valid(v) };
+// a choice with needsInput stays off until valid(value) and answers with the
+// field's value. Tests answer through window.__askChoiceAuto.
 function askChoice(opts) {
   if (typeof window.__askChoiceAuto === 'function') {
     try { return Promise.resolve(window.__askChoiceAuto(opts)); } catch (e) { return Promise.resolve('cancel'); }
@@ -1960,16 +1995,28 @@ function askChoice(opts) {
     // title / html are markup the caller built (escaping its own values)
     box.innerHTML = html`<h3 style="margin:0 0 8px 0;">${raw(opts.title || '')}</h3>` +
       html`<div style="font-size:13px;color:var(--text-dim);margin:0 0 14px;line-height:1.45;max-height:50vh;overflow-y:auto;">${raw(opts.html || '')}</div>`;
+    let input = null;
+    const inputOk = () => !!input && (!opts.input.valid || !!opts.input.valid(input.value));
+    if (opts.input) {
+      input = document.createElement('input');
+      input.type = opts.input.type || 'text';
+      if (opts.input.max) input.max = opts.input.max;
+      input.style.cssText = 'width:100%;padding:10px;margin-bottom:12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:15px;';
+      box.appendChild(input);
+    }
     const col = document.createElement('div');
     col.style.cssText = 'display:flex;flex-direction:column;gap:8px;';
+    const gated = [];
     (opts.choices || []).forEach(c => {
       const b = document.createElement('button');
       b.className = 'btn ' + (c.primary ? 'btn-primary' : (c.danger ? 'btn-danger' : 'btn-outline'));
       b.style.cssText = 'padding:11px;font-size:14px;';
       b.textContent = c.label;
-      b.onclick = () => done(c.value);
+      if (c.needsInput && input) { b.disabled = true; gated.push(b); b.onclick = () => { if (inputOk()) done(input.value); }; }
+      else b.onclick = () => done(c.value);
       col.appendChild(b);
     });
+    if (input) input.oninput = input.onchange = () => { const ok = inputOk(); gated.forEach(b => { b.disabled = !ok; }); };
     box.appendChild(col);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
@@ -1979,43 +2026,21 @@ function askChoice(opts) {
 // export. Resolves "YYYY-MM-DD", 'undated' (keep the old undated sheet) or
 // 'cancel'. No date is pre-filled: today would quietly put an older unit on
 // today's sheet, where loto-web could bind it to a same-named unit surveyed
-// today (the build 95 rule). The suite answers through __askChoiceAuto.
+// today (the build 95 rule). The app's own question box with a date field
+// (build 110 — it was a second copy of that box).
 function askSurveyDate(units) {
   const names = units.slice(0, 8).map(e => e.equipName || '(unnamed)');
-  const opts = { id: 'survey-date', defaultValue: 'undated', count: units.length, names: names };
-  if (typeof window.__askChoiceAuto === 'function') {
-    try { return Promise.resolve(window.__askChoiceAuto(opts)); } catch (e) { return Promise.resolve('cancel'); }
-  }
-  return new Promise(resolve => {
-    const old = document.getElementById('surveyDateOverlay');
-    if (old) old.remove();
-    const overlay = document.createElement('div');
-    overlay.className = 'dialog-overlay';
-    overlay.id = 'surveyDateOverlay';
-    overlay.style.display = 'flex';
-    const done = (v) => { overlay.remove(); resolve(v); };
-    const n = units.length;
-    overlay.innerHTML = html`
-      <div class="dialog" style="max-width:440px;">
-        <h3 style="margin:0 0 8px 0;">&#128197; ${n} unit${n === 1 ? ' has' : 's have'} no survey date</h3>
-        <div style="font-size:13px;color:var(--text-dim);margin:0 0 12px;line-height:1.45;">
-          ${names.map((x, k) => html`${k ? raw('<br>') : ''}&bull; ${x}`)}${n > names.length ? raw('<br>&hellip;') : ''}
-          <br><br>They were saved before the app recorded one. Which day were they surveyed? They go on that day&rsquo;s Information Sheet &mdash; loto-web reads the day from the sheet&rsquo;s name.
-        </div>
-        <input type="date" id="surveyDateAsk" max="${localDateStr(new Date())}" style="width:100%;padding:10px;margin-bottom:12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:15px;">
-        <div style="display:flex;flex-direction:column;gap:8px;">
-          <button class="btn btn-primary" id="surveyDateUse" disabled style="padding:11px;font-size:14px;">Use this date</button>
-          <button class="btn btn-outline" id="surveyDateKeep" style="padding:11px;font-size:14px;">Leave them undated (loto-web can&rsquo;t import that sheet)</button>
-          <button class="btn btn-outline" id="surveyDateCancel" style="padding:11px;font-size:14px;">Cancel</button>
-        </div>
-      </div>`;
-    document.body.appendChild(overlay);
-    const input = overlay.querySelector('#surveyDateAsk'), use = overlay.querySelector('#surveyDateUse');
-    const ok = () => isIsoDay(input.value) && input.value <= localDateStr(new Date());
-    input.oninput = input.onchange = () => { use.disabled = !ok(); };
-    use.onclick = () => { if (ok()) done(input.value); };
-    overlay.querySelector('#surveyDateKeep').onclick = () => done('undated');
-    overlay.querySelector('#surveyDateCancel').onclick = () => done('cancel');
+  const n = units.length;
+  return askChoice({
+    id: 'survey-date', defaultValue: 'undated', count: n, names: names,
+    title: '&#128197; ' + n + ' unit' + (n === 1 ? ' has' : 's have') + ' no survey date',
+    html: html`${names.map((x, k) => html`${k ? raw('<br>') : ''}&bull; ${x}`)}${n > names.length ? raw('<br>&hellip;') : ''}<br><br>They were saved before the app recorded one. Which day were they surveyed? They go on that day&rsquo;s Information Sheet &mdash; loto-web reads the day from the sheet&rsquo;s name.`,
+    input: { type: 'date', max: localDateStr(new Date()), valid: v => isIsoDay(v) && v <= localDateStr(new Date()) },
+    choices: [
+      { value: 'date', label: 'Use this date', primary: true, needsInput: true },
+      { value: 'undated', label: 'Leave them undated (loto-web can\u2019t import that sheet)' },
+      { value: 'cancel', label: 'Cancel' }
+    ]
   });
 }
 let miscPhotos = [];       // Current equipment's misc photos [{dbKey, thumbnail, fileType, timestamp}]
@@ -5267,6 +5292,7 @@ function paintEquipPhotoSlots() { ['equip_main', 'equip_dataplate', 'equip_ee'].
 
 function renderSources() {
   applySimpleVerifDefaults();
+  settleAutoDuplicates();   // an automatic Duplicate = Yes follows its photo (build 110)
   const container = document.getElementById('sourcesContainer');
   container.innerHTML = '';
 
@@ -5332,6 +5358,12 @@ function buildSourceCard(src, i) {
         : sourceIsToggleable
         ? 'No photo on this source'
         : raw('No photo needed &mdash; uses main equipment photo');
+      // Duplicate = Yes with no photo yet (build 110): the shared photo can be
+      // picked any time — Skip on the question used to leave no way back but
+      // setting No and then Yes again.
+      const sharedPhotoBtn = (isDuplicate && !isLinked && !hasPhotoRef && sourceKindTakesPhoto(src))
+        ? html`<button type="button" class="btn btn-sm" id="dupPhotoBtn_${i}" style="padding:6px 12px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="pickSharedPhoto(${i})">&#8635; Pick the shared photo</button>`
+        : '';
       // Toggle button — only on toggleable sources that aren't duplicate/linked.
       const showPhotoToggle = sourceIsToggleable && !isDuplicate && !isLinked && !hasPhotoRef;
       const photoToggleBtn = showPhotoToggle
@@ -5510,7 +5542,7 @@ function buildSourceCard(src, i) {
               </select>
             </div>
           </div>
-          ${isNoPhoto ? html`<div style="padding:8px 0;color:var(--text-dim);font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span>${noPhotoMessage}</span>${photoToggleBtn}</div>` : html`
+          ${isNoPhoto ? html`<div style="padding:8px 0;color:var(--text-dim);font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span>${noPhotoMessage}</span>${photoToggleBtn}${sharedPhotoBtn}</div>` : html`
           <div class="photo-section" style="display:flex;gap:16px;align-items:flex-start;">
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--text-label);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;">Source Photo</label>
@@ -5557,6 +5589,10 @@ function refreshSourceDependents(index) {
   const src = sources[index];
   const live = document.querySelectorAll('#sourcesContainer > .source-card')[index];
   if (!src || src.collapsed || !live) return;
+  // The defaults renderSources fills in first (build 110): without them the
+  // card showed "Saves as: Temp Only - CHW" for a verification the source
+  // didn't hold — Save anyway exported it blank (or with the old suffix).
+  applySimpleVerifDefaults();
   const fresh = buildSourceCard(src, index);
   const swapInner = (id) => {
     const a = live.querySelector('#' + id), b = fresh.querySelector('#' + id);
@@ -5621,7 +5657,9 @@ function updateSource(index, field, value) {
     delete sources[index].dupAuto;
     renderSources();
     const slot = 'source_' + index;
-    if (value === 'Yes' && !sources[index].linkedTo && !(photos[slot] && photos[slot].dbKey)) showReusePhotoPicker(slot, { forDuplicate: true });
+    // only on a row that takes a photo of its own (build 110 — the capacitor
+    // and other no-photo rows got the question too)
+    if (value === 'Yes' && sourceKindTakesPhoto(sources[index]) && !(photos[slot] && photos[slot].dbKey)) showReusePhotoPicker(slot, { forDuplicate: true });
     return;
   }
   if (field === 'quantity') {
@@ -5651,8 +5689,21 @@ function updateUnitDeviceId(index, unit, value) {
   const src = sources[index];
   const parts = splitUnitIds(src.deviceId);
   const next = Array.from({ length: Math.max(valveMarkSlots(src), parts.length) }, (_, k) => parts[k] || '');
-  // A pasted "a; b" fills this unit and the ones after it.
+  // A pasted "a; b" fills this unit and the ones after it — but only boxes
+  // that are empty or already hold that tag (build 110). A ";" that would
+  // replace or blank a tag already in a later box (typed by hand: poles
+  // "1;3;5", or a scanned label) stays in this unit as a comma — a tag the
+  // tech typed is never overwritten.
   const pieces = String(value).split(';');
+  const clash = pieces.slice(1).some((piece, k) => { const cur = String(next[unit + 1 + k] || '').trim(); return !!cur && cur !== piece.trim(); });
+  if (clash) {
+    next[unit] = pieces.join(',');
+    updateSource(index, 'deviceId', joinUnitIds(next));
+    const box = document.getElementById('src_deviceId_' + index + '_' + unit);
+    if (box && box.value !== next[unit]) box.value = next[unit];
+    showToast('";" starts the next unit’s tag — kept here as "," so the tag already in the next box isn’t replaced', true);
+    return;
+  }
   pieces.forEach((piece, k) => { next[unit + k] = k === 0 ? piece : piece.trim(); });
   updateSource(index, 'deviceId', joinUnitIds(next));
   if (pieces.length > 1) renderSources();
@@ -5714,7 +5765,10 @@ function splitSource(index) {
   newSrc.deviceId = '';        // a distinct valve → its own tag (build 93)
   if (unitIds) {
     newSrc.deviceId = (unitIds[qty - 1] || '').trim();
-    src.deviceId = joinUnitIds(unitIds.slice(0, qty - 1));
+    // the original keeps its other units' tags AND any typed past its quantity
+    // (build 110: those were deleted without a word — still shown, as before,
+    // under "More tags than Quantity")
+    src.deviceId = joinUnitIds(unitIds.slice(0, qty - 1).concat(unitIds.slice(qty)));
   }
   const prev = sources.slice();
   sources.splice(index + 1, 0, newSrc);
@@ -6008,11 +6062,14 @@ function applyCopySource(entryIndex, sourceIndex) {
     if (src[k] !== undefined) dest[k] = src[k];
   }
   // Duplicate follows THIS source's own photo (build 109): a copy never brings
-  // the other source's photo. A reused photo here keeps it Yes (automatic);
-  // without one, an automatic Yes — copied, or this source's own — is dropped.
+  // the other source's photo. A reused photo here makes it an automatic Yes;
+  // the other source's automatic Yes stays automatic, and renderSources then
+  // settles it against this source's photo (build 110 — effectiveDuplicate);
+  // a Yes or No set by hand is copied as it is.
   const ownRef = photos['source_' + targetIndex];
   if (ownRef && ownRef.dbKey && ownRef.dupOf) { dest.duplicate = 'Yes'; dest.dupAuto = true; }
-  else if (src.dupAuto || dest.dupAuto) { dest.duplicate = 'No'; delete dest.dupAuto; }
+  else if (src.dupAuto) dest.dupAuto = true;
+  else delete dest.dupAuto;
   // The source is now user-configured (not auto) and expanded so the copy
   // is visible to the user immediately.
   dest.auto = false;
@@ -6070,8 +6127,7 @@ function duplicateSource(index) {
     newSrc.duplicate = 'Yes';
     newSrc.dupAuto = true;
   } else {
-    delete photos[`source_${index + 1}`];
-    if (newSrc.dupAuto) { newSrc.duplicate = 'No'; delete newSrc.dupAuto; }   // no photo came with it
+    delete photos[`source_${index + 1}`];   // no photo came with it: renderSources settles an automatic Yes to No (build 110)
   }
   renderSources();
   autoSaveCurrent();
@@ -6371,11 +6427,14 @@ function collectTodaysPhotos() {
   const curName = (document.getElementById('equipName').value || '').trim() || 'Current';
   for (const k of Object.keys(photos)) add(photos[k], curName + ' \u00b7 ' + photoSlotLabel(k), currentEntryId);
   miscPhotos.forEach((mp, mi) => add(mp, curName + ' \u00b7 Misc ' + (mi + 1), currentEntryId));
+  // Saved units' photos TAKEN today (build 110) — any unit's, also one saved
+  // earlier and edited today; never an older photo of a unit saved today.
+  const today = localDateStr(new Date());
+  const takenToday = (ph) => !!(ph && ph.timestamp && localDateStr(ph.timestamp) === today);
   for (const e of savedEquipment) {
-    if (!isSavedToday(e)) continue;
     const ep = e.photos || {};
-    for (const k of Object.keys(ep)) add(ep[k], (e.equipName || '?') + ' \u00b7 ' + photoSlotLabel(k), e.id);
-    (e.miscPhotos || []).forEach((mp, mi) => add(mp, (e.equipName || '?') + ' \u00b7 Misc ' + (mi + 1), e.id));
+    for (const k of Object.keys(ep)) if (takenToday(ep[k])) add(ep[k], (e.equipName || '?') + ' \u00b7 ' + photoSlotLabel(k), e.id);
+    (e.miscPhotos || []).forEach((mp, mi) => { if (takenToday(mp)) add(mp, (e.equipName || '?') + ' \u00b7 Misc ' + (mi + 1), e.id); });
   }
   out.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
   return out;
@@ -8420,6 +8479,20 @@ function exifTimeToIso(t) {
   const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);   // the device's own zone
   return isNaN(d.getTime()) ? '' : isoLocalWithOffset(d);
 }
+// Did this photo input's file come from a camera (build 110)? Its input
+// carries capture="environment" AND this device opens a camera for it: the iOS
+// app, an iPad / iPhone / Android browser. A desktop browser ignores capture
+// and opens a file chooser — a file picked there is no fresh shot, and "now"
+// would be a made-up capture time.
+function deviceCameraCapture() {
+  if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) return true;
+  const ua = navigator.userAgent || '';
+  return /Android|iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && (navigator.maxTouchPoints || 0) > 1);   // iPadOS reports a Mac
+}
+function inputIsCamera(input) {
+  const capture = !(input && typeof input.hasAttribute === 'function' && !input.hasAttribute('capture'));
+  return capture && deviceCameraCapture();
+}
 // The capture time of one photo as the camera / library handed it over.
 function captureTimeOf(originalDataUrl, fromCamera, now) {
   let t = null;
@@ -8558,8 +8631,9 @@ function handlePhoto(input, slotId) {
   const sm = /^source_(\d+)$/.exec(slotId);
   const srcObj = sm ? sources[parseInt(sm[1], 10)] : null;
   if (sm && !srcObj) { showToast('⚠ That energy source no longer exists — photo not taken', true); return; }
-  // The camera's inputs carry capture="environment"; the library picker's don't (build 109: the capture time)
-  const fromCamera = !(input && typeof input.hasAttribute === 'function' && !input.hasAttribute('capture'));
+  // The camera's inputs carry capture="environment"; the library picker's don't (build 109: the capture
+  // time) — and a desktop browser opens a file chooser for them (build 110: inputIsCamera)
+  const fromCamera = inputIsCamera(input);
   // Key = owning entry id + slot token + capture rev. Never the name.
   const dbKey = photoStoreKey(entryId, sm ? slotTokenForSource(srcObj) : slotTokenForCapture(slotId));
   const settings = getPhotoSettings();
@@ -8610,9 +8684,10 @@ function handlePhoto(input, slotId) {
           rec.unsaved = false;
           if (current) {
             // The source has a photo of its own now: an automatic Duplicate =
-            // Yes (it came with a reused photo) goes back to No (build 109)
+            // Yes (it came with a reused photo) goes back to No (build 109;
+            // the rule itself is effectiveDuplicate, build 110)
             const cs = sm ? sources[parseInt(slot.split('_')[1], 10)] : null;
-            if (cs && cs.dupAuto) { cs.duplicate = 'No'; delete cs.dupAuto; renderSources(); }
+            if (cs && cs.dupAuto) renderSources();
             paintPhotoSlot(slot);
             autoSaveCurrent();
             showToast('Photo saved (' + out.w + 'x' + out.h + ', ~' + out.kb + 'KB)');
@@ -8701,33 +8776,70 @@ function handlePhoto(input, slotId) {
 // office never sees it. Older shots of a retaken slot (the slot holds a newer
 // photo) and photos of removed sources aren't counted — those are left on
 // purpose; a shot from a discarded edit into a slot the unit has empty is
-// (the tech may not have meant to lose it). → [{ name, slot, count }]
+// (the tech may not have meant to lose it). → [{ name, slot, count, keys }]
+// Build 110: the warning can be settled — "Don't warn about these again" at
+// export marks those photos (UNATTACHED_OK_KEY; nothing is deleted, the photos
+// stay listed in the Photo Store Report), and it came back at every export
+// before. Misc photos are checked too: one the tech removed is theirs to leave
+// out (removeMiscPhoto marks it); one that never attached is flagged. Misc
+// photos already loose when this build first looks can't be told apart, and
+// build 109 never flagged them — they are settled once, quietly.
+const UNATTACHED_OK_KEY = 'loto_unattached_ok';
+const UNATTACHED_MISC_BASELINE_KEY = 'loto_unattached_misc_baseline';
+function unattachedOkSet() {
+  try { return new Set(JSON.parse(localStorage.getItem(UNATTACHED_OK_KEY) || '[]')); } catch (e) { return new Set(); }
+}
+function markUnattachedOk(keys) {
+  if (!keys || !keys.length) return;
+  try {
+    const s = unattachedOkSet();
+    keys.forEach(k => { if (k) s.add(k); });
+    localStorage.setItem(UNATTACHED_OK_KEY, JSON.stringify([...s].slice(-5000)));
+  } catch (e) {}
+}
 async function emptySlotsWithUnattachedShots(entries) {
   let present;
   try { present = await presentPhotoKeySet(); } catch (e) { return []; }
   const referenced = new Set(allReferencedPhotoKeys());
-  const loose = new Map();   // "<entry id>|<slot token>" → unattached photos
+  const ok = unattachedOkSet();
+  const loose = new Map();       // "<entry id>|<slot token>" → unattached photo keys
+  const looseMisc = new Map();   // "<entry id>" → unattached misc photo keys
   for (const k of present) {
-    if (referenced.has(k)) continue;
+    if (referenced.has(k) || ok.has(k)) continue;
     const p = parsePhotoKey(k);
     if (!p) continue;
-    const key = String(p.entryId) + '|' + p.slotToken;
-    loose.set(key, (loose.get(key) || 0) + 1);
+    const id = String(p.entryId);
+    if (/^misc[-_]/.test(p.slotToken)) { if (!looseMisc.has(id)) looseMisc.set(id, []); looseMisc.get(id).push(k); continue; }
+    const key = id + '|' + p.slotToken;
+    if (!loose.has(key)) loose.set(key, []);
+    loose.get(key).push(k);
   }
-  if (!loose.size) return [];
+  let baselined = true;
+  try { baselined = localStorage.getItem(UNATTACHED_MISC_BASELINE_KEY) === '1'; } catch (e) {}
+  if (!baselined) {
+    if (!present.incomplete) {   // a full listing only: an unread folder settles nothing
+      markUnattachedOk([].concat(...looseMisc.values()));
+      try { localStorage.setItem(UNATTACHED_MISC_BASELINE_KEY, '1'); } catch (e) {}
+    }
+    looseMisc.clear();
+  }
+  if (!loose.size && !looseMisc.size) return [];
   const out = [];
   for (const e of entries || []) {
     if (!e || e.id == null) continue;
     const ep = e.photos || {};
+    const name = e.equipName || '(unnamed)';
     const check = (slotId, token, label) => {
       if (ep[slotId] && ep[slotId].dbKey) return;
-      const n = loose.get(String(e.id) + '|' + token);
-      if (n) out.push({ name: e.equipName || '(unnamed)', slot: label, count: n });
+      const keys = loose.get(String(e.id) + '|' + token);
+      if (keys) out.push({ name, slot: label, count: keys.length, keys });
     };
     check('equip_main', 'main', 'Main Photo');
     check('equip_dataplate', 'dataplate', 'Data Plate');
     check('equip_ee', 'ee', 'EE Number');
     (e.sources || []).forEach((src, i) => { if (src && src.sourceId && !src.linkedTo) check('source_' + i, src.sourceId, 'Source #' + (i + 1) + (src.energySource ? ' (' + src.energySource + ')' : '')); });
+    const misc = looseMisc.get(String(e.id));
+    if (misc) out.push({ name, slot: misc.length > 1 ? misc.length + ' Misc photos' : 'Misc photo', count: misc.length, keys: misc });
   }
   return out;
 }
@@ -8825,7 +8937,7 @@ function handleMiscPhoto(input) {
   // entry's key — where export dropped it as foreign.
   const session = formSession;
   const entryId = ensureCurrentEntryId();
-  const fromCamera = !(input && typeof input.hasAttribute === 'function' && !input.hasAttribute('capture'));
+  const fromCamera = inputIsCamera(input);
   const takenAt = new Date();
   // Misc photos get a stable per-photo token (NOT the array index, which
   // shifts on deletion) under the owning entry's id.
@@ -8891,7 +9003,9 @@ function handleMiscPhoto(input) {
 
 function removeMiscPhoto(idx) {
   if (!confirm('Remove misc photo ' + (idx + 1) + '?')) return;
-  miscPhotos.splice(idx, 1);
+  const gone = miscPhotos.splice(idx, 1)[0];
+  // taken out on purpose: never flagged as "a photo that never attached" at export (build 110)
+  if (gone && gone.dbKey) markUnattachedOk([gone.dbKey]);
   // Bytes are NOT deleted here: during an edit the saved entry still references
   // this record until Save & New — deleting made a discarded edit destroy the
   // original's misc photo. Orphaned records are handled by quarantine tooling.
@@ -9055,6 +9169,8 @@ function saveAndNew() {
     showToast('Add at least one energy source', true);
     return;
   }
+  // What the cards show is what is saved (build 110 — see refreshSourceDependents)
+  applySimpleVerifDefaults();
   // Warn (don't block) if anything expected is still blank
   const missing = collectIncompleteFields();
   if (missing.length) { showIncompleteWarning(missing); return; }
@@ -9250,6 +9366,12 @@ function isSavedYesterday(entry) {
   y.setDate(y.getDate() - 1);
   return isSavedOnLocalDay(entry, y);
 }
+// The saved list's Today / Yesterday (build 110): the unit's SURVEY date — the
+// day its sheet goes out on and Bulk Delete counts it under — not the day it
+// was saved (a back-dated unit showed under Today and exported on yesterday's sheet).
+function isSurveyedOn(entry, refDate) { return !!entry && getEntryDate(entry) === localDateStr(refDate); }
+function isSurveyedToday(entry) { return isSurveyedOn(entry, new Date()); }
+function isSurveyedYesterday(entry) { const y = new Date(); y.setDate(y.getDate() - 1); return isSurveyedOn(entry, y); }
 
 const SAVED_FILTERS = new Set(['all', 'today', 'yesterday']);
 function setSavedFilter(value) {
@@ -9308,8 +9430,8 @@ function renderSavedPanel() {
   // Build the list of (entry, originalIndex) pairs so the action button
   // indices still point at the right savedEquipment[i] regardless of filter.
   const matchesFilter =
-    savedFilter === 'today'     ? isSavedToday
-    : savedFilter === 'yesterday' ? isSavedYesterday
+    savedFilter === 'today'     ? isSurveyedToday
+    : savedFilter === 'yesterday' ? isSurveyedYesterday
     : () => true;
   const visible = savedEquipment
     .map((entry, i) => ({ entry, i }))
@@ -9317,8 +9439,8 @@ function renderSavedPanel() {
 
   const summary = document.getElementById('savedFilterSummary');
   if (summary) {
-    const todayCount     = savedEquipment.filter(isSavedToday).length;
-    const yesterdayCount = savedEquipment.filter(isSavedYesterday).length;
+    const todayCount     = savedEquipment.filter(isSurveyedToday).length;
+    const yesterdayCount = savedEquipment.filter(isSurveyedYesterday).length;
     const parts = [
       `${todayCount} today`,
       `${yesterdayCount} yesterday`,
@@ -9899,29 +10021,33 @@ async function executeDuplicate(index, withPhotos) {
   sources.forEach(s => { if (s) { delete s.sourceId; delete s.priorSourceIds; s.deviceId = ''; ensureSourceId(s); } });
   const dupSources = sources.slice();   // the source OBJECTS the copies belong to
 
-  photos = {};
-  miscPhotos = [];
-  paintEquipPhotoSlots();
-  renderSources();
-  renderMiscPhotos();
-
-  // Load the diagram with a CLEAN drawing (the user re-annotates the
-  // duplicate). loadSketchDiagram keeps whatever strokes/labels the form had —
-  // the previous unit's — so they used to carry onto the copy (build 91).
-  clearSketchState();
-  if (entry.template && TEMPLATE_DIAGRAM_MAP[entry.template]) {
-    loadSketchDiagram(entry.template);
-  }
-  autoSaveCurrent();
-
+  // With photos, the copy counts as running from here (build 110): a source's
+  // automatic Duplicate = Yes waits for its copied photo before it is settled
+  // (settleAutoDuplicates). Info Only brings no photo, so the first render
+  // settles every automatic Yes to No — it used to stay Yes with no photo.
+  const write = withPhotos ? startPhotoWrite('duplicate') : null;
   let dupCopied = 0, dupFailed = 0, abandoned = false, keptNewer = 0;
-  if (withPhotos) {
-    // Deep-copy every photo's BYTES to keys owned by the duplicate's UUID —
-    // read via loadPhotoBytes (filesystem → IDB → localStorage, so native FS
-    // photos copy too), write verified, and record dupOf provenance. No
-    // fire-and-forget: the user is told exactly how many copies succeeded.
-    const write = startPhotoWrite('duplicate');
-    try {
+  try {
+    photos = {};
+    miscPhotos = [];
+    paintEquipPhotoSlots();
+    renderSources();
+    renderMiscPhotos();
+
+    // Load the diagram with a CLEAN drawing (the user re-annotates the
+    // duplicate). loadSketchDiagram keeps whatever strokes/labels the form had —
+    // the previous unit's — so they used to carry onto the copy (build 91).
+    clearSketchState();
+    if (entry.template && TEMPLATE_DIAGRAM_MAP[entry.template]) {
+      loadSketchDiagram(entry.template);
+    }
+    autoSaveCurrent();
+
+    if (withPhotos) {
+      // Deep-copy every photo's BYTES to keys owned by the duplicate's UUID —
+      // read via loadPhotoBytes (filesystem → IDB → localStorage, so native FS
+      // photos copy too), write verified, and record dupOf provenance. No
+      // fire-and-forget: the user is told exactly how many copies succeeded.
       const copyPhoto = async (photo, slotToken) => {
         const src = photo.dbKey ? await loadPhotoBytes(photo.dbKey, photo.fileType, photo.sha256 || undefined) : null;
         const newKey = photoStoreKey(dupId, slotToken);
@@ -9968,8 +10094,8 @@ async function executeDuplicate(index, withPhotos) {
         if (session !== formSession) { abandoned = true; break; }
         miscPhotos.push(copy);
       }
-    } finally { endPhotoWrite(write); }
-  }
+    }
+  } finally { if (write) endPhotoWrite(write); }
 
   if (abandoned) {
     showToast('⚠ Duplicate stopped — the form changed while photos were copying. Copies made so far stay on the device, unattached.', true);
@@ -10412,6 +10538,13 @@ function reservePhotoSeq(datePrefix, next) {
   if (inp) inp.value = next;
 }
 
+// The photo total past which an export asks first (build 110). The whole ZIP
+// is built in the WebView's memory — the photos, then the ZIP made of them —
+// and a WebView out of memory just stops: build 85's quarantine export died
+// that way at ~350 MB. Since build 109 a photo is 2-3x bigger (2560 x 1440,
+// turned for portrait shots). A `let` so the suite can lower it.
+let EXPORT_BIG_BYTES = 250 * 1024 * 1024;
+
 async function runCombinedExport(opts) {
   opts = opts || {};
   if (refuseIfPhotoWritesBusy('export')) return;
@@ -10499,10 +10632,13 @@ async function runCombinedExport(opts) {
     const go = await askChoice({
       id: 'export-unattached', defaultValue: 'export',
       title: '&#9888; ' + missedShots.length + ' empty photo slot' + (missedShots.length === 1 ? ' has a photo' : 's have photos') + ' on this iPad',
-      html: html`${missedShots.slice(0, 12).map((m, k) => html`${k ? raw('<br>') : ''}&bull; ${m.name} &mdash; ${m.slot}`)}${missedShots.length > 12 ? raw('<br>&hellip;') : ''}<br><br>A photo was taken for each of these, but it isn&rsquo;t on the unit (it never attached &mdash; the form changed while it was saving &mdash; or its edit was discarded), so this export leaves it behind. Retake it while you are still there &mdash; or export anyway: Settings &rarr; Photo Store Report can export those photos for the office.`,
-      choices: [{ value: 'export', label: 'Export anyway', primary: true }, { value: 'cancel', label: 'Cancel' }]
+      html: html`${missedShots.slice(0, 12).map((m, k) => html`${k ? raw('<br>') : ''}&bull; ${m.name} &mdash; ${m.slot}`)}${missedShots.length > 12 ? raw('<br>&hellip;') : ''}<br><br>A photo was taken for each of these, but it isn&rsquo;t on the unit (it never attached &mdash; the form changed while it was saving &mdash; or its edit was discarded), so this export leaves it behind. Retake it while you are still there &mdash; or export anyway: Settings &rarr; Photo Store Report can export those photos for the office.<br><br>Left out on purpose? &ldquo;Don&rsquo;t warn about these again&rdquo; stops this warning for these photos only &mdash; they stay on the iPad.`,
+      choices: [{ value: 'export', label: 'Export anyway', primary: true },
+                { value: 'forget', label: 'Export — don’t warn about these again' },
+                { value: 'cancel', label: 'Cancel' }]
     });
-    if (go !== 'export') { showToast('Export cancelled', true); return; }
+    if (go !== 'export' && go !== 'forget') { showToast('Export cancelled', true); return; }
+    if (go === 'forget') markUnattachedOk([].concat(...missedShots.map(m => m.keys || [])));   // a warning settled, nothing deleted (build 110)
   }
 
   // A source with no Energy Source (build 93): loto-web's Information Sheet
@@ -10550,9 +10686,12 @@ async function runCombinedExport(opts) {
   const exportId = genUuid();
   const exportDeviceId = ensureDeviceId();
 
-  const zip = new JSZip();
-  const photosFolder = zip.folder('photos');
+  // let, not const: both are dropped once the ZIP is packed (build 110), so the
+  // photo bytes they hold can be freed before the file is written / shared
+  let zip = new JSZip();
+  let photosFolder = zip.folder('photos');
   let photoCount = 0;
+  let photoBytes = 0;   // the photo files' total size — see EXPORT_BIG_BYTES
   let misses = 0;
   const missedKeys = [];
   const hashMismatches = [];   // { entryName, slot }
@@ -10620,6 +10759,7 @@ async function runCombinedExport(opts) {
     const filename = opts.fileName ? uniqueName(opts.fileName(ext)) : uniqueName(nextH() + ext);
     photosFolder.file(filename, pd.bytes);
     photoCount++;
+    photoBytes += pd.bytes.length;
     const rec = { filename: filename, sha256: hash || '', entries: [entryRef] };
     // when the photo was taken (build 109) — also inside the JPEG's EXIF
     if (ref.capturedAt) { rec.capturedAt = ref.capturedAt; rec.capturedFrom = ref.capturedFrom || ''; }
@@ -10659,7 +10799,7 @@ async function runCombinedExport(opts) {
     .filter(Boolean).join('_').replace(/[^a-zA-Z0-9_-]/g, '_') + '_' + (String(entry.id || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8) || 'noid');
 
   // ---- PASS 1B: export sketch diagrams ----
-  const diagramsFolder = zip.folder('diagrams');
+  let diagramsFolder = zip.folder('diagrams');
   const diagramFiles = []; // one per entry: filename or ''
   const diagramFailures = [];
 
@@ -10687,21 +10827,40 @@ async function runCombinedExport(opts) {
     showToast('⚠ ' + diagramFailures.length + ' diagram' + (diagramFailures.length === 1 ? '' : 's') + ' could not be drawn (' + diagramFailures.slice(0, 3).join(', ') + (diagramFailures.length > 3 ? '…' : '') + ') — exporting without them', true);
   }
 
+  // When a photo that went into the ZIP was taken (build 109) — null where unknown.
+  const captureInfoOf = (ref, exported) => (exported && ref && ref.capturedAt) ? { capturedAt: ref.capturedAt, capturedFrom: ref.capturedFrom || '' } : null;
+
   // ---- PASS 1C: export misc photos ----
   const miscFileNames = []; // one per entry: comma-separated filenames or ''
+  const miscCaptured = [];  // one per entry: a capture time per misc FILE, same order (build 110)
 
   for (let ei = 0; ei < allEntries.length; ei++) {
     const entry = allEntries[ei];
-    const names = [];
+    const names = [], caps = [];
     const stem = entryFileStem(entry);
     const list = entry.miscPhotos || [];
     for (let mi = 0; mi < list.length; mi++) {
       const mp = list[mi];
       if (!mp || !mp.dbKey) continue;
       const f = await resolveExportPhoto(entry, 'misc-' + (mi + 1), mp, { fileName: (ext) => stem + '_Misc' + (mi + 1) + ext });
-      if (f) names.push(f);
+      if (f) { names.push(f); caps.push(captureInfoOf(mp, f)); }
     }
     miscFileNames.push(names.join(', '));
+    miscCaptured.push(caps);
+  }
+
+  // A big export is packed in the iPad's memory — every photo, then the ZIP
+  // made of them (build 110: photos are 2-3x bigger since build 109). Past the
+  // safe size, ask first: a WebView out of memory just stops, and no file appears.
+  if (photoBytes > EXPORT_BIG_BYTES) {
+    const mb = Math.round(photoBytes / 1048576);
+    const go = await askChoice({
+      id: 'export-big', defaultValue: 'export',
+      title: '&#9888; A big export &mdash; ' + mb + ' MB of photos',
+      html: html`This export packs ${photoCount} photos (${mb} MB) in the iPad&rsquo;s memory. An export this big can run it out of memory &mdash; then no file appears. Nothing is lost either way, but nothing is exported.<br><br>Safer: export one day at a time (Date Filter), or one facility at a time.`,
+      choices: [{ value: 'export', label: 'Export anyway', primary: true }, { value: 'cancel', label: 'Cancel' }]
+    });
+    if (go !== 'export') { showToast('Export cancelled', true); return; }
   }
 
   // ---- PASS 2: build CSV ----
@@ -10721,7 +10880,7 @@ async function runCombinedExport(opts) {
         quote(entry.template || ''), quote(entry.tiedTo || ''),
         quote(entry.tiedToName || ''), quote(entry.notes || ''),
         i + 1, quote(src.energySource), quote(src.deviceType), quote(src.deviceId || ''), src.quantity,
-        quote(src.location), src.duplicate, quote(src.verification),
+        quote(src.location), effectiveDuplicate(src, (entry.photos || {})['source_' + i]), quote(src.verification),
         quote(src.valveState || 'normal'),
         quote(map.sourceHs[i] || ''), quote(src.detail || ''),
         quote(linkedStr),
@@ -10745,17 +10904,24 @@ async function runCombinedExport(opts) {
     const map = entryMaps[ei];
     // Drop bulky/binary-ish fields; keep all structural data.
     const { photos, miscPhotos, ...rest } = entry;
-    const capOf = (ref, exported) => (exported && ref && ref.capturedAt) ? { capturedAt: ref.capturedAt, capturedFrom: ref.capturedFrom || '' } : null;
-    const srcOut = (rest.sources || []).map((src, i) => ({
-      ...src,
-      valveState: src.valveState || 'normal',   // always present for downstream (loto-web)
-      photoFile: map.sourceHs[i] ? 'photos/' + map.sourceHs[i] : '',
-      // when its photo was taken (build 109), as in the JPEG's EXIF
-      photoCapturedAt: (capOf((photos || {})['source_' + i], map.sourceHs[i]) || {}).capturedAt || '',
-      photoCapturedFrom: (capOf((photos || {})['source_' + i], map.sourceHs[i]) || {}).capturedFrom || '',
-      // Valve marks (build 92): [{x, y}] fractions of photoFile, one per device
-      photoMarks: map.sourceHs[i] ? sourceMarksForExport(entry, i) : []
-    }));
+    const srcOut = (rest.sources || []).map((src, i) => {
+      const ref = (photos || {})['source_' + i];
+      const cap = captureInfoOf(ref, map.sourceHs[i]) || {};
+      const out = {
+        ...src,
+        // an automatic Yes holds only with its borrowed photo (build 110)
+        duplicate: effectiveDuplicate(src, ref),
+        valveState: src.valveState || 'normal',   // always present for downstream (loto-web)
+        photoFile: map.sourceHs[i] ? 'photos/' + map.sourceHs[i] : '',
+        // when its photo was taken (build 109), as in the JPEG's EXIF
+        photoCapturedAt: cap.capturedAt || '',
+        photoCapturedFrom: cap.capturedFrom || '',
+        // Valve marks (build 92): [{x, y}] fractions of photoFile, one per device
+        photoMarks: map.sourceHs[i] ? sourceMarksForExport(entry, i) : []
+      };
+      if (out.duplicate !== src.duplicate) delete out.dupAuto;
+      return out;
+    });
     const miscOut = miscFileNames[ei]
       ? miscFileNames[ei].split(', ').filter(Boolean).map(n => 'photos/' + n)
       : [];
@@ -10777,10 +10943,10 @@ async function runCombinedExport(opts) {
       },
       // when each equipment photo was taken (build 109) — null where unknown
       photoCaptured: {
-        main:      capOf((photos || {}).equip_main, map.mainH),
-        dataplate: capOf((photos || {}).equip_dataplate, map.dpH),
-        ee:        capOf((photos || {}).equip_ee, map.eeH),
-        misc:      miscOut.length ? (miscPhotos || []).filter(mp => mp && mp.dbKey).map(mp => capOf(mp, true)) : []
+        main:      captureInfoOf((photos || {}).equip_main, map.mainH),
+        dataplate: captureInfoOf((photos || {}).equip_dataplate, map.dpH),
+        ee:        captureInfoOf((photos || {}).equip_ee, map.eeH),
+        misc:      miscCaptured[ei] || []   // one per file in photoFiles.misc, same order (build 110)
       }
     };
   });
@@ -10933,7 +11099,7 @@ async function runCombinedExport(opts) {
             src ? (src.location     || '') : '',
             srcH || '',
             detailCell,
-            src ? (src.duplicate || '') : '',
+            src ? effectiveDuplicate(src, (entry.photos || {})['source_' + s]) : '',   // an automatic Yes needs its photo (build 110)
             src ? (src.verification || '') : '',
             '',
             // Valve state (build 91). The office imports THIS sheet, and it had
@@ -11099,6 +11265,7 @@ async function runCombinedExport(opts) {
     // Photos are already-compressed JPEGs: STORE avoids burning CPU (and time
     // in memory) re-deflating them.
     const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+    zip = photosFolder = diagramsFolder = null;   // the photos' bytes are in the ZIP now — let them go (build 110)
     // FieldExport_{code}_{MMDDYY}_{deviceShort}.zip — facility + date + a short
     // per-device id so same-day exports from two iPads don't collide. Date
     // filter / full ids live in manifest.json. Facility falls back to
