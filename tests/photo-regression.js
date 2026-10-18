@@ -66,6 +66,8 @@
 //             pick, the automatic Yes on every path, the survey-date question box
 //   T228      build 111: loto-web's Medical Vacuum Pump, Chemical Pump, Compressed Air Tank, Blower, Switchgear and
 //             Electrical with Stored Energy can be picked (new types Compressed Air Tank, Blower, Switchgear, VFD)
+//   T229–T231 build 112: what a vacuum record covers (one question, three answers) and the pump's exhaust valve;
+//             a Kinetic row per AHU fan; a room that already has the other kind of medical vacuum record
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -6768,8 +6770,10 @@
       document.getElementById('equipTemplate').value = '';
       document.getElementById('equipType').value = type;
       const seen = { choices: null, volts: null, count: false };
-      await withDialogs({ confirm: true }, async () => {
+      // build 112: the Vacuum Pump type asks what the record covers (the answer = the template)
+      await withDialogs({ confirm: true, choice: { 'vacuum-cover': template || 'cancel' } }, async () => {
         handleEquipTypeChange();
+        await sleep(0);
         const tp = document.getElementById('templatePromptOverlay');
         if (tp) {
           seen.choices = [...tp.querySelectorAll('button')].map(b => b.textContent.trim()).filter(t => !/skip/i.test(t));
@@ -6800,7 +6804,6 @@
     const fails = [];
     const want = (ok, what) => { if (!ok) fails.push(what); };
     want(r.mvp.template === 'Medical Vacuum Pump' && r.mvp.offered.join() === 'Vacuum Pump,Medical Vacuum,Medical Vacuum Pump,Lab Vacuum'
-      && (r.mvp.choices || []).some(t => /one pump on a shared receiver/i.test(t)) && (r.mvp.choices || []).some(t => /^Medical Vacuum: the receiver and all its pumps/i.test(t))
       && r.mvp.rows.join('|') === 'Electrical 480V/Disconnect/SW (Hand/Off/Auto)|Vacuum Air In/Ball Valve/Gauge/Drain' && !r.mvp.count
       && (r.mvp.volts || []).join() === '120V,208V,240V,480V', 'Medical Vacuum Pump');
     want(r.cfp.template === 'Chemical Pump' && r.cfp.offered.join() === 'Chemical Pump' && r.cfp.rows.join('|') === 'Electrical 208V//', 'Chemical Feed Pump');
@@ -6869,6 +6872,183 @@
     want(jeTemplates.join() === wantNames && sheetTemplates.join() === wantNames, 'export');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(r) + '; custom ' + JSON.stringify(customs)
       + '; entries.json ' + JSON.stringify(jeTemplates) + '; sheet ' + JSON.stringify(sheetTemplates));
+  }
+
+  // ==========================================================================
+  // BUILD 112 — loto-web's prompts it can use today (2026-10-18). Each test
+  // fails on build 111.
+  // ==========================================================================
+
+  // T229 — one question says what a vacuum record covers; a medical vacuum
+  // pump's own exhaust valve gets a row; its disconnect is on the panel
+  async function t229_aVacuumRecordSaysWhatItCovers() {
+    const N = 'T229 the Vacuum Pump type asks "What does this record cover?" (Patient care: one pump on a shared receiver / Patient care: the receiver and all its pumps / Laboratory: the receiver and all its pumps / Choose later) and the answer is the template; Medical Vacuum Pump starts its disconnect at "Panel" and, after the voltage, asks about the exhaust — "its own valve" adds a Vacuum Air Out ball valve row, "no" adds none; Laboratory gives Lab Vacuum and its pump count; Choose later leaves no template; a vacuum template picked from the list asks too (the answer wins, Cancel keeps the unit\'s template, a Lab Vacuum type with one choice does not ask)';
+    await resetAppState();
+    const rows = () => sources.map(x => [x.energySource, x.deviceType, x.location, x.verification].join('/'));
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const viaType = async (answer, exhaust) => {
+      fillFormNoSources('VP-229');
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = 'Vacuum Pump';
+      let asked = null, count = false, exhaustAsked = false;
+      await withDialogs({ confirm: true, choice: (o) => {
+        if (o.id === 'vacuum-cover') { asked = o; return answer; }
+        if (o.id === 'vacuum-exhaust') { exhaustAsked = true; return exhaust || 'cancel'; }
+        return 'cancel';
+      } }, async () => {
+        handleEquipTypeChange();
+        await sleep(0);
+        if (document.getElementById('templateVoltageOverlay')) applyTemplateVoltageChoice('480V');
+        await sleep(0);
+        count = !!document.getElementById('electricalCountOverlay');
+      });
+      closeAllPrompts();
+      return { labels: asked ? asked.choices.map(c => c.label) : null, values: asked ? asked.choices.map(c => c.value) : null,
+               template: getTemplate(), rows: rows(), count, exhaustAsked, templatePrompt: !!document.getElementById('templatePromptOverlay') };
+    };
+    got.own = await viaType('Medical Vacuum Pump', 'own');
+    want((got.own.labels || []).join('|') === 'Patient care: one pump on a shared receiver|Patient care: the receiver and all its pumps|Laboratory: the receiver and all its pumps|Choose later'
+      && (got.own.values || []).slice(0, 3).join() === 'Medical Vacuum Pump,Medical Vacuum,Lab Vacuum', 'the question');
+    want(got.own.template === 'Medical Vacuum Pump' && got.own.exhaustAsked && !got.own.count
+      && got.own.rows.join('|') === 'Electrical 480V/Disconnect/Panel/SW (Hand/Off/Auto)|Vacuum Air In/Ball Valve//Gauge/Drain|Vacuum Air Out/Ball Valve//', 'own exhaust valve');
+    got.no = await viaType('Medical Vacuum Pump', 'no');
+    want(got.no.template === 'Medical Vacuum Pump' && got.no.rows.length === 2 && !got.no.rows.some(x => /Vacuum Air Out/.test(x)), 'no exhaust valve');
+    got.lab = await viaType('Lab Vacuum');
+    want(got.lab.template === 'Lab Vacuum' && got.lab.count && !got.lab.exhaustAsked, 'laboratory');
+    got.later = await viaType('cancel');
+    want(got.later.template === '' && !got.later.templatePrompt, 'choose later');
+    got.system = await viaType('Medical Vacuum');
+    want(got.system.template === 'Medical Vacuum' && !got.system.exhaustAsked, 'the receiver and all its pumps');
+    // picked from the list: the form is on Medical Vacuum (got.system) with its rows
+    const pickFromList = async (value, answer) => {
+      let asked = null;
+      await withDialogs({ confirm: true, choice: (o) => { if (o.id === 'vacuum-cover') { asked = o; return answer; } return 'cancel'; } }, async () => {
+        rememberTemplateBefore();
+        document.getElementById('equipTemplate').value = value;
+        await onTemplateSelectChange();
+        await sleep(0);
+      });
+      closeAllPrompts();
+      return { asked: !!asked, primary: asked ? (asked.choices.find(c => c.primary) || {}).value : null, template: getTemplate(), rows: rows() };
+    };
+    const sysRows = rows().join('|');
+    got.listKeep = await pickFromList('Medical Vacuum Pump', 'Medical Vacuum');
+    want(got.listKeep.asked && got.listKeep.primary === 'Medical Vacuum Pump' && got.listKeep.template === 'Medical Vacuum' && got.listKeep.rows.join('|') === sysRows, 'list pick, answer keeps the template');
+    got.listCancel = await pickFromList('Lab Vacuum', 'cancel');
+    want(got.listCancel.asked && got.listCancel.template === 'Medical Vacuum' && got.listCancel.rows.join('|') === sysRows, 'list pick, Cancel');
+    got.listTake = await pickFromList('Medical Vacuum Pump', 'Medical Vacuum Pump');
+    want(got.listTake.asked && got.listTake.template === 'Medical Vacuum Pump', 'list pick, answer taken');
+    // a template that is not a vacuum one: no question
+    got.listOther = await pickFromList('Vacuum Pump', 'Medical Vacuum');
+    want(!got.listOther.asked && got.listOther.template === 'Vacuum Pump', 'list pick of plain Vacuum Pump');
+    // the Lab Vacuum type offers one answer: no question
+    fillFormNoSources('LV-229');
+    document.getElementById('equipType').value = 'Lab Vacuum';
+    filterTemplateDropdown('Lab Vacuum');
+    document.getElementById('equipTemplate').value = '';
+    got.labType = await pickFromList('Lab Vacuum', 'Medical Vacuum Pump');
+    want(!got.labType.asked && got.labType.template === 'Lab Vacuum', 'Lab Vacuum type');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T230 — an AHU's count prompt gives a Kinetic row per fan
+  async function t230_anAhuGetsAKineticRowPerFan() {
+    const N = 'T230 the AHU count prompt adds a Kinetic row per fan, not just Electrical rows: AHU - Steam with 2 gives two Electrical and two Kinetic rows ("At Supply Fan", then "At Return Fan", each its own row); 1 keeps one of each; going back from 2 to 1 removes the added Kinetic row; Medical Air with 3 keeps its single Kinetic row';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const kin = () => sources.filter(x => x.energySource === 'Kinetic');
+    const elec = () => sources.filter(x => /^Electrical /.test(x.energySource || ''));
+    const setup = async (type, template, n) => {
+      fillFormNoSources('AHU-230');
+      document.getElementById('equipType').value = type;
+      filterTemplateDropdown(type);
+      await withDialogs({ confirm: true }, async () => {
+        pickTemplate(template);
+        if (document.getElementById('templateVoltageOverlay')) applyTemplateVoltageChoice('480V');
+        if (document.getElementById('electricalCountOverlay')) applyElectricalCountChoice(n);
+      });
+      closeAllPrompts();
+      return { kin: kin().map(x => x.location), elec: elec().length, distinct: new Set(kin()).size === kin().length };
+    };
+    got.two = await setup('Air Handler', 'AHU - Steam', 2);
+    const k2 = kin();
+    want(got.two.elec === 2 && got.two.kin.join() === 'At Supply Fan,At Return Fan' && got.two.distinct
+      && (!k2[1].sourceId || k2[1].sourceId !== k2[0].sourceId), 'two fans');
+    applyElectricalCountChoice(1);
+    got.back = { kin: kin().map(x => x.location), elec: elec().length };
+    want(got.back.elec === 1 && got.back.kin.join() === 'At Supply Fan', 'back to one');
+    got.one = await setup('Air Handler', 'AHU - HHW', 1);
+    want(got.one.elec === 1 && got.one.kin.join() === 'At Supply Fan', 'one fan');
+    got.geo = await setup('Air Handler', 'AHU - Geothermal', 2);
+    want(got.geo.elec === 2 && got.geo.kin.length === 2, 'geothermal');
+    got.medAir = await setup('Air Compressor', 'Medical Air', 3);
+    want(got.medAir.elec === 3 && got.medAir.kin.length === 1, 'medical air');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T231 — a room that already has the other kind of medical vacuum record
+  async function t231_theSameRoomRecordedBothWaysIsNoticed() {
+    const N = 'T231 Save & New notices a medical vacuum record whose room (same facility and building; case, spaces and dashes ignored) already has the other kind — "This room already has Medical Vacuum: the receiver and all its pumps. Keep both only if the site wants both procedures." for a pump record, the mirror for a system record — and lists it under "Check before saving"; another room, another facility, the same kind, the unit itself or a Lab Vacuum gives none';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const saved = (template, building, room, hospitalCode) => Object.assign(mkEntry('MV ' + template, { building, room }),
+      { equipType: 'Vacuum Pump', template, hospitalCode: hospitalCode || '' });
+    const formAs = (template, building, room) => {
+      fillFormNoSources('MV-231');
+      document.getElementById('equipType').value = 'Vacuum Pump';
+      filterTemplateDropdown('Vacuum Pump');
+      document.getElementById('equipTemplate').value = template;
+      setBuilding(building);
+      document.getElementById('equipRoom').value = room;
+    };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Kansas City');
+      savedEquipment = [saved('Medical Vacuum', 'Bldg 1', 'VB-720', 'Kansas City')];
+      formAs('Medical Vacuum Pump', 'bldg 1', 'vb 720');
+      got.pump = collectSaveNotices();
+      want(got.pump.join() === 'This room already has Medical Vacuum: the receiver and all its pumps. Keep both only if the site wants both procedures.', 'pump record');
+      formAs('Medical Vacuum Pump', 'Bldg 1', 'VB-721');
+      want(!collectSaveNotices().length, 'another room');
+      formAs('Medical Vacuum Pump', 'Bldg 26', 'VB-720');
+      want(!collectSaveNotices().length, 'another building');
+      formAs('Lab Vacuum', 'Bldg 1', 'VB-720');
+      want(!collectSaveNotices().length, 'lab vacuum');
+      savedEquipment = [saved('Medical Vacuum', 'Bldg 1', 'VB-720', 'Marion')];
+      formAs('Medical Vacuum Pump', 'Bldg 1', 'VB-720');
+      want(!collectSaveNotices().length, 'another facility');
+      savedEquipment = [saved('Medical Vacuum Pump', 'Bldg 1', 'VB720', 'Kansas City')];
+      formAs('Medical Vacuum', 'BLDG 1', 'VB - 720');
+      got.system = collectSaveNotices();
+      want(got.system.join() === 'This room already has Medical Vacuum Pump: one pump on a shared receiver. Keep both only if the site wants both procedures.', 'system record');
+      formAs('Medical Vacuum Pump', 'Bldg 1', 'VB-720');
+      want(!collectSaveNotices().length, 'the same kind');
+      // the unit itself, on Edit
+      const self = saved('Medical Vacuum', 'Bldg 1', 'VB-720', 'Kansas City');
+      savedEquipment = [self];
+      formAs('Medical Vacuum Pump', 'Bldg 1', 'VB-720');
+      currentEntryId = self.id;
+      want(!collectSaveNotices().length, 'the unit itself');
+      currentEntryId = null;
+      // the dialog
+      showIncompleteWarning([], ['This room already has X.']);
+      const o = document.getElementById('incompleteWarningOverlay');
+      got.dialog = o ? o.textContent.replace(/\s+/g, ' ').trim() : '';
+      want(/Check before saving/.test(got.dialog) && /This room already has X\./.test(got.dialog) && !/still missing/.test(got.dialog) && /Go back Save anyway/.test(got.dialog), 'dialog');
+      closeIncompleteWarning();
+      showIncompleteWarning(['Main info — Room'], ['This room already has X.']);
+      const o2 = document.getElementById('incompleteWarningOverlay');
+      got.dialog2 = o2 ? o2.textContent.replace(/\s+/g, ' ').trim() : '';
+      want(/Incomplete entry/.test(got.dialog2) && /1 item is still missing/.test(got.dialog2) && /This room already has X\./.test(got.dialog2), 'dialog with gaps');
+      closeIncompleteWarning();
+    } finally {
+      setHospitalCode(prevCode);
+      savedEquipment = [];
+    }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
   // ---------- runner --------------------------------------------------------
@@ -6968,7 +7148,8 @@
     t220_aYesWithoutItsPhotoCanStillPickIt, t221_splitKeepsExtraTags, t222_theUnattachedShotWarningCanBeSettled,
     t223_todayAndYesterdayFollowTheSurveyDate, t224_miscCaptureTimesLineUpWithTheirFiles,
     t225_aFilePickedOnADesktopIsNotACameraShot, t226_anAutomaticYesFollowsItsPhotoOnEveryPath,
-    t227_theSurveyDateQuestionIsTheAppsQuestionBox, t228_everyLotoWebTemplateCanBePicked];
+    t227_theSurveyDateQuestionIsTheAppsQuestionBox, t228_everyLotoWebTemplateCanBePicked,
+    t229_aVacuumRecordSaysWhatItCovers, t230_anAhuGetsAKineticRowPerFan, t231_theSameRoomRecordedBothWaysIsNoticed];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

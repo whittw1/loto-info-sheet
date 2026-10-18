@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b111</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b112</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -559,7 +559,7 @@ if ('serviceWorker' in navigator) {
       </div>
       <div class="form-group">
         <label>Template</label>
-        <select id="equipTemplate" onfocus="rememberTemplateBefore()" onpointerdown="rememberTemplateBefore()" onchange="handleTemplateChange()">
+        <select id="equipTemplate" onfocus="rememberTemplateBefore()" onpointerdown="rememberTemplateBefore()" onchange="onTemplateSelectChange()">
           <option value="">-- Select --</option>
         </select>
       </div>
@@ -2562,6 +2562,11 @@ function equipTypeChanged(equipType) {
     const templates = EQUIPMENT_TEMPLATE_MAP[equipType];
     if (templates.length === 1) {
       pickTemplate(templates[0]);
+    } else if (equipType === 'Vacuum Pump') {
+      // Build 112: what one record covers, in place of the template list
+      askVacuumCover('', vacuumCoverChoicesOffered()).then(t => {
+        if (t && t !== 'cancel' && getEquipType() === 'Vacuum Pump') pickTemplate(t);
+      });
     } else if (EQUIPMENT_PROMPT_FOR_TEMPLATE.has(equipType) && templates.length > 1) {
       showTemplatePrompt(equipType, templates);
     }
@@ -2602,13 +2607,7 @@ const EQUIPMENT_TEMPLATE_LABELS = {
     'Water Heater - Electric': 'Electric',
     'Water Heater - Steam':    'Steam',
   },
-  // Build 111: the two medical vacuum templates differ by what one unit is.
-  'Vacuum Pump': {
-    'Vacuum Pump':         'Vacuum Pump',
-    'Medical Vacuum':      'Medical Vacuum: the receiver and all its pumps',
-    'Medical Vacuum Pump': 'Medical Vacuum Pump: one pump on a shared receiver',
-    'Lab Vacuum':          'Lab Vacuum: the receiver and all its pumps',
-  },
+  // (The Vacuum Pump type asks askVacuumCover's question instead, build 112.)
   'Transformer': {
     'Standard Electrical':           'Standard Electrical',
     'Electrical with Stored Energy': 'With a capacitor bank (Electrical with Stored Energy)',
@@ -2656,6 +2655,83 @@ function applyTemplatePromptChoice(template) {
 function closeTemplatePrompt() {
   const overlay = document.getElementById('templatePromptOverlay');
   if (overlay) overlay.remove();
+}
+
+// ---- What a vacuum record covers (build 112, loto-web 2026-10-18) -----------
+// Medical vacuum has two procedures: one pump on a shared receiver (Medical
+// Vacuum Pump) and the receiver with all its pumps (Medical Vacuum, loto-web's
+// "Medical Vacuum System"). A laboratory vacuum is always the receiver and all
+// its pumps (Lab Vacuum). One question with the three answers is asked when the
+// Vacuum Pump type is chosen and when the user picks one of these templates
+// from the list, so a lab pump (KC-LOTO-018) is not saved as medical and the
+// same pumps are not surveyed both ways without anyone deciding to. The answer
+// travels as the template name.
+const VACUUM_COVER_CHOICES = [
+  { template: 'Medical Vacuum Pump', label: 'Patient care: one pump on a shared receiver' },
+  { template: 'Medical Vacuum',      label: 'Patient care: the receiver and all its pumps' },
+  { template: 'Lab Vacuum',          label: 'Laboratory: the receiver and all its pumps' },
+];
+// The answers the template list offers right now (a Lab Vacuum type offers one).
+function vacuumCoverChoicesOffered() {
+  const opts = [...document.getElementById('equipTemplate').options].map(o => o.value);
+  return VACUUM_COVER_CHOICES.filter(c => opts.includes(c.template));
+}
+// Resolves the chosen template, or 'cancel'. `picked` = the template the user
+// picked from the list ('' from the type), shown as the primary answer.
+function askVacuumCover(picked, choices) {
+  return askChoice({
+    id: 'vacuum-cover', defaultValue: 'cancel', picked: picked || '',
+    title: 'What does this record cover?',
+    html: html`Each record prints one procedure. A medical vacuum pump that shares its receiver with other pumps gets a record of its own; the receiver with all its pumps is a different record. Survey the same pumps both ways only if the site wants both procedures. A laboratory vacuum is recorded as the receiver and all its pumps.`,
+    choices: (choices || VACUUM_COVER_CHOICES).map(c => ({ value: c.template, label: c.label, primary: c.template === picked }))
+      .concat([{ value: 'cancel', label: picked ? 'Cancel' : 'Choose later' }])
+  });
+}
+// The template list's own change (the user's pick). A vacuum template asks the
+// question first; any other pick, and every pick the app makes (pickTemplate),
+// goes straight on to handleTemplateChange.
+function onTemplateSelectChange() {
+  const sel = document.getElementById('equipTemplate');
+  const picked = sel.value;
+  const choices = vacuumCoverChoicesOffered();
+  if (!VACUUM_COVER_CHOICES.some(c => c.template === picked) || choices.length < 2) return handleTemplateChange();
+  // null = not recorded: cancelTemplateChange then falls back to the saved unit's
+  const before = _templateBefore;
+  const beforeValue = before ? before.value : ((editingEntry && editingEntry.template) || '');
+  return askVacuumCover(picked, choices).then(t => {
+    // Back to what the form held; the answer then goes through pickTemplate,
+    // so Cancel on "Change Template?" still restores the form's own template.
+    _templateCancelTo = before;
+    cancelTemplateChange();
+    if (t && t !== 'cancel' && t !== beforeValue) pickTemplate(t);
+  });
+}
+
+// A medical vacuum pump's exhaust (build 112). "Its own valve" adds a Vacuum
+// Air Out ball valve row for its photo; loto-web prints its close and open
+// steps. The other answers loto-web asked for (a check valve only, a shared
+// line with no valve, can't see) wait for a field both apps agree on, so they
+// are one "no" here for now. Asked after the template's voltage.
+function maybeAskVacuumExhaust() {
+  const hasOut = () => sources.some(s => /^Vacuum Air Out/.test((s && s.energySource) || ''));
+  if (getTemplate() !== 'Medical Vacuum Pump' || hasOut()) return Promise.resolve(null);
+  return askChoice({
+    id: 'vacuum-exhaust', defaultValue: 'no',
+    title: 'This pump&rsquo;s exhaust',
+    html: html`Does this pump&rsquo;s exhaust have its own valve? If it does, it gets a row of its own (Vacuum Air Out) &mdash; photograph it.`,
+    choices: [
+      { value: 'own', label: 'Yes, its own valve', primary: true },
+      { value: 'no', label: 'No, or I can\u2019t see one' }
+    ]
+  }).then(v => {
+    if (v !== 'own' || getTemplate() !== 'Medical Vacuum Pump' || hasOut()) return v;
+    sources.push({ energySource: 'Vacuum Air Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '',
+                   duplicate: 'No', detail: '', auto: true, collapsed: true });
+    renderSources();
+    autoSaveCurrent();
+    showToast('Added the exhaust valve (Vacuum Air Out) \u2014 photograph it');
+    return v;
+  });
 }
 
 // Voltage prompt configurations per equipment type
@@ -4563,12 +4639,16 @@ function applyTemplate(val) {
     //  - Equipment types that already ran their own voltage prompt at
     //    equipment-type selection (ATS / Generator / Chiller)
     //  - Templates whose voltage is fixed by design (Air Dryer = 120V plug)
+    let voltageAsked = false;
     if (!EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT.has(equipType) && !TEMPLATE_SKIPS_VOLTAGE_PROMPT.has(val)) {
       const hasAutoElectrical = sources.some(s => s.auto && /^Electrical(?:\s|$)/.test(s.energySource || ''));
-      if (hasAutoElectrical) {
+      if (hasAutoElectrical && getElectricalVoltageOptions(val).length) {
         promptForTemplateVoltage(val);
+        voltageAsked = true;
       }
     }
+    // the voltage's follow-up question still comes without the voltage prompt
+    if (!voltageAsked) maybeAskVacuumExhaust();
   } else if (!val) {
     // Cleared the template selection — clear sources if no data (sources
     // with a photo are kept, photo attached)
@@ -4739,11 +4819,13 @@ function applyTemplateVoltageChoice(voltage) {
     showToast(`Set ${updated} Electrical source${updated > 1 ? 's' : ''} to ${voltage}`);
   }
   maybePromptElectricalCount();
+  maybeAskVacuumExhaust();
 }
 
 function keepDefaultVoltage() {
   closeTemplateVoltagePrompt();
   maybePromptElectricalCount();
+  maybeAskVacuumExhaust();
 }
 
 function closeTemplateVoltagePrompt() {
@@ -4818,11 +4900,44 @@ function applyElectricalCountChoice(n) {
     }
     blocked = toRemove;
   }
+  // An AHU's count is its fans (build 112, loto-web 2026-10-18): one Kinetic
+  // row per fan, as loto-web's pre-QC wants a K row for every drive. The
+  // second reads "At Return Fan" (kineticDefaultLocation).
+  const fans = /^AHU\b/.test(getTemplate()) ? matchAutoKineticRows(n, photographed) : null;
   rebindSourcePhotos(prev);
   renderSources();
   autoSaveCurrent();
   if (blocked) showSourceToast(`Kept ${blocked} photographed electrical source${blocked > 1 ? 's' : ''} — remove it manually if it doesn't apply`, true);
-  else showSourceToast(`${n} electrical source${n > 1 ? 's' : ''}`, false);
+  else if (fans && fans.blocked) showSourceToast(`Kept ${fans.blocked} photographed Kinetic source${fans.blocked > 1 ? 's' : ''} — remove it manually if it doesn't apply`, true);
+  else showSourceToast(fans && fans.rows ? `${n} fan${n > 1 ? 's' : ''}: ${n} electrical and ${n} Kinetic source${n > 1 ? 's' : ''}` : `${n} electrical source${n > 1 ? 's' : ''}`, false);
+}
+// Ensure n AUTO Kinetic rows (an AHU template starts with one). A photographed
+// one is never removed. Returns { rows, blocked } or null with no Kinetic row.
+function matchAutoKineticRows(n, photographed) {
+  const isAutoKin = s => s && s.auto && s.energySource === 'Kinetic';
+  const current = sources.filter(isAutoKin).length;
+  if (!current) return null;
+  let blocked = 0;
+  if (n > current) {
+    const base = sources.find(isAutoKin);
+    let lastIdx = -1;
+    sources.forEach((s, i) => { if (isAutoKin(s)) lastIdx = i; });
+    for (let k = 0; k < (n - current); k++) {
+      const c = Object.assign(JSON.parse(JSON.stringify(base)), { collapsed: true, location: kineticDefaultLocation() });
+      delete c.sourceId;      // another fan: its own row and id
+      delete c.linkedTo;
+      delete c.priorSourceIds;
+      delete c.userEdited;
+      sources.splice(++lastIdx, 0, c);
+    }
+  } else if (n < current) {
+    let toRemove = current - n;
+    for (let i = sources.length - 1; i >= 0 && toRemove > 0; i--) {
+      if (isAutoKin(sources[i]) && !photographed.has(sources[i])) { sources.splice(i, 1); toRemove--; }
+    }
+    blocked = toRemove;
+  }
+  return { rows: n, blocked };
 }
 
 // Template-triggered auto-sources (mirrors EQUIPMENT_AUTO_SOURCES)
@@ -4927,8 +5042,11 @@ const TEMPLATE_AUTO_SOURCES = {
   // disconnect and the valve between the receiver and this pump, which
   // loto-web closes and relieves behind (at the union or flange there) while
   // the receiver stays in service. No count prompt (one pump), no Kinetic.
+  // The disconnect is on the vacuum control panel (build 112: "Panel"; KC-282
+  // said "On Equipment"). The exhaust valve, when it has one, comes from
+  // maybeAskVacuumExhaust.
   'Medical Vacuum Pump': [
-    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'SW (Hand/Off/Auto)', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: 'Panel', verification: 'SW (Hand/Off/Auto)', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Vacuum Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
   // Compressed Air Tank (build 111): the tank's isolation valve with its drain
@@ -9217,21 +9335,50 @@ function collectIncompleteFields() {
   return missing;
 }
 
-function showIncompleteWarning(missing) {
+// Things to check before saving that are not missing fields (build 112): the
+// same pumps recorded both ways — one record per pump AND one for the receiver
+// with all its pumps (loto-web 2026-10-18). The same facility, building and
+// room, case, spaces and dashes ignored. A notice: the site may want both
+// procedures. A site-wide check needs loto-web's unit list (gap 3.9).
+const VACUUM_RECORD_OTHER = { 'Medical Vacuum Pump': 'Medical Vacuum', 'Medical Vacuum': 'Medical Vacuum Pump' };
+const VACUUM_RECORD_LABEL = {
+  'Medical Vacuum': 'Medical Vacuum: the receiver and all its pumps',
+  'Medical Vacuum Pump': 'Medical Vacuum Pump: one pump on a shared receiver',
+};
+function placeKey(v) { return String(v || '').toLowerCase().replace(/[\s\-\u2010-\u2015]+/g, ''); }
+function collectSaveNotices() {
+  const notices = [];
+  const other = VACUUM_RECORD_OTHER[getTemplate()];
+  const room = placeKey((document.getElementById('equipRoom') || {}).value);
+  if (other && room) {
+    const bld = placeKey(getBuilding());
+    const fac = entryHospitalCode(savedEquipment.find(e => e && sameEntryId(e.id, currentEntryId)));
+    const twin = savedEquipment.some(e => e && e.template === other && !sameEntryId(e.id, currentEntryId)
+      && placeKey(e.equipRoom) === room && placeKey(e.equipBuilding) === bld && entryHospitalCode(e) === fac);
+    if (twin) notices.push(`This room already has ${VACUUM_RECORD_LABEL[other]}. Keep both only if the site wants both procedures.`);
+  }
+  return notices;
+}
+
+function showIncompleteWarning(missing, notices) {
   closeIncompleteWarning();
+  notices = notices || [];
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.id = 'incompleteWarningOverlay';
   const items = missing.map(m => html`<li style="margin-bottom:5px;">${m}</li>`);
+  const noteItems = notices.map(m => html`<li style="margin-bottom:5px;">${m}</li>`);
   overlay.innerHTML = html`
     <div class="dialog" style="max-width:440px;">
-      <h3 style="margin:0 0 6px 0;color:#d9a441;">&#9888; Incomplete entry</h3>
-      <p style="margin:0 0 10px 0;color:var(--text-dim);font-size:14px;">
+      <h3 style="margin:0 0 6px 0;color:#d9a441;">&#9888; ${missing.length ? 'Incomplete entry' : 'Check before saving'}</h3>
+      ${missing.length ? html`<p style="margin:0 0 10px 0;color:var(--text-dim);font-size:14px;">
         ${missing.length} item${missing.length > 1 ? 's are' : ' is'} still missing:
       </p>
-      <ul style="margin:0 0 16px 18px;padding:0;font-size:13px;max-height:250px;overflow-y:auto;">${items}</ul>
+      <ul style="margin:0 0 16px 18px;padding:0;font-size:13px;max-height:250px;overflow-y:auto;">${items}</ul>` : ''}
+      ${notices.length && missing.length ? html`<p style="margin:0 0 10px 0;color:var(--text-dim);font-size:14px;">Also check:</p>` : ''}
+      ${notices.length ? html`<ul id="saveNoticeList" style="margin:0 0 16px 18px;padding:0;font-size:13px;">${noteItems}</ul>` : ''}
       <div style="display:flex;flex-direction:column;gap:10px;">
-        <button class="btn btn-primary" onclick="closeIncompleteWarning()" style="padding:12px;font-size:15px;">Go back and finish</button>
+        <button class="btn btn-primary" onclick="closeIncompleteWarning()" style="padding:12px;font-size:15px;">${missing.length ? 'Go back and finish' : 'Go back'}</button>
         <button class="btn btn-warning" onclick="closeIncompleteWarning(); performSaveAndNew();" style="padding:12px;font-size:15px;">Save anyway</button>
       </div>
     </div>
@@ -9272,7 +9419,8 @@ function saveAndNew() {
   applySimpleVerifDefaults();
   // Warn (don't block) if anything expected is still blank
   const missing = collectIncompleteFields();
-  if (missing.length) { showIncompleteWarning(missing); return; }
+  const notices = collectSaveNotices();
+  if (missing.length || notices.length) { showIncompleteWarning(missing, notices); return; }
   performSaveAndNew();
 }
 
