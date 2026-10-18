@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b112</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b113</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -2695,15 +2695,15 @@ function onTemplateSelectChange() {
   const picked = sel.value;
   const choices = vacuumCoverChoicesOffered();
   if (!VACUUM_COVER_CHOICES.some(c => c.template === picked) || choices.length < 2) return handleTemplateChange();
-  // null = not recorded: cancelTemplateChange then falls back to the saved unit's
-  const before = _templateBefore;
-  const beforeValue = before ? before.value : ((editingEntry && editingEntry.template) || '');
+  const before = _templateBefore;   // left as it is: "Change Template?" Cancel restores it
   return askVacuumCover(picked, choices).then(t => {
-    // Back to what the form held; the answer then goes through pickTemplate,
-    // so Cancel on "Change Template?" still restores the form's own template.
-    _templateCancelTo = before;
-    cancelTemplateChange();
-    if (t && t !== 'cancel' && t !== beforeValue) pickTemplate(t);
+    const sel = document.getElementById('equipTemplate');
+    const beforeValue = before ? before.value : ((editingEntry && editingEntry.template) || '');
+    // Cancel, or the template the form already has: the list goes back, nothing else changes
+    if (!t || t === 'cancel' || t === beforeValue) { restoreTemplateSelect(before); rememberTemplateBefore(); return; }
+    // The answer is the change (build 113: no detour through the old template first)
+    sel.value = t;
+    handleTemplateChange();
   });
 }
 
@@ -3900,17 +3900,20 @@ function clearSketch() {
 
 // Label placement — room-based numbering
 // Counts labels from all saved equipment in the same building+room so numbering continues
+// One rule for "the same building / room" (build 113): case, spaces and dashes
+// ignored — "VB-720", "vb 720" and "VB720" are one room. The sketch's label
+// numbering and the medical vacuum notice (collectSaveNotices) both use it.
+function placeKey(v) { return String(v || '').toLowerCase().replace(/[\s\-\u2010-\u2015]+/g, ''); }
+
 function getRoomLabelCounts() {
-  const building = (getBuilding() || '').trim().toLowerCase();
-  const room = (document.getElementById('equipRoom').value || '').trim().toLowerCase();
+  const building = placeKey(getBuilding());
+  const room = placeKey(document.getElementById('equipRoom').value);
   const counts = {}; // { prefix: totalCount }
 
   if (!building && !room) return counts;
 
   for (const entry of savedEquipment) {
-    const eBldg = (entry.equipBuilding || '').trim().toLowerCase();
-    const eRoom = (entry.equipRoom || '').trim().toLowerCase();
-    if (eBldg !== building || eRoom !== room) continue;
+    if (placeKey(entry.equipBuilding) !== building || placeKey(entry.equipRoom) !== room) continue;
 
     // Count labels from this entry's sketch
     if (entry.sketch && entry.sketch.labels) {
@@ -3999,14 +4002,14 @@ function getLabelForLinkedSource(linkedTo) {
   }
 
   // No labels placed on linked equipment yet — compute from room max of OTHER equipment
-  const bldg = (entry.equipBuilding || '').trim().toLowerCase();
-  const room = (entry.equipRoom || '').trim().toLowerCase();
+  const bldg = placeKey(entry.equipBuilding);
+  const room = placeKey(entry.equipRoom);
   let roomMax = 0;
   if (bldg || room) {
     for (const e of savedEquipment) {
       if (e === entry) continue;
-      if ((e.equipBuilding || '').trim().toLowerCase() !== bldg) continue;
-      if ((e.equipRoom || '').trim().toLowerCase() !== room) continue;
+      if (placeKey(e.equipBuilding) !== bldg) continue;
+      if (placeKey(e.equipRoom) !== room) continue;
       if (e.sketch && e.sketch.labels) {
         for (const lbl of e.sketch.labels) {
           const m = lbl.text.match(/^([A-Z]+)-(\d+)$/);
@@ -4566,17 +4569,24 @@ function confirmTemplateChange(templateVal) {
 function cancelTemplateChange() {
   const overlay = document.getElementById('templateConfirmOverlay');
   if (overlay) overlay.remove();
-  const sel = document.getElementById('equipTemplate');
-  const before = _templateCancelTo
-    || { value: (editingEntry && editingEntry.template && DATA.templates.includes(editingEntry.template)) ? editingEntry.template : '', custom: '' };
+  const before = _templateCancelTo;
   _templateCancelTo = null;
+  restoreTemplateSelect(before);
+  rememberTemplateBefore();
+  autoSaveCurrent();
+}
+// Put the template list (and the custom name box) back to `before` — a
+// rememberTemplateBefore record; null = not known, then the saved unit's own.
+function restoreTemplateSelect(before) {
+  const sel = document.getElementById('equipTemplate');
+  before = before
+    || { value: (editingEntry && editingEntry.template && DATA.templates.includes(editingEntry.template)) ? editingEntry.template : '', custom: '' };
   if (before.value && before.value !== '** New Template **') keepTemplateOption(before.value);
   sel.value = before.value || '';
   const custom = before.value === '** New Template **';
   document.getElementById('equipTemplateCustom').value = custom ? (before.custom || '') : '';
   document.getElementById('customTemplateGroup').style.display = custom ? 'flex' : 'none';
-  rememberTemplateBefore();
-  autoSaveCurrent();
+  return before;
 }
 
 function applyTemplate(val) {
@@ -4647,8 +4657,8 @@ function applyTemplate(val) {
         voltageAsked = true;
       }
     }
-    // the voltage's follow-up question still comes without the voltage prompt
-    if (!voltageAsked) maybeAskVacuumExhaust();
+    // the voltage's follow-ups still come without the voltage prompt
+    if (!voltageAsked) afterTemplateVoltage();
   } else if (!val) {
     // Cleared the template selection — clear sources if no data (sources
     // with a photo are kept, photo attached)
@@ -4818,12 +4828,19 @@ function applyTemplateVoltageChoice(voltage) {
   if (updated) {
     showToast(`Set ${updated} Electrical source${updated > 1 ? 's' : ''} to ${voltage}`);
   }
-  maybePromptElectricalCount();
-  maybeAskVacuumExhaust();
+  afterTemplateVoltage();
 }
 
 function keepDefaultVoltage() {
   closeTemplateVoltagePrompt();
+  afterTemplateVoltage();
+}
+
+// What a template asks once its voltage is settled (build 113: one place, it was
+// wired by hand into each voltage path): the count of its drives / fans / pumps,
+// then a medical vacuum pump's exhaust. applyTemplate calls it directly when it
+// shows no voltage prompt.
+function afterTemplateVoltage() {
   maybePromptElectricalCount();
   maybeAskVacuumExhaust();
 }
@@ -4886,17 +4903,15 @@ function applyElectricalCountChoice(n) {
     sources.forEach((s, i) => { if (isAutoElec(s)) lastIdx = i; });
     const adds = [];
     for (let k = 0; k < (n - current); k++) {
-      const c = Object.assign(JSON.parse(JSON.stringify(base)), { collapsed: true });
-      delete c.sourceId;      // a distinct physical disconnect gets its own id
-      delete c.linkedTo;
-      delete c.priorSourceIds;
+      const c = countCopyOf(base);
       adds.push(c);
     }
     sources.splice(lastIdx + 1, 0, ...adds);
   } else if (n < current) {
     let toRemove = current - n;
-    for (let i = sources.length - 1; i >= 0 && toRemove > 0; i--) {
-      if (isAutoElec(sources[i]) && !photographed.has(sources[i])) { sources.splice(i, 1); toRemove--; }
+    const first = sources.findIndex(isAutoElec);   // the first one stays (build 113)
+    for (let i = sources.length - 1; i > first && toRemove > 0; i--) {
+      if (isAutoElec(sources[i]) && countMayRemove(sources[i], photographed)) { sources.splice(i, 1); toRemove--; }
     }
     blocked = toRemove;
   }
@@ -4907,12 +4922,32 @@ function applyElectricalCountChoice(n) {
   rebindSourcePhotos(prev);
   renderSources();
   autoSaveCurrent();
-  if (blocked) showSourceToast(`Kept ${blocked} photographed electrical source${blocked > 1 ? 's' : ''} — remove it manually if it doesn't apply`, true);
-  else if (fans && fans.blocked) showSourceToast(`Kept ${fans.blocked} photographed Kinetic source${fans.blocked > 1 ? 's' : ''} — remove it manually if it doesn't apply`, true);
+  if (blocked) showSourceToast(`Kept ${blocked} electrical source${blocked > 1 ? 's' : ''} you filled in or photographed — remove it manually if it doesn't apply`, true);
+  else if (fans && fans.blocked) showSourceToast(`Kept ${fans.blocked} Kinetic source${fans.blocked > 1 ? 's' : ''} you filled in or photographed — remove it manually if it doesn't apply`, true);
   else showSourceToast(fans && fans.rows ? `${n} fan${n > 1 ? 's' : ''}: ${n} electrical and ${n} Kinetic source${n > 1 ? 's' : ''}` : `${n} electrical source${n > 1 ? 's' : ''}`, false);
 }
+// The count prompt's copy of a row: another disconnect / fan, so its own row and
+// id, and nothing the user typed on the first — no tag, no edit mark (build 113:
+// an edit mark copied here would make the copy look like the user's own row).
+function countCopyOf(base) {
+  const c = Object.assign(JSON.parse(JSON.stringify(base)), { collapsed: true });
+  delete c.sourceId;
+  delete c.linkedTo;
+  delete c.priorSourceIds;
+  delete c.userEdited;
+  delete c.deviceId;
+  return c;
+}
+// A lower count removes only rows that hold nothing of the user's (build 113):
+// no photo and no typed or picked value (sourceHasUserData) — the rule
+// applyTemplate keeps. Before, a row with a typed Device ID or location went.
+// The first row of the kind is never removed either: a kept later row must not
+// leave the count met by dropping the template's own first one.
+function countMayRemove(s, photographed) {
+  return !photographed.has(s) && !sourceHasUserData(s);
+}
 // Ensure n AUTO Kinetic rows (an AHU template starts with one). A photographed
-// one is never removed. Returns { rows, blocked } or null with no Kinetic row.
+// one, or one holding the user's data, is never removed. Returns { rows, blocked } or null with no Kinetic row.
 function matchAutoKineticRows(n, photographed) {
   const isAutoKin = s => s && s.auto && s.energySource === 'Kinetic';
   const current = sources.filter(isAutoKin).length;
@@ -4923,17 +4958,14 @@ function matchAutoKineticRows(n, photographed) {
     let lastIdx = -1;
     sources.forEach((s, i) => { if (isAutoKin(s)) lastIdx = i; });
     for (let k = 0; k < (n - current); k++) {
-      const c = Object.assign(JSON.parse(JSON.stringify(base)), { collapsed: true, location: kineticDefaultLocation() });
-      delete c.sourceId;      // another fan: its own row and id
-      delete c.linkedTo;
-      delete c.priorSourceIds;
-      delete c.userEdited;
+      const c = Object.assign(countCopyOf(base), { location: kineticDefaultLocation() });   // another fan
       sources.splice(++lastIdx, 0, c);
     }
   } else if (n < current) {
     let toRemove = current - n;
-    for (let i = sources.length - 1; i >= 0 && toRemove > 0; i--) {
-      if (isAutoKin(sources[i]) && !photographed.has(sources[i])) { sources.splice(i, 1); toRemove--; }
+    const first = sources.findIndex(isAutoKin);   // the first fan ("At Supply Fan") stays
+    for (let i = sources.length - 1; i > first && toRemove > 0; i--) {
+      if (isAutoKin(sources[i]) && countMayRemove(sources[i], photographed)) { sources.splice(i, 1); toRemove--; }
     }
     blocked = toRemove;
   }
@@ -5304,6 +5336,13 @@ const CUSTOM_EQUIP_KEYWORD_TEMPLATE = [
   { keyword: 'pump', template: 'Standard Pump' },
 ];
 
+// A keyword counts at the START of a word (build 113): "Repair Tank" holds
+// "air tank" but is no air tank. Only the start is anchored, so "Pumps" and
+// "VFD-3" still match. An `unless` word vetoes anywhere in the name.
+function nameHasWord(lowerName, keyword) {
+  return new RegExp('(^|[^a-z0-9])' + keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(lowerName);
+}
+
 // Fired when a custom equipment type name is entered. If the name matches a keyword
 // (e.g. contains "Pump") and no template is selected yet, auto-pick the suggested
 // template and apply its auto-sources — the user can still change it afterward.
@@ -5314,7 +5353,7 @@ function handleCustomEquipTypeChange() {
   const tmplSel = document.getElementById('equipTemplate');
   if (tmplSel.value) return; // respect a template the user already chose
   const lower = name.toLowerCase();
-  const match = CUSTOM_EQUIP_KEYWORD_TEMPLATE.find(e => lower.includes(e.keyword) && !(e.unless && lower.includes(e.unless)));
+  const match = CUSTOM_EQUIP_KEYWORD_TEMPLATE.find(e => nameHasWord(lower, e.keyword) && !(e.unless && lower.includes(e.unless)));
   if (match && [...tmplSel.options].some(o => o.value === match.template)) {
     pickTemplate(match.template); // applies the template's auto-sources + diagram
     showToast(`Auto-selected ${match.template} template — change it if needed`);
@@ -9345,7 +9384,6 @@ const VACUUM_RECORD_LABEL = {
   'Medical Vacuum': 'Medical Vacuum: the receiver and all its pumps',
   'Medical Vacuum Pump': 'Medical Vacuum Pump: one pump on a shared receiver',
 };
-function placeKey(v) { return String(v || '').toLowerCase().replace(/[\s\-\u2010-\u2015]+/g, ''); }
 function collectSaveNotices() {
   const notices = [];
   const other = VACUUM_RECORD_OTHER[getTemplate()];

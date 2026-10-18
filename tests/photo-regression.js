@@ -68,6 +68,9 @@
 //             Electrical with Stored Energy can be picked (new types Compressed Air Tank, Blower, Switchgear, VFD)
 //   T229–T231 build 112: what a vacuum record covers (one question, three answers) and the pump's exhaust valve;
 //             a Kinetic row per AHU fan; a room that already has the other kind of medical vacuum record
+//   T232–T235 build 113: the 2026-10-18 medium review of builds 110–112 — a lower count keeps the user's rows
+//             (and a count copy carries no tag), custom-name words at a word start, the template's follow-ups
+//             after its voltage from one place, the vacuum list pick without a detour
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -7051,6 +7054,156 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ==========================================================================
+  // BUILD 113 — the 2026-10-18 medium review of builds 110–112.
+  // ==========================================================================
+
+  // T232 — a lower count never removes a row holding the user's data; a count
+  // copy carries no tag or edit mark of the row it copies
+  async function t232_aLowerCountKeepsTheUsersRows() {
+    const N = 'T232 the count prompt: a copy of the first disconnect carries none of its Device ID or edit mark; going from 2 back to 1 keeps a second Electrical row with a typed Device ID and a second Kinetic row with a typed location (and says so), and still removes rows nobody touched';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const elec = () => sources.filter(x => /^Electrical /.test(x.energySource || ''));
+    const kin = () => sources.filter(x => x.energySource === 'Kinetic');
+    const setup = async () => {
+      fillFormNoSources('AHU-232');
+      document.getElementById('equipType').value = 'Air Handler';
+      filterTemplateDropdown('Air Handler');
+      await withDialogs({ confirm: true }, async () => {
+        pickTemplate('AHU - Steam');
+        if (document.getElementById('templateVoltageOverlay')) applyTemplateVoltageChoice('480V');
+      });
+      closeAllPrompts();
+    };
+    await setup();
+    updateSource(sources.indexOf(elec()[0]), 'deviceId', 'VFD-1');
+    applyElectricalCountChoice(2);
+    got.copy = { tag: elec()[1].deviceId || '', edited: !!elec()[1].userEdited, first: elec()[0].deviceId };
+    want(elec().length === 2 && !got.copy.tag && !got.copy.edited && got.copy.first === 'VFD-1', 'the copy');
+    updateSource(sources.indexOf(elec()[1]), 'deviceId', 'VFD-2');
+    updateSource(sources.indexOf(kin()[1]), 'location', 'Return fan plenum');
+    const toasts = await withToasts(async () => { applyElectricalCountChoice(1); });
+    got.kept = { elec: elec().map(x => x.deviceId || ''), kin: kin().map(x => x.location), toasts };
+    want(got.kept.elec.join() === 'VFD-1,VFD-2' && got.kept.kin.join() === 'At Supply Fan,Return fan plenum', 'edited rows kept');
+    // untouched rows still go
+    await setup();
+    applyElectricalCountChoice(2);
+    applyElectricalCountChoice(1);
+    got.plain = { elec: elec().length, kin: kin().length };
+    want(got.plain.elec === 1 && got.plain.kin === 1, 'untouched rows removed');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T233 — custom-name words count at the start of a word
+  async function t233_customNameWordsStartAWord() {
+    const N = 'T233 a custom equipment type picks a template from a word only at a word start: "Repair Tank 2" and "Hair Tank" get none, "Air Tank 3" Compressed Air Tank, "Booster Pumps" Standard Pump, "AHU-3 VFD" and "VFD-12" Electrical with Stored Energy, "Main Switchgear-2" Switchgear, "Tube Blower" Blower, "Lab Vac 2" Lab Vacuum';
+    await resetAppState();
+    const custom = async (typed) => {
+      fillFormNoSources('C-233');
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = '** New Equipment Type **';
+      filterTemplateDropdown('');
+      document.getElementById('equipTypeCustom').value = typed;
+      await withDialogs({ confirm: true }, async () => { handleCustomEquipTypeChange(); });
+      closeAllPrompts();
+      return getTemplate();
+    };
+    const wantMap = { 'Repair Tank 2': '', 'Hair Tank': '', 'Air Tank 3': 'Compressed Air Tank', 'Booster Pumps': 'Standard Pump',
+      'AHU-3 VFD': 'Electrical with Stored Energy', 'VFD-12': 'Electrical with Stored Energy', 'Main Switchgear-2': 'Switchgear',
+      'Tube Blower': 'Blower', 'Lab Vac 2': 'Lab Vacuum' };
+    const got = {};
+    for (const typed of Object.keys(wantMap)) got[typed] = await custom(typed);
+    const wrong = Object.keys(wantMap).filter(k => got[k] !== wantMap[k]);
+    record(N, !wrong.length, (wrong.length ? 'WRONG: ' + wrong.join(', ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T234 — the template's follow-ups after its voltage come from one place
+  async function t234_theTemplatesFollowUpsComeFromOnePlace() {
+    const N = 'T234 after a template\'s voltage — picked, kept by default, or with no voltage prompt — its count prompt and a medical vacuum pump\'s exhaust question come from one place (afterTemplateVoltage); a template change that keeps the user\'s own Electrical row still asks for the voltage and then the count';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    got.hook = typeof afterTemplateVoltage === 'function';
+    want(got.hook, 'afterTemplateVoltage');
+    // an AHU whose own Electrical row (a typed Device ID) is kept through a template change
+    fillFormNoSources('AHU-234');
+    document.getElementById('equipType').value = 'Air Handler';
+    filterTemplateDropdown('Air Handler');
+    await withDialogs({ confirm: true }, async () => { pickTemplate('AHU - HHW'); });
+    closeAllPrompts();
+    const e0 = sources.findIndex(x => /^Electrical /.test(x.energySource || ''));
+    updateSource(e0, 'deviceId', 'AHU-234-DISC');
+    await withDialogs({ confirm: true }, async () => {
+      pickTemplate('AHU - Steam');
+      if (document.getElementById('templateConfirmOverlay')) confirmTemplateChange('AHU - Steam');
+      got.voltage = !!document.getElementById('templateVoltageOverlay');
+      if (got.voltage) keepDefaultVoltage();
+      got.count = !!document.getElementById('electricalCountOverlay');
+    });
+    closeAllPrompts();
+    want(getTemplate() === 'AHU - Steam' && got.voltage && got.count && sources.some(x => x.deviceId === 'AHU-234-DISC'), 'kept row, voltage then count');
+    // straight from the hook: the count prompt for an AHU, the exhaust question for a medical vacuum pump
+    if (got.hook) {
+      afterTemplateVoltage();
+      got.hookCount = !!document.getElementById('electricalCountOverlay');
+      closeAllPrompts();
+      let asked = false;
+      fillFormNoSources('MVP-234');
+      document.getElementById('equipType').value = 'Vacuum Pump';
+      filterTemplateDropdown('Vacuum Pump');
+      await withDialogs({ confirm: true }, async () => { pickTemplate('Medical Vacuum Pump'); });
+      closeAllPrompts();
+      await withDialogs({ choice: (o) => { if (o.id === 'vacuum-exhaust') asked = true; return 'cancel'; } }, async () => { afterTemplateVoltage(); await sleep(0); });
+      got.hookExhaust = asked;
+      want(got.hookCount && got.hookExhaust, 'the hook');
+    }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T235 — the vacuum list pick takes the answer directly
+  async function t235_theVacuumListPickTakesTheAnswerDirectly() {
+    const N = 'T235 a vacuum template picked from the list: answering with the template the unit already has puts the list back and writes nothing (no "Change Template?", the typed Device ID kept); answering with the picked one goes straight to "Change Template?" (the unit has data), whose Cancel restores Medical Vacuum Pump; no autosave in between ever sees a blank template';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('MVP-235');
+    document.getElementById('equipType').value = 'Vacuum Pump';
+    filterTemplateDropdown('Vacuum Pump');
+    await withDialogs({ confirm: true }, async () => { pickTemplate('Medical Vacuum Pump'); });
+    closeAllPrompts();
+    updateSource(sources.findIndex(x => /^Electrical /.test(x.energySource || '')), 'deviceId', 'MVP-235-DISC');
+    const realSave = window.autoSaveCurrent;
+    const saves = [];
+    window.autoSaveCurrent = function () { saves.push(getTemplate()); return realSave.apply(this, arguments); };
+    try {
+      const pick = async (value, answer) => {
+        await withDialogs({ confirm: true, choice: (o) => o.id === 'vacuum-cover' ? answer : 'cancel' }, async () => {
+          rememberTemplateBefore();
+          document.getElementById('equipTemplate').value = value;
+          await onTemplateSelectChange();
+          await sleep(0);
+        });
+      };
+      await pick('Medical Vacuum', 'Medical Vacuum Pump');
+      got.same = { template: getTemplate(), confirm: !!document.getElementById('templateConfirmOverlay'), saves: saves.slice(),
+                   tag: sources.some(x => x.deviceId === 'MVP-235-DISC') };
+      want(got.same.template === 'Medical Vacuum Pump' && !got.same.confirm && !got.same.saves.length && got.same.tag, 'answer = the unit\'s template');
+      saves.length = 0;
+      await pick('Medical Vacuum', 'Medical Vacuum');
+      got.change = { confirm: !!document.getElementById('templateConfirmOverlay'), saves: saves.slice() };
+      cancelTemplateChange();
+      got.change.after = getTemplate();
+      got.change.tag = sources.some(x => x.deviceId === 'MVP-235-DISC');
+      want(got.change.confirm && got.change.after === 'Medical Vacuum Pump' && got.change.tag && !got.change.saves.includes(''), 'answer = the pick');
+    } finally {
+      window.autoSaveCurrent = realSave;
+      closeAllPrompts();
+    }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -7149,7 +7302,9 @@
     t223_todayAndYesterdayFollowTheSurveyDate, t224_miscCaptureTimesLineUpWithTheirFiles,
     t225_aFilePickedOnADesktopIsNotACameraShot, t226_anAutomaticYesFollowsItsPhotoOnEveryPath,
     t227_theSurveyDateQuestionIsTheAppsQuestionBox, t228_everyLotoWebTemplateCanBePicked,
-    t229_aVacuumRecordSaysWhatItCovers, t230_anAhuGetsAKineticRowPerFan, t231_theSameRoomRecordedBothWaysIsNoticed];
+    t229_aVacuumRecordSaysWhatItCovers, t230_anAhuGetsAKineticRowPerFan, t231_theSameRoomRecordedBothWaysIsNoticed,
+    t232_aLowerCountKeepsTheUsersRows, t233_customNameWordsStartAWord, t234_theTemplatesFollowUpsComeFromOnePlace,
+    t235_theVacuumListPickTakesTheAnswerDirectly];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
