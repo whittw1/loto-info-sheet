@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 110,
+  "build": 111,
   "hospitals": [
     {
       "code": "Marion",
@@ -43,12 +43,16 @@
     "Unit Heater",
     "Domestic Water Heater",
     "Air Compressor",
+    "Compressed Air Tank",
+    "Blower",
     "Air Dryer",
     "Vacuum Pump",
     "Lab Vacuum",
     "ATS",
     "Generator",
     "Transformer",
+    "Switchgear",
+    "VFD",
     "Day Tank",
     "DA Tank",
     "Condensate Surge Tank",
@@ -111,10 +115,10 @@
       "Water Heater - Steam"
     ],
     "Chemical Feed Pump": [
-      "Standard Pump"
+      "Chemical Pump"
     ],
     "Chemical Pump": [
-      "Standard Pump"
+      "Chemical Pump"
     ],
     "Fire Pump": [
       "Fire Pump"
@@ -141,7 +145,14 @@
     ],
     "Air Compressor": [
       "Air Compressor",
-      "Medical Air"
+      "Medical Air",
+      "Compressed Air Tank"
+    ],
+    "Compressed Air Tank": [
+      "Compressed Air Tank"
+    ],
+    "Blower": [
+      "Blower"
     ],
     "Air Dryer": [
       "Air Dryer"
@@ -149,6 +160,7 @@
     "Vacuum Pump": [
       "Vacuum Pump",
       "Medical Vacuum",
+      "Medical Vacuum Pump",
       "Lab Vacuum"
     ],
     "Lab Vacuum": [
@@ -182,7 +194,14 @@
       "Boiler - Natural Gas - STM"
     ],
     "Transformer": [
-      "Standard Electrical"
+      "Standard Electrical",
+      "Electrical with Stored Energy"
+    ],
+    "Switchgear": [
+      "Switchgear"
+    ],
+    "VFD": [
+      "Electrical with Stored Energy"
     ],
     "Steam PRV Station": [
       "Steam PRV Station"
@@ -202,6 +221,7 @@
     "Fire Pump",
     "Feedwater Pump",
     "Glycol Pump",
+    "Chemical Pump",
     "Day Tank",
     "Condensate Return Unit",
     "Condensate Return Unit - Steam",
@@ -214,9 +234,12 @@
     "Unit Heater - Natural Gas",
     "Air Compressor",
     "Medical Air",
+    "Compressed Air Tank",
+    "Blower",
     "Air Dryer",
     "Vacuum Pump",
     "Medical Vacuum",
+    "Medical Vacuum Pump",
     "Lab Vacuum",
     "Condensing Unit",
     "Mini Split",
@@ -229,6 +252,8 @@
     "ATS - Generic",
     "Humidifier",
     "Standard Electrical",
+    "Electrical with Stored Energy",
+    "Switchgear",
     "Heat Exchanger - Steam",
     "Heat Exchanger - CHW/Glycol",
     "Steam PRV Station",

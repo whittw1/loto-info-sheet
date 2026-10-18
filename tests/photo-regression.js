@@ -64,6 +64,8 @@
 //             picking the shared photo later, Split keeping extra tags, settling the unattached-shot
 //             warning (+ misc), Today / Yesterday by survey date, misc capture times, a desktop file
 //             pick, the automatic Yes on every path, the survey-date question box
+//   T228      build 111: loto-web's Medical Vacuum Pump, Chemical Pump, Compressed Air Tank, Blower, Switchgear and
+//             Electrical with Stored Energy can be picked (new types Compressed Air Tank, Blower, Switchgear, VFD)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -5812,7 +5814,7 @@
     const askOk = /pumps are on this receiver/i.test(countAsk) && /each one gets its own disconnect/i.test(countAsk);
     // the Vacuum Pump type offers it; the medical template is untouched
     const vpOffers = (EQUIPMENT_TEMPLATE_MAP['Vacuum Pump'] || []).join();
-    const medOk = vpOffers === 'Vacuum Pump,Medical Vacuum,Lab Vacuum'
+    const medOk = vpOffers === 'Vacuum Pump,Medical Vacuum,Medical Vacuum Pump,Lab Vacuum'   // + Medical Vacuum Pump since build 111
       && (TEMPLATE_AUTO_SOURCES['Medical Vacuum'] || []).map(x => x.energySource).join() === 'Electrical 208V';
     // custom type names
     const custom = async (typed) => {
@@ -6748,6 +6750,127 @@
       'question box ' + (ov ? ov.id : 'none (a separate dialog)') + '; Use this date off at first=' + offAtFirst + ', on after a date=' + onAfter + '; answered ' + JSON.stringify(got));
   }
 
+  // ==========================================================================
+  // BUILD 111 — loto-web's templates the app could not pick (2026-10-18):
+  // Medical Vacuum Pump, Chemical Pump, Compressed Air Tank, Blower,
+  // Switchgear and Electrical with Stored Energy. Fails on build 110.
+  // ==========================================================================
+
+  // T228 — every one of them can be picked, with its own rows, and exports
+  // under loto-web's name
+  async function t228_everyLotoWebTemplateCanBePicked() {
+    const N = 'T228 loto-web\'s six templates the app lacked: the Vacuum Pump type offers Medical Vacuum Pump (one pump on a shared receiver: its Hand/Off/Auto disconnect at the picked voltage and the Vacuum Air In ball valve, no pump-count prompt); Chemical Feed Pump and Chemical Pump pick Chemical Pump (120V default kept on the Chemical Pump type); the new Compressed Air Tank type picks its template (one Compressed Air In ball valve, no Electrical row, no voltage prompt, no Electrical expected — also on the Air Compressor type); the new Blower type picks Blower (a disconnect, no Kinetic); the new Switchgear and VFD types pick Switchgear and Electrical with Stored Energy (one Meter-verified feed up to 4160V, no Stored Electrical Energy row); Transformer asks between Standard Electrical and Electrical with Stored Energy; custom names follow loto-web\'s words; every type\'s choices are on the template list; the export says each name';
+    await resetAppState();
+    const rowsOf = () => sources.map(x => [x.energySource, x.deviceType, x.verification].join('/'));
+    // Pick a type; answer the template prompt with `template` and the voltage prompt with `volt`.
+    const pickType = async (type, template, volt) => {
+      fillFormNoSources('T228-' + type);
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = type;
+      const seen = { choices: null, volts: null, count: false };
+      await withDialogs({ confirm: true }, async () => {
+        handleEquipTypeChange();
+        const tp = document.getElementById('templatePromptOverlay');
+        if (tp) {
+          seen.choices = [...tp.querySelectorAll('button')].map(b => b.textContent.trim()).filter(t => !/skip/i.test(t));
+          if (template) applyTemplatePromptChoice(template);
+        }
+        if (document.getElementById('templateConfirmOverlay') && template) confirmTemplateChange(template);
+        const vo = document.getElementById('templateVoltageOverlay');
+        if (vo) {
+          seen.volts = [...vo.querySelectorAll('button')].map(b => b.textContent.trim()).filter(t => /^\d+V$/.test(t));
+          if (volt) applyTemplateVoltageChoice(volt);
+        }
+        seen.count = !!document.getElementById('electricalCountOverlay');
+      });
+      closeAllPrompts();
+      return Object.assign(seen, { template: getTemplate(), rows: rowsOf(),
+        offered: [...document.getElementById('equipTemplate').options].map(o => o.value).filter(v => v && v !== '** New Template **') });
+    };
+    const r = {};
+    r.mvp = await pickType('Vacuum Pump', 'Medical Vacuum Pump', '480V');
+    r.cfp = await pickType('Chemical Feed Pump', null, '208V');
+    r.cp = await pickType('Chemical Pump', null, null);
+    r.tank = await pickType('Compressed Air Tank', null, null);
+    r.acTank = await pickType('Air Compressor', 'Compressed Air Tank', null);
+    r.blower = await pickType('Blower', null, '480V');
+    r.swgr = await pickType('Switchgear', null, '4160V');
+    r.vfd = await pickType('VFD', null, '480V');
+    r.xfmr = await pickType('Transformer', 'Electrical with Stored Energy', '480V');
+    const fails = [];
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    want(r.mvp.template === 'Medical Vacuum Pump' && r.mvp.offered.join() === 'Vacuum Pump,Medical Vacuum,Medical Vacuum Pump,Lab Vacuum'
+      && (r.mvp.choices || []).some(t => /one pump on a shared receiver/i.test(t)) && (r.mvp.choices || []).some(t => /^Medical Vacuum: the receiver and all its pumps/i.test(t))
+      && r.mvp.rows.join('|') === 'Electrical 480V/Disconnect/SW (Hand/Off/Auto)|Vacuum Air In/Ball Valve/Gauge/Drain' && !r.mvp.count
+      && (r.mvp.volts || []).join() === '120V,208V,240V,480V', 'Medical Vacuum Pump');
+    want(r.cfp.template === 'Chemical Pump' && r.cfp.offered.join() === 'Chemical Pump' && r.cfp.rows.join('|') === 'Electrical 208V//', 'Chemical Feed Pump');
+    want(r.cp.template === 'Chemical Pump' && r.cp.offered.join() === 'Chemical Pump' && r.cp.rows.join('|') === 'Electrical 120V//' && !!r.cp.volts, 'Chemical Pump type');
+    want(r.tank.template === 'Compressed Air Tank' && r.tank.rows.join('|') === 'Compressed Air In/Ball Valve/Gauge/Drain' && !r.tank.volts, 'Compressed Air Tank type');
+    want(r.acTank.template === 'Compressed Air Tank' && r.acTank.offered.join() === 'Air Compressor,Medical Air,Compressed Air Tank'
+      && !r.acTank.rows.some(x => /^Electrical|^Kinetic/.test(x)) && !r.acTank.volts, 'Air Compressor -> Compressed Air Tank');
+    want(!expectsElectricalSource('Compressed Air Tank', 'Compressed Air Tank') && !expectsElectricalSource('Air Compressor', 'Compressed Air Tank')
+      && expectsElectricalSource('Air Compressor', 'Air Compressor'), 'tank expects no Electrical');
+    want(r.blower.template === 'Blower' && r.blower.rows.join('|') === 'Electrical 480V/Disconnect/Controls' && expectsElectricalSource('Blower', 'Blower'), 'Blower');
+    want(r.swgr.template === 'Switchgear' && r.swgr.rows.join('|') === 'Electrical 4160V//Meter' && (r.swgr.volts || []).includes('4160V')
+      && expectsElectricalSource('Switchgear', 'Switchgear'), 'Switchgear');
+    want(r.vfd.template === 'Electrical with Stored Energy' && r.vfd.rows.join('|') === 'Electrical 480V//Meter'
+      && !r.vfd.rows.some(x => /^Stored/.test(x)) && expectsElectricalSource('VFD', 'Electrical with Stored Energy'), 'VFD');
+    want(r.xfmr.template === 'Electrical with Stored Energy' && (r.xfmr.choices || []).length === 2
+      && (r.xfmr.choices || []).some(t => /capacitor bank/i.test(t)) && r.xfmr.rows.join('|') === 'Electrical 480V//Meter', 'Transformer');
+    // custom equipment type names
+    const custom = async (typed) => {
+      fillFormNoSources('C-228');
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = '** New Equipment Type **';
+      document.getElementById('equipTypeCustom').value = typed;
+      await withDialogs({ confirm: true }, async () => { handleCustomEquipTypeChange(); });
+      closeAllPrompts();
+      return getTemplate();
+    };
+    const customs = {};
+    for (const typed of ['Boiler Chemical Feed Pump', 'Chem Feed Pump 2', 'Air Receiver 2', 'Medical Air Receiver Tank', 'Pneumatic Tube Blower',
+                         'AHU-3 Supply VFD', 'Main Switchgear', 'Medical Vacuum Pump 2', 'Booster Pump']) customs[typed] = await custom(typed);
+    want(customs['Boiler Chemical Feed Pump'] === 'Chemical Pump' && customs['Chem Feed Pump 2'] === 'Chemical Pump'
+      && customs['Air Receiver 2'] === 'Compressed Air Tank' && customs['Medical Air Receiver Tank'] !== 'Compressed Air Tank'
+      && customs['Pneumatic Tube Blower'] === 'Blower' && customs['AHU-3 Supply VFD'] === 'Electrical with Stored Energy'
+      && customs['Main Switchgear'] === 'Switchgear' && customs['Medical Vacuum Pump 2'] !== 'Medical Vacuum Pump'
+      && customs['Booster Pump'] === 'Standard Pump', 'custom names');
+    // every type's choices are templates the list (and app-lists.json) carries
+    const offList = [];
+    Object.keys(EQUIPMENT_TEMPLATE_MAP).forEach(t => EQUIPMENT_TEMPLATE_MAP[t].forEach(x => { if (!DATA.templates.includes(x)) offList.push(t + ' -> ' + x); }));
+    ['Compressed Air Tank', 'Blower', 'Switchgear', 'VFD'].forEach(t => { if (!DATA.equipmentTypes.includes(t)) offList.push('type ' + t); });
+    want(!offList.length, 'off the list: ' + offList.join(', '));
+    // the export carries each name exactly (an empty form, so it holds these units only)
+    await resetAppState();
+    const NEW = [['Vacuum Pump', 'Medical Vacuum Pump', 'Vacuum Air In'], ['Chemical Feed Pump', 'Chemical Pump', 'Electrical 120V'],
+                 ['Compressed Air Tank', 'Compressed Air Tank', 'Compressed Air In'], ['Blower', 'Blower', 'Electrical 208V'],
+                 ['Switchgear', 'Switchgear', 'Electrical 480V'], ['VFD', 'Electrical with Stored Energy', 'Electrical 480V']];
+    savedEquipment = NEW.map(([type, template, src], i) => {
+      const e = mkEntry('T228 Unit ' + (i + 1), { sources: [Object.assign(mkSrc(src), { sourceId: genUuid(), deviceType: /^Electrical/.test(src) ? 'Disconnect' : 'Ball Valve' })] });
+      e.equipType = type; e.template = template;
+      return e;
+    });
+    saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const jeTemplates = ((u.entriesJson && u.entriesJson.entries) || []).map(e => e.template).sort();
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    const sheetTemplates = [];
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      const ws = wb.worksheets[0];
+      ws.eachRow(row => {
+        if (String(row.getCell(1).value || '') === 'Tied to Equipment') sheetTemplates.push(String(ws.getRow(row.number + 1).getCell(8).value || ''));
+      });
+    }
+    sheetTemplates.sort();
+    const wantNames = NEW.map(x => x[1]).sort().join();
+    want(jeTemplates.join() === wantNames && sheetTemplates.join() === wantNames, 'export');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(r) + '; custom ' + JSON.stringify(customs)
+      + '; entries.json ' + JSON.stringify(jeTemplates) + '; sheet ' + JSON.stringify(sheetTemplates));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -6845,7 +6968,7 @@
     t220_aYesWithoutItsPhotoCanStillPickIt, t221_splitKeepsExtraTags, t222_theUnattachedShotWarningCanBeSettled,
     t223_todayAndYesterdayFollowTheSurveyDate, t224_miscCaptureTimesLineUpWithTheirFiles,
     t225_aFilePickedOnADesktopIsNotACameraShot, t226_anAutomaticYesFollowsItsPhotoOnEveryPath,
-    t227_theSurveyDateQuestionIsTheAppsQuestionBox];
+    t227_theSurveyDateQuestionIsTheAppsQuestionBox, t228_everyLotoWebTemplateCanBePicked];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b110</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b111</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1102,8 +1102,8 @@ const DATA = {
     "CHW Pump","Domestic HW Pump","Domestic Water Pump","Feedwater Pump","Glycol Pump",
     "Fire Pump","Fire Jockey Pump","Heat Exchanger",
     "Condensate Return Unit","Condensate Pump","Unit Heater",
-    "Domestic Water Heater","Air Compressor","Air Dryer","Vacuum Pump","Lab Vacuum","ATS",
-    "Generator","Transformer","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
+    "Domestic Water Heater","Air Compressor","Compressed Air Tank","Blower","Air Dryer","Vacuum Pump","Lab Vacuum","ATS",
+    "Generator","Transformer","Switchgear","VFD","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
     "Chiller","Refrigerator","Boiler","Steam PRV Station","Humidifier",
     "** New Equipment Type **"
   ],
@@ -1171,16 +1171,16 @@ const DATA = {
   templates: [
     "** New Template **",
     "AHU - Steam","AHU - HHW","AHU - Geothermal","AHU - Steam, CHW, HHW",
-    "Chilled Water Pump","Heating Hot Water Pump","Standard Pump","Fire Pump","Feedwater Pump","Glycol Pump",
+    "Chilled Water Pump","Heating Hot Water Pump","Standard Pump","Fire Pump","Feedwater Pump","Glycol Pump","Chemical Pump",
     "Day Tank",
     "Condensate Return Unit","Condensate Return Unit - Steam",
     "Exhaust Fan","Water Heater - Steam","Water Heater - Gas","Water Heater - Electric",
     "Unit Heater - Steam","Unit Heater - HHW","Unit Heater - Natural Gas",
-    "Air Compressor","Medical Air","Air Dryer","Vacuum Pump","Medical Vacuum","Lab Vacuum","Condensing Unit","Mini Split",
+    "Air Compressor","Medical Air","Compressed Air Tank","Blower","Air Dryer","Vacuum Pump","Medical Vacuum","Medical Vacuum Pump","Lab Vacuum","Condensing Unit","Mini Split",
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
     "Elevator - Traction","Elevator - Hydraulic",
     "ATS - Generic","Humidifier",
-    "Standard Electrical","Heat Exchanger - Steam","Heat Exchanger - CHW/Glycol",
+    "Standard Electrical","Electrical with Stored Energy","Switchgear","Heat Exchanger - Steam","Heat Exchanger - CHW/Glycol",
     "Steam PRV Station","Boiler - Natural Gas - HHW","Boiler - Natural Gas - STM"
   ],
   tiedToOptions: ["Shut Down","Shut Down & LOTO"]
@@ -2587,6 +2587,9 @@ const EQUIPMENT_PROMPT_FOR_TEMPLATE = new Set([
   // Air Compressor / Vacuum Pump now offer a regular and a Medical variant.
   'Air Compressor',
   'Vacuum Pump',
+  // Transformer offers Electrical with Stored Energy beside Standard
+  // Electrical since build 111.
+  'Transformer',
 ]);
 
 // Optional per-equipment-type display-label overrides for the template-pick
@@ -2598,6 +2601,17 @@ const EQUIPMENT_TEMPLATE_LABELS = {
   'Dishwasher': {
     'Water Heater - Electric': 'Electric',
     'Water Heater - Steam':    'Steam',
+  },
+  // Build 111: the two medical vacuum templates differ by what one unit is.
+  'Vacuum Pump': {
+    'Vacuum Pump':         'Vacuum Pump',
+    'Medical Vacuum':      'Medical Vacuum: the receiver and all its pumps',
+    'Medical Vacuum Pump': 'Medical Vacuum Pump: one pump on a shared receiver',
+    'Lab Vacuum':          'Lab Vacuum: the receiver and all its pumps',
+  },
+  'Transformer': {
+    'Standard Electrical':           'Standard Electrical',
+    'Electrical with Stored Energy': 'With a capacitor bank (Electrical with Stored Energy)',
   },
 };
 
@@ -2790,8 +2804,12 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Condensate Surge Tank': ['Condensate Return Unit'],
   // Dishwasher — Electric or Steam variant. Reuses the Water Heater templates.
   'Dishwasher': ['Water Heater - Electric', 'Water Heater - Steam'],
-  'Chemical Feed Pump': ['Standard Pump'],
-  'Chemical Pump': ['Standard Pump'],
+  // Chemical pumps (build 111): loto-web's Chemical Pump procedure (2026-10-09)
+  // = the Standard Pump one with the chemical hazard banners and the Boiler
+  // Plant POC / personnel. Before, both types offered only Standard Pump, and
+  // loto-web reached its template only from a name saying "chemical pump".
+  'Chemical Feed Pump': ['Chemical Pump'],
+  'Chemical Pump': ['Chemical Pump'],
   // Fire Pump has its own template since build 108: loto-web stores the
   // exported template as the unit's type, and its Fire Pump procedure (the
   // Standard Pump one plus the fire protection impairment NOTEs) and Fire Pump
@@ -2802,12 +2820,27 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Condensate Return Unit': ['Condensate Return Unit','Condensate Return Unit - Steam'],
   'Unit Heater': ['Unit Heater - Steam','Unit Heater - HHW','Unit Heater - Natural Gas'],
   'Domestic Water Heater': ['Water Heater - Steam','Water Heater - Gas','Water Heater - Electric'],
-  'Air Compressor': ['Air Compressor','Medical Air'],
+  // Compressed Air Tank (build 111): loto-web's tank procedure (2026-09-15) =
+  // the Air Compressor one minus everything electrical, for a receiver or
+  // surge tank recorded on its own. Its own type, and a choice on the Air
+  // Compressor type.
+  'Air Compressor': ['Air Compressor','Medical Air','Compressed Air Tank'],
+  'Compressed Air Tank': ['Compressed Air Tank'],
+  // Blower (build 111): loto-web's Blower procedure (2026-10-11, KC-LOTO-065,
+  // a pneumatic tube system blower) = the Air Compressor one without the tank
+  // text, with piping disconnect / reconnect steps. loto-web adds the
+  // "At Blower" Kinetic row itself.
+  'Blower': ['Blower'],
   'Air Dryer': ['Air Dryer'],
   // Lab Vacuum (build 108): loto-web's Lab_Vacuum procedure (2026-10-08) for a
   // laboratory vacuum plant, mostly clinical labs — one unit = the receiver
   // tank and every pump on it. No patient-care / NFPA 99 text; no matrix.
-  'Vacuum Pump': ['Vacuum Pump','Medical Vacuum','Lab Vacuum'],
+  // Medical Vacuum Pump (build 111): loto-web's per-pump procedure (2026-10-16,
+  // KC-LOTO-282–284) for ONE pump on a shared receiver, isolated at its own
+  // inlet valve while the receiver keeps serving the other pumps. "Medical
+  // Vacuum" stays the receiver and all its pumps (loto-web's Medical Vacuum
+  // System), and only this explicit pick reaches the pump procedure.
+  'Vacuum Pump': ['Vacuum Pump','Medical Vacuum','Medical Vacuum Pump','Lab Vacuum'],
   'Lab Vacuum': ['Lab Vacuum'],
   'Cooling Tower': ['Cooling Tower'],
   'Generator': ['Emergency Generator'],
@@ -2819,7 +2852,13 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Boiler': ['Boiler - Natural Gas - HHW','Boiler - Natural Gas - STM'],
   // Transformer: generic electrical equipment — one Electrical source with a
   // Meter verification, and the voltage prompt offers up to 4160V.
-  'Transformer': ['Standard Electrical'],
+  // Build 111: "Electrical with Stored Energy" (loto-web adds the capacitor
+  // bank's Stored Electrical Energy row) is offered here too, and it is the
+  // template of the new VFD type: loto-web adds a drive's DC-bus row per site.
+  // Switchgear has loto-web's Switchgear procedure and matrix.
+  'Transformer': ['Standard Electrical','Electrical with Stored Energy'],
+  'Switchgear': ['Switchgear'],
+  'VFD': ['Electrical with Stored Energy'],
   'Steam PRV Station': ['Steam PRV Station'],
   'Humidifier': ['Humidifier'],
 };
@@ -2900,8 +2939,10 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Cooling Tower': 'cooling_tower',
   'Condensate Return Unit': 'condensate_return', 'Condensate Return Unit - Steam': 'condensate_return',
   'Elevator - Traction': 'traction_elevator', 'Elevator - Hydraulic': 'hydraulic_elevator',
-  'Vacuum Pump': 'medical_vacuum', 'Medical Vacuum': 'medical_vacuum', 'Lab Vacuum': 'medical_vacuum',
+  'Vacuum Pump': 'medical_vacuum', 'Medical Vacuum': 'medical_vacuum', 'Medical Vacuum Pump': 'medical_vacuum', 'Lab Vacuum': 'medical_vacuum',
   'Standard Electrical': 'general', 'UPS': 'ups',
+  'Electrical with Stored Energy': 'general', 'Switchgear': 'general',
+  'Chemical Pump': 'pump', 'Compressed Air Tank': 'general', 'Blower': 'general',
   'Steam PRV Station': 'general',
   'Medical Air Compressor': 'medical_air_compressor',
 };
@@ -4608,6 +4649,7 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Heating Hot Water Pump':  ['120V', '208V', '240V', '480V'],
   'Standard Pump':           ['120V', '208V', '240V', '480V'],
   'Fire Pump':               ['120V', '208V', '240V', '480V'],
+  'Chemical Pump':           ['120V', '208V', '240V', '480V'],
   // AHUs, Cooling Tower, Exhaust Fan: only 120/208/480 per spec (no 240, no 4160).
   'AHU - Steam':             ['120V', '208V', '277V', '480V'],
   'AHU - HHW':               ['120V', '208V', '277V', '480V'],
@@ -4626,7 +4668,9 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Air Compressor':          ['120V', '208V', '240V', '480V'],
   'Medical Air':             ['120V', '208V', '240V', '480V'],
   'Medical Vacuum':          ['120V', '208V', '240V', '480V'],
+  'Medical Vacuum Pump':     ['120V', '208V', '240V', '480V'],
   'Lab Vacuum':              ['120V', '208V', '240V', '480V'],
+  'Blower':                  ['120V', '208V', '240V', '480V'],
   // Condensate Return Unit (the electric variant): standard pump-scale voltages.
   'Condensate Return Unit':  ['120V', '208V', '240V', '480V'],
   // Condensing Unit: drop 24V (control voltage, not a disconnect) and 4160V
@@ -4636,6 +4680,8 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   // Standard Electrical: generic electrical equipment — full realistic range
   // including 4160V, but no 24V control voltage.
   'Standard Electrical':     ['120V', '208V', '240V', '480V', '4160V'],
+  'Electrical with Stored Energy': ['120V', '208V', '240V', '480V', '4160V'],
+  'Switchgear':              ['120V', '208V', '240V', '480V', '4160V'],
   // Steam boiler: control/burner circuit — 120/208/480V only.
   'Boiler - Natural Gas - STM': ['120V', '208V', '480V'],
   // Glycol Pump: 120/208/480 — no 240V realistic for a glycol loop.
@@ -4877,6 +4923,25 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Electrical 480V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'SW (Hand/Off/Auto)', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Vacuum Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
+  // Medical Vacuum Pump (build 111): ONE pump on a shared receiver — its own
+  // disconnect and the valve between the receiver and this pump, which
+  // loto-web closes and relieves behind (at the union or flange there) while
+  // the receiver stays in service. No count prompt (one pump), no Kinetic.
+  'Medical Vacuum Pump': [
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'SW (Hand/Off/Auto)', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Vacuum Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Compressed Air Tank (build 111): the tank's isolation valve with its drain
+  // and gauge. No Electrical row and so no voltage prompt (loto-web's tank
+  // procedure has no electrical content).
+  'Compressed Air Tank': [
+    { energySource: 'Compressed Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Blower (build 111): its Electrical disconnect; the voltage is prompted.
+  // No Kinetic row: loto-web adds its own "At Blower" one.
+  'Blower': [
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+  ],
   'Condensing Unit': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
@@ -4898,6 +4963,12 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'HHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   'Standard Pump': [
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Chemical Pump (build 111): the Standard Pump shape. The Chemical Pump type
+  // still defaults to 120V (EQUIPMENT_VOLTAGE_OVERRIDE), a Chemical Feed Pump
+  // to 208V; the voltage is prompted either way.
+  'Chemical Pump': [
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   // Fire Pump (build 108): the Standard Pump shape — its Electrical feed (the
@@ -4990,6 +5061,16 @@ const TEMPLATE_AUTO_SOURCES = {
   'Standard Electrical': [
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: 'Meter', duplicate: 'No', detail: '', auto: true },
   ],
+  // Electrical with Stored Energy and Switchgear (build 111): the same single
+  // Electrical source. No Stored Electrical Energy row from the app: loto-web
+  // adds the capacitor bank's, and a drive's DC-bus row by the site's VFD
+  // setting — a row recorded here would print whatever the site says.
+  'Electrical with Stored Energy': [
+    { energySource: 'Electrical 480V', deviceType: '', quantity: 1, location: '', verification: 'Meter', duplicate: 'No', detail: '', auto: true },
+  ],
+  'Switchgear': [
+    { energySource: 'Electrical 480V', deviceType: '', quantity: 1, location: '', verification: 'Meter', duplicate: 'No', detail: '', auto: true },
+  ],
   // Gas-fired boiler: 120V control circuit, the gas train, and the domestic
   // water inlet. Device left blank on the electrical and water sources so the
   // tech picks what's actually there. 120V is fixed (see
@@ -5013,7 +5094,8 @@ const TEMPLATE_AUTO_SOURCES = {
 };
 
 // Equipment types that override the electrical voltage their (possibly shared) template
-// would otherwise set. Lets Chemical Pump reuse the Standard Pump template but at 120V.
+// would otherwise set. A Chemical Pump defaults to 120V on the Chemical Pump template
+// (the Standard Pump one before build 111), which the Chemical Feed Pump type shares at 208V.
 const EQUIPMENT_VOLTAGE_OVERRIDE = {
   'Chemical Pump': 'Electrical 120V',
 };
@@ -5082,11 +5164,25 @@ function handleEquipTypeChange() {
 // "fire pump" comes ahead of "pump" (build 108), never for a jockey pump: only
 // the main fire pump gets loto-web's fire protection impairment NOTEs. "lab vac"
 // / "laboratory vacuum" go to Lab Vacuum ahead of "pump" (build 108); a medical
-// vacuum stays on the Vacuum Pump type's Medical Vacuum template.
+// vacuum stays on the Vacuum Pump type's Medical Vacuum template (build 111:
+// only a pick reaches Medical Vacuum Pump, as in loto-web). Build 111 adds
+// loto-web's own name words for its Chemical Pump, Compressed Air Tank,
+// Blower and Electrical with Stored Energy (drive) templates; "vfd" comes
+// first ("Pump VFD" is the drive), the tank words never on medical air.
 const CUSTOM_EQUIP_KEYWORD_TEMPLATE = [
+  { keyword: 'vfd', template: 'Electrical with Stored Energy' },
+  { keyword: 'variable frequency drive', template: 'Electrical with Stored Energy' },
   { keyword: 'fire pump', unless: 'jockey', template: 'Fire Pump' },
   { keyword: 'lab vac', template: 'Lab Vacuum' },
   { keyword: 'laboratory vacuum', template: 'Lab Vacuum' },
+  { keyword: 'chemical feed pump', template: 'Chemical Pump' },
+  { keyword: 'chem feed pump', template: 'Chemical Pump' },
+  { keyword: 'chemical pump', template: 'Chemical Pump' },
+  { keyword: 'compressed air tank', unless: 'medical', template: 'Compressed Air Tank' },
+  { keyword: 'air receiver', unless: 'medical', template: 'Compressed Air Tank' },
+  { keyword: 'air tank', unless: 'medical', template: 'Compressed Air Tank' },
+  { keyword: 'blower', template: 'Blower' },
+  { keyword: 'switchgear', template: 'Switchgear' },
   { keyword: 'pump', template: 'Standard Pump' },
 ];
 
@@ -9052,10 +9148,13 @@ const TYPES_WITH_ELECTRICAL_FEED = new Set([
   'Fire Pump','Fire Jockey Pump','Condensate Pump','Chemical Feed Pump','Chemical Pump','Vacuum Pump','Lab Vacuum',
   'Condensate Return Unit','Unit Heater','Domestic Water Heater','Boiler','Humidifier',
   'Air Compressor','Air Dryer','ATS','Generator','Transformer','Day Tank','Elevator',
-  'Dishwasher','Refrigerator'
+  'Dishwasher','Refrigerator','Blower','Switchgear','VFD'
 ]);
+// A Compressed Air Tank (build 111) is a plain vessel — also when the Air
+// Compressor type picks its template.
 const TEMPLATES_WITHOUT_ELECTRICAL_FEED = new Set([
-  'Condensate Return Unit - Steam','Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol','Steam PRV Station'
+  'Condensate Return Unit - Steam','Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol','Steam PRV Station',
+  'Compressed Air Tank'
 ]);
 const CUSTOM_TYPE_ELECTRICAL_WORDS = /pump|fan|blower|air ?handler|\bahu\b|\brtu\b|rooftop|compressor|motor|chiller|boiler|heater|generator|\bats\b|transfer switch|transformer|elevator|\blift\b|dryer|\bvfd\b|panel|switchgear|\bmcc\b|dishwasher|washer|refrigerat|freezer|cooler|humidifier|ice machine|conveyor|condensing unit|mini ?split|cooling tower/i;
 function expectsElectricalSource(type, template) {
