@@ -71,6 +71,7 @@
 //   T232–T235 build 113: the 2026-10-18 medium review of builds 110–112 — a lower count keeps the user's rows
 //             (and a count copy carries no tag), custom-name words at a word start, the template's follow-ups
 //             after its voltage from one place, the vacuum list pick without a detour
+//   T236      build 114: Dental Vacuum (the fourth answer) and the one-pump answer's "a valve for this pump?"
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -5819,7 +5820,7 @@
     const askOk = /pumps are on this receiver/i.test(countAsk) && /each one gets its own disconnect/i.test(countAsk);
     // the Vacuum Pump type offers it; the medical template is untouched
     const vpOffers = (EQUIPMENT_TEMPLATE_MAP['Vacuum Pump'] || []).join();
-    const medOk = vpOffers === 'Vacuum Pump,Medical Vacuum,Medical Vacuum Pump,Lab Vacuum'   // + Medical Vacuum Pump since build 111
+    const medOk = vpOffers === 'Vacuum Pump,Medical Vacuum,Medical Vacuum Pump,Lab Vacuum,Dental Vacuum'   // + Medical Vacuum Pump since build 111, Dental Vacuum since 114
       && (TEMPLATE_AUTO_SOURCES['Medical Vacuum'] || []).map(x => x.energySource).join() === 'Electrical 208V';
     // custom type names
     const custom = async (typed) => {
@@ -6774,7 +6775,7 @@
       document.getElementById('equipType').value = type;
       const seen = { choices: null, volts: null, count: false };
       // build 112: the Vacuum Pump type asks what the record covers (the answer = the template)
-      await withDialogs({ confirm: true, choice: { 'vacuum-cover': template || 'cancel' } }, async () => {
+      await withDialogs({ confirm: true, choice: { 'vacuum-cover': template || 'cancel', 'pump-inlet-valve': 'yes' } }, async () => {
         handleEquipTypeChange();
         await sleep(0);
         const tp = document.getElementById('templatePromptOverlay');
@@ -6806,7 +6807,7 @@
     r.xfmr = await pickType('Transformer', 'Electrical with Stored Energy', '480V');
     const fails = [];
     const want = (ok, what) => { if (!ok) fails.push(what); };
-    want(r.mvp.template === 'Medical Vacuum Pump' && r.mvp.offered.join() === 'Vacuum Pump,Medical Vacuum,Medical Vacuum Pump,Lab Vacuum'
+    want(r.mvp.template === 'Medical Vacuum Pump' && r.mvp.offered.join() === 'Vacuum Pump,Medical Vacuum,Medical Vacuum Pump,Lab Vacuum,Dental Vacuum'
       && r.mvp.rows.join('|') === 'Electrical 480V/Disconnect/SW (Hand/Off/Auto)|Vacuum Air In/Ball Valve/Gauge/Drain' && !r.mvp.count
       && (r.mvp.volts || []).join() === '120V,208V,240V,480V', 'Medical Vacuum Pump');
     want(r.cfp.template === 'Chemical Pump' && r.cfp.offered.join() === 'Chemical Pump' && r.cfp.rows.join('|') === 'Electrical 208V//', 'Chemical Feed Pump');
@@ -6897,6 +6898,7 @@
       let asked = null, count = false, exhaustAsked = false;
       await withDialogs({ confirm: true, choice: (o) => {
         if (o.id === 'vacuum-cover') { asked = o; return answer; }
+        if (o.id === 'pump-inlet-valve') return 'yes';   // build 114
         if (o.id === 'vacuum-exhaust') { exhaustAsked = true; return exhaust || 'cancel'; }
         return 'cancel';
       } }, async () => {
@@ -6911,8 +6913,8 @@
                template: getTemplate(), rows: rows(), count, exhaustAsked, templatePrompt: !!document.getElementById('templatePromptOverlay') };
     };
     got.own = await viaType('Medical Vacuum Pump', 'own');
-    want((got.own.labels || []).join('|') === 'Patient care: one pump on a shared receiver|Patient care: the receiver and all its pumps|Laboratory: the receiver and all its pumps|Choose later'
-      && (got.own.values || []).slice(0, 3).join() === 'Medical Vacuum Pump,Medical Vacuum,Lab Vacuum', 'the question');
+    want((got.own.labels || []).join('|') === 'Patient care: one pump on a shared receiver|Patient care: the receiver and all its pumps|Laboratory: the receiver and all its pumps|Dental: the tank and all its pumps|Choose later'
+      && (got.own.values || []).slice(0, 4).join() === 'Medical Vacuum Pump,Medical Vacuum,Lab Vacuum,Dental Vacuum', 'the question');   // Dental since build 114
     want(got.own.template === 'Medical Vacuum Pump' && got.own.exhaustAsked && !got.own.count
       && got.own.rows.join('|') === 'Electrical 480V/Disconnect/Panel/SW (Hand/Off/Auto)|Vacuum Air In/Ball Valve//Gauge/Drain|Vacuum Air Out/Ball Valve//', 'own exhaust valve');
     got.no = await viaType('Medical Vacuum Pump', 'no');
@@ -6926,7 +6928,7 @@
     // picked from the list: the form is on Medical Vacuum (got.system) with its rows
     const pickFromList = async (value, answer) => {
       let asked = null;
-      await withDialogs({ confirm: true, choice: (o) => { if (o.id === 'vacuum-cover') { asked = o; return answer; } return 'cancel'; } }, async () => {
+      await withDialogs({ confirm: true, choice: (o) => { if (o.id === 'vacuum-cover') { asked = o; return answer; } if (o.id === 'pump-inlet-valve') return 'yes'; return 'cancel'; } }, async () => {
         rememberTemplateBefore();
         document.getElementById('equipTemplate').value = value;
         await onTemplateSelectChange();
@@ -7179,7 +7181,7 @@
     window.autoSaveCurrent = function () { saves.push(getTemplate()); return realSave.apply(this, arguments); };
     try {
       const pick = async (value, answer) => {
-        await withDialogs({ confirm: true, choice: (o) => o.id === 'vacuum-cover' ? answer : 'cancel' }, async () => {
+        await withDialogs({ confirm: true, choice: (o) => o.id === 'vacuum-cover' ? answer : (o.id === 'pump-inlet-valve' ? 'yes' : 'cancel') }, async () => {
           rememberTemplateBefore();
           document.getElementById('equipTemplate').value = value;
           await onTemplateSelectChange();
@@ -7201,6 +7203,96 @@
       window.autoSaveCurrent = realSave;
       closeAllPrompts();
     }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // ==========================================================================
+  // BUILD 114 — Dental Vacuum and "a valve for this pump?" (loto-web 2026-10-18)
+  // ==========================================================================
+
+  // T236 — a fourth answer, dental; the one-pump answer asks for the pump's own valve
+  async function t236_dentalVacuumAndThePumpsOwnValve() {
+    const N = 'T236 the vacuum question has a fourth answer, "Dental: the tank and all its pumps" → Dental Vacuum (an Electrical 208V Disconnect / SW (Hand/Off/Auto) per pump from "How many pumps are on this vacuum tank?" and the tank\'s Vacuum Air In ball valve); "one pump on a shared receiver" asks "Is there a valve between the receiver and this pump?" — Yes gives Medical Vacuum Pump, No Medical Vacuum (and says so), Cancel no template; the same from the list; custom "Dental Vac Pump" → Dental Vacuum; the export says "Dental Vacuum"';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const rows = () => sources.map(x => [x.energySource, x.deviceType, x.verification].join('/'));
+    const viaType = async (answer, valve) => {
+      fillFormNoSources('VP-236');
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = 'Vacuum Pump';
+      let valveAsked = false, countText = '';
+      const toasts = await withToasts(async () => {
+        await withDialogs({ confirm: true, choice: (o) => {
+          if (o.id === 'vacuum-cover') return answer;
+          if (o.id === 'pump-inlet-valve') { valveAsked = true; return valve || 'cancel'; }
+          return 'cancel';
+        } }, async () => {
+          handleEquipTypeChange();
+          await sleep(0); await sleep(0);
+          if (document.getElementById('templateVoltageOverlay')) applyTemplateVoltageChoice('208V');
+          await sleep(0);
+          const o = document.getElementById('electricalCountOverlay');
+          countText = o ? o.textContent.replace(/\s+/g, ' ').trim() : '';
+          if (o) applyElectricalCountChoice(2);
+        });
+      });
+      closeAllPrompts();
+      return { template: getTemplate(), rows: rows(), valveAsked, countText, toasts };
+    };
+    got.dental = await viaType('Dental Vacuum');
+    want(got.dental.template === 'Dental Vacuum' && !got.dental.valveAsked && /pumps are on this vacuum tank/i.test(got.dental.countText)
+      && got.dental.rows.join('|') === 'Electrical 208V/Disconnect/SW (Hand/Off/Auto)|Electrical 208V/Disconnect/SW (Hand/Off/Auto)|Vacuum Air In/Ball Valve/Gauge/Drain', 'dental');
+    got.yes = await viaType('Medical Vacuum Pump', 'yes');
+    want(got.yes.valveAsked && got.yes.template === 'Medical Vacuum Pump', 'one pump, its own valve');
+    got.no = await viaType('Medical Vacuum Pump', 'no');
+    want(got.no.valveAsked && got.no.template === 'Medical Vacuum' && got.no.toasts.some(t => /receiver and all its pumps/i.test(t)), 'one pump, no valve');
+    got.cancel = await viaType('Medical Vacuum Pump', 'cancel');
+    want(got.cancel.valveAsked && got.cancel.template === '', 'valve question cancelled');
+    got.lab = await viaType('Lab Vacuum');
+    want(got.lab.template === 'Lab Vacuum' && !got.lab.valveAsked, 'lab asks no valve question');
+    // from the list, on a Medical Vacuum unit: one pump without a valve stays the whole system, untouched
+    got.system = await viaType('Medical Vacuum');
+    const before = rows().join('|');
+    await withDialogs({ confirm: true, choice: (o) => o.id === 'vacuum-cover' ? 'Medical Vacuum Pump' : (o.id === 'pump-inlet-valve' ? 'no' : 'cancel') }, async () => {
+      rememberTemplateBefore();
+      document.getElementById('equipTemplate').value = 'Medical Vacuum Pump';
+      await onTemplateSelectChange();
+      await sleep(0); await sleep(0);
+    });
+    closeAllPrompts();
+    got.list = { template: getTemplate(), same: rows().join('|') === before, confirm: !!document.getElementById('templateConfirmOverlay') };
+    want(got.system.template === 'Medical Vacuum' && got.list.template === 'Medical Vacuum' && got.list.same && !got.list.confirm, 'list pick');
+    // custom name
+    fillFormNoSources('C-236');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = '** New Equipment Type **';
+    filterTemplateDropdown('');
+    document.getElementById('equipTypeCustom').value = 'Dental Vac Pump';
+    await withDialogs({ confirm: true }, async () => { handleCustomEquipTypeChange(); });
+    closeAllPrompts();
+    got.custom = getTemplate();
+    want(got.custom === 'Dental Vacuum', 'custom name');
+    // the export
+    await resetAppState();
+    const A = mkEntry('Dental Vacuum 1', { sources: [
+      Object.assign(mkSrc('Electrical 208V'), { sourceId: genUuid(), deviceType: 'Disconnect' }),
+      Object.assign(mkSrc('Vacuum Air In'), { sourceId: genUuid(), deviceType: 'Ball Valve' })] });
+    A.equipType = 'Vacuum Pump'; A.template = 'Dental Vacuum';
+    savedEquipment = [A]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    const sheet = [];
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      const ws = wb.worksheets[0];
+      ws.eachRow(row => { if (String(row.getCell(1).value || '') === 'Tied to Equipment') sheet.push(String(ws.getRow(row.number + 1).getCell(8).value || '')); });
+    }
+    got.export = { json: je.template, sheet };
+    want(je.template === 'Dental Vacuum' && sheet.join() === 'Dental Vacuum', 'export');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -7304,7 +7396,7 @@
     t227_theSurveyDateQuestionIsTheAppsQuestionBox, t228_everyLotoWebTemplateCanBePicked,
     t229_aVacuumRecordSaysWhatItCovers, t230_anAhuGetsAKineticRowPerFan, t231_theSameRoomRecordedBothWaysIsNoticed,
     t232_aLowerCountKeepsTheUsersRows, t233_customNameWordsStartAWord, t234_theTemplatesFollowUpsComeFromOnePlace,
-    t235_theVacuumListPickTakesTheAnswerDirectly];
+    t235_theVacuumListPickTakesTheAnswerDirectly, t236_dentalVacuumAndThePumpsOwnValve];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

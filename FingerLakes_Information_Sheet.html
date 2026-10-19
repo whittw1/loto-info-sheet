@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b113</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b114</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1176,7 +1176,7 @@ const DATA = {
     "Condensate Return Unit","Condensate Return Unit - Steam",
     "Exhaust Fan","Water Heater - Steam","Water Heater - Gas","Water Heater - Electric",
     "Unit Heater - Steam","Unit Heater - HHW","Unit Heater - Natural Gas",
-    "Air Compressor","Medical Air","Compressed Air Tank","Blower","Air Dryer","Vacuum Pump","Medical Vacuum","Medical Vacuum Pump","Lab Vacuum","Condensing Unit","Mini Split",
+    "Air Compressor","Medical Air","Compressed Air Tank","Blower","Air Dryer","Vacuum Pump","Medical Vacuum","Medical Vacuum Pump","Lab Vacuum","Dental Vacuum","Condensing Unit","Mini Split",
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
     "Elevator - Traction","Elevator - Hydraulic",
     "ATS - Generic","Humidifier",
@@ -2564,7 +2564,7 @@ function equipTypeChanged(equipType) {
       pickTemplate(templates[0]);
     } else if (equipType === 'Vacuum Pump') {
       // Build 112: what one record covers, in place of the template list
-      askVacuumCover('', vacuumCoverChoicesOffered()).then(t => {
+      askVacuumRecord('', vacuumCoverChoicesOffered()).then(t => {
         if (t && t !== 'cancel' && getEquipType() === 'Vacuum Pump') pickTemplate(t);
       });
     } else if (EQUIPMENT_PROMPT_FOR_TEMPLATE.has(equipType) && templates.length > 1) {
@@ -2666,10 +2666,13 @@ function closeTemplatePrompt() {
 // from the list, so a lab pump (KC-LOTO-018) is not saved as medical and the
 // same pumps are not surveyed both ways without anyone deciding to. The answer
 // travels as the template name.
+// Build 114: a fourth answer, dental (loto-web 2026-10-18), and the one-pump
+// answer asks whether the pump has a valve of its own (askVacuumRecord).
 const VACUUM_COVER_CHOICES = [
   { template: 'Medical Vacuum Pump', label: 'Patient care: one pump on a shared receiver' },
   { template: 'Medical Vacuum',      label: 'Patient care: the receiver and all its pumps' },
   { template: 'Lab Vacuum',          label: 'Laboratory: the receiver and all its pumps' },
+  { template: 'Dental Vacuum',       label: 'Dental: the tank and all its pumps' },
 ];
 // The answers the template list offers right now (a Lab Vacuum type offers one).
 function vacuumCoverChoicesOffered() {
@@ -2682,9 +2685,34 @@ function askVacuumCover(picked, choices) {
   return askChoice({
     id: 'vacuum-cover', defaultValue: 'cancel', picked: picked || '',
     title: 'What does this record cover?',
-    html: html`Each record prints one procedure. A medical vacuum pump that shares its receiver with other pumps gets a record of its own; the receiver with all its pumps is a different record. Survey the same pumps both ways only if the site wants both procedures. A laboratory vacuum is recorded as the receiver and all its pumps.`,
+    html: html`Each record prints one procedure. A medical vacuum pump that shares its receiver with other pumps gets a record of its own; the receiver with all its pumps is a different record. Survey the same pumps both ways only if the site wants both procedures. A laboratory or dental vacuum is recorded as the tank and all its pumps.`,
     choices: (choices || VACUUM_COVER_CHOICES).map(c => ({ value: c.template, label: c.label, primary: c.template === picked }))
       .concat([{ value: 'cancel', label: picked ? 'Cancel' : 'Choose later' }])
+  });
+}
+// The question, then (build 114, loto-web 2026-10-18) for the one-pump answer:
+// "Is there a valve between the receiver and this pump?" One pump can be
+// locked out on its own only behind a valve of its own; without one the
+// receiver is shut down with it, so No records the whole system (Medical
+// Vacuum). Resolves the template, or 'cancel'.
+function askVacuumRecord(picked, choices) {
+  return askVacuumCover(picked, choices).then(t => {
+    if (t !== 'Medical Vacuum Pump') return t;
+    return askChoice({
+      id: 'pump-inlet-valve', defaultValue: 'cancel',
+      title: 'A valve for this pump?',
+      html: html`Is there a valve between the receiver and this pump? This pump can be locked out on its own only behind a valve of its own &mdash; without one, the receiver is shut down with it.`,
+      choices: [
+        { value: 'yes', label: 'Yes, a valve between them', primary: true },
+        { value: 'no', label: 'No: record the receiver and all its pumps' },
+        { value: 'cancel', label: 'Cancel' }
+      ]
+    }).then(v => {
+      if (v === 'yes') return 'Medical Vacuum Pump';
+      if (v !== 'no') return 'cancel';
+      showToast('No valve of its own: recorded as the receiver and all its pumps (Medical Vacuum)');
+      return 'Medical Vacuum';
+    });
   });
 }
 // The template list's own change (the user's pick). A vacuum template asks the
@@ -2696,7 +2724,7 @@ function onTemplateSelectChange() {
   const choices = vacuumCoverChoicesOffered();
   if (!VACUUM_COVER_CHOICES.some(c => c.template === picked) || choices.length < 2) return handleTemplateChange();
   const before = _templateBefore;   // left as it is: "Change Template?" Cancel restores it
-  return askVacuumCover(picked, choices).then(t => {
+  return askVacuumRecord(picked, choices).then(t => {
     const sel = document.getElementById('equipTemplate');
     const beforeValue = before ? before.value : ((editingEntry && editingEntry.template) || '');
     // Cancel, or the template the form already has: the list goes back, nothing else changes
@@ -2916,7 +2944,11 @@ const EQUIPMENT_TEMPLATE_MAP = {
   // inlet valve while the receiver keeps serving the other pumps. "Medical
   // Vacuum" stays the receiver and all its pumps (loto-web's Medical Vacuum
   // System), and only this explicit pick reaches the pump procedure.
-  'Vacuum Pump': ['Vacuum Pump','Medical Vacuum','Medical Vacuum Pump','Lab Vacuum'],
+  // Dental Vacuum (build 114, wilkins 2026-10-18): a dental vacuum tank and all
+  // its pumps, as one record. The name is the app's proposal to loto-web, which
+  // has no dental template yet — until it adds a "Dental Vacuum" one, such a
+  // unit prints loto-web's generic template (its pre-QC flags it).
+  'Vacuum Pump': ['Vacuum Pump','Medical Vacuum','Medical Vacuum Pump','Lab Vacuum','Dental Vacuum'],
   'Lab Vacuum': ['Lab Vacuum'],
   'Cooling Tower': ['Cooling Tower'],
   'Generator': ['Emergency Generator'],
@@ -3015,7 +3047,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Cooling Tower': 'cooling_tower',
   'Condensate Return Unit': 'condensate_return', 'Condensate Return Unit - Steam': 'condensate_return',
   'Elevator - Traction': 'traction_elevator', 'Elevator - Hydraulic': 'hydraulic_elevator',
-  'Vacuum Pump': 'medical_vacuum', 'Medical Vacuum': 'medical_vacuum', 'Medical Vacuum Pump': 'medical_vacuum', 'Lab Vacuum': 'medical_vacuum',
+  'Vacuum Pump': 'medical_vacuum', 'Medical Vacuum': 'medical_vacuum', 'Medical Vacuum Pump': 'medical_vacuum', 'Lab Vacuum': 'medical_vacuum', 'Dental Vacuum': 'medical_vacuum',
   'Standard Electrical': 'general', 'UPS': 'ups',
   'Electrical with Stored Energy': 'general', 'Switchgear': 'general',
   'Chemical Pump': 'pump', 'Compressed Air Tank': 'general', 'Blower': 'general',
@@ -4726,7 +4758,7 @@ const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water H
 // up to 4 units). See promptForElectricalCount.
 const TEMPLATE_ASK_ELECTRICAL_COUNT = {
   'AHU - Steam': 2, 'AHU - HHW': 2, 'AHU - Geothermal': 2, 'AHU - Steam, CHW, HHW': 2,
-  'Medical Air': 4, 'Medical Vacuum': 4, 'Lab Vacuum': 4,
+  'Medical Air': 4, 'Medical Vacuum': 4, 'Lab Vacuum': 4, 'Dental Vacuum': 4,
 };
 
 // Per-template voltage option overrides. Falls back to all available
@@ -4760,6 +4792,7 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Medical Vacuum':          ['120V', '208V', '240V', '480V'],
   'Medical Vacuum Pump':     ['120V', '208V', '240V', '480V'],
   'Lab Vacuum':              ['120V', '208V', '240V', '480V'],
+  'Dental Vacuum':           ['120V', '208V', '240V', '480V'],
   'Blower':                  ['120V', '208V', '240V', '480V'],
   // Condensate Return Unit (the electric variant): standard pump-scale voltages.
   'Condensate Return Unit':  ['120V', '208V', '240V', '480V'],
@@ -4856,6 +4889,8 @@ function closeTemplateVoltagePrompt() {
 const TEMPLATE_ELECTRICAL_COUNT_PROMPT = {
   'Lab Vacuum': { title: 'Pumps on this receiver',
                   ask: 'How many pumps are on this receiver tank? Count every pump: each one gets its own disconnect (one Electrical source each).' },
+  'Dental Vacuum': { title: 'Pumps on this tank',
+                     ask: 'How many pumps are on this vacuum tank? Count every pump: each one gets its own disconnect (one Electrical source each).' },
 };
 function maybePromptElectricalCount() {
   const max = TEMPLATE_ASK_ELECTRICAL_COUNT[getTemplate()];
@@ -5068,6 +5103,13 @@ const TEMPLATE_AUTO_SOURCES = {
   // Thermal row: loto-web adds its own T row.
   'Lab Vacuum': [
     { energySource: 'Electrical 480V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'SW (Hand/Off/Auto)', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Vacuum Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Dental Vacuum (build 114): the Lab Vacuum shape — one Electrical row per pump
+  // (the count prompt asks how many are on the tank; dental pumps run 120–208V,
+  // the voltage is prompted) and the ball valve that isolates the tank.
+  'Dental Vacuum': [
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'SW (Hand/Off/Auto)', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Vacuum Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
   // Medical Vacuum Pump (build 111): ONE pump on a shared receiver — its own
@@ -5325,6 +5367,7 @@ const CUSTOM_EQUIP_KEYWORD_TEMPLATE = [
   { keyword: 'fire pump', unless: 'jockey', template: 'Fire Pump' },
   { keyword: 'lab vac', template: 'Lab Vacuum' },
   { keyword: 'laboratory vacuum', template: 'Lab Vacuum' },
+  { keyword: 'dental vac', template: 'Dental Vacuum' },
   { keyword: 'chemical feed pump', template: 'Chemical Pump' },
   { keyword: 'chem feed pump', template: 'Chemical Pump' },
   { keyword: 'chemical pump', template: 'Chemical Pump' },

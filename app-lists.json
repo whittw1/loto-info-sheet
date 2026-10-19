@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 113,
+  "build": 114,
   "hospitals": [
     {
       "code": "Marion",
@@ -161,7 +161,8 @@
       "Vacuum Pump",
       "Medical Vacuum",
       "Medical Vacuum Pump",
-      "Lab Vacuum"
+      "Lab Vacuum",
+      "Dental Vacuum"
     ],
     "Lab Vacuum": [
       "Lab Vacuum"
@@ -241,6 +242,7 @@
     "Medical Vacuum",
     "Medical Vacuum Pump",
     "Lab Vacuum",
+    "Dental Vacuum",
     "Condensing Unit",
     "Mini Split",
     "Emergency Generator",
