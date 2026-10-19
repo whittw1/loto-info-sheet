@@ -72,6 +72,7 @@
 //             (and a count copy carries no tag), custom-name words at a word start, the template's follow-ups
 //             after its voltage from one place, the vacuum list pick without a detour
 //   T236      build 114: Dental Vacuum (the fourth answer) and the one-pump answer's "a valve for this pump?"
+//   T237      build 115: Dental Air Compressor (the compressor, its discharge, the duplex dryers' inlets and discharges)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -6813,7 +6814,7 @@
     want(r.cfp.template === 'Chemical Pump' && r.cfp.offered.join() === 'Chemical Pump' && r.cfp.rows.join('|') === 'Electrical 208V//', 'Chemical Feed Pump');
     want(r.cp.template === 'Chemical Pump' && r.cp.offered.join() === 'Chemical Pump' && r.cp.rows.join('|') === 'Electrical 120V//' && !!r.cp.volts, 'Chemical Pump type');
     want(r.tank.template === 'Compressed Air Tank' && r.tank.rows.join('|') === 'Compressed Air In/Ball Valve/Gauge/Drain' && !r.tank.volts, 'Compressed Air Tank type');
-    want(r.acTank.template === 'Compressed Air Tank' && r.acTank.offered.join() === 'Air Compressor,Medical Air,Compressed Air Tank'
+    want(r.acTank.template === 'Compressed Air Tank' && r.acTank.offered.join() === 'Air Compressor,Medical Air,Dental Air Compressor,Compressed Air Tank'
       && !r.acTank.rows.some(x => /^Electrical|^Kinetic/.test(x)) && !r.acTank.volts, 'Air Compressor -> Compressed Air Tank');
     want(!expectsElectricalSource('Compressed Air Tank', 'Compressed Air Tank') && !expectsElectricalSource('Air Compressor', 'Compressed Air Tank')
       && expectsElectricalSource('Air Compressor', 'Air Compressor'), 'tank expects no Electrical');
@@ -7296,6 +7297,75 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ==========================================================================
+  // BUILD 115 — Dental Air Compressor (loto-web 2026-10-19, KC-LOTO-285)
+  // ==========================================================================
+
+  // T237 — the Air Compressor type offers Dental Air Compressor, with its dryers
+  async function t237_dentalAirCompressorAndItsDryers() {
+    const N = 'T237 the Air Compressor type offers Dental Air Compressor; it starts with the compressor\'s Electrical (voltage prompted 120–480V) Disconnect / Controls, its Compressed Air Out ball valve (Gauge/Drain), and two rows of two Compressed Air Out ball valves "Below Air Dryers" (the inlets, typed Out as wilkins enters them) and "Above Air Dryers" (the discharges) — no Kinetic, no count prompt — the dryer locations show as themselves on the cards; a custom "Dental Air Plant" gets it; the export says "Dental Air Compressor"';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('DAC-237');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'Air Compressor';
+    await withDialogs({ confirm: true }, async () => {
+      handleEquipTypeChange();
+      const tp = document.getElementById('templatePromptOverlay');
+      got.choices = tp ? [...tp.querySelectorAll('button')].map(b => b.textContent.trim()).filter(t => !/skip/i.test(t)) : null;
+      if (tp) applyTemplatePromptChoice('Dental Air Compressor');
+      const vo = document.getElementById('templateVoltageOverlay');
+      got.volts = vo ? [...vo.querySelectorAll('button')].map(b => b.textContent.trim()).filter(t => /^\d+V$/.test(t)) : null;
+      if (vo) applyTemplateVoltageChoice('480V');
+      got.count = !!document.getElementById('electricalCountOverlay');
+    });
+    closeAllPrompts();
+    got.template = getTemplate();
+    got.rows = sources.map(x => [x.energySource, x.deviceType, x.quantity, x.location, x.verification].join('/'));
+    [2, 3].forEach(i => { if (sources[i]) sources[i].collapsed = false; });   // template rows start collapsed
+    renderSources();
+    got.shown = [2, 3].map(i => { const el = document.getElementById('src_loc_' + i); return el ? el.value : null; });
+    want((got.choices || []).join() === 'Air Compressor,Medical Air,Dental Air Compressor,Compressed Air Tank', 'offered');
+    want(got.template === 'Dental Air Compressor' && (got.volts || []).join() === '120V,208V,240V,480V' && !got.count, 'template, voltage, no count');
+    want(got.rows.join('|') === 'Electrical 480V/Disconnect/1//Controls|Compressed Air Out/Ball Valve/1//Gauge/Drain|Compressed Air Out/Ball Valve/2/Below Air Dryers/|Compressed Air Out/Ball Valve/2/Above Air Dryers/', 'rows');
+    want(got.shown.join() === 'Below Air Dryers,Above Air Dryers', 'dryer locations on the cards');
+    // custom name
+    fillFormNoSources('C-237');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = '** New Equipment Type **';
+    filterTemplateDropdown('');
+    document.getElementById('equipTypeCustom').value = 'Dental Air Plant';
+    await withDialogs({ confirm: true }, async () => { handleCustomEquipTypeChange(); });
+    closeAllPrompts();
+    got.custom = getTemplate();
+    want(got.custom === 'Dental Air Compressor', 'custom name');
+    // the export
+    await resetAppState();
+    const A = mkEntry('Dental Air Compressor 1', { sources: [
+      Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Disconnect' }),
+      Object.assign(mkSrc('Compressed Air Out'), { sourceId: genUuid(), deviceType: 'Ball Valve', quantity: 2, location: 'Below Air Dryers' })] });
+    A.equipType = 'Air Compressor'; A.template = 'Dental Air Compressor';
+    savedEquipment = [A]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    const sheet = [], locs = [];
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      const ws = wb.worksheets[0];
+      ws.eachRow(row => {
+        if (String(row.getCell(1).value || '') === 'Tied to Equipment') sheet.push(String(ws.getRow(row.number + 1).getCell(8).value || ''));
+        if (String(row.getCell(1).value || '') === 'Compressed Air Out') locs.push(String(row.getCell(5).value || ''));
+      });
+    }
+    got.export = { json: je.template, sheet, locs };
+    want(je.template === 'Dental Air Compressor' && sheet.join() === 'Dental Air Compressor' && locs.join() === 'Below Air Dryers', 'export');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -7396,7 +7466,8 @@
     t227_theSurveyDateQuestionIsTheAppsQuestionBox, t228_everyLotoWebTemplateCanBePicked,
     t229_aVacuumRecordSaysWhatItCovers, t230_anAhuGetsAKineticRowPerFan, t231_theSameRoomRecordedBothWaysIsNoticed,
     t232_aLowerCountKeepsTheUsersRows, t233_customNameWordsStartAWord, t234_theTemplatesFollowUpsComeFromOnePlace,
-    t235_theVacuumListPickTakesTheAnswerDirectly, t236_dentalVacuumAndThePumpsOwnValve];
+    t235_theVacuumListPickTakesTheAnswerDirectly, t236_dentalVacuumAndThePumpsOwnValve,
+    t237_dentalAirCompressorAndItsDryers];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

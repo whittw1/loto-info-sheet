@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b114</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b115</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1176,7 +1176,7 @@ const DATA = {
     "Condensate Return Unit","Condensate Return Unit - Steam",
     "Exhaust Fan","Water Heater - Steam","Water Heater - Gas","Water Heater - Electric",
     "Unit Heater - Steam","Unit Heater - HHW","Unit Heater - Natural Gas",
-    "Air Compressor","Medical Air","Compressed Air Tank","Blower","Air Dryer","Vacuum Pump","Medical Vacuum","Medical Vacuum Pump","Lab Vacuum","Dental Vacuum","Condensing Unit","Mini Split",
+    "Air Compressor","Medical Air","Dental Air Compressor","Compressed Air Tank","Blower","Air Dryer","Vacuum Pump","Medical Vacuum","Medical Vacuum Pump","Lab Vacuum","Dental Vacuum","Condensing Unit","Mini Split",
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
     "Elevator - Traction","Elevator - Hydraulic",
     "ATS - Generic","Humidifier",
@@ -2928,7 +2928,13 @@ const EQUIPMENT_TEMPLATE_MAP = {
   // the Air Compressor one minus everything electrical, for a receiver or
   // surge tank recorded on its own. Its own type, and a choice on the Air
   // Compressor type.
-  'Air Compressor': ['Air Compressor','Medical Air','Compressed Air Tank'],
+  // Dental Air Compressor (build 115): loto-web's Dental_Air_Compressor procedure
+  // (2026-10-19, KC-LOTO-285 — a dental air plant: one compressor cabinet, its
+  // receiver, duplex desiccant dryers): Dental Service told and the work
+  // scheduled outside clinic hours; at start-up the plant comes up to pressure
+  // and the dryers purge with their discharge valves still closed. No
+  // medical-air content, no matrix.
+  'Air Compressor': ['Air Compressor','Medical Air','Dental Air Compressor','Compressed Air Tank'],
   'Compressed Air Tank': ['Compressed Air Tank'],
   // Blower (build 111): loto-web's Blower procedure (2026-10-11, KC-LOTO-065,
   // a pneumatic tube system blower) = the Air Compressor one without the tank
@@ -3036,7 +3042,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Heat Exchanger - Steam': 'heat_exchanger',
   'Heat Exchanger - CHW/Glycol': 'heat_exchanger',
   'Exhaust Fan': 'exhaust_fan',
-  'Condensing Unit': 'ac_unit', 'Mini Split': 'ac_unit', 'Air Compressor': 'air_compressor', 'Medical Air': 'air_compressor',
+  'Condensing Unit': 'ac_unit', 'Mini Split': 'ac_unit', 'Air Compressor': 'air_compressor', 'Medical Air': 'air_compressor', 'Dental Air Compressor': 'air_compressor',
   'Boiler': 'boiler', 'Boiler - Natural Gas - HHW': 'boiler', 'Boiler - Natural Gas - STM': 'boiler', 'Air Dryer': 'general',
   'ATS - Generic': 'ats',
   'Water Heater - Steam': 'steam_water_heater', 'Water Heater - Gas': 'electric_water_heater',
@@ -4789,6 +4795,7 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   // Air Compressor: cap at 480V (no 4160V).
   'Air Compressor':          ['120V', '208V', '240V', '480V'],
   'Medical Air':             ['120V', '208V', '240V', '480V'],
+  'Dental Air Compressor':   ['120V', '208V', '240V', '480V'],
   'Medical Vacuum':          ['120V', '208V', '240V', '480V'],
   'Medical Vacuum Pump':     ['120V', '208V', '240V', '480V'],
   'Lab Vacuum':              ['120V', '208V', '240V', '480V'],
@@ -5091,6 +5098,22 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Compressed Air Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
+  // Dental Air Compressor (build 115, loto-web 2026-10-19): the compressor's
+  // disconnect (voltage prompted) and its discharge, then the duplex dryers'
+  // inlet and discharge valves — two rows of two, each with "dryer" in its
+  // location, which is how loto-web tells dryer valves apart. The dryer inlets
+  // are typed Compressed Air OUT on purpose, as wilkins enters them by hand
+  // (KC-LOTO-285, 288): loto-web prints rows of one source type together, so
+  // inlets typed "In" would print after the discharges; with no In row it
+  // counts the dryers per row group and takes the last dryer row as the
+  // discharges. No Kinetic: loto-web adds its own (wilkins deletes it where a
+  // unit has none).
+  'Dental Air Compressor': [
+    { energySource: 'Electrical 480V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Compressed Air Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Compressed Air Out', deviceType: 'Ball Valve', quantity: 2, location: 'Below Air Dryers', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Compressed Air Out', deviceType: 'Ball Valve', quantity: 2, location: 'Above Air Dryers', verification: '', duplicate: 'No', detail: '', auto: true },
+  ],
   // Medical Vacuum: base unit (the pump's disconnect; no Kinetic since build 107). Voltage prompt +
   // "how many units? 1-4". Tech adds the vacuum-line source as needed.
   'Medical Vacuum': [
@@ -5368,6 +5391,7 @@ const CUSTOM_EQUIP_KEYWORD_TEMPLATE = [
   { keyword: 'lab vac', template: 'Lab Vacuum' },
   { keyword: 'laboratory vacuum', template: 'Lab Vacuum' },
   { keyword: 'dental vac', template: 'Dental Vacuum' },
+  { keyword: 'dental air', template: 'Dental Air Compressor' },
   { keyword: 'chemical feed pump', template: 'Chemical Pump' },
   { keyword: 'chem feed pump', template: 'Chemical Pump' },
   { keyword: 'chemical pump', template: 'Chemical Pump' },
