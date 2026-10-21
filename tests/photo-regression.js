@@ -73,6 +73,7 @@
 //             after its voltage from one place, the vacuum list pick without a detour
 //   T236      build 114: Dental Vacuum (the fourth answer) and the one-pump answer's "a valve for this pump?"
 //   T237      build 115: Dental Air Compressor (the compressor, its discharge, the duplex dryers' inlets and discharges)
+//   T238      build 116: DA Tank is a template of its own (the Heat Exchanger - Steam rows, sketch and no-Electrical rule)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -7366,6 +7367,70 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ==========================================================================
+  // BUILD 116 — DA Tank template (loto-web 2026-10-21, KC-LOTO-163)
+  // ==========================================================================
+
+  // T238 — the DA Tank type picks its own DA Tank template with what it had
+  async function t238_daTankIsATemplateOfItsOwn() {
+    const N = 'T238 the DA Tank type picks the new DA Tank template (the only one offered) with exactly the rows, sketch and no-Electrical rule it had on Heat Exchanger - Steam (LPS 10 PSI gate valve; Condensate Out gate valve Below Equipment, Temp Only - Hot; no voltage prompt; no "no Electrical source" item); the Heat Exchanger type still offers Heat Exchanger - Steam; a DA Tank saved on Heat Exchanger - Steam opens for Edit on it (DA Tank offered beside it); the export says "DA Tank"';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('DA-238');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'DA Tank';
+    await withDialogs({ confirm: true }, async () => {
+      handleEquipTypeChange();
+      got.voltage = !!document.getElementById('templateVoltageOverlay');
+    });
+    closeAllPrompts();
+    const rowsOf = rs => (rs || []).map(x => [x.energySource, x.deviceType, x.location, x.verification].join('/')).join('|');
+    got.template = getTemplate();
+    got.offered = [...document.getElementById('equipTemplate').options].map(o => o.value).filter(v => v && v !== '** New Template **');
+    got.rows = rowsOf(sources);
+    want(got.template === 'DA Tank' && got.offered.join() === 'DA Tank' && !got.voltage, 'type picks DA Tank');
+    // what the same form shows on Heat Exchanger - Steam (the simplified verification fills the LPS row)
+    fillFormNoSources('HX-238');
+    document.getElementById('equipType').value = 'Heat Exchanger';
+    filterTemplateDropdown('Heat Exchanger');
+    await withDialogs({ confirm: true }, async () => { pickTemplate('Heat Exchanger - Steam'); });
+    closeAllPrompts();
+    got.hxRows = rowsOf(sources);
+    want(got.rows === got.hxRows && /^LPS 10 PSI\/Gate Valve\/\/.*\|Condensate Out\/Gate Valve\/Below Equipment\/Temp Only - Hot$/.test(got.rows), 'the same rows');
+    want(TEMPLATE_DIAGRAM_MAP['DA Tank'] === TEMPLATE_DIAGRAM_MAP['Heat Exchanger - Steam'], 'the same sketch');
+    want(!expectsElectricalSource('DA Tank', 'DA Tank') && !expectsElectricalSource('Deaerator 2', 'DA Tank'), 'no Electrical expected');
+    want((EQUIPMENT_TEMPLATE_MAP['Heat Exchanger'] || []).join() === 'Heat Exchanger - Steam,Heat Exchanger - CHW/Glycol', 'Heat Exchanger type unchanged');
+    // a DA Tank saved on Heat Exchanger - Steam before build 116
+    await resetAppState();
+    const A = mkEntry('DA Tank 1', { sources: [Object.assign(mkSrc('LPS 10 PSI'), { sourceId: genUuid(), deviceType: 'Gate Valve' })] });
+    A.equipType = 'DA Tank'; A.template = 'Heat Exchanger - Steam';
+    savedEquipment = [A]; saveAll();
+    await withDialogs({ confirm: true }, async () => { editSaved(0); });
+    const sel = document.getElementById('equipTemplate');
+    got.edit = { value: sel.value, offered: [...sel.options].map(o => o.value).filter(v => v && v !== '** New Template **') };
+    want(got.edit.value === 'Heat Exchanger - Steam' && got.edit.offered.includes('DA Tank'), 'old unit keeps its template');
+    // the export
+    await resetAppState();
+    const B = mkEntry('DA Tank 2', { sources: [Object.assign(mkSrc('LPS 10 PSI'), { sourceId: genUuid(), deviceType: 'Gate Valve' })] });
+    B.equipType = 'DA Tank'; B.template = 'DA Tank';
+    savedEquipment = [B]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    const sheet = [];
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      const ws = wb.worksheets[0];
+      ws.eachRow(row => { if (String(row.getCell(1).value || '') === 'Tied to Equipment') sheet.push(String(ws.getRow(row.number + 1).getCell(8).value || '')); });
+    }
+    got.export = { json: je.template, sheet };
+    want(je.template === 'DA Tank' && sheet.join() === 'DA Tank', 'export');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -7467,7 +7532,7 @@
     t229_aVacuumRecordSaysWhatItCovers, t230_anAhuGetsAKineticRowPerFan, t231_theSameRoomRecordedBothWaysIsNoticed,
     t232_aLowerCountKeepsTheUsersRows, t233_customNameWordsStartAWord, t234_theTemplatesFollowUpsComeFromOnePlace,
     t235_theVacuumListPickTakesTheAnswerDirectly, t236_dentalVacuumAndThePumpsOwnValve,
-    t237_dentalAirCompressorAndItsDryers];
+    t237_dentalAirCompressorAndItsDryers, t238_daTankIsATemplateOfItsOwn];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

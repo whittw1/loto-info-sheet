@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 115,
+  "build": 116,
   "hospitals": [
     {
       "code": "Marion",
@@ -105,7 +105,7 @@
       "Day Tank"
     ],
     "DA Tank": [
-      "Heat Exchanger - Steam"
+      "DA Tank"
     ],
     "Condensate Surge Tank": [
       "Condensate Return Unit"
@@ -259,6 +259,7 @@
     "Electrical with Stored Energy",
     "Switchgear",
     "Heat Exchanger - Steam",
+    "DA Tank",
     "Heat Exchanger - CHW/Glycol",
     "Steam PRV Station",
     "Boiler - Natural Gas - HHW",

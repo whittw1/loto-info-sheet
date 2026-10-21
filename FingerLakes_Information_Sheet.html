@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b115</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b116</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1180,7 +1180,7 @@ const DATA = {
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
     "Elevator - Traction","Elevator - Hydraulic",
     "ATS - Generic","Humidifier",
-    "Standard Electrical","Electrical with Stored Energy","Switchgear","Heat Exchanger - Steam","Heat Exchanger - CHW/Glycol",
+    "Standard Electrical","Electrical with Stored Energy","Switchgear","Heat Exchanger - Steam","DA Tank","Heat Exchanger - CHW/Glycol",
     "Steam PRV Station","Boiler - Natural Gas - HHW","Boiler - Natural Gas - STM"
   ],
   tiedToOptions: ["Shut Down","Shut Down & LOTO"]
@@ -2903,7 +2903,14 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Day Tank': ['Day Tank'],
   // DA Tank (deaerator) — uses steam to deaerate boiler feedwater.
   // Steam heat-exchanger semantics.
-  'DA Tank': ['Heat Exchanger - Steam'],
+  // Build 116: loto-web's own DA Tank procedure (2026-10-21, KC-LOTO-163) — the
+  // Heat Exchanger one with the Boiler Plant POC / personnel, the confined-space
+  // CAUTION and the bypass NOTE in Section 2, "Allow the DA tank to fill
+  // completely" in Section 4, tied-to pumps started last; the Steam HX matrix.
+  // It keeps everything the type had on Heat Exchanger - Steam (rows, sketch, no
+  // Electrical expected). A unit saved on Heat Exchanger - Steam keeps it
+  // (keepTemplateOption); loto-web routes such a unit named "DA Tank" anyway.
+  'DA Tank': ['DA Tank'],
   // Condensate Surge Tank — holds condensate; standard (non-steam) CRU template.
   'Condensate Surge Tank': ['Condensate Return Unit'],
   // Dishwasher — Electric or Steam variant. Reuses the Water Heater templates.
@@ -3039,7 +3046,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Emergency Generator': 'generator',
   'Chiller': 'chiller', 'Refrigerator': 'general',
   'Heat Exchanger': 'heat_exchanger',
-  'Heat Exchanger - Steam': 'heat_exchanger',
+  'Heat Exchanger - Steam': 'heat_exchanger', 'DA Tank': 'heat_exchanger',
   'Heat Exchanger - CHW/Glycol': 'heat_exchanger',
   'Exhaust Fan': 'exhaust_fan',
   'Condensing Unit': 'ac_unit', 'Mini Split': 'ac_unit', 'Air Compressor': 'air_compressor', 'Medical Air': 'air_compressor', 'Dental Air Compressor': 'air_compressor',
@@ -5018,6 +5025,12 @@ function matchAutoKineticRows(n, photographed) {
 const TEMPLATE_AUTO_SOURCES = {
   // Heat Exchanger - Steam: LPS source + Condensate Out
   'Heat Exchanger - Steam': [
+    { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: 'Below Equipment', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+  ],
+  // DA Tank (build 116): the same rows as Heat Exchanger - Steam, which the DA
+  // Tank type used before it had a template of its own.
+  'DA Tank': [
     { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: 'Below Equipment', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
@@ -9377,7 +9390,7 @@ const TYPES_WITH_ELECTRICAL_FEED = new Set([
 // A Compressed Air Tank (build 111) is a plain vessel — also when the Air
 // Compressor type picks its template.
 const TEMPLATES_WITHOUT_ELECTRICAL_FEED = new Set([
-  'Condensate Return Unit - Steam','Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol','Steam PRV Station',
+  'Condensate Return Unit - Steam','Heat Exchanger - Steam','DA Tank','Heat Exchanger - CHW/Glycol','Steam PRV Station',
   'Compressed Air Tank'
 ]);
 const CUSTOM_TYPE_ELECTRICAL_WORDS = /pump|fan|blower|air ?handler|\bahu\b|\brtu\b|rooftop|compressor|motor|chiller|boiler|heater|generator|\bats\b|transfer switch|transformer|elevator|\blift\b|dryer|\bvfd\b|panel|switchgear|\bmcc\b|dishwasher|washer|refrigerat|freezer|cooler|humidifier|ice machine|conveyor|condensing unit|mini ?split|cooling tower/i;
