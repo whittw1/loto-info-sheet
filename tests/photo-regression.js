@@ -74,6 +74,7 @@
 //   T236      build 114: Dental Vacuum (the fourth answer) and the one-pump answer's "a valve for this pump?"
 //   T237      build 115: Dental Air Compressor (the compressor, its discharge, the duplex dryers' inlets and discharges)
 //   T238      build 116: DA Tank is a template of its own (the Heat Exchanger - Steam rows, sketch and no-Electrical rule)
+//   T239      build 117: Overhead Door type and template (a panel breaker, Potential, Kinetic; no voltage prompt)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -7431,6 +7432,66 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ==========================================================================
+  // BUILD 117 — Overhead Door (loto-web 2026-10-21, MA-LOTO-335)
+  // ==========================================================================
+
+  // T239 — the Overhead Door type picks the Overhead Door template
+  async function t239_overheadDoorTypeAndTemplate() {
+    const N = 'T239 the new Overhead Door type picks the Overhead Door template (the only one) with no voltage prompt and three rows — Electrical 208V Breaker at Panel / Controls (the door\'s feed), Gravity/Potential (no photo) and Kinetic / Rotating — expects an Electrical source; the Elevator type is unchanged; a custom "Overhead Door Bay 2" gets it; the export says "Overhead Door" as template and type';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('OD-239');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'Overhead Door';
+    await withDialogs({ confirm: true }, async () => {
+      handleEquipTypeChange();
+      got.voltage = !!document.getElementById('templateVoltageOverlay');
+      got.prompt = !!document.getElementById('templatePromptOverlay');
+    });
+    closeAllPrompts();
+    got.template = getTemplate();
+    got.offered = [...document.getElementById('equipTemplate').options].map(o => o.value).filter(v => v && v !== '** New Template **');
+    got.rows = sources.map(x => [x.energySource, x.deviceType, x.location, x.verification, x.noPhoto ? 'noPhoto' : ''].join('/'));
+    want(got.template === 'Overhead Door' && got.offered.join() === 'Overhead Door' && !got.voltage && !got.prompt, 'type picks the template, no prompts');
+    want(got.rows.join('|') === 'Electrical 208V/Breaker/Panel/Controls/|Gravity/Potential/Potential/On Equipment/Block/noPhoto|Kinetic/Rotating/On Equipment/Rotating/', 'rows');
+    want(expectsElectricalSource('Overhead Door', 'Overhead Door'), 'Electrical expected');
+    want((EQUIPMENT_TEMPLATE_MAP['Elevator'] || []).join() === 'Elevator - Traction,Elevator - Hydraulic', 'Elevator type unchanged');
+    // custom name
+    fillFormNoSources('C-239');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = '** New Equipment Type **';
+    filterTemplateDropdown('');
+    document.getElementById('equipTypeCustom').value = 'Overhead Door Bay 2';
+    await withDialogs({ confirm: true }, async () => { handleCustomEquipTypeChange(); });
+    closeAllPrompts();
+    got.custom = getTemplate();
+    want(got.custom === 'Overhead Door', 'custom name');
+    // the export
+    await resetAppState();
+    const A = mkEntry('Overhead Door Bay 1', { sources: [Object.assign(mkSrc('Electrical 120V'), { sourceId: genUuid(), deviceType: 'Breaker', location: 'Panel RP-A' })] });
+    A.equipType = 'Overhead Door'; A.template = 'Overhead Door';
+    savedEquipment = [A]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    const sheet = [], types = [];
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      const ws = wb.worksheets[0];
+      ws.eachRow(row => {
+        if (String(row.getCell(1).value || '') === 'Tied to Equipment') sheet.push(String(ws.getRow(row.number + 1).getCell(8).value || ''));
+        if (String(row.getCell(1).value || '') === 'Overhead Door Bay 1') types.push(String(row.getCell(6).value || ''));
+      });
+    }
+    got.export = { json: je.template, sheet, types };
+    want(je.template === 'Overhead Door' && sheet.join() === 'Overhead Door' && types.join() === 'Overhead Door', 'export');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -7532,7 +7593,8 @@
     t229_aVacuumRecordSaysWhatItCovers, t230_anAhuGetsAKineticRowPerFan, t231_theSameRoomRecordedBothWaysIsNoticed,
     t232_aLowerCountKeepsTheUsersRows, t233_customNameWordsStartAWord, t234_theTemplatesFollowUpsComeFromOnePlace,
     t235_theVacuumListPickTakesTheAnswerDirectly, t236_dentalVacuumAndThePumpsOwnValve,
-    t237_dentalAirCompressorAndItsDryers, t238_daTankIsATemplateOfItsOwn];
+    t237_dentalAirCompressorAndItsDryers, t238_daTankIsATemplateOfItsOwn,
+    t239_overheadDoorTypeAndTemplate];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
