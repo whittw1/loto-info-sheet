@@ -163,6 +163,7 @@
     photos = {};
     miscPhotos = [];
     sources = [];
+    if (typeof unitAnswers !== 'undefined') unitAnswers = {};   // build 118: the answers for loto-web
     try { clearSketchState(); } catch (e) {}
     // remove dialogs the previous test opened — but never the static ones
     // (Export / Bulk delete / Settings live in the HTML and are only hidden)
@@ -264,6 +265,7 @@
     document.getElementById('equipRoom').value = 'B100';
     setBuilding('Main');
     sources = [];
+    if (typeof loadUnitAnswers === 'function') loadUnitAnswers({});   // a fresh unit's answers, as clearForm gives (build 118)
     renderSources();
   }
 
@@ -4723,7 +4725,8 @@
       await runCloud(stub);
       const today = localDateStr(new Date());
       zipAt = Array.from(stub.files.keys()).find(p => /^Atlanta\/\d{4}-\d{2}-\d{2}\/export\/FieldExport_Atlanta_.*\.zip$/.test(p)) || '';
-      sheetAt = Array.from(stub.files.keys()).find(p => /\/export\/Information_Sheet_\d{6}_[A-Za-z0-9]+\.xlsx$/.test(p)) || '';
+      // the facility follows the date in a sheet's name since build 118 (one sheet per facility per day)
+      sheetAt = Array.from(stub.files.keys()).find(p => /\/export\/Information_Sheet_\d{6}_Atlanta_[A-Za-z0-9]+\.xlsx$/.test(p)) || '';
       stamped = !!savedEquipment.find(e => e.id === A.id).exportedAt && zipAt.indexOf('Atlanta/' + today + '/') === 0;
       // (c) a 12 MB file in 5 MiB pieces, the second piece lost once: resumed, and its hash checked
       stub.restore(); stub = backupStub({ dropPut: (n) => n === 2 });
@@ -7492,6 +7495,406 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ---------- build 118 — loto-web's 2026-10-22 sync spec ---------------------
+  // Each unit block of an exported sheet as loto-web numbers it: base = the
+  // "Equipment ID/Name" header row − 2; row 24 the summary labels, 25 their
+  // values, 26 "Notes:", 27 the notes; source n's header row 2n+2, its data 2n+3.
+  async function sheetBlocks(bytes) {
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(bytes);
+    const ws = wb.worksheets[0];
+    const v = (r, c) => { const x = ws.getRow(r).getCell(c).value; return x == null ? '' : String(x); };
+    const out = {};
+    ws.eachRow(row => {
+      if (v(row.number, 1) !== 'Equipment ID/Name') return;
+      const base = row.number - 2;
+      const b = { base, at24: v(base + 24, 1), labels: {}, values: {}, src: [] };
+      for (const [slot, [r, c]] of Object.entries(UNIT_SHEET_SLOTS)) { b.labels[slot] = v(base + r, c); b.values[slot] = v(base + r + 1, c); }
+      for (let n = 1; n <= 10; n++) b.src.push({ head: v(base + 2 * n + 2, 14) + '/' + v(base + 2 * n + 2, 15), es: v(base + 2 * n + 3, 1), drain: v(base + 2 * n + 3, 14), lock: v(base + 2 * n + 3, 15) });
+      out[v(base + 3, 1)] = b;
+    });
+    return out;
+  }
+
+  // T240 — the sheet contract, cell by cell (spec §1.2–1.4).
+  async function t240_theAnswersSitUnderTheirLabels() {
+    const N = 'T240 the answers for loto-web sit under their own labels on the Information Sheet: Shop and Change Later on every block; UV Lights / Confined Space on an AHU, ATS Make / Backfeed on an ATS, Capacitors on a chiller, Exhaust / Union/Flange on a medical vacuum pump, Refrigerant / PSI wherever there is refrigerant; a source\'s Drain Location and Lock Open under their headers in columns 14–15 (only on the rows that take them); automatic change-later notes; the same answers in entries.json';
+    await resetAppState();
+    setHospitalCode('');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const S = (es, extra) => Object.assign(mkSrc(es), { sourceId: genUuid() }, extra || {});
+    const ahu = mkEntry('AHU-240', { sources: [
+      S('HHW In', { deviceType: 'Gate Valve', verification: 'Drain Only - Hot', drainLocation: { where: 'Between this valve and the equipment', text: ' low point of  coil return ' } }),
+      S('HHW Out', { deviceType: 'Gate Valve', verification: 'Temp Only - Hot', drainLocation: { where: 'None found', text: '' } }),
+      S('CHW In', { deviceType: 'Gate Valve', verification: 'Temp Only - CHW', lockOpen: true, drainLocation: { where: 'On this valve', text: '' } }),
+      S('Electrical 480V', { deviceType: 'Disconnect', lockOpen: true, drainLocation: { where: 'On the equipment', text: 'x' } })
+    ] });
+    Object.assign(ahu, { equipType: 'Air Handler', template: 'AHU - HHW',
+      unitAnswers: { shop: 'Plumbing Shop', uvLights: 'Yes', confinedSpace: 'No', changeLater: 'Feeder not\nfound' } });
+    const ats = mkEntry('ATS-240');
+    Object.assign(ats, { equipType: 'ATS', template: 'ATS - Generic', unitAnswers: { atsMake: 'Zenith', atsBackfeed: ['PV or battery storage', 'UPS'] } });
+    const ch = mkEntry('CH-240');
+    Object.assign(ch, { equipType: 'Chiller', template: 'Chiller', unitAnswers: { capacitors: 'No', refrigerant: 'R-134a', refrigerantPsi: '185' } });
+    const mvp = mkEntry('MVP-240');
+    Object.assign(mvp, { equipType: 'Vacuum Pump', template: 'Medical Vacuum Pump', unitAnswers: { vacuumExhaust: 'Shared line, no valve', reliefJoint: 'No' } });
+    const ice = mkEntry('ICE-240', { sources: [S('Electrical 120V'), S('Refrigerant', { deviceType: 'Ball Valve', verification: '' })] });
+    Object.assign(ice, { equipType: 'Ice Machine', template: '',
+      unitAnswers: { shop: 'Other', shopOther: ' Clinical Eng East ', refrigerant: 'Other', refrigerantOther: 'R-1234ze', refrigerantPsi: ' 200 psi' } });
+    const p = mkEntry('P-240');
+    savedEquipment = [ahu, ats, ch, mvp, ice, p]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const xpath = Object.keys(u.files).find(q => /Information_Sheet_.*\.xlsx$/.test(q));
+    const B = xpath ? await sheetBlocks(u.files[xpath]) : {};
+    const cells = (name) => { const b = B[name]; return b ? Object.keys(UNIT_SHEET_SLOTS).map(s => s + '=' + b.labels[s] + ':' + b.values[s]).join('|') : 'missing'; };
+    const expect = {
+      'AHU-240': 'U1=Shop:Plumbing Shop|U2=Change Later:Feeder not; found | No drain found for source #2 (HHW Out)|U3=UV Lights:Yes|U4=Confined Space:No|U5=:|U6=:|U7=:|U8=:',
+      'ATS-240': 'U1=Shop:|U2=Change Later:|U3=ATS Make:Zenith|U4=Backfeed:UPS; PV or battery storage|U5=:|U6=:|U7=:|U8=:',
+      'CH-240': 'U1=Shop:|U2=Change Later:|U3=Capacitors:No|U4=:|U5=Refrigerant:R-134a|U6=Refrigerant PSI:185|U7=:|U8=:',
+      'MVP-240': 'U1=Shop:|U2=Change Later:' + RELIEF_JOINT_NOTE + '|U3=Exhaust:Shared line, no valve|U4=Union/Flange:No|U5=:|U6=:|U7=:|U8=:',
+      'ICE-240': 'U1=Shop:Clinical Eng East|U2=Change Later:|U3=:|U4=:|U5=Refrigerant:R-1234ze|U6=Refrigerant PSI:200|U7=:|U8=:',
+      'P-240': 'U1=Shop:|U2=Change Later:|U3=:|U4=:|U5=:|U6=:|U7=:|U8=:'
+    };
+    got.cells = {};
+    for (const name of Object.keys(expect)) { got.cells[name] = cells(name); want(got.cells[name] === expect[name], name + ' cells'); }
+    want(Object.keys(B).length === 6 && Object.values(B).every(b => b.at24 === 'Tied to Equipment'), 'row 24 of every block is its summary label row');
+    got.psi = ['185.5', '450/250', 'HI 450 LO 250', ' 200 psi', ''].map(v => refrigerantPsiValue({ refrigerantPsi: v })).join(',');
+    want(got.psi === '185,450,450,200,', 'the PSI is the first whole number in the box');
+    got.ahuSrc = (B['AHU-240'] || { src: [] }).src.slice(0, 4).map(x => [x.head, x.es, x.drain, x.lock].join('|'));
+    want(JSON.stringify(got.ahuSrc) === JSON.stringify([
+      'Drain Location/Lock Open|HHW In|Between this valve and the equipment: low point of coil return|',
+      'Drain Location/Lock Open|HHW Out|None found|',
+      'Drain Location/Lock Open|CHW In||Yes',
+      'Drain Location/Lock Open|Electrical 480V||']), 'AHU source columns 14–15');
+    const je = {}; ((u.entriesJson && u.entriesJson.entries) || []).forEach(e => { je[e.equipName] = e; });
+    const j = (n) => je[n] || {};
+    got.json = {
+      ahu: [j('AHU-240').shop, j('AHU-240').uvLights, j('AHU-240').confinedSpace, (j('AHU-240').changeLater || {}).auto, 'atsMake' in j('AHU-240')].join(),
+      ats: JSON.stringify(j('ATS-240').atsBackfeed), ch: [j('CH-240').capacitors, JSON.stringify(j('CH-240').refrigerant)].join(),
+      mvp: [j('MVP-240').vacuumExhaust, j('MVP-240').reliefJoint].join(),
+      src: JSON.stringify(((j('AHU-240').sources || [])[0] || {}).drainLocation), lock: ((j('AHU-240').sources || [])[2] || {}).lockOpen
+    };
+    want(got.json.ahu === 'Plumbing Shop,Yes,No,true,false', 'entries.json: the AHU\'s answers');
+    want(got.json.ats === '["UPS","PV or battery storage"]', 'entries.json: the backfeed picks in the list\'s order');
+    want(got.json.ch === 'No,{"type":"R-134a","psi":"185"}' && got.json.mvp === 'Shared line, no valve,No', 'entries.json: chiller and pump');
+    want(/Between this valve/.test(got.json.src || '') && got.json.lock === true, 'entries.json: the source answers');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T241 — item 23 (one sheet per facility per day) and item 22 (the build, unique ZIP names).
+  async function t241_oneSheetPerFacilityPerDay() {
+    const N = 'T241 one Information Sheet per facility per survey date (the facility follows the date in its name; a unit with no facility keeps the plain name), each sheet\'s Facility banner names its own facility and the build, manifest.json records the build, the ZIP name ends with the export\'s id, and the header label is APP_BUILD';
+    await resetAppState();
+    setHospitalCode('');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const A = mkEntry('MAIN-241'); A.hospitalCode = 'Atlanta';
+    const F = mkEntry('FTM-241'); F.hospitalCode = 'Atlanta - Fort McPherson';
+    const F2 = mkEntry('FTM-241b'); F2.hospitalCode = 'Atlanta - Fort McPherson';
+    const X = mkEntry('NOFAC-241');
+    savedEquipment = [A, F, X, F2]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const stamp = getDateStamp(new Date());
+    const sheets = {};
+    for (const q of Object.keys(u.files).filter(x => /^info_sheets\/Information_Sheet_.*\.xlsx$/.test(x)).sort()) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[q]);
+      sheets[q.replace('info_sheets/', '')] = { units: (await sheetUnits(u.files[q])).join(), banner: String(wb.worksheets[0].getRow(1).getCell(2).value || ''),
+        bannerRow: String(wb.worksheets[0].getRow(1).getCell(1).value || '') === 'Facility' };
+    }
+    got.sheets = sheets;
+    const s = (fac) => sheets['Information_Sheet_' + stamp + fac + '.xlsx'] || {};
+    want(Object.keys(sheets).sort().join() === ['Information_Sheet_' + stamp + '.xlsx', 'Information_Sheet_' + stamp + '_Atlanta.xlsx', 'Information_Sheet_' + stamp + '_Atlanta_Fort_McPherson.xlsx'].sort().join(), 'three sheets, named by date and facility');
+    want(s('_Atlanta').units === 'MAIN-241' && s('_Atlanta_Fort_McPherson').units === 'FTM-241,FTM-241b' && s('').units === 'NOFAC-241', 'each sheet holds only its facility\'s units');
+    want(/\[Atlanta\] · VA LOTO Collector build 118$/.test(s('_Atlanta').banner || '') && /\[Atlanta - Fort McPherson\] · VA LOTO Collector build 118$/.test(s('_Atlanta_Fort_McPherson').banner || ''), 'each banner names its facility and the build');
+    want(s('').bannerRow === false, 'the sheet of units with no facility has no banner (never another sheet\'s facility)');
+    const m = u.manifest || {};
+    got.manifest = { appBuild: m.appBuild, sheets: ((m.files || {}).xlsxSheets || []).length };
+    want(m.appBuild === APP_BUILD && APP_BUILD === 118 && got.manifest.sheets === 3, 'manifest.json');
+    const ex8 = String(m.exportId || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8);
+    got.zipName = zip.filename;
+    want(!!ex8 && new RegExp('^FieldExport_NoFacility_\\d{6}_[A-Za-z0-9]{8}_' + ex8 + '\\.zip$').test(zip.filename || ''), 'the ZIP name ends with the export id');
+    const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
+    want(!!label && +label[1] === APP_BUILD, 'the header label is APP_BUILD');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T242 — the type voltage box: ATS feeds, a chiller's capacitors, "Other voltage…".
+  async function t242_theTypeVoltageQuestions() {
+    const N = 'T242 after a type\'s voltage: an ATS asks its emergency then normal feed (rows "Emergency Feed: …" then "Normal Feed", a blank keeping the bare label); a chiller asks "Capacitor bank?" (No: no Stored Electrical Energy row; Yes / Can\'t tell: the row; closed: the row, nothing recorded); the box offers "Other voltage…" (the full list, no blank voltage)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const typeVoltage = async (type, name, choice, voltage) => {
+      await resetAppState();
+      fillFormNoSources(name);
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = type;
+      let buttons = [];
+      await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+      const ov = document.getElementById('voltageOverlay');
+      buttons = ov ? [...ov.querySelectorAll('button')].map(b => b.textContent.trim()) : [];
+      await withDialogs({ confirm: true, choice: choice }, async () => { await applyVoltageChoice(voltage); await sleep(0); });
+      closeAllPrompts();
+      return buttons;
+    };
+    got.buttons = await typeVoltage('ATS', 'ATS-242', { 'ats-emergency-feed': '  EDP-1   bkr 3 ', 'ats-normal-feed': '' }, '480V');
+    want(got.buttons.includes('Other voltage…') && !got.buttons.some(t => /leave blank/i.test(t)), 'the box offers Other voltage…, no blank');
+    got.ats = sources.filter(s => s.deviceType === 'Breaker').map(s => s.energySource + '|' + s.location).join(' / ');
+    want(got.ats === 'Electrical 480V|Emergency Feed: EDP-1 bkr 3 / Electrical 480V|Normal Feed', 'the ATS rows name their feeds');
+    const chiller = async (answer) => {
+      await typeVoltage('Chiller', 'CH-242', { 'chiller-capacitors': answer }, '480V');
+      return sources.filter(s => s.energySource === 'Stored Electrical Energy').length + ':' + (unitAnswers.capacitors || '');
+    };
+    got.chiller = { no: await chiller('No'), yes: await chiller('Yes'), cantTell: await chiller('Can\'t tell'), closed: await chiller('cancel') };
+    want(got.chiller.no === '0:No' && got.chiller.yes === '1:Yes' && got.chiller.cantTell === '1:Can\'t tell' && got.chiller.closed === '1:', 'the chiller\'s capacitor row follows the answer');
+    // the form's answer moves an untouched row too; a row with a Device ID stays, and Save & New notes it
+    const caps = () => sources.filter(s => s.energySource === 'Stored Electrical Energy').length;
+    setUnitAnswer('capacitors', 'No'); const afterNo = caps();
+    setUnitAnswer('capacitors', 'Can\'t tell'); const afterCant = caps();
+    sources.find(s => s.energySource === 'Stored Electrical Energy').deviceId = 'CAP-1';
+    setUnitAnswer('capacitors', 'No'); const typedKept = caps();
+    const noted = collectSaveNotices().some(n => /Capacitor bank is No/.test(n));
+    got.chillerForm = [afterNo, afterCant, typedKept, noted].join('/');
+    want(got.chillerForm === '0/1/1/true', 'the form\'s capacitor answer moves an untouched row; a typed one stays and is noted');
+    await resetAppState();
+    fillFormNoSources('GEN-242');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'Generator';
+    await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+    let offered = [];
+    await withDialogs({ confirm: true, choice: (o) => { if (o.id === 'other-voltage') { offered = o.choices.map(c => c.value); return '277V'; } return o.defaultValue || 'cancel'; } },
+      async () => { await chooseOtherVoltage(); await sleep(0); });
+    closeAllPrompts();
+    got.other = { offered: offered.join(), rows: sources.filter(s => /^Electrical/.test(s.energySource)).map(s => s.energySource).join() };
+    want(got.other.offered === '24V,120V,208V,240V,277V,480V,4160V,back' && got.other.rows === 'Electrical 277V', 'Other voltage… picks from the full list');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T243 — a medical vacuum pump: the exhaust's four answers and the inlet union / flange.
+  async function t243_theVacuumPumpsExhaustAndJoint() {
+    const N = 'T243 a medical vacuum pump\'s exhaust takes the four answers loto-web asked for (only "Own valve" adds the Vacuum Air Out row), then the union or flange at the inlet (Yes by default; No writes the change-later note); a unit that answered is not asked again; the form shows both answers';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const run = async (exhaust, joint) => {
+      await resetAppState();
+      fillFormNoSources('MVP-243');
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = 'Vacuum Pump';
+      const asked = [];
+      await withDialogs({ confirm: true, choice: (o) => {
+        asked.push(o.id);
+        if (o.id === 'vacuum-cover') return 'Medical Vacuum Pump';
+        if (o.id === 'pump-inlet-valve') return 'yes';
+        if (o.id === 'vacuum-exhaust') return exhaust;
+        if (o.id === 'vacuum-relief-joint') return joint;
+        return 'cancel';
+      } }, async () => {
+        handleEquipTypeChange();
+        await sleep(0); await sleep(0);
+        if (document.getElementById('templateVoltageOverlay')) applyTemplateVoltageChoice('208V');
+        for (let k = 0; k < 6; k++) await sleep(0);
+      });
+      closeAllPrompts();
+      return { template: getTemplate(), exhaust: unitAnswers.vacuumExhaust || '', joint: unitAnswers.reliefJoint || '',
+        outRow: sources.some(s => s.energySource === 'Vacuum Air Out'), asked: asked.filter(x => /^vacuum-(exhaust|relief)/.test(x)).join(),
+        form: [(document.getElementById('uq_vacuumExhaust') || {}).value, (document.getElementById('uq_reliefJoint') || {}).value].join('|'),
+        note: changeLaterSheetText(formEntryLike()) };
+    };
+    got.shared = await run('shared', 'No');
+    want(got.shared.template === 'Medical Vacuum Pump' && got.shared.exhaust === 'Shared line, no valve' && !got.shared.outRow && got.shared.joint === 'No'
+      && got.shared.form === 'Shared line, no valve|No' && got.shared.note === RELIEF_JOINT_NOTE, 'shared line, no joint');
+    got.own = await run('own', 'Yes');
+    want(got.own.exhaust === 'Own valve' && got.own.outRow && got.own.joint === 'Yes' && got.own.note === '', 'own valve, a joint');
+    // the app's exhaust row dropped (as a template change drops it): Save & New
+    // notes it, and the next ask puts it back for "Own valve" without asking
+    sources = sources.filter(s => s.energySource !== 'Vacuum Air Out'); renderSources();
+    got.ownNotice = collectSaveNotices().some(n => /no Vacuum Air Out row/.test(n));
+    const asked2 = [];
+    await withDialogs({ choice: (o) => { asked2.push(o.id); return 'cancel'; } }, async () => { await maybeAskVacuumExhaust(); });
+    got.ownBack = hasVacuumExhaustRow() + '/' + asked2.join();
+    want(got.ownNotice && got.ownBack === 'true/', '"Own valve" brings its row back');
+    // the form's exhaust answer moves the untouched row
+    setUnitAnswer('vacuumExhaust', 'Shared line, no valve'); const gone = !hasVacuumExhaustRow();
+    setUnitAnswer('vacuumExhaust', 'Own valve'); const back = hasVacuumExhaustRow();
+    got.formMoves = gone + '/' + back;
+    want(got.formMoves === 'true/true', 'the form\'s answer takes the row away and back');
+    got.closed = await run('cancel', 'cancel');
+    want(got.closed.exhaust === '' && !got.closed.outRow && got.closed.joint === 'Yes', 'closed: no exhaust answer, the joint keeps its default');
+    // answered: not asked again
+    const again = [];
+    await withDialogs({ choice: (o) => { again.push(o.id); return 'cancel'; } }, async () => { unitAnswers.vacuumExhaust = 'Can\'t see'; await maybeAskVacuumExhaust(); });
+    got.again = again.join();
+    want(got.again === '', 'an answered pump is not asked again');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T244 — the lists build 118 changed.
+  async function t244_theListsLotoWebAskedFor() {
+    const N = 'T244 the lists build 118 changed: Battery 12/24/48/125V DC (Bag / On Equipment / Controls, family E); no Thermal; Quick Disconnect only on compressed air, vacuum air, natural gas, propane and chemical lines, with the line\'s own checks; no Refrigerant source on the five refrigerant templates; Glycol HW takes "- Hot"; a cooling tower\'s Kinetic row is "At Fan Assembly"; every template has a Shop hint; app-lists.json carries the answers\' choices';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('B-244');
+    addSource();
+    handleEnergySourceChange(0, 'Battery 24V DC');
+    got.battery = [sources[0].deviceType, sources[0].location, sources[0].verification, ENERGY_LABEL_PREFIX['Battery'], getSourceColorClass('Battery 24V DC')].join('/');
+    want(got.battery === 'Bag/On Equipment/Controls/E/source-electrical', 'a battery\'s defaults');
+    want(['Battery 12V DC', 'Battery 24V DC', 'Battery 48V DC', 'Battery 125V DC'].every(s => DATA.energySources.includes(s)) && !DATA.energySources.includes('Thermal'), 'the source list');
+    got.qd = {};
+    ['Electrical 480V', 'Compressed Air In', 'Vacuum Air Out', 'Natural Gas', 'Propane', 'Chemical In', 'Pneumatic', 'Fuel Oil In', 'Battery 12V DC']
+      .forEach(es => { got.qd[es] = getFilteredDevices(es).includes('Quick Disconnect'); });
+    want(JSON.stringify(got.qd) === JSON.stringify({ 'Electrical 480V': false, 'Compressed Air In': true, 'Vacuum Air Out': true, 'Natural Gas': true, 'Propane': true, 'Chemical In': true, 'Pneumatic': false, 'Fuel Oil In': false, 'Battery 12V DC': false }), 'where Quick Disconnect is offered');
+    got.qdChecks = getFilteredVerifications('Quick Disconnect', 'Natural Gas').join();
+    want(got.qdChecks === getFilteredVerifications('Ball Valve', 'Natural Gas').join() && !/SW \(|Button/.test(got.qdChecks), 'a fitting takes the line\'s checks (a valve\'s, not a switch\'s)');
+    const offered = (template) => {
+      sources = [Object.assign(mkSrc('Electrical 208V'), { collapsed: false })];
+      keepTemplateOption(template); document.getElementById('equipTemplate').value = template;
+      renderSources();
+      const sel = document.getElementById('src_energy_0');
+      return sel ? [...sel.options].some(o => o.value === 'Refrigerant') : null;
+    };
+    got.refrigerant = {};
+    ['Chiller', 'Condensing Unit', 'Mini Split', 'Refrigerator', 'Air Dryer', 'Standard Pump'].forEach(t => { got.refrigerant[t] = offered(t); });
+    want(JSON.stringify(got.refrigerant) === JSON.stringify({ 'Chiller': false, 'Condensing Unit': false, 'Mini Split': false, 'Refrigerator': false, 'Air Dryer': false, 'Standard Pump': true }), 'no Refrigerant source on the five templates');
+    want(getTempSuffixFor('Glycol HW In/Out') === 'hot' && getTempSuffixFor('Glycol CHW In/Out') === 'chw', 'Glycol HW takes - Hot');
+    got.tower = [EQUIPMENT_AUTO_SOURCES['Cooling Tower'][0].location, TEMPLATE_AUTO_SOURCES['Cooling Tower'][0].location].join('|');
+    document.getElementById('equipType').value = 'Cooling Tower';
+    got.towerKinetic = kineticDefaultLocation();
+    want(got.tower === 'At Fan Assembly|At Fan Assembly' && got.towerKinetic === 'At Fan Assembly' && DATA.locations.includes('At Fan Assembly'), 'the cooling tower\'s Kinetic row');
+    got.noShop = DATA.templates.filter(t => t !== '** New Template **' && !defaultShopFor(t, []));
+    want(!got.noShop.length && defaultShopFor('Glycol Pump', [{ energySource: 'Glycol HW In/Out' }]) === 'HVAC Shop' && defaultShopFor('Glycol Pump', []) === 'Plumbing Shop' && defaultShopFor('Day Tank', []) === 'Electric Shop', 'the Shop hints');
+    const lists = appListsSnapshot(APP_BUILD);
+    want(lists.build === 118 && (lists.answers || {}).vacuumExhaust && lists.answers.vacuumExhaust.join() === DATA.vacuumExhaust.join() && lists.answers.atsBackfeed.length === 6 && lists.answers.refrigerants.includes('R-410A'), 'app-lists.json answers');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T245 — drain location and lock-open on a source.
+  async function t245_drainLocationAndLockOpen() {
+    const N = 'T245 a valve row of a water, steam, condensate, glycol or compressed-air line asks "Drain for this isolation point" (a found drain gives its code a drain: Temp Only - Hot → Drain Only - Hot, GaugeOnly → Gauge/Drain; None found leaves the code and writes the change-later note) and offers "Locked open" (which takes the drain question away); an electrical row gets neither; the typed detail rides along';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('AHU-245');
+    sources = [
+      Object.assign(mkSrc('HHW In'), { deviceType: 'Gate Valve', verification: 'Temp Only - Hot', collapsed: false }),
+      Object.assign(mkSrc('Compressed Air In'), { deviceType: 'Ball Valve', verification: 'GaugeOnly', collapsed: false }),
+      Object.assign(mkSrc('CHW Out'), { deviceType: 'Gate Valve', verification: 'Zero Flow', collapsed: false }),
+      Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Disconnect', collapsed: false })
+    ];
+    renderSources();
+    got.asks = [0, 1, 2, 3].map(i => [!!document.getElementById('src_drainwhere_' + i), !!document.getElementById('src_lockopen_' + i)].join('/')).join(' ');
+    want(got.asks === 'true/true true/true true/true false/false', 'which rows ask');
+    updateDrainWhere(0, 'Between this valve and the equipment');
+    updateDrainText(0, 'low point of coil return');
+    updateDrainWhere(1, 'On this valve');
+    updateDrainWhere(2, 'On the equipment');
+    got.codes = sources.slice(0, 3).map(s => s.verification).join(' / ');
+    want(got.codes === 'Drain Only - Hot / Gauge/Drain / Zero Flow', 'a found drain gives the code a drain');
+    updateDrainWhere(1, 'None found');
+    got.none = [sources[1].verification, changeLaterAutoNotes(formEntryLike()).join(' | ')].join(' || ');
+    want(got.none === 'GaugeOnly || No drain found for source #2 (Compressed Air In)', 'None found puts back the code the answer changed, and writes the note');
+    got.text = drainLocationSheetText(sources[0]);
+    want(got.text === 'Between this valve and the equipment: low point of coil return', 'the detail rides along');
+    // another found choice keeps the drain; a code the tech changed since is not put back
+    updateDrainWhere(0, 'On this valve');
+    const stillOurs = sources[0].verification;
+    updateSource(0, 'verification', 'Gauge/Drain - Hot');
+    updateDrainWhere(0, 'None found');
+    got.manual = stillOurs + ' → ' + sources[0].verification;
+    want(got.manual === 'Drain Only - Hot → Gauge/Drain - Hot', 'a code the tech changed is kept');
+    updateDrainWhere(0, 'Between this valve and the equipment');
+    updateLockOpen(0, true);
+    got.locked = [!!document.getElementById('src_drainwhere_0'), lockOpenSheetText(sources[0]), drainLocationSheetText(sources[0])].join('/');
+    want(got.locked === 'false/Yes/', 'locked open takes the drain question away');
+    updateDrainWhere(1, '');
+    want(!sources[1].drainLocation && !changeLaterAutoNotes(formEntryLike()).length, 'a cleared answer drops its note');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T246 — a drive's feeder.
+  async function t246_aDrivesFeeder() {
+    const N = 'T246 a VFD row offers "+ Add the breaker that feeds this drive": it adds an Electrical Breaker row on the drive\'s source, Location "Feeder: <panel> bkr <n> (<drive tag>)" in loto-web\'s format (the tag filled from the drive row, the next untagged one for a second drive; "No number" leaves the bkr out; Cancel adds nothing)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('AHU-246');
+    sources = [Object.assign(mkSrc('Electrical 480V'), { deviceType: 'VFD', deviceId: 'VFD-1; VFD-2', quantity: 2, collapsed: false })];
+    renderSources();
+    got.button = !!document.getElementById('src_addfeeder_0');
+    let tagOffered = [];
+    const add = (choice) => withDialogs({ choice: (o) => { if (o.id === 'feeder-drive') tagOffered.push(o.input && o.input.value); return choice[o.id] !== undefined ? choice[o.id] : 'cancel'; } },
+      async () => { await addFeederForDrive(0); });
+    await add({ 'feeder-panel': 'MCC-2A', 'feeder-breaker': '14', 'feeder-drive': 'VFD-1' });
+    await add({ 'feeder-panel': ' MCC-2A ', 'feeder-breaker': '', 'feeder-drive': 'VFD-2' });
+    await add({ 'feeder-panel': 'cancel' });
+    got.rows = sources.slice(1).map(s => [s.energySource, s.deviceType, s.location].join('|'));
+    got.tagOffered = tagOffered.join();
+    want(got.button && got.rows.join(' / ') === 'Electrical 480V|Breaker|Feeder: MCC-2A bkr 14 (VFD-1) / Electrical 480V|Breaker|Feeder: MCC-2A (VFD-2)', 'the feeder rows');
+    want(got.tagOffered === 'VFD-1,VFD-2', 'the drive tag is offered, the next one second');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T247 — the answers travel with the unit.
+  async function t247_theAnswersTravelWithTheUnit() {
+    const N = 'T247 the answers travel with the unit: saved by Save & New, back on the form on Edit, copied by Duplicate (all but the change-later note), kept in the unit-in-progress copy across a reload, cleared by a new form; a marked unit shows FOR THE OFFICE in the list; Save & New notes a name that is still the type; + NOTE / + CAUTION start a line in Notes';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('AHU-247');
+    keepTemplateOption('AHU - HHW'); document.getElementById('equipTemplate').value = 'AHU - HHW';
+    document.getElementById('equipType').value = 'Air Handler';
+    sources = [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid() })];
+    renderSources();
+    setUnitAnswer('shop', 'Boiler Plant');
+    setUnitAnswer('uvLights', 'No');
+    const ta = document.getElementById('uq_changeLater');   // typed, as the tech would
+    if (ta) { ta.value = 'Panel locked'; setUnitText('changeLater', ta.value); }
+    got.formShows = [(document.getElementById('uq_shop') || {}).value, (document.getElementById('uq_uvLights') || {}).value, (document.getElementById('uq_changeLater') || {}).value].join('|');
+    want(got.formShows === 'Boiler Plant|No|Panel locked', 'the form shows the answers');
+    // the section follows a template change made without redrawing the rows, and
+    // the box being typed in keeps its focus and caret through the rebuild
+    if (ta) { ta.focus(); ta.setSelectionRange(5, 5); }
+    keepTemplateOption('Chiller'); document.getElementById('equipTemplate').value = 'Chiller';
+    autoSaveCurrent();
+    got.follows = [!!document.getElementById('uq_capacitors'), !!document.getElementById('uq_refrigerant'), !document.getElementById('uq_uvLights') ? 'noUV' : 'uv',
+      (document.activeElement || {}).id, (document.activeElement || {}).selectionStart].join('/');
+    keepTemplateOption('AHU - HHW'); document.getElementById('equipTemplate').value = 'AHU - HHW';
+    autoSaveCurrent();
+    want(got.follows === 'true/true/uv/uq_changeLater/5', 'the section follows the template; typing keeps its focus');
+    got.wip = JSON.stringify(buildWipState().unitAnswers);
+    want(got.wip === JSON.stringify({ shop: 'Boiler Plant', uvLights: 'No', changeLater: 'Panel locked' }), 'the unit-in-progress copy holds them');
+    await withDialogs({ confirm: true }, async () => { performSaveAndNew(); });
+    const saved = savedEquipment.find(e => e.equipName === 'AHU-247') || {};
+    got.saved = JSON.stringify(saved.unitAnswers);
+    want(got.saved === got.wip && Object.keys(unitAnswers).length === 0, 'saved, and the new form is clear');
+    renderSavedPanel();
+    got.badge = !!document.querySelector('.office-mark-badge');
+    want(got.badge, 'the list marks the unit for the office');
+    editSaved(savedEquipment.indexOf(saved));
+    got.edit = [(document.getElementById('uq_shop') || {}).value, (document.getElementById('uq_changeLater') || {}).value].join('|');
+    want(got.edit === 'Boiler Plant|Panel locked', 'Edit puts them back');
+    clearForm(false);
+    await withDialogs({ confirm: true, choice: (o) => o.defaultValue || 'cancel' }, async () => { await executeDuplicate(savedEquipment.indexOf(saved), false); });
+    got.dup = JSON.stringify(unitAnswers);
+    want(got.dup === JSON.stringify({ shop: 'Boiler Plant', uvLights: 'No' }), 'Duplicate copies all but the note');
+    clearForm(false);
+    document.getElementById('equipType').value = 'Air Handler';
+    document.getElementById('equipName').value = 'Air Handler';
+    got.notice = collectSaveNotices().some(n => /still the type/.test(n));
+    document.getElementById('equipName').value = 'AHU-3';
+    got.noNotice = !collectSaveNotices().some(n => /still the type/.test(n));
+    want(got.notice && got.noNotice, 'a name that is still the type is noted');
+    document.getElementById('equipNotes').value = 'Shares a header';
+    addNoteLine('NOTE'); document.getElementById('equipNotes').value += 'Pump 2 shares the suction header';
+    addNoteLine('CAUTION');
+    got.notes = document.getElementById('equipNotes').value;
+    want(got.notes === 'Shares a header\nNOTE: Pump 2 shares the suction header\nCAUTION: ', '+ NOTE / + CAUTION');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -7594,7 +7997,10 @@
     t232_aLowerCountKeepsTheUsersRows, t233_customNameWordsStartAWord, t234_theTemplatesFollowUpsComeFromOnePlace,
     t235_theVacuumListPickTakesTheAnswerDirectly, t236_dentalVacuumAndThePumpsOwnValve,
     t237_dentalAirCompressorAndItsDryers, t238_daTankIsATemplateOfItsOwn,
-    t239_overheadDoorTypeAndTemplate];
+    t239_overheadDoorTypeAndTemplate,
+    t240_theAnswersSitUnderTheirLabels, t241_oneSheetPerFacilityPerDay, t242_theTypeVoltageQuestions,
+    t243_theVacuumPumpsExhaustAndJoint, t244_theListsLotoWebAskedFor, t245_drainLocationAndLockOpen,
+    t246_aDrivesFeeder, t247_theAnswersTravelWithTheUnit];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 117,
+  "build": 118,
   "hospitals": [
     {
       "code": "Marion",
@@ -278,6 +278,10 @@
     "Electrical 277V",
     "Electrical 480V",
     "Electrical 4160V",
+    "Battery 12V DC",
+    "Battery 24V DC",
+    "Battery 48V DC",
+    "Battery 125V DC",
     "LPS 10 PSI",
     "MPS 20 PSI",
     "HPS 100 PSI",
@@ -325,7 +329,6 @@
     "Glycol ER Water Out",
     "Kinetic",
     "Stored Electrical Energy",
-    "Thermal",
     "Refrigerant",
     "Hydraulic"
   ],
@@ -407,8 +410,66 @@
     "At Return Fan",
     "At Exhaust Fan",
     "At Relief Fan",
+    "At Fan Assembly",
     "At Capacitor Bank",
     "Front of",
     "Above"
-  ]
+  ],
+  "answers": {
+    "shops": [
+      "HVAC Shop",
+      "Plumbing Shop",
+      "Electric Shop",
+      "Boiler Plant",
+      "Clinical Engineering",
+      "Elevator Contractor"
+    ],
+    "refrigerants": [
+      "R-22",
+      "R-32",
+      "R-123",
+      "R-134a",
+      "R-290",
+      "R-404A",
+      "R-407C",
+      "R-410A",
+      "R-454B",
+      "R-513A",
+      "R-600a"
+    ],
+    "atsMakes": [
+      "ASCO",
+      "Zenith",
+      "Other"
+    ],
+    "atsBackfeed": [
+      "UPS",
+      "Temporary or portable generator connections",
+      "Tie breakers to live buses",
+      "Downstream transfer switches on other generators",
+      "PV or battery storage",
+      "Transformers with an alternate secondary feed"
+    ],
+    "vacuumExhaust": [
+      "Own valve",
+      "Check valve only",
+      "Shared line, no valve",
+      "Can't see"
+    ],
+    "drainLocations": [
+      "On this valve",
+      "Between this valve and the equipment",
+      "On the equipment",
+      "None found"
+    ],
+    "yesNoCantTell": [
+      "Yes",
+      "No",
+      "Can't tell"
+    ],
+    "yesNo": [
+      "Yes",
+      "No"
+    ]
+  }
 }
