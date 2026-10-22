@@ -478,7 +478,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b110</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b117</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -559,7 +559,7 @@ if ('serviceWorker' in navigator) {
       </div>
       <div class="form-group">
         <label>Template</label>
-        <select id="equipTemplate" onfocus="rememberTemplateBefore()" onpointerdown="rememberTemplateBefore()" onchange="handleTemplateChange()">
+        <select id="equipTemplate" onfocus="rememberTemplateBefore()" onpointerdown="rememberTemplateBefore()" onchange="onTemplateSelectChange()">
           <option value="">-- Select --</option>
         </select>
       </div>
@@ -1102,8 +1102,8 @@ const DATA = {
     "CHW Pump","Domestic HW Pump","Domestic Water Pump","Feedwater Pump","Glycol Pump",
     "Fire Pump","Fire Jockey Pump","Heat Exchanger",
     "Condensate Return Unit","Condensate Pump","Unit Heater",
-    "Domestic Water Heater","Air Compressor","Air Dryer","Vacuum Pump","Lab Vacuum","ATS",
-    "Generator","Transformer","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
+    "Domestic Water Heater","Air Compressor","Compressed Air Tank","Blower","Air Dryer","Vacuum Pump","Lab Vacuum","ATS",
+    "Generator","Transformer","Switchgear","VFD","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Overhead Door","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
     "Chiller","Refrigerator","Boiler","Steam PRV Station","Humidifier",
     "** New Equipment Type **"
   ],
@@ -1171,16 +1171,16 @@ const DATA = {
   templates: [
     "** New Template **",
     "AHU - Steam","AHU - HHW","AHU - Geothermal","AHU - Steam, CHW, HHW",
-    "Chilled Water Pump","Heating Hot Water Pump","Standard Pump","Fire Pump","Feedwater Pump","Glycol Pump",
+    "Chilled Water Pump","Heating Hot Water Pump","Standard Pump","Fire Pump","Feedwater Pump","Glycol Pump","Chemical Pump",
     "Day Tank",
     "Condensate Return Unit","Condensate Return Unit - Steam",
     "Exhaust Fan","Water Heater - Steam","Water Heater - Gas","Water Heater - Electric",
     "Unit Heater - Steam","Unit Heater - HHW","Unit Heater - Natural Gas",
-    "Air Compressor","Medical Air","Air Dryer","Vacuum Pump","Medical Vacuum","Lab Vacuum","Condensing Unit","Mini Split",
+    "Air Compressor","Medical Air","Dental Air Compressor","Compressed Air Tank","Blower","Air Dryer","Vacuum Pump","Medical Vacuum","Medical Vacuum Pump","Lab Vacuum","Dental Vacuum","Condensing Unit","Mini Split",
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
-    "Elevator - Traction","Elevator - Hydraulic",
+    "Elevator - Traction","Elevator - Hydraulic","Overhead Door",
     "ATS - Generic","Humidifier",
-    "Standard Electrical","Heat Exchanger - Steam","Heat Exchanger - CHW/Glycol",
+    "Standard Electrical","Electrical with Stored Energy","Switchgear","Heat Exchanger - Steam","DA Tank","Heat Exchanger - CHW/Glycol",
     "Steam PRV Station","Boiler - Natural Gas - HHW","Boiler - Natural Gas - STM"
   ],
   tiedToOptions: ["Shut Down","Shut Down & LOTO"]
@@ -2562,6 +2562,11 @@ function equipTypeChanged(equipType) {
     const templates = EQUIPMENT_TEMPLATE_MAP[equipType];
     if (templates.length === 1) {
       pickTemplate(templates[0]);
+    } else if (equipType === 'Vacuum Pump') {
+      // Build 112: what one record covers, in place of the template list
+      askVacuumRecord('', vacuumCoverChoicesOffered()).then(t => {
+        if (t && t !== 'cancel' && getEquipType() === 'Vacuum Pump') pickTemplate(t);
+      });
     } else if (EQUIPMENT_PROMPT_FOR_TEMPLATE.has(equipType) && templates.length > 1) {
       showTemplatePrompt(equipType, templates);
     }
@@ -2587,6 +2592,9 @@ const EQUIPMENT_PROMPT_FOR_TEMPLATE = new Set([
   // Air Compressor / Vacuum Pump now offer a regular and a Medical variant.
   'Air Compressor',
   'Vacuum Pump',
+  // Transformer offers Electrical with Stored Energy beside Standard
+  // Electrical since build 111.
+  'Transformer',
 ]);
 
 // Optional per-equipment-type display-label overrides for the template-pick
@@ -2598,6 +2606,11 @@ const EQUIPMENT_TEMPLATE_LABELS = {
   'Dishwasher': {
     'Water Heater - Electric': 'Electric',
     'Water Heater - Steam':    'Steam',
+  },
+  // (The Vacuum Pump type asks askVacuumCover's question instead, build 112.)
+  'Transformer': {
+    'Standard Electrical':           'Standard Electrical',
+    'Electrical with Stored Energy': 'With a capacitor bank (Electrical with Stored Energy)',
   },
 };
 
@@ -2642,6 +2655,111 @@ function applyTemplatePromptChoice(template) {
 function closeTemplatePrompt() {
   const overlay = document.getElementById('templatePromptOverlay');
   if (overlay) overlay.remove();
+}
+
+// ---- What a vacuum record covers (build 112, loto-web 2026-10-18) -----------
+// Medical vacuum has two procedures: one pump on a shared receiver (Medical
+// Vacuum Pump) and the receiver with all its pumps (Medical Vacuum, loto-web's
+// "Medical Vacuum System"). A laboratory vacuum is always the receiver and all
+// its pumps (Lab Vacuum). One question with the three answers is asked when the
+// Vacuum Pump type is chosen and when the user picks one of these templates
+// from the list, so a lab pump (KC-LOTO-018) is not saved as medical and the
+// same pumps are not surveyed both ways without anyone deciding to. The answer
+// travels as the template name.
+// Build 114: a fourth answer, dental (loto-web 2026-10-18), and the one-pump
+// answer asks whether the pump has a valve of its own (askVacuumRecord).
+const VACUUM_COVER_CHOICES = [
+  { template: 'Medical Vacuum Pump', label: 'Patient care: one pump on a shared receiver' },
+  { template: 'Medical Vacuum',      label: 'Patient care: the receiver and all its pumps' },
+  { template: 'Lab Vacuum',          label: 'Laboratory: the receiver and all its pumps' },
+  { template: 'Dental Vacuum',       label: 'Dental: the tank and all its pumps' },
+];
+// The answers the template list offers right now (a Lab Vacuum type offers one).
+function vacuumCoverChoicesOffered() {
+  const opts = [...document.getElementById('equipTemplate').options].map(o => o.value);
+  return VACUUM_COVER_CHOICES.filter(c => opts.includes(c.template));
+}
+// Resolves the chosen template, or 'cancel'. `picked` = the template the user
+// picked from the list ('' from the type), shown as the primary answer.
+function askVacuumCover(picked, choices) {
+  return askChoice({
+    id: 'vacuum-cover', defaultValue: 'cancel', picked: picked || '',
+    title: 'What does this record cover?',
+    html: html`Each record prints one procedure. A medical vacuum pump that shares its receiver with other pumps gets a record of its own; the receiver with all its pumps is a different record. Survey the same pumps both ways only if the site wants both procedures. A laboratory or dental vacuum is recorded as the tank and all its pumps.`,
+    choices: (choices || VACUUM_COVER_CHOICES).map(c => ({ value: c.template, label: c.label, primary: c.template === picked }))
+      .concat([{ value: 'cancel', label: picked ? 'Cancel' : 'Choose later' }])
+  });
+}
+// The question, then (build 114, loto-web 2026-10-18) for the one-pump answer:
+// "Is there a valve between the receiver and this pump?" One pump can be
+// locked out on its own only behind a valve of its own; without one the
+// receiver is shut down with it, so No records the whole system (Medical
+// Vacuum). Resolves the template, or 'cancel'.
+function askVacuumRecord(picked, choices) {
+  return askVacuumCover(picked, choices).then(t => {
+    if (t !== 'Medical Vacuum Pump') return t;
+    return askChoice({
+      id: 'pump-inlet-valve', defaultValue: 'cancel',
+      title: 'A valve for this pump?',
+      html: html`Is there a valve between the receiver and this pump? This pump can be locked out on its own only behind a valve of its own &mdash; without one, the receiver is shut down with it.`,
+      choices: [
+        { value: 'yes', label: 'Yes, a valve between them', primary: true },
+        { value: 'no', label: 'No: record the receiver and all its pumps' },
+        { value: 'cancel', label: 'Cancel' }
+      ]
+    }).then(v => {
+      if (v === 'yes') return 'Medical Vacuum Pump';
+      if (v !== 'no') return 'cancel';
+      showToast('No valve of its own: recorded as the receiver and all its pumps (Medical Vacuum)');
+      return 'Medical Vacuum';
+    });
+  });
+}
+// The template list's own change (the user's pick). A vacuum template asks the
+// question first; any other pick, and every pick the app makes (pickTemplate),
+// goes straight on to handleTemplateChange.
+function onTemplateSelectChange() {
+  const sel = document.getElementById('equipTemplate');
+  const picked = sel.value;
+  const choices = vacuumCoverChoicesOffered();
+  if (!VACUUM_COVER_CHOICES.some(c => c.template === picked) || choices.length < 2) return handleTemplateChange();
+  const before = _templateBefore;   // left as it is: "Change Template?" Cancel restores it
+  return askVacuumRecord(picked, choices).then(t => {
+    const sel = document.getElementById('equipTemplate');
+    const beforeValue = before ? before.value : ((editingEntry && editingEntry.template) || '');
+    // Cancel, or the template the form already has: the list goes back, nothing else changes
+    if (!t || t === 'cancel' || t === beforeValue) { restoreTemplateSelect(before); rememberTemplateBefore(); return; }
+    // The answer is the change (build 113: no detour through the old template first)
+    sel.value = t;
+    handleTemplateChange();
+  });
+}
+
+// A medical vacuum pump's exhaust (build 112). "Its own valve" adds a Vacuum
+// Air Out ball valve row for its photo; loto-web prints its close and open
+// steps. The other answers loto-web asked for (a check valve only, a shared
+// line with no valve, can't see) wait for a field both apps agree on, so they
+// are one "no" here for now. Asked after the template's voltage.
+function maybeAskVacuumExhaust() {
+  const hasOut = () => sources.some(s => /^Vacuum Air Out/.test((s && s.energySource) || ''));
+  if (getTemplate() !== 'Medical Vacuum Pump' || hasOut()) return Promise.resolve(null);
+  return askChoice({
+    id: 'vacuum-exhaust', defaultValue: 'no',
+    title: 'This pump&rsquo;s exhaust',
+    html: html`Does this pump&rsquo;s exhaust have its own valve? If it does, it gets a row of its own (Vacuum Air Out) &mdash; photograph it.`,
+    choices: [
+      { value: 'own', label: 'Yes, its own valve', primary: true },
+      { value: 'no', label: 'No, or I can\u2019t see one' }
+    ]
+  }).then(v => {
+    if (v !== 'own' || getTemplate() !== 'Medical Vacuum Pump' || hasOut()) return v;
+    sources.push({ energySource: 'Vacuum Air Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '',
+                   duplicate: 'No', detail: '', auto: true, collapsed: true });
+    renderSources();
+    autoSaveCurrent();
+    showToast('Added the exhaust valve (Vacuum Air Out) \u2014 photograph it');
+    return v;
+  });
 }
 
 // Voltage prompt configurations per equipment type
@@ -2785,13 +2903,24 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Day Tank': ['Day Tank'],
   // DA Tank (deaerator) — uses steam to deaerate boiler feedwater.
   // Steam heat-exchanger semantics.
-  'DA Tank': ['Heat Exchanger - Steam'],
+  // Build 116: loto-web's own DA Tank procedure (2026-10-21, KC-LOTO-163) — the
+  // Heat Exchanger one with the Boiler Plant POC / personnel, the confined-space
+  // CAUTION and the bypass NOTE in Section 2, "Allow the DA tank to fill
+  // completely" in Section 4, tied-to pumps started last; the Steam HX matrix.
+  // It keeps everything the type had on Heat Exchanger - Steam (rows, sketch, no
+  // Electrical expected). A unit saved on Heat Exchanger - Steam keeps it
+  // (keepTemplateOption); loto-web routes such a unit named "DA Tank" anyway.
+  'DA Tank': ['DA Tank'],
   // Condensate Surge Tank — holds condensate; standard (non-steam) CRU template.
   'Condensate Surge Tank': ['Condensate Return Unit'],
   // Dishwasher — Electric or Steam variant. Reuses the Water Heater templates.
   'Dishwasher': ['Water Heater - Electric', 'Water Heater - Steam'],
-  'Chemical Feed Pump': ['Standard Pump'],
-  'Chemical Pump': ['Standard Pump'],
+  // Chemical pumps (build 111): loto-web's Chemical Pump procedure (2026-10-09)
+  // = the Standard Pump one with the chemical hazard banners and the Boiler
+  // Plant POC / personnel. Before, both types offered only Standard Pump, and
+  // loto-web reached its template only from a name saying "chemical pump".
+  'Chemical Feed Pump': ['Chemical Pump'],
+  'Chemical Pump': ['Chemical Pump'],
   // Fire Pump has its own template since build 108: loto-web stores the
   // exported template as the unit's type, and its Fire Pump procedure (the
   // Standard Pump one plus the fire protection impairment NOTEs) and Fire Pump
@@ -2802,24 +2931,61 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Condensate Return Unit': ['Condensate Return Unit','Condensate Return Unit - Steam'],
   'Unit Heater': ['Unit Heater - Steam','Unit Heater - HHW','Unit Heater - Natural Gas'],
   'Domestic Water Heater': ['Water Heater - Steam','Water Heater - Gas','Water Heater - Electric'],
-  'Air Compressor': ['Air Compressor','Medical Air'],
+  // Compressed Air Tank (build 111): loto-web's tank procedure (2026-09-15) =
+  // the Air Compressor one minus everything electrical, for a receiver or
+  // surge tank recorded on its own. Its own type, and a choice on the Air
+  // Compressor type.
+  // Dental Air Compressor (build 115): loto-web's Dental_Air_Compressor procedure
+  // (2026-10-19, KC-LOTO-285 — a dental air plant: one compressor cabinet, its
+  // receiver, duplex desiccant dryers): Dental Service told and the work
+  // scheduled outside clinic hours; at start-up the plant comes up to pressure
+  // and the dryers purge with their discharge valves still closed. No
+  // medical-air content, no matrix.
+  'Air Compressor': ['Air Compressor','Medical Air','Dental Air Compressor','Compressed Air Tank'],
+  'Compressed Air Tank': ['Compressed Air Tank'],
+  // Blower (build 111): loto-web's Blower procedure (2026-10-11, KC-LOTO-065,
+  // a pneumatic tube system blower) = the Air Compressor one without the tank
+  // text, with piping disconnect / reconnect steps. loto-web adds the
+  // "At Blower" Kinetic row itself.
+  'Blower': ['Blower'],
   'Air Dryer': ['Air Dryer'],
   // Lab Vacuum (build 108): loto-web's Lab_Vacuum procedure (2026-10-08) for a
   // laboratory vacuum plant, mostly clinical labs — one unit = the receiver
   // tank and every pump on it. No patient-care / NFPA 99 text; no matrix.
-  'Vacuum Pump': ['Vacuum Pump','Medical Vacuum','Lab Vacuum'],
+  // Medical Vacuum Pump (build 111): loto-web's per-pump procedure (2026-10-16,
+  // KC-LOTO-282–284) for ONE pump on a shared receiver, isolated at its own
+  // inlet valve while the receiver keeps serving the other pumps. "Medical
+  // Vacuum" stays the receiver and all its pumps (loto-web's Medical Vacuum
+  // System), and only this explicit pick reaches the pump procedure.
+  // Dental Vacuum (build 114, wilkins 2026-10-18): a dental vacuum tank and all
+  // its pumps, as one record. The name is the app's proposal to loto-web, which
+  // has no dental template yet — until it adds a "Dental Vacuum" one, such a
+  // unit prints loto-web's generic template (its pre-QC flags it).
+  'Vacuum Pump': ['Vacuum Pump','Medical Vacuum','Medical Vacuum Pump','Lab Vacuum','Dental Vacuum'],
   'Lab Vacuum': ['Lab Vacuum'],
   'Cooling Tower': ['Cooling Tower'],
   'Generator': ['Emergency Generator'],
   'Chiller': ['Chiller'],
   'Refrigerator': ['Refrigerator'],
   'Elevator': ['Elevator - Traction','Elevator - Hydraulic'],
+  // Overhead Door (build 117): loto-web's Overhead_Door procedure (2026-10-21,
+  // from wilkins' MA-LOTO-335 "Overhead Door Bay 1", Marion Bldg 304) — the
+  // Elevator - Traction one with "door" for "elevator": lower the door to its
+  // lowest position, check it, kinetic and potential warnings; Plumbing Shop
+  // POC / personnel; no matrix.
+  'Overhead Door': ['Overhead Door'],
   'ATS': ['ATS - Generic'],
   'Heat Exchanger': ['Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol'],
   'Boiler': ['Boiler - Natural Gas - HHW','Boiler - Natural Gas - STM'],
   // Transformer: generic electrical equipment — one Electrical source with a
   // Meter verification, and the voltage prompt offers up to 4160V.
-  'Transformer': ['Standard Electrical'],
+  // Build 111: "Electrical with Stored Energy" (loto-web adds the capacitor
+  // bank's Stored Electrical Energy row) is offered here too, and it is the
+  // template of the new VFD type: loto-web adds a drive's DC-bus row per site.
+  // Switchgear has loto-web's Switchgear procedure and matrix.
+  'Transformer': ['Standard Electrical','Electrical with Stored Energy'],
+  'Switchgear': ['Switchgear'],
+  'VFD': ['Electrical with Stored Energy'],
   'Steam PRV Station': ['Steam PRV Station'],
   'Humidifier': ['Humidifier'],
 };
@@ -2886,10 +3052,10 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Emergency Generator': 'generator',
   'Chiller': 'chiller', 'Refrigerator': 'general',
   'Heat Exchanger': 'heat_exchanger',
-  'Heat Exchanger - Steam': 'heat_exchanger',
+  'Heat Exchanger - Steam': 'heat_exchanger', 'DA Tank': 'heat_exchanger',
   'Heat Exchanger - CHW/Glycol': 'heat_exchanger',
   'Exhaust Fan': 'exhaust_fan',
-  'Condensing Unit': 'ac_unit', 'Mini Split': 'ac_unit', 'Air Compressor': 'air_compressor', 'Medical Air': 'air_compressor',
+  'Condensing Unit': 'ac_unit', 'Mini Split': 'ac_unit', 'Air Compressor': 'air_compressor', 'Medical Air': 'air_compressor', 'Dental Air Compressor': 'air_compressor',
   'Boiler': 'boiler', 'Boiler - Natural Gas - HHW': 'boiler', 'Boiler - Natural Gas - STM': 'boiler', 'Air Dryer': 'general',
   'ATS - Generic': 'ats',
   'Water Heater - Steam': 'steam_water_heater', 'Water Heater - Gas': 'electric_water_heater',
@@ -2900,8 +3066,11 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Cooling Tower': 'cooling_tower',
   'Condensate Return Unit': 'condensate_return', 'Condensate Return Unit - Steam': 'condensate_return',
   'Elevator - Traction': 'traction_elevator', 'Elevator - Hydraulic': 'hydraulic_elevator',
-  'Vacuum Pump': 'medical_vacuum', 'Medical Vacuum': 'medical_vacuum', 'Lab Vacuum': 'medical_vacuum',
+  'Overhead Door': 'general',
+  'Vacuum Pump': 'medical_vacuum', 'Medical Vacuum': 'medical_vacuum', 'Medical Vacuum Pump': 'medical_vacuum', 'Lab Vacuum': 'medical_vacuum', 'Dental Vacuum': 'medical_vacuum',
   'Standard Electrical': 'general', 'UPS': 'ups',
+  'Electrical with Stored Energy': 'general', 'Switchgear': 'general',
+  'Chemical Pump': 'pump', 'Compressed Air Tank': 'general', 'Blower': 'general',
   'Steam PRV Station': 'general',
   'Medical Air Compressor': 'medical_air_compressor',
 };
@@ -3783,17 +3952,20 @@ function clearSketch() {
 
 // Label placement — room-based numbering
 // Counts labels from all saved equipment in the same building+room so numbering continues
+// One rule for "the same building / room" (build 113): case, spaces and dashes
+// ignored — "VB-720", "vb 720" and "VB720" are one room. The sketch's label
+// numbering and the medical vacuum notice (collectSaveNotices) both use it.
+function placeKey(v) { return String(v || '').toLowerCase().replace(/[\s\-\u2010-\u2015]+/g, ''); }
+
 function getRoomLabelCounts() {
-  const building = (getBuilding() || '').trim().toLowerCase();
-  const room = (document.getElementById('equipRoom').value || '').trim().toLowerCase();
+  const building = placeKey(getBuilding());
+  const room = placeKey(document.getElementById('equipRoom').value);
   const counts = {}; // { prefix: totalCount }
 
   if (!building && !room) return counts;
 
   for (const entry of savedEquipment) {
-    const eBldg = (entry.equipBuilding || '').trim().toLowerCase();
-    const eRoom = (entry.equipRoom || '').trim().toLowerCase();
-    if (eBldg !== building || eRoom !== room) continue;
+    if (placeKey(entry.equipBuilding) !== building || placeKey(entry.equipRoom) !== room) continue;
 
     // Count labels from this entry's sketch
     if (entry.sketch && entry.sketch.labels) {
@@ -3882,14 +4054,14 @@ function getLabelForLinkedSource(linkedTo) {
   }
 
   // No labels placed on linked equipment yet — compute from room max of OTHER equipment
-  const bldg = (entry.equipBuilding || '').trim().toLowerCase();
-  const room = (entry.equipRoom || '').trim().toLowerCase();
+  const bldg = placeKey(entry.equipBuilding);
+  const room = placeKey(entry.equipRoom);
   let roomMax = 0;
   if (bldg || room) {
     for (const e of savedEquipment) {
       if (e === entry) continue;
-      if ((e.equipBuilding || '').trim().toLowerCase() !== bldg) continue;
-      if ((e.equipRoom || '').trim().toLowerCase() !== room) continue;
+      if (placeKey(e.equipBuilding) !== bldg) continue;
+      if (placeKey(e.equipRoom) !== room) continue;
       if (e.sketch && e.sketch.labels) {
         for (const lbl of e.sketch.labels) {
           const m = lbl.text.match(/^([A-Z]+)-(\d+)$/);
@@ -4449,17 +4621,24 @@ function confirmTemplateChange(templateVal) {
 function cancelTemplateChange() {
   const overlay = document.getElementById('templateConfirmOverlay');
   if (overlay) overlay.remove();
-  const sel = document.getElementById('equipTemplate');
-  const before = _templateCancelTo
-    || { value: (editingEntry && editingEntry.template && DATA.templates.includes(editingEntry.template)) ? editingEntry.template : '', custom: '' };
+  const before = _templateCancelTo;
   _templateCancelTo = null;
+  restoreTemplateSelect(before);
+  rememberTemplateBefore();
+  autoSaveCurrent();
+}
+// Put the template list (and the custom name box) back to `before` — a
+// rememberTemplateBefore record; null = not known, then the saved unit's own.
+function restoreTemplateSelect(before) {
+  const sel = document.getElementById('equipTemplate');
+  before = before
+    || { value: (editingEntry && editingEntry.template && DATA.templates.includes(editingEntry.template)) ? editingEntry.template : '', custom: '' };
   if (before.value && before.value !== '** New Template **') keepTemplateOption(before.value);
   sel.value = before.value || '';
   const custom = before.value === '** New Template **';
   document.getElementById('equipTemplateCustom').value = custom ? (before.custom || '') : '';
   document.getElementById('customTemplateGroup').style.display = custom ? 'flex' : 'none';
-  rememberTemplateBefore();
-  autoSaveCurrent();
+  return before;
 }
 
 function applyTemplate(val) {
@@ -4522,12 +4701,16 @@ function applyTemplate(val) {
     //  - Equipment types that already ran their own voltage prompt at
     //    equipment-type selection (ATS / Generator / Chiller)
     //  - Templates whose voltage is fixed by design (Air Dryer = 120V plug)
+    let voltageAsked = false;
     if (!EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT.has(equipType) && !TEMPLATE_SKIPS_VOLTAGE_PROMPT.has(val)) {
       const hasAutoElectrical = sources.some(s => s.auto && /^Electrical(?:\s|$)/.test(s.energySource || ''));
-      if (hasAutoElectrical) {
+      if (hasAutoElectrical && getElectricalVoltageOptions(val).length) {
         promptForTemplateVoltage(val);
+        voltageAsked = true;
       }
     }
+    // the voltage's follow-ups still come without the voltage prompt
+    if (!voltageAsked) afterTemplateVoltage();
   } else if (!val) {
     // Cleared the template selection — clear sources if no data (sources
     // with a photo are kept, photo attached)
@@ -4589,13 +4772,13 @@ const EQUIPMENT_EXTRA_SOURCES = {
 // Templates whose electrical voltage is fixed by design — no voltage prompt.
 // Water Heater - Steam has a 120V control circuit only (no choice between
 // 208/240/etc.); same for Air Dryer (always a 120V plug) and Day Tank.
-const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas', 'Unit Heater - Natural Gas', 'Boiler - Natural Gas - HHW', 'Mini Split', 'Elevator - Traction', 'Elevator - Hydraulic']);
+const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas', 'Unit Heater - Natural Gas', 'Boiler - Natural Gas - HHW', 'Mini Split', 'Elevator - Traction', 'Elevator - Hydraulic', 'Overhead Door']);
 // After the voltage prompt, these templates ask "how many electrical sources?"
 // Value = the max offered (AHUs = 2 for dual fans; medical air/vacuum skids run
 // up to 4 units). See promptForElectricalCount.
 const TEMPLATE_ASK_ELECTRICAL_COUNT = {
   'AHU - Steam': 2, 'AHU - HHW': 2, 'AHU - Geothermal': 2, 'AHU - Steam, CHW, HHW': 2,
-  'Medical Air': 4, 'Medical Vacuum': 4, 'Lab Vacuum': 4,
+  'Medical Air': 4, 'Medical Vacuum': 4, 'Lab Vacuum': 4, 'Dental Vacuum': 4,
 };
 
 // Per-template voltage option overrides. Falls back to all available
@@ -4608,6 +4791,7 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Heating Hot Water Pump':  ['120V', '208V', '240V', '480V'],
   'Standard Pump':           ['120V', '208V', '240V', '480V'],
   'Fire Pump':               ['120V', '208V', '240V', '480V'],
+  'Chemical Pump':           ['120V', '208V', '240V', '480V'],
   // AHUs, Cooling Tower, Exhaust Fan: only 120/208/480 per spec (no 240, no 4160).
   'AHU - Steam':             ['120V', '208V', '277V', '480V'],
   'AHU - HHW':               ['120V', '208V', '277V', '480V'],
@@ -4625,8 +4809,12 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   // Air Compressor: cap at 480V (no 4160V).
   'Air Compressor':          ['120V', '208V', '240V', '480V'],
   'Medical Air':             ['120V', '208V', '240V', '480V'],
+  'Dental Air Compressor':   ['120V', '208V', '240V', '480V'],
   'Medical Vacuum':          ['120V', '208V', '240V', '480V'],
+  'Medical Vacuum Pump':     ['120V', '208V', '240V', '480V'],
   'Lab Vacuum':              ['120V', '208V', '240V', '480V'],
+  'Dental Vacuum':           ['120V', '208V', '240V', '480V'],
+  'Blower':                  ['120V', '208V', '240V', '480V'],
   // Condensate Return Unit (the electric variant): standard pump-scale voltages.
   'Condensate Return Unit':  ['120V', '208V', '240V', '480V'],
   // Condensing Unit: drop 24V (control voltage, not a disconnect) and 4160V
@@ -4636,6 +4824,8 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   // Standard Electrical: generic electrical equipment — full realistic range
   // including 4160V, but no 24V control voltage.
   'Standard Electrical':     ['120V', '208V', '240V', '480V', '4160V'],
+  'Electrical with Stored Energy': ['120V', '208V', '240V', '480V', '4160V'],
+  'Switchgear':              ['120V', '208V', '240V', '480V', '4160V'],
   // Steam boiler: control/burner circuit — 120/208/480V only.
   'Boiler - Natural Gas - STM': ['120V', '208V', '480V'],
   // Glycol Pump: 120/208/480 — no 240V realistic for a glycol loop.
@@ -4692,12 +4882,21 @@ function applyTemplateVoltageChoice(voltage) {
   if (updated) {
     showToast(`Set ${updated} Electrical source${updated > 1 ? 's' : ''} to ${voltage}`);
   }
-  maybePromptElectricalCount();
+  afterTemplateVoltage();
 }
 
 function keepDefaultVoltage() {
   closeTemplateVoltagePrompt();
+  afterTemplateVoltage();
+}
+
+// What a template asks once its voltage is settled (build 113: one place, it was
+// wired by hand into each voltage path): the count of its drives / fans / pumps,
+// then a medical vacuum pump's exhaust. applyTemplate calls it directly when it
+// shows no voltage prompt.
+function afterTemplateVoltage() {
   maybePromptElectricalCount();
+  maybeAskVacuumExhaust();
 }
 
 function closeTemplateVoltagePrompt() {
@@ -4711,6 +4910,8 @@ function closeTemplateVoltagePrompt() {
 const TEMPLATE_ELECTRICAL_COUNT_PROMPT = {
   'Lab Vacuum': { title: 'Pumps on this receiver',
                   ask: 'How many pumps are on this receiver tank? Count every pump: each one gets its own disconnect (one Electrical source each).' },
+  'Dental Vacuum': { title: 'Pumps on this tank',
+                     ask: 'How many pumps are on this vacuum tank? Count every pump: each one gets its own disconnect (one Electrical source each).' },
 };
 function maybePromptElectricalCount() {
   const max = TEMPLATE_ASK_ELECTRICAL_COUNT[getTemplate()];
@@ -4758,31 +4959,85 @@ function applyElectricalCountChoice(n) {
     sources.forEach((s, i) => { if (isAutoElec(s)) lastIdx = i; });
     const adds = [];
     for (let k = 0; k < (n - current); k++) {
-      const c = Object.assign(JSON.parse(JSON.stringify(base)), { collapsed: true });
-      delete c.sourceId;      // a distinct physical disconnect gets its own id
-      delete c.linkedTo;
-      delete c.priorSourceIds;
+      const c = countCopyOf(base);
       adds.push(c);
     }
     sources.splice(lastIdx + 1, 0, ...adds);
   } else if (n < current) {
     let toRemove = current - n;
-    for (let i = sources.length - 1; i >= 0 && toRemove > 0; i--) {
-      if (isAutoElec(sources[i]) && !photographed.has(sources[i])) { sources.splice(i, 1); toRemove--; }
+    const first = sources.findIndex(isAutoElec);   // the first one stays (build 113)
+    for (let i = sources.length - 1; i > first && toRemove > 0; i--) {
+      if (isAutoElec(sources[i]) && countMayRemove(sources[i], photographed)) { sources.splice(i, 1); toRemove--; }
     }
     blocked = toRemove;
   }
+  // An AHU's count is its fans (build 112, loto-web 2026-10-18): one Kinetic
+  // row per fan, as loto-web's pre-QC wants a K row for every drive. The
+  // second reads "At Return Fan" (kineticDefaultLocation).
+  const fans = /^AHU\b/.test(getTemplate()) ? matchAutoKineticRows(n, photographed) : null;
   rebindSourcePhotos(prev);
   renderSources();
   autoSaveCurrent();
-  if (blocked) showSourceToast(`Kept ${blocked} photographed electrical source${blocked > 1 ? 's' : ''} — remove it manually if it doesn't apply`, true);
-  else showSourceToast(`${n} electrical source${n > 1 ? 's' : ''}`, false);
+  if (blocked) showSourceToast(`Kept ${blocked} electrical source${blocked > 1 ? 's' : ''} you filled in or photographed — remove it manually if it doesn't apply`, true);
+  else if (fans && fans.blocked) showSourceToast(`Kept ${fans.blocked} Kinetic source${fans.blocked > 1 ? 's' : ''} you filled in or photographed — remove it manually if it doesn't apply`, true);
+  else showSourceToast(fans && fans.rows ? `${n} fan${n > 1 ? 's' : ''}: ${n} electrical and ${n} Kinetic source${n > 1 ? 's' : ''}` : `${n} electrical source${n > 1 ? 's' : ''}`, false);
+}
+// The count prompt's copy of a row: another disconnect / fan, so its own row and
+// id, and nothing the user typed on the first — no tag, no edit mark (build 113:
+// an edit mark copied here would make the copy look like the user's own row).
+function countCopyOf(base) {
+  const c = Object.assign(JSON.parse(JSON.stringify(base)), { collapsed: true });
+  delete c.sourceId;
+  delete c.linkedTo;
+  delete c.priorSourceIds;
+  delete c.userEdited;
+  delete c.deviceId;
+  return c;
+}
+// A lower count removes only rows that hold nothing of the user's (build 113):
+// no photo and no typed or picked value (sourceHasUserData) — the rule
+// applyTemplate keeps. Before, a row with a typed Device ID or location went.
+// The first row of the kind is never removed either: a kept later row must not
+// leave the count met by dropping the template's own first one.
+function countMayRemove(s, photographed) {
+  return !photographed.has(s) && !sourceHasUserData(s);
+}
+// Ensure n AUTO Kinetic rows (an AHU template starts with one). A photographed
+// one, or one holding the user's data, is never removed. Returns { rows, blocked } or null with no Kinetic row.
+function matchAutoKineticRows(n, photographed) {
+  const isAutoKin = s => s && s.auto && s.energySource === 'Kinetic';
+  const current = sources.filter(isAutoKin).length;
+  if (!current) return null;
+  let blocked = 0;
+  if (n > current) {
+    const base = sources.find(isAutoKin);
+    let lastIdx = -1;
+    sources.forEach((s, i) => { if (isAutoKin(s)) lastIdx = i; });
+    for (let k = 0; k < (n - current); k++) {
+      const c = Object.assign(countCopyOf(base), { location: kineticDefaultLocation() });   // another fan
+      sources.splice(++lastIdx, 0, c);
+    }
+  } else if (n < current) {
+    let toRemove = current - n;
+    const first = sources.findIndex(isAutoKin);   // the first fan ("At Supply Fan") stays
+    for (let i = sources.length - 1; i > first && toRemove > 0; i--) {
+      if (isAutoKin(sources[i]) && countMayRemove(sources[i], photographed)) { sources.splice(i, 1); toRemove--; }
+    }
+    blocked = toRemove;
+  }
+  return { rows: n, blocked };
 }
 
 // Template-triggered auto-sources (mirrors EQUIPMENT_AUTO_SOURCES)
 const TEMPLATE_AUTO_SOURCES = {
   // Heat Exchanger - Steam: LPS source + Condensate Out
   'Heat Exchanger - Steam': [
+    { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: 'Below Equipment', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+  ],
+  // DA Tank (build 116): the same rows as Heat Exchanger - Steam, which the DA
+  // Tank type used before it had a template of its own.
+  'DA Tank': [
     { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: 'Below Equipment', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
@@ -4863,6 +5118,22 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Electrical 240V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Compressed Air Out', deviceType: '', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
+  // Dental Air Compressor (build 115, loto-web 2026-10-19): the compressor's
+  // disconnect (voltage prompted) and its discharge, then the duplex dryers'
+  // inlet and discharge valves — two rows of two, each with "dryer" in its
+  // location, which is how loto-web tells dryer valves apart. The dryer inlets
+  // are typed Compressed Air OUT on purpose, as wilkins enters them by hand
+  // (KC-LOTO-285, 288): loto-web prints rows of one source type together, so
+  // inlets typed "In" would print after the discharges; with no In row it
+  // counts the dryers per row group and takes the last dryer row as the
+  // discharges. No Kinetic: loto-web adds its own (wilkins deletes it where a
+  // unit has none).
+  'Dental Air Compressor': [
+    { energySource: 'Electrical 480V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Compressed Air Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Compressed Air Out', deviceType: 'Ball Valve', quantity: 2, location: 'Below Air Dryers', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Compressed Air Out', deviceType: 'Ball Valve', quantity: 2, location: 'Above Air Dryers', verification: '', duplicate: 'No', detail: '', auto: true },
+  ],
   // Medical Vacuum: base unit (the pump's disconnect; no Kinetic since build 107). Voltage prompt +
   // "how many units? 1-4". Tech adds the vacuum-line source as needed.
   'Medical Vacuum': [
@@ -4876,6 +5147,35 @@ const TEMPLATE_AUTO_SOURCES = {
   'Lab Vacuum': [
     { energySource: 'Electrical 480V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'SW (Hand/Off/Auto)', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Vacuum Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Dental Vacuum (build 114): the Lab Vacuum shape — one Electrical row per pump
+  // (the count prompt asks how many are on the tank; dental pumps run 120–208V,
+  // the voltage is prompted) and the ball valve that isolates the tank.
+  'Dental Vacuum': [
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'SW (Hand/Off/Auto)', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Vacuum Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Medical Vacuum Pump (build 111): ONE pump on a shared receiver — its own
+  // disconnect and the valve between the receiver and this pump, which
+  // loto-web closes and relieves behind (at the union or flange there) while
+  // the receiver stays in service. No count prompt (one pump), no Kinetic.
+  // The disconnect is on the vacuum control panel (build 112: "Panel"; KC-282
+  // said "On Equipment"). The exhaust valve, when it has one, comes from
+  // maybeAskVacuumExhaust.
+  'Medical Vacuum Pump': [
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: 'Panel', verification: 'SW (Hand/Off/Auto)', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Vacuum Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Compressed Air Tank (build 111): the tank's isolation valve with its drain
+  // and gauge. No Electrical row and so no voltage prompt (loto-web's tank
+  // procedure has no electrical content).
+  'Compressed Air Tank': [
+    { energySource: 'Compressed Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Blower (build 111): its Electrical disconnect; the voltage is prompted.
+  // No Kinetic row: loto-web adds its own "At Blower" one.
+  'Blower': [
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   'Condensing Unit': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
@@ -4898,6 +5198,12 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'HHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   'Standard Pump': [
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Chemical Pump (build 111): the Standard Pump shape. The Chemical Pump type
+  // still defaults to 120V (EQUIPMENT_VOLTAGE_OVERRIDE), a Chemical Feed Pump
+  // to 208V; the voltage is prompted either way.
+  'Chemical Pump': [
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
   // Fire Pump (build 108): the Standard Pump shape — its Electrical feed (the
@@ -4946,6 +5252,17 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
+  // Overhead Door (build 117): the Elevator - Traction shape with the door's one
+  // feed — a breaker in a panel (Marion's doors are fed from Panel RP-A) — then
+  // the door's potential energy (no photo) and the motor's Kinetic row, as on
+  // elevators (loto-web prints Kinetic in Section 1 only). No voltage prompt, as
+  // on elevators: 208V by default, changed on the card. loto-web adds its own
+  // Potential / Kinetic rows only when a unit has none.
+  'Overhead Door': [
+    { energySource: 'Electrical 208V', deviceType: 'Breaker', location: 'Panel', verification: 'Controls', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+  ],
   // Humidifier — dedicated template (was previously reusing Water Heater - Steam
   // with a general-diagram override). Has its own voltage prompt so the user
   // can pick a real power-feed voltage instead of the steam water heater's
@@ -4990,6 +5307,16 @@ const TEMPLATE_AUTO_SOURCES = {
   'Standard Electrical': [
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: 'Meter', duplicate: 'No', detail: '', auto: true },
   ],
+  // Electrical with Stored Energy and Switchgear (build 111): the same single
+  // Electrical source. No Stored Electrical Energy row from the app: loto-web
+  // adds the capacitor bank's, and a drive's DC-bus row by the site's VFD
+  // setting — a row recorded here would print whatever the site says.
+  'Electrical with Stored Energy': [
+    { energySource: 'Electrical 480V', deviceType: '', quantity: 1, location: '', verification: 'Meter', duplicate: 'No', detail: '', auto: true },
+  ],
+  'Switchgear': [
+    { energySource: 'Electrical 480V', deviceType: '', quantity: 1, location: '', verification: 'Meter', duplicate: 'No', detail: '', auto: true },
+  ],
   // Gas-fired boiler: 120V control circuit, the gas train, and the domestic
   // water inlet. Device left blank on the electrical and water sources so the
   // tech picks what's actually there. 120V is fixed (see
@@ -5013,7 +5340,8 @@ const TEMPLATE_AUTO_SOURCES = {
 };
 
 // Equipment types that override the electrical voltage their (possibly shared) template
-// would otherwise set. Lets Chemical Pump reuse the Standard Pump template but at 120V.
+// would otherwise set. A Chemical Pump defaults to 120V on the Chemical Pump template
+// (the Standard Pump one before build 111), which the Chemical Feed Pump type shares at 208V.
 const EQUIPMENT_VOLTAGE_OVERRIDE = {
   'Chemical Pump': 'Electrical 120V',
 };
@@ -5082,13 +5410,37 @@ function handleEquipTypeChange() {
 // "fire pump" comes ahead of "pump" (build 108), never for a jockey pump: only
 // the main fire pump gets loto-web's fire protection impairment NOTEs. "lab vac"
 // / "laboratory vacuum" go to Lab Vacuum ahead of "pump" (build 108); a medical
-// vacuum stays on the Vacuum Pump type's Medical Vacuum template.
+// vacuum stays on the Vacuum Pump type's Medical Vacuum template (build 111:
+// only a pick reaches Medical Vacuum Pump, as in loto-web). Build 111 adds
+// loto-web's own name words for its Chemical Pump, Compressed Air Tank,
+// Blower and Electrical with Stored Energy (drive) templates; "vfd" comes
+// first ("Pump VFD" is the drive), the tank words never on medical air.
 const CUSTOM_EQUIP_KEYWORD_TEMPLATE = [
+  { keyword: 'vfd', template: 'Electrical with Stored Energy' },
+  { keyword: 'variable frequency drive', template: 'Electrical with Stored Energy' },
   { keyword: 'fire pump', unless: 'jockey', template: 'Fire Pump' },
   { keyword: 'lab vac', template: 'Lab Vacuum' },
   { keyword: 'laboratory vacuum', template: 'Lab Vacuum' },
+  { keyword: 'dental vac', template: 'Dental Vacuum' },
+  { keyword: 'dental air', template: 'Dental Air Compressor' },
+  { keyword: 'chemical feed pump', template: 'Chemical Pump' },
+  { keyword: 'chem feed pump', template: 'Chemical Pump' },
+  { keyword: 'chemical pump', template: 'Chemical Pump' },
+  { keyword: 'compressed air tank', unless: 'medical', template: 'Compressed Air Tank' },
+  { keyword: 'air receiver', unless: 'medical', template: 'Compressed Air Tank' },
+  { keyword: 'air tank', unless: 'medical', template: 'Compressed Air Tank' },
+  { keyword: 'blower', template: 'Blower' },
+  { keyword: 'switchgear', template: 'Switchgear' },
+  { keyword: 'overhead door', template: 'Overhead Door' },
   { keyword: 'pump', template: 'Standard Pump' },
 ];
+
+// A keyword counts at the START of a word (build 113): "Repair Tank" holds
+// "air tank" but is no air tank. Only the start is anchored, so "Pumps" and
+// "VFD-3" still match. An `unless` word vetoes anywhere in the name.
+function nameHasWord(lowerName, keyword) {
+  return new RegExp('(^|[^a-z0-9])' + keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(lowerName);
+}
 
 // Fired when a custom equipment type name is entered. If the name matches a keyword
 // (e.g. contains "Pump") and no template is selected yet, auto-pick the suggested
@@ -5100,7 +5452,7 @@ function handleCustomEquipTypeChange() {
   const tmplSel = document.getElementById('equipTemplate');
   if (tmplSel.value) return; // respect a template the user already chose
   const lower = name.toLowerCase();
-  const match = CUSTOM_EQUIP_KEYWORD_TEMPLATE.find(e => lower.includes(e.keyword) && !(e.unless && lower.includes(e.unless)));
+  const match = CUSTOM_EQUIP_KEYWORD_TEMPLATE.find(e => nameHasWord(lower, e.keyword) && !(e.unless && lower.includes(e.unless)));
   if (match && [...tmplSel.options].some(o => o.value === match.template)) {
     pickTemplate(match.template); // applies the template's auto-sources + diagram
     showToast(`Auto-selected ${match.template} template — change it if needed`);
@@ -9051,11 +9403,14 @@ const TYPES_WITH_ELECTRICAL_FEED = new Set([
   'Heating HW Pump','CHW Pump','Domestic HW Pump','Domestic Water Pump','Feedwater Pump','Glycol Pump',
   'Fire Pump','Fire Jockey Pump','Condensate Pump','Chemical Feed Pump','Chemical Pump','Vacuum Pump','Lab Vacuum',
   'Condensate Return Unit','Unit Heater','Domestic Water Heater','Boiler','Humidifier',
-  'Air Compressor','Air Dryer','ATS','Generator','Transformer','Day Tank','Elevator',
-  'Dishwasher','Refrigerator'
+  'Air Compressor','Air Dryer','ATS','Generator','Transformer','Day Tank','Elevator','Overhead Door',
+  'Dishwasher','Refrigerator','Blower','Switchgear','VFD'
 ]);
+// A Compressed Air Tank (build 111) is a plain vessel — also when the Air
+// Compressor type picks its template.
 const TEMPLATES_WITHOUT_ELECTRICAL_FEED = new Set([
-  'Condensate Return Unit - Steam','Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol','Steam PRV Station'
+  'Condensate Return Unit - Steam','Heat Exchanger - Steam','DA Tank','Heat Exchanger - CHW/Glycol','Steam PRV Station',
+  'Compressed Air Tank'
 ]);
 const CUSTOM_TYPE_ELECTRICAL_WORDS = /pump|fan|blower|air ?handler|\bahu\b|\brtu\b|rooftop|compressor|motor|chiller|boiler|heater|generator|\bats\b|transfer switch|transformer|elevator|\blift\b|dryer|\bvfd\b|panel|switchgear|\bmcc\b|dishwasher|washer|refrigerat|freezer|cooler|humidifier|ice machine|conveyor|condensing unit|mini ?split|cooling tower/i;
 function expectsElectricalSource(type, template) {
@@ -9118,21 +9473,49 @@ function collectIncompleteFields() {
   return missing;
 }
 
-function showIncompleteWarning(missing) {
+// Things to check before saving that are not missing fields (build 112): the
+// same pumps recorded both ways — one record per pump AND one for the receiver
+// with all its pumps (loto-web 2026-10-18). The same facility, building and
+// room, case, spaces and dashes ignored. A notice: the site may want both
+// procedures. A site-wide check needs loto-web's unit list (gap 3.9).
+const VACUUM_RECORD_OTHER = { 'Medical Vacuum Pump': 'Medical Vacuum', 'Medical Vacuum': 'Medical Vacuum Pump' };
+const VACUUM_RECORD_LABEL = {
+  'Medical Vacuum': 'Medical Vacuum: the receiver and all its pumps',
+  'Medical Vacuum Pump': 'Medical Vacuum Pump: one pump on a shared receiver',
+};
+function collectSaveNotices() {
+  const notices = [];
+  const other = VACUUM_RECORD_OTHER[getTemplate()];
+  const room = placeKey((document.getElementById('equipRoom') || {}).value);
+  if (other && room) {
+    const bld = placeKey(getBuilding());
+    const fac = entryHospitalCode(savedEquipment.find(e => e && sameEntryId(e.id, currentEntryId)));
+    const twin = savedEquipment.some(e => e && e.template === other && !sameEntryId(e.id, currentEntryId)
+      && placeKey(e.equipRoom) === room && placeKey(e.equipBuilding) === bld && entryHospitalCode(e) === fac);
+    if (twin) notices.push(`This room already has ${VACUUM_RECORD_LABEL[other]}. Keep both only if the site wants both procedures.`);
+  }
+  return notices;
+}
+
+function showIncompleteWarning(missing, notices) {
   closeIncompleteWarning();
+  notices = notices || [];
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.id = 'incompleteWarningOverlay';
   const items = missing.map(m => html`<li style="margin-bottom:5px;">${m}</li>`);
+  const noteItems = notices.map(m => html`<li style="margin-bottom:5px;">${m}</li>`);
   overlay.innerHTML = html`
     <div class="dialog" style="max-width:440px;">
-      <h3 style="margin:0 0 6px 0;color:#d9a441;">&#9888; Incomplete entry</h3>
-      <p style="margin:0 0 10px 0;color:var(--text-dim);font-size:14px;">
+      <h3 style="margin:0 0 6px 0;color:#d9a441;">&#9888; ${missing.length ? 'Incomplete entry' : 'Check before saving'}</h3>
+      ${missing.length ? html`<p style="margin:0 0 10px 0;color:var(--text-dim);font-size:14px;">
         ${missing.length} item${missing.length > 1 ? 's are' : ' is'} still missing:
       </p>
-      <ul style="margin:0 0 16px 18px;padding:0;font-size:13px;max-height:250px;overflow-y:auto;">${items}</ul>
+      <ul style="margin:0 0 16px 18px;padding:0;font-size:13px;max-height:250px;overflow-y:auto;">${items}</ul>` : ''}
+      ${notices.length && missing.length ? html`<p style="margin:0 0 10px 0;color:var(--text-dim);font-size:14px;">Also check:</p>` : ''}
+      ${notices.length ? html`<ul id="saveNoticeList" style="margin:0 0 16px 18px;padding:0;font-size:13px;">${noteItems}</ul>` : ''}
       <div style="display:flex;flex-direction:column;gap:10px;">
-        <button class="btn btn-primary" onclick="closeIncompleteWarning()" style="padding:12px;font-size:15px;">Go back and finish</button>
+        <button class="btn btn-primary" onclick="closeIncompleteWarning()" style="padding:12px;font-size:15px;">${missing.length ? 'Go back and finish' : 'Go back'}</button>
         <button class="btn btn-warning" onclick="closeIncompleteWarning(); performSaveAndNew();" style="padding:12px;font-size:15px;">Save anyway</button>
       </div>
     </div>
@@ -9173,7 +9556,8 @@ function saveAndNew() {
   applySimpleVerifDefaults();
   // Warn (don't block) if anything expected is still blank
   const missing = collectIncompleteFields();
-  if (missing.length) { showIncompleteWarning(missing); return; }
+  const notices = collectSaveNotices();
+  if (missing.length || notices.length) { showIncompleteWarning(missing, notices); return; }
   performSaveAndNew();
 }
 
