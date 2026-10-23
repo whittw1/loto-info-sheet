@@ -479,7 +479,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b120</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b121</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1136,7 +1136,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 120;
+const APP_BUILD = 121;
 
 // ============================================================================
 // DATA
@@ -5698,6 +5698,7 @@ function countCopyOf(base) {
   delete c.deviceId;
   delete c.existingTag;   // another device: not checked yet (build 119)
   delete c.springReturn;  // …nor read from its nameplate (build 120)
+  delete c.labelWait; delete c.dcBusV;   // …nor its label (build 121)
   return c;
 }
 // A lower count removes only rows that hold nothing of the user's (build 113):
@@ -6522,6 +6523,7 @@ function buildSourceCard(src, i) {
             })()}
             ${existingTagBlock(src, i)}
             ${springReturnBlock(src, i)}
+            ${labelWaitBlock(src, i)}
             <div class="form-group">
               <label>Location</label>
               <select onchange="handleLocationChange(${i},this.value)" id="src_loc_${i}">
@@ -6869,6 +6871,151 @@ function springReturnBlock(src, i) {
     <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Photograph the actuator&rsquo;s nameplate &mdash; the model number shows spring return.</div>
   </div>`;
 }
+// ---- The label discharge wait (build 121; agreed with loto-web 2026-10-23) --
+// Field_App_Discharge_Wait_Proposal_2026-10-23.md, "Agreed contract" (wilkins):
+// on a drive's own row (Electrical, Device VFD) and on a capacitor bank (Stored
+// Electrical Energy) — never on a Chiller or Mini Split, whose template waits
+// stand, and not on a linked row (its device is the target's) — the tech
+// records, per unit, the wait printed on the warning label (1-240 minutes) or
+// "No label", optionally the DC bus voltage from the same label (12-1500 V),
+// and ONE label photo for the row. Every facility. loto-web prints the longer
+// of the label and its own minimum.
+// The label photo is a misc photo bound to the row by its sourceId
+// (misc.labelFor): moving or deleting rows can't shift it, and a row that goes
+// (or stops taking the question) leaves it as an ordinary misc photo.
+const LABEL_WAIT_SKIP = ['Chiller', 'Mini Split'];
+function sourceTakesLabelWait(src, type, template) {
+  if (!src || src.linkedTo) return false;
+  if (LABEL_WAIT_SKIP.includes(type) || LABEL_WAIT_SKIP.includes(template)) return false;
+  const es = String(src.energySource || '');
+  return (/^Electrical\b/.test(es) && src.deviceType === 'VFD') || /^Stored Electrical Energy/.test(es);
+}
+function formTakesLabelWait(src) { return sourceTakesLabelWait(src, getEquipType(), getTemplate()); }
+function labelWaitEntries(src) { return Array.isArray(src && src.labelWait) ? src.labelWait : []; }
+function dcBusEntries(src) { return Array.isArray(src && src.dcBusV) ? src.dcBusV : []; }
+function validLabelMinutes(v) { const n = Number(v); return Number.isInteger(n) && n >= 1 && n <= 240 ? n : null; }
+function validDcBusV(v) { const n = Number(v); return Number.isInteger(n) && n >= 12 && n <= 1500 ? n : null; }
+function labelWaitState(e) {
+  if (e && e.noLabel === true) return 'none';
+  return (e && validLabelMinutes(e.minutes) != null) ? 'minutes' : 'unchecked';
+}
+// Per Quantity unit, as loto-web stores them (entries.json, backup only).
+function labelWaitForJson(src) {
+  const list = labelWaitEntries(src);
+  return Array.from({ length: valveMarkSlots(src) }, (_, k) => {
+    const st = labelWaitState(list[k]);
+    return st === 'none' ? { noLabel: true } : (st === 'minutes' ? { minutes: validLabelMinutes(list[k].minutes) } : null);
+  });
+}
+function dcBusForJson(src) {
+  const list = dcBusEntries(src);
+  return Array.from({ length: valveMarkSlots(src) }, (_, k) => validDcBusV(list[k]));
+}
+// Columns 18 / 19: one position per unit joined "; ", trailing empties dropped.
+function joinUnitPositions(parts) {
+  const p = parts.slice();
+  while (p.length && !p[p.length - 1]) p.pop();
+  return p.join('; ');
+}
+function labelWaitCellText(src) { return joinUnitPositions(labelWaitForJson(src).map(e => e ? (e.noLabel ? 'No label' : String(e.minutes)) : '')); }
+function dcBusCellText(src) { return joinUnitPositions(dcBusForJson(src).map(v => v == null ? '' : String(v))); }
+function setUnitEntry(src, key, k, value) {
+  const list = Array.isArray(src[key]) ? src[key].slice() : [];
+  while (list.length <= k) list.push(null);
+  list[k] = value;
+  while (list.length && list[list.length - 1] == null) list.pop();
+  if (list.length) src[key] = list; else delete src[key];
+}
+function updateLabelMinutes(index, unit, value) {
+  const src = sources[index];
+  if (!src) return;
+  const v = String(value || '').replace(/[^0-9]/g, '');
+  const box = document.getElementById('src_lwmin_' + index + '_' + unit);
+  if (box && box.value !== v) box.value = v;
+  markSourceEdited(index);
+  const n = validLabelMinutes(v);
+  setUnitEntry(src, 'labelWait', unit, n != null ? { minutes: n } : null);
+  if (box) box.style.borderColor = (v && n == null) ? '#b5451b' : '';
+  const none = document.getElementById('src_lwnone_' + index + '_' + unit);
+  if (none) none.disabled = !!v;   // typed minutes are never thrown away by "No label"
+  autoSaveCurrent();
+}
+function setLabelWaitNone(index, unit, checked) {
+  const src = sources[index];
+  if (!src) return;
+  if (checked && labelWaitState(labelWaitEntries(src)[unit]) === 'minutes') { renderSources(); return; }
+  markSourceEdited(index);
+  setUnitEntry(src, 'labelWait', unit, checked ? { noLabel: true } : null);
+  const box = document.getElementById('src_lwmin_' + index + '_' + unit);
+  if (box) box.disabled = !!checked;
+  const scan = document.getElementById('src_lwscan_' + index + '_' + unit);
+  if (scan) scan.disabled = !!checked;
+  autoSaveCurrent();
+}
+function updateDcBusV(index, unit, value) {
+  const src = sources[index];
+  if (!src) return;
+  const v = String(value || '').replace(/[^0-9]/g, '');
+  const box = document.getElementById('src_dcv_' + index + '_' + unit);
+  if (box && box.value !== v) box.value = v;
+  markSourceEdited(index);
+  const n = validDcBusV(v);
+  setUnitEntry(src, 'dcBusV', unit, n);
+  if (box) box.style.borderColor = (v && n == null) ? '#b5451b' : '';
+  autoSaveCurrent();
+}
+// The row's label photo: the last misc photo bound to its sourceId.
+function labelPhotoIndexOf(src, list) {
+  const arr = list || miscPhotos;
+  if (!src || !src.sourceId) return -1;
+  for (let k = arr.length - 1; k >= 0; k--) if (arr[k] && arr[k].labelFor === src.sourceId) return k;
+  return -1;
+}
+let _pendingLabelFor = null;   // the row a label photo is being taken for (handleMiscPhoto)
+function addLabelPhoto(index) {
+  const src = sources[index];
+  if (!src) return;
+  if (refuseIfDuplicateCopying()) return;
+  if (miscPhotos.length >= MAX_MISC_PHOTOS) { showToast('Maximum ' + MAX_MISC_PHOTOS + ' misc photos reached (the label photo is one)', true); return; }
+  ensureSourceId(src);
+  _pendingLabelFor = src.sourceId;
+  autoSaveCurrent();
+  document.getElementById('file_misc_photo').click();
+}
+function labelWaitBlock(src, i) {
+  if (!formTakesLabelWait(src)) return '';
+  const n = valveMarkSlots(src), inOut = isInOutPair(src);
+  const lw = labelWaitEntries(src), dv = dcBusEntries(src);
+  const name = k => inOut ? (k ? 'Out' : 'In') : 'Unit ' + (k + 1);
+  const pi = labelPhotoIndexOf(src);
+  const photo = pi >= 0 ? miscPhotos[pi] : null;
+  return html`<div class="form-group" id="lwGroup_${i}" style="grid-column:1 / -1;">
+    <label>Discharge wait on the label${n > 1 ? raw(' <span style="font-weight:400;color:var(--text-dim);">&mdash; one per unit</span>') : ''}</label>
+    ${Array.from({ length: n }, (_, k) => {
+      const e = lw[k], st = labelWaitState(e);
+      const mins = st === 'minutes' ? String(validLabelMinutes(e.minutes)) : '';
+      const volts = validDcBusV(dv[k]) != null ? String(dv[k]) : '';
+      return html`<div class="scan-input-row" style="margin-bottom:6px;align-items:center;flex-wrap:wrap;gap:6px;">
+        ${n > 1 ? html`<span style="min-width:64px;font-size:12px;color:var(--text-dim);">${name(k)}</span>` : ''}
+        <input type="text" inputmode="numeric" id="src_lwmin_${i}_${k}" value="${mins}" placeholder="minutes, e.g. 15" style="max-width:150px;" ${st === 'none' ? 'disabled' : ''}
+          oninput="updateLabelMinutes(${i},${k},this.value)">
+        <button type="button" class="scan-btn" id="src_lwscan_${i}_${k}" onclick="scanTextToField('src_lwmin_${i}_${k}','number')" title="Scan the label" ${st === 'none' ? 'disabled' : ''}>&#128247;</button>
+        <label style="display:flex;align-items:center;gap:6px;margin:0 8px 0 4px;font-size:13px;white-space:nowrap;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500;">
+          <input type="checkbox" class="painted-check" id="src_lwnone_${i}_${k}" ${st === 'none' ? 'checked' : ''} ${mins ? 'disabled' : ''}
+            onchange="setLabelWaitNone(${i},${k},this.checked)">No label
+        </label>
+        <input type="text" inputmode="numeric" id="src_dcv_${i}_${k}" value="${volts}" placeholder="DC bus V (optional)" style="max-width:170px;"
+          oninput="updateDcBusV(${i},${k},this.value)">
+      </div>`;
+    })}
+    <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+      ${photo ? html`<img src="${photo.thumbnail}" onclick="showMiscPhotoViewer(${pi})" title="The label photo" style="width:56px;border-radius:6px;border:2px solid #333;cursor:pointer;">` : ''}
+      <button type="button" class="btn btn-sm" id="src_lwphoto_${i}" onclick="addLabelPhoto(${i})" style="padding:8px 12px;font-size:13px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">&#128247; ${photo ? 'Retake the label photo' : 'Photograph the label'}</button>
+    </div>
+    <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">From the warning label on the drive or capacitor bank, e.g. &ldquo;Wait 15 minutes&rdquo;. Photograph the label.</div>
+  </div>`;
+}
+
 // The location list a row offers: a damper actuator's own (build 120).
 function sourceLocationChoices(src) {
   return isDamperRow(src) ? DATA.damperLocations : DATA.locations.filter(s => s !== '** Custom Location **');
@@ -7045,6 +7192,18 @@ function splitSource(index) {
     while (rest.length && !rest[rest.length - 1]) rest.pop();
     if (rest.length) src.existingTag = rest; else delete src.existingTag;
   }
+  // The label wait and DC bus voltage (build 121) move the same way; the row's
+  // label photo stays with the original row (it is bound to its sourceId).
+  ['labelWait', 'dcBusV'].forEach(key => {
+    delete newSrc[key];
+    if (!Array.isArray(src[key]) || !src[key].length) return;
+    const list = src[key].slice();
+    while (list.length < qty) list.push(null);
+    if (list[qty - 1] != null) newSrc[key] = [list[qty - 1]];
+    const rest = list.slice(0, qty - 1).concat(list.slice(qty));
+    while (rest.length && rest[rest.length - 1] == null) rest.pop();
+    if (rest.length) src[key] = rest; else delete src[key];
+  });
   const prev = sources.slice();
   sources.splice(index + 1, 0, newSrc);
   rebindSourcePhotos(prev);    // photos follow their sources; the split valve starts empty
@@ -7385,6 +7544,7 @@ function duplicateSource(index) {
   newSrc.deviceId = '';          // its own device → its own tag (build 93)
   delete newSrc.existingTag;     // …and its own existing tag, not checked yet (build 119)
   delete newSrc.springReturn;    // …and its own nameplate's spring return (build 120)
+  delete newSrc.labelWait; delete newSrc.dcBusV;   // …and its own label's wait (build 121)
   const prev = sources.slice();
   sources.splice(index + 1, 0, newSrc);
   rebindSourcePhotos(prev);
@@ -10200,11 +10360,16 @@ function addMiscPhoto() {
     showToast('Maximum ' + MAX_MISC_PHOTOS + ' misc photos reached', true);
     return;
   }
+  _pendingLabelFor = null;   // a plain misc photo (build 121)
   autoSaveCurrent();
   document.getElementById('file_misc_photo').click();
 }
 
 function handleMiscPhoto(input) {
+  // A label photo (build 121) is taken through this same input: the row it is
+  // for is taken from addLabelPhoto now, before anything can change it.
+  const labelFor = _pendingLabelFor;
+  _pendingLabelFor = null;
   const file = input && input.files && input.files[0];
   if (!file) return;
   if (refuseIfDuplicateCopying()) return;
@@ -10247,8 +10412,14 @@ function handleMiscPhoto(input) {
         if (miscPhotos.length >= MAX_MISC_PHOTOS) { fail('Maximum ' + MAX_MISC_PHOTOS + ' misc photos reached — this one was not attached'); return; }
         const miscRec = { dbKey: dbKey, thumbnail: out.thumbnail, fileType: 'image/jpeg', timestamp: new Date().toISOString(), unsaved: false };
         if (when.capturedAt) { miscRec.capturedAt = when.capturedAt; miscRec.capturedFrom = when.capturedFrom; }
+        if (labelFor) {
+          // one label photo per row: an earlier one stays, as an ordinary misc photo
+          miscPhotos.forEach(m => { if (m && m.labelFor === labelFor) delete m.labelFor; });
+          miscRec.labelFor = labelFor;
+        }
         miscPhotos.push(miscRec);
         renderMiscPhotos();
+        if (labelFor) renderSources();
         autoSaveCurrent();
         updateIntegrityBadge();
         showToast('Misc photo ' + miscPhotos.length + ' saved (' + out.w + 'x' + out.h + ', ~' + out.kb + 'KB)');
@@ -10293,6 +10464,14 @@ function removeMiscPhoto(idx) {
   updateIntegrityBadge();
 }
 
+// "Label #n" for a row's label photo (build 121), else "Misc n".
+function miscCaption(p, i) {
+  if (p && p.labelFor) {
+    const si = sources.findIndex(s => s && s.sourceId === p.labelFor && formTakesLabelWait(s));
+    if (si >= 0 && labelPhotoIndexOf(sources[si]) === i) return 'Label #' + (si + 1);
+  }
+  return 'Misc ' + (i + 1);
+}
 function renderMiscPhotos() {
   const grid = document.getElementById('miscPhotoGrid');
   const btn = document.getElementById('addMiscPhotoBtn');
@@ -10300,7 +10479,7 @@ function renderMiscPhotos() {
   grid.innerHTML = html`${miscPhotos.map((p, i) => html`
     <div style="position:relative;width:80px;">
       <img src="${p.thumbnail}" onclick="showMiscPhotoViewer(${i})" title="Tap to view full size" style="width:80px;border-radius:6px;border:2px solid #333;cursor:pointer;">
-      <span style="position:absolute;top:2px;left:4px;background:rgba(0,0,0,0.7);color:#fff;font-size:9px;padding:1px 5px;border-radius:3px;">Misc ${i+1}</span>
+      <span style="position:absolute;top:2px;left:4px;background:rgba(0,0,0,0.7);color:#fff;font-size:9px;padding:1px 5px;border-radius:3px;">${miscCaption(p, i)}</span>
       <button onclick="removeMiscPhoto(${i})" style="position:absolute;top:2px;right:2px;background:rgba(200,40,40,0.9);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;line-height:18px;padding:0;">&#10005;</button>
     </div>
   `)}`;
@@ -10408,6 +10587,13 @@ function collectIncompleteFields() {
     // return is what the row needs (build 120).
     if (!s.verification && !ackOnly && !isDamperRow(s)) gaps.push('Verification');
     if (isDamperRow(s) && !s.springReturn) gaps.push('Spring return');
+    // Build 121: a soft warning for a unit whose label wait nobody checked
+    if (formTakesLabelWait(s)) {
+      const n = valveMarkSlots(s), inOut = isInOutPair(s), lw = labelWaitEntries(s);
+      const miss = [];
+      for (let k = 0; k < n; k++) if (labelWaitState(lw[k]) === 'unchecked') miss.push(n < 2 ? '' : (inOut ? (k ? 'Out' : 'In') : 'Unit ' + (k + 1)));
+      if (miss.length) gaps.push('Label discharge wait' + (miss[0] ? ' (' + miss.join(', ') + ')' : ''));
+    }
     // build 102: its photo slot is shown but empty (a duplicate, a linked source
     // and a kind that needs no photo are never flagged — sourceExpectsPhoto)
     if (sourceExpectsPhoto(s) && !sourcePhotoTaken(i)) gaps.push('Photo');
@@ -11376,7 +11562,7 @@ async function executeDuplicate(index, withPhotos) {
   // the other unit's breaker. The tech enters this unit's own.
   // Build 119: the existing tags too — the copy starts "not checked" (loto-web Q6).
   // Build 120: and the spring return, read from each copy's own nameplate.
-  sources.forEach(s => { if (s) { delete s.sourceId; delete s.priorSourceIds; s.deviceId = ''; delete s.existingTag; delete s.springReturn; ensureSourceId(s); } });
+  sources.forEach(s => { if (s) { delete s.sourceId; delete s.priorSourceIds; s.deviceId = ''; delete s.existingTag; delete s.springReturn; delete s.labelWait; delete s.dcBusV; ensureSourceId(s); } });
   const dupSources = sources.slice();   // the source OBJECTS the copies belong to
 
   // With photos, the copy counts as running from here (build 110): a source's
@@ -12147,6 +12333,15 @@ async function runCombinedExport(opts) {
       }
       map.sourceHs.push(srcH);
     }
+    // The rows' label photos (build 121), numbered in the photo sequence like
+    // the rows' own photos; column 10 names them. PASS 1C leaves them out.
+    map.labelHs = entry.sources.map(() => null);
+    for (let i = 0; i < entry.sources.length; i++) {
+      const src = entry.sources[i];
+      if (!sourceTakesLabelWait(src, entry.equipType, entry.template)) continue;
+      const li = labelPhotoIndexOf(src, entry.miscPhotos || []);
+      if (li >= 0) map.labelHs[i] = await resolveExportPhoto(entry, 'label-' + (i + 1), entry.miscPhotos[li], { sourceId: src.sourceId });
+    }
 
     entryMaps.push(map);
   }
@@ -12198,9 +12393,13 @@ async function runCombinedExport(opts) {
     const names = [], caps = [];
     const stem = entryFileStem(entry);
     const list = entry.miscPhotos || [];
+    // a row's label photo went out in PASS 1 under its row (build 121)
+    const labelIdx = new Set((entry.sources || []).filter(s => sourceTakesLabelWait(s, entry.equipType, entry.template))
+      .map(s => labelPhotoIndexOf(s, list)).filter(k => k >= 0));
     for (let mi = 0; mi < list.length; mi++) {
       const mp = list[mi];
       if (!mp || !mp.dbKey) continue;
+      if (labelIdx.has(mi)) continue;
       const f = await resolveExportPhoto(entry, 'misc-' + (mi + 1), mp, { fileName: (ext) => stem + '_Misc' + (mi + 1) + ext });
       if (f) { names.push(f); caps.push(captureInfoOf(mp, f)); }
     }
@@ -12285,6 +12484,12 @@ async function runCombinedExport(opts) {
       if (tagsApply) out.existingTag = existingTagsForJson(src); else delete out.existingTag;
       // Spring return (build 120, backup only): on a Damper Actuator row, else no key.
       if (isDamperRow(src)) out.springReturn = SPRING_RETURN_SHEET[src.springReturn] ? src.springReturn : null; else delete out.springReturn;
+      // The label wait (build 121, backup only): on a row that takes the question, else no keys.
+      if (sourceTakesLabelWait(src, entry.equipType, entry.template)) {
+        out.labelWait = labelWaitForJson(src);
+        out.dcBusV = dcBusForJson(src);
+        out.labelPhotoFile = map.labelHs[i] ? 'photos/' + map.labelHs[i] : '';
+      } else { delete out.labelWait; delete out.dcBusV; delete out.labelPhotoFile; }
       return out;
     });
     const miscOut = miscFileNames[ei]
@@ -12374,7 +12579,9 @@ async function runCombinedExport(opts) {
         { width: 34 },  // 14: Drain Location (build 118)
         { width: 10 },  // 15: Lock Open (build 118)
         { width: 22 },  // 16: Existing Tag (build 119)
-        { width: 14 }   // 17: Spring Return (build 120)
+        { width: 14 },  // 17: Spring Return (build 120)
+        { width: 12 },  // 18: Label Wait (build 121)
+        { width: 10 }   // 19: DC Bus V (build 121)
       ];
 
       // Style definitions matching original info sheet
@@ -12390,7 +12597,7 @@ async function runCombinedExport(opts) {
       const VALVE_STATE_SHEET_TEXT = { normally_closed: 'Normally Closed', normally_open: 'Normally Open' };
       function applyRow(row, font, fill, borders) {
         row.eachCell({ includeEmpty: true }, (cell, colNum) => {
-          if (colNum <= 17) {
+          if (colNum <= 19) {
             cell.font = font;
             if (fill) cell.fill = fill;
             if (borders) cell.border = borders;
@@ -12449,6 +12656,9 @@ async function runCombinedExport(opts) {
         const tagsApply = existingTagAppliesToEntry(entry);
         // Spring return (build 120): column 17's header only on a unit with a Damper Actuator row.
         const dampersHere = (entry.sources || []).some(isDamperRow);
+        // The label wait (build 121): columns 18 / 19 headed, and column 10 used,
+        // only on a unit with a row that takes the question.
+        const lwHere = (entry.sources || []).some(x => sourceTakesLabelWait(x, entry.equipType, entry.template));
         // 10 energy source rows — FIXED: loto-web's office importer reads this
         // sheet as 27-row blocks, so a taller block would shift every unit after
         // it. Sources 11+ are in the CSV and entries.json (the export warns).
@@ -12465,7 +12675,8 @@ async function runCombinedExport(opts) {
             // build 118: loto-web reads each only under its own header
             'Drain Location', 'Lock Open',
             tagsApply ? 'Existing Tag' : '',   // build 119
-            dampersHere ? 'Spring Return' : ''   // build 120
+            dampersHere ? 'Spring Return' : '',   // build 120
+            lwHere ? 'Label Wait' : '', lwHere ? 'DC Bus V' : ''   // build 121
           ]);
           applyRow(srcLabelRow, labelFont, labelFill, allBorders);
 
@@ -12491,7 +12702,8 @@ async function runCombinedExport(opts) {
             detailCell,
             src ? effectiveDuplicate(src, (entry.photos || {})['source_' + s]) : '',   // an automatic Yes needs its photo (build 110)
             src ? (src.verification || '') : '',
-            '',
+            // Column 10 (build 121): the row's label photo, on a unit that asks
+            (src && lwHere && sourceTakesLabelWait(src, entry.equipType, entry.template)) ? (map.labelHs[s] || '') : '',
             // Valve state (build 91). The office imports THIS sheet, and it had
             // no valve state: a Normally Closed valve arrived as an ordinary one
             // and the procedure said to open it at restore. Blank = normal.
@@ -12507,7 +12719,10 @@ async function runCombinedExport(opts) {
             // Existing tag (build 119): one position per unit, "; "-joined
             (src && tagsApply) ? existingTagCellText(src) : '',
             // Spring return (build 120): Yes / No / Can't tell on a Damper Actuator row
-            (src && dampersHere) ? springReturnSheetText(src) : ''
+            (src && dampersHere) ? springReturnSheetText(src) : '',
+            // The label wait and DC bus voltage (build 121), per unit
+            (src && lwHere && sourceTakesLabelWait(src, entry.equipType, entry.template)) ? labelWaitCellText(src) : '',
+            (src && lwHere && sourceTakesLabelWait(src, entry.equipType, entry.template)) ? dcBusCellText(src) : ''
           ]);
           applyRow(srcDataRow, dataFont, null, allBorders);
         }
@@ -15276,7 +15491,7 @@ async function scanTextToField(inputId, pick) {
   // while it read put the scanned name or tag on the NEXT unit, silently when
   // that box was empty, and a source moved meanwhile got another's tag.
   const session = formSession;
-  const srcBox = /^src_(deviceId|locid|detail|extag)_(\d+)(_\d+)?$/.exec(inputId);
+  const srcBox = /^src_(deviceId|locid|detail|extag|lwmin|dcv)_(\d+)(_\d+)?$/.exec(inputId);
   const srcObj = srcBox ? sources[parseInt(srcBox[2], 10)] : null;
 
   let photo;
@@ -15317,7 +15532,10 @@ async function scanTextToField(inputId, pick) {
   // Most labels are 1–3 lines; collapse line breaks into spaces so the field
   // ends up with a single clean string the user can edit. A Panel / MCC ID
   // takes the line with the ID, without the word "Panel" / "MCC".
-  const text = pick === 'locationId' ? pickLocationIdFromScan(rawText, result && result.blocks) : rawText.replace(/\s+/g, ' ').trim();
+  // 'number' (build 121): the first whole number on the label ("WAIT 15 MINUTES" → 15)
+  const text = pick === 'locationId' ? pickLocationIdFromScan(rawText, result && result.blocks)
+    : pick === 'number' ? ((rawText.match(/\d+/) || [''])[0])
+    : rawText.replace(/\s+/g, ' ').trim();
 
   if (session !== formSession) {
     showToast('Scan not used — the form changed while it was reading (the unit was saved, closed or another one opened). Scan again.', true);

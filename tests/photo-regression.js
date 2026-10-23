@@ -80,6 +80,9 @@
 //             warning, the sheet's column 16 and entries.json existingTag
 //   T252–T255 build 120: damper actuators (Atlanta) — the setting per facility and the types that ask, the row's
 //             fields and copies, the Can't tell note and "No damper actuators", column 17 / U7 / entries.json
+//   T256–T259 build 121: the label discharge wait — which rows ask (VFD / Stored Electrical Energy, not Chiller /
+//             Mini Split / linked) and the per-unit boxes; the label photo bound to its row; copies, Split and the
+//             Save & New warning; columns 10 / 18 / 19 and entries.json
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8329,6 +8332,182 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ==========================================================================
+  // BUILD 121 — the label discharge wait (agreed with loto-web 2026-10-23).
+  // Each test fails on build 120.
+  // ==========================================================================
+  function lwForm(name, type, template, srcs) {
+    fillFormNoSources(name);
+    document.getElementById('equipType').value = type;
+    filterTemplateDropdown(type);
+    if (template) document.getElementById('equipTemplate').value = template;
+    sources = srcs.map(x => Object.assign({}, x, { collapsed: false }));
+    renderSources();
+  }
+  const VFDROW = (extra) => Object.assign(mkSrc('Electrical 480V'), { deviceType: 'VFD', location: 'MCC' }, extra || {});
+  const SEEROW = (extra) => Object.assign(mkSrc('Stored Electrical Energy'), { deviceType: 'Capacitor', location: 'At Capacitor Bank', verification: '', noPhoto: true }, extra || {});
+  async function takeLabelPhoto(index, seed) {
+    const inp = document.getElementById('file_misc_photo');
+    const realClick = inp.click;
+    inp.click = () => {};
+    try {
+      const before = miscPhotos.length;
+      addLabelPhoto(index);
+      handleMiscPhoto({ files: [await makePhotoFile(seed)], value: '' });
+      await waitFor(() => miscPhotos.length === before + 1 && miscPhotos[before].unsaved === false, 15000, 'label photo');
+      await waitForPhotoWritesIdle(15000);
+    } finally { inp.click = realClick; }
+  }
+
+  // T256 — which rows ask, and the per-unit boxes
+  async function t256_theLabelWaitIsAskedOnDrivesAndCapacitorBanks() {
+    const N = 'T256 the label discharge wait is asked at every facility on an Electrical row with Device VFD and on a Stored Electrical Energy row — not a Disconnect row, not a linked row, not on a Chiller or Mini Split; per unit a minutes box (digits only, 1–240), a scan button that takes the label\'s first number, a painted "No label" box (exclusive with typed minutes) and an optional DC bus V (12–1500)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Marion');
+      lwForm('LW-256', 'Air Handler', 'AHU - Steam', [VFDROW({ quantity: 2 }), Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Disconnect' }), SEEROW(),
+        VFDROW({ linkedTo: { equipName: 'X', sourceIndex: 0, sourceLabel: 'Electrical 480V' } })]);
+      got.rows = [0, 1, 2, 3].map(i => !!document.getElementById('lwGroup_' + i));
+      want(got.rows.join() === 'true,false,true,false', 'which rows (Marion too)');
+      got.boxes = document.querySelectorAll('[id^="src_lwmin_0_"]').length;
+      want(got.boxes === 2 && !!document.getElementById('src_dcv_0_1') && document.getElementById('src_lwnone_0_0').classList.contains('painted-check')
+        && /'number'/.test(document.getElementById('src_lwscan_0_0').getAttribute('onclick') || ''), 'per-unit boxes, scan, painted No label');
+      updateLabelMinutes(0, 0, '15 min');
+      got.typed = { box: document.getElementById('src_lwmin_0_0').value, list: JSON.stringify(sources[0].labelWait), noneDisabled: document.getElementById('src_lwnone_0_0').disabled };
+      want(got.typed.box === '15' && got.typed.list === '[{"minutes":15}]' && got.typed.noneDisabled, 'minutes');
+      updateLabelMinutes(0, 0, '300');
+      want(!sources[0].labelWait, 'out of range is not kept');
+      updateLabelMinutes(0, 0, '15');
+      setLabelWaitNone(0, 1, true);
+      got.none = { list: JSON.stringify(sources[0].labelWait), boxDisabled: document.getElementById('src_lwmin_0_1').disabled, cell: labelWaitCellText(sources[0]) };
+      want(got.none.list === '[{"minutes":15},{"noLabel":true}]' && got.none.boxDisabled && got.none.cell === '15; No label', 'No label');
+      updateDcBusV(0, 0, '650'); updateDcBusV(2, 0, '5');
+      got.dc = { a: JSON.stringify(sources[0].dcBusV), b: sources[2].dcBusV === undefined, cell: dcBusCellText(sources[0]) };
+      want(got.dc.a === '[650]' && got.dc.b && got.dc.cell === '650', 'DC bus V');
+      // Chiller and Mini Split units keep their template waits
+      lwForm('LW-256-CH', 'Chiller', 'Chiller', [VFDROW(), SEEROW()]);
+      got.chiller = [0, 1].map(i => !!document.getElementById('lwGroup_' + i));
+      lwForm('LW-256-MS', 'Mini Split', 'Mini Split', [SEEROW()]);
+      got.mini = !!document.getElementById('lwGroup_0');
+      want(got.chiller.join() === 'false,false' && !got.mini, 'not Chiller / Mini Split');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T257 — the label photo is a misc photo bound to its row
+  async function t257_theLabelPhotoIsBoundToItsRow() {
+    const N = 'T257 "Photograph the label" stores the photo as a misc photo bound to the row\'s sourceId (shown on the card, captioned "Label #n"); a retake binds the new one and leaves the old one as a misc photo; moving rows keeps the binding; deleting the row leaves the photo as an ordinary misc photo';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    lwForm('LW-257', 'Air Handler', 'AHU - Steam', [Object.assign(mkSrc('Electrical 208V'), { deviceType: 'Disconnect' }), VFDROW()]);
+    await takeLabelPhoto(1, 'lw257a');
+    const sid = sources[1].sourceId;
+    got.first = { bound: miscPhotos[0].labelFor === sid && !!sid, card: !!document.querySelector('#lwGroup_1 img'), btn: (document.getElementById('src_lwphoto_1') || {}).textContent || '', caption: miscCaption(miscPhotos[0], 0) };
+    want(got.first.bound && got.first.card && /Retake/.test(got.first.btn) && got.first.caption === 'Label #2', 'bound and shown');
+    await takeLabelPhoto(1, 'lw257b');
+    got.retake = { old: miscPhotos[0].labelFor === undefined, now: miscPhotos[1].labelFor === sid, idx: labelPhotoIndexOf(sources[1]) };
+    want(got.retake.old && got.retake.now && got.retake.idx === 1, 'retake');
+    moveSource(1, -1);
+    got.moved = { idx: labelPhotoIndexOf(sources[0]), caption: miscCaption(miscPhotos[1], 1) };
+    want(got.moved.idx === 1 && got.moved.caption === 'Label #1', 'moving rows');
+    await withDialogs({ confirm: true }, async () => { removeSource(0); });
+    renderMiscPhotos();
+    got.deleted = { photos: miscPhotos.length, caption: miscCaption(miscPhotos[1], 1) };
+    want(got.deleted.photos === 2 && got.deleted.caption === 'Misc 2', 'a deleted row leaves the photo');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T258 — copies, Split and the Save & New warning
+  async function t258_labelWaitCopiesSplitAndWarning() {
+    const N = 'T258 Duplicate source, a count copy and a Duplicate of the unit start with no label wait or voltage; Split gives the split-off drive the last unit\'s answers; Save & New warns softly about a unit nobody checked (none once answered or No label)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    lwForm('LW-258', 'Air Handler', 'AHU - Steam', [VFDROW({ labelWait: [{ minutes: 15 }], dcBusV: [650] })]);
+    duplicateSource(0);
+    got.dup = sources.map(x => JSON.stringify([x.labelWait || null, x.dcBusV || null]));
+    want(got.dup.join('|') === '[[{"minutes":15}],[650]]|[null,null]', 'Duplicate source');
+    const cc = countCopyOf(VFDROW({ labelWait: [{ minutes: 5 }], dcBusV: [325] }));
+    want(cc.labelWait === undefined && cc.dcBusV === undefined, 'count copy');
+    const U = Object.assign(mkEntry('LW-258-U', { sources: [Object.assign(VFDROW({ labelWait: [{ minutes: 15 }], dcBusV: [650] }), { sourceId: genUuid() })] }), { equipType: 'Air Handler', template: 'AHU - Steam' });
+    savedEquipment = [U]; saveAll();
+    await withDialogs({ confirm: true }, async () => { await executeDuplicate(0, false); });
+    got.dupUnit = sources.map(x => x.labelWait === undefined && x.dcBusV === undefined);
+    want(got.dupUnit.join() === 'true', 'Duplicate unit');
+    lwForm('LW-258-S', 'Air Handler', 'AHU - Steam', [VFDROW({ quantity: 3, labelWait: [{ minutes: 10 }, { noLabel: true }, { minutes: 20 }], dcBusV: [650, null, 325] })]);
+    await withDialogs({ confirm: true }, async () => { splitSource(0); });
+    got.split = sources.map(x => JSON.stringify([x.labelWait || null, x.dcBusV || null]));
+    want(got.split.join('|') === '[[{"minutes":10},{"noLabel":true}],[650]]|[[{"minutes":20}],[325]]', 'Split');
+    lwForm('LW-258-W', 'Air Handler', 'AHU - Steam', [VFDROW({ quantity: 2, labelWait: [{ minutes: 15 }] }), SEEROW()]);
+    const items = () => collectIncompleteFields().filter(m => /Label discharge wait/.test(m));
+    got.warn = items();
+    want(got.warn.length === 2 && /^Source #1 \(Electrical 480V\) — .*Label discharge wait \(Unit 2\)/.test(got.warn[0]) && /^Source #2 \(Stored Electrical Energy\) — .*Label discharge wait$/.test(got.warn[1]), 'warned');
+    sources[0].labelWait = [{ minutes: 15 }, { noLabel: true }]; sources[1].labelWait = [{ minutes: 5 }];
+    got.answered = items();
+    want(!got.answered.length, 'answered');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T259 — columns 10 / 18 / 19 and entries.json
+  async function t259_theLabelWaitTravelsInColumns10_18_19() {
+    const N = 'T259 on a unit with a row that takes the question, every source label row carries "Label Wait" (18) and "DC Bus V" (19); its rows that take it write the minutes / No label and volts per unit and the label photo\'s sequence-numbered file name in column 10 (that file in photos/, not in the misc list), the others leave 10 / 18 / 19 empty; a Chiller unit and a unit without such rows carry neither header; entries.json labelWait / dcBusV / labelPhotoFile on those rows only';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    // the label photo, taken through the form
+    lwForm('LW-259-AHU', 'Air Handler', 'AHU - Steam', [Object.assign(mkSrc('Electrical 208V'), { deviceType: 'Disconnect' }),
+      VFDROW({ quantity: 2, labelWait: [{ minutes: 15 }, { noLabel: true }], dcBusV: [650] }), SEEROW({ labelWait: [{ minutes: 5 }] })]);
+    await takeLabelPhoto(1, 'lw259');
+    document.getElementById('equipName').value = 'LW-259-AHU';
+    const A = saveEntry();
+    A.equipType = 'Air Handler'; A.template = 'AHU - Steam';
+    const S = (x) => Object.assign(x, { sourceId: genUuid() });
+    const C = Object.assign(mkEntry('LW-259-CH', { sources: [S(VFDROW({ labelWait: [{ minutes: 9 }] })), S(SEEROW())] }), { equipType: 'Chiller', template: 'Chiller' });
+    const P = Object.assign(mkEntry('LW-259-P', { sources: [S(mkSrc('Electrical 208V'))] }), { equipType: 'CHW Pump', template: 'Chilled Water Pump' });
+    savedEquipment = [A, C, P].map((e, k) => k === 0 ? savedEquipment.find(x => x.id === A.id) || A : e);
+    savedEquipment[0].equipType = 'Air Handler'; savedEquipment[0].template = 'AHU - Steam';
+    saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) { record(N, false, 'no zip: ' + confirms.join(' | ')); return; }
+    const u = await unzipExport(zip.blob);
+    const by = {};
+    for (const xpath of Object.keys(u.files).filter(p => /Information_Sheet_.*\.xlsx$/.test(p))) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      const ws = wb.worksheets[0];
+      let cur = null;
+      ws.eachRow(row => {
+        const a = String(row.getCell(1).value || '');
+        if (a === 'Equipment ID/Name') { cur = String(ws.getRow(row.number + 1).getCell(1).value || ''); by[cur] = { h: [], v: [], misc: String(ws.getRow(row.number + 1).getCell(12).value || ''), w: [ws.getColumn(18).width, ws.getColumn(19).width] }; }
+        if (cur && /^Energy Source #\d+$/.test(a)) {
+          by[cur].h.push(String(row.getCell(18).value || '') + '|' + String(row.getCell(19).value || '') + '|' + String(row.getCell(10).value || ''));
+          const d = ws.getRow(row.number + 1);
+          if (String(d.getCell(1).value || '')) by[cur].v.push([10, 18, 19].map(c => String(d.getCell(c).value || '')).join('|'));
+        }
+      });
+    }
+    got.sheet = by;
+    const ahu = by['LW-259-AHU'] || {}, ch = by['LW-259-CH'] || {}, pump = by['LW-259-P'] || {};
+    const photoName = ((ahu.v || [])[1] || '').split('|')[0];
+    want((ahu.h || []).length === 10 && ahu.h.every(h => /^Label Wait\|DC Bus V\|Verification Photo #\d+$/.test(h)), 'AHU headers');
+    want((ahu.v || [])[0] === '||' && /^[^|]+\.jpg\|15; No label\|650$/.test((ahu.v || [])[1] || '') && (ahu.v || [])[2] === '|5|', 'AHU values');
+    want(!!photoName && !!u.files['photos/' + photoName] && !/Misc/.test(photoName) && !(ahu.misc || '').includes(photoName), 'the label photo file');
+    want((ch.h || []).every(h => /^\|\|Verification Photo/.test(h)) && (ch.v || []).every(v => v === '||'), 'Chiller has neither');
+    want((pump.h || []).every(h => /^\|\|Verification Photo/.test(h)), 'a unit without such rows');
+    want((ahu.w || []).join() === '12,10', 'widths');
+    const je = {};
+    ((u.entriesJson && u.entriesJson.entries) || []).forEach(e => { je[e.equipName] = (e.sources || []).map(x => ('labelWait' in x) ? [x.labelWait, x.dcBusV, x.labelPhotoFile] : 'NO KEY'); });
+    got.json = je;
+    const ja = je['LW-259-AHU'] || [];
+    want(ja[0] === 'NO KEY' && JSON.stringify(ja[1].slice(0, 2)) === '[[{"minutes":15},{"noLabel":true}],[650,null]]' && ja[1][2] === 'photos/' + photoName
+      && JSON.stringify(ja[2]) === '[[{"minutes":5}],[null],""]', 'entries.json AHU');
+    want(JSON.stringify(je['LW-259-CH']) === '["NO KEY","NO KEY"]', 'entries.json Chiller');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -8438,7 +8617,9 @@
     t248_theExistingTagPromptFollowsTheUnitsFacility, t249_copiesStartNotCheckedAndSplitMovesTheTag,
     t250_saveAndNewWarnsAboutAnUnansweredTag, t251_theExistingTagTravelsInColumn16,
     t252_theDamperQuestionFollowsFacilityAndType, t253_theDamperActuatorRow, t254_cantTellNoteAndNoDampers,
-    t255_springReturnTravelsInColumn17AndU7];
+    t255_springReturnTravelsInColumn17AndU7,
+    t256_theLabelWaitIsAskedOnDrivesAndCapacitorBanks, t257_theLabelPhotoIsBoundToItsRow,
+    t258_labelWaitCopiesSplitAndWarning, t259_theLabelWaitTravelsInColumns10_18_19];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
