@@ -1286,6 +1286,11 @@ build 118's tip, so the "None found" fix `e9bbb7c` is in.
   - "No tag" → `[{none}]`;
   - an In/Out pair "No tag; W-3" → In none, Out W-3;
   - a Marion unit with no column-16 header → None (not asked).
+  - **loto-web's end-to-end check passed (2026-10-23, its Atlanta chat; live code, throwaway database).** Both sheets were
+    imported through `_parse_info_sheet`; a re-import changed nothing. The Atlanta unit, generated on an
+    `ids_per_equipment` site, printed E-1 (recorded) / E-2 (unit 2 not checked → next number), W-2 and W-3 (recorded),
+    and W-4 / W-5 for the No tag valves. Pre-QC raised exactly one FIX: "Electrical 480V unit 2 of 2 has no existing tag
+    and no 'No tag'".
 - `APP_BUILD` = 119. T241 and T244 now read it instead of a literal 118.
 
 | Test | What it holds |
