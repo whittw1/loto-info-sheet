@@ -479,7 +479,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b118</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b119</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -805,6 +805,11 @@ if ('serviceWorker' in navigator) {
         Show Overhead Sketch section for this facility
       </label>
       <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">Off by default. Entries that already have sketch drawings still show the section.</div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="settingsExistingTags" style="width:18px;height:18px;">
+        Ask for each source's existing LOTO tag at this facility
+      </label>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">On by default for the three Atlanta facilities, off elsewhere. Sources that already hold an answer still show it.</div>
     </div>
     <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
     <div style="margin-bottom:16px;">
@@ -958,6 +963,8 @@ function onHospitalSelectChange() {
   // Reflect the picked facility's sketch pref (custom entries resolve on Save)
   const sketchChk = document.getElementById('settingsSketchShow');
   if (sketchChk && sel.value !== '__custom__') sketchChk.checked = sketchEnabledForFacility(sel.value);
+  const tagChk = document.getElementById('settingsExistingTags');
+  if (tagChk && sel.value !== '__custom__') tagChk.checked = existingTagPromptOn(sel.value);
 }
 
 // Small header chip showing the active facility (or a warning when unset, so a
@@ -1006,6 +1013,8 @@ function showSettings() {
   }
   const sketchChk = document.getElementById('settingsSketchShow');
   if (sketchChk) sketchChk.checked = sketchEnabledForFacility(hc);
+  const tagChk = document.getElementById('settingsExistingTags');
+  if (tagChk) tagChk.checked = existingTagPromptOn(hc);
   document.getElementById('photoPreset').value = s.preset || PHOTO_DEFAULTS.preset;
   document.getElementById('photoMaxW').value = s.maxWidth;
   document.getElementById('photoMaxH').value = s.maxHeight;
@@ -1092,6 +1101,11 @@ function savePhotoSettings() {
   const sketchChk = document.getElementById('settingsSketchShow');
   if (sketchChk) setSketchPrefForFacility(hc, sketchChk.checked);
   applySketchVisibility();
+  // Existing tags (build 119): only a change is stored, so a facility left at
+  // its default keeps following it.
+  const tagChk = document.getElementById('settingsExistingTags');
+  if (tagChk && tagChk.checked !== existingTagPromptOn(hc)) setExistingTagPrefForFacility(hc, tagChk.checked);
+  renderSources();
 
   document.getElementById('settingsOverlay').style.display = 'none';
   showToast('Settings saved');
@@ -1110,7 +1124,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 118;
+const APP_BUILD = 119;
 
 // ============================================================================
 // DATA
@@ -5634,6 +5648,7 @@ function countCopyOf(base) {
   delete c.priorSourceIds;
   delete c.userEdited;
   delete c.deviceId;
+  delete c.existingTag;   // another device: not checked yet (build 119)
   return c;
 }
 // A lower count removes only rows that hold nothing of the user's (build 113):
@@ -6456,6 +6471,7 @@ function buildSourceCard(src, i) {
               ${extra.length ? html`<div style="font-size:11px;color:#b5451b;">More tags than Quantity, not printed: ${extra.join('; ')}</div>` : ''}
             </div>`;
             })()}
+            ${existingTagBlock(src, i)}
             <div class="form-group">
               <label>Location</label>
               <select onchange="handleLocationChange(${i},this.value)" id="src_loc_${i}">
@@ -6731,6 +6747,134 @@ function updateUnitDeviceId(index, unit, value) {
   if (pieces.length > 1) renderSources();
 }
 
+// ---- Existing LOTO tags (build 119, Atlanta) ----------------------------------
+// The VA Atlanta project keeps the energy source tags already on its equipment,
+// so the tech records each source's existing tag per unit, or "No tag"
+// (loto-web docs/Atlanta_Existing_Tags_Spec_2026-10-22.md, wilkins 2026-10-22).
+// Stored as src.existingTag: one entry per unit, in unit order (unit 1 first,
+// In then Out, as for Device ID): { tag: "E-2" } / { none: true } / null = not
+// checked. A single tag never covers every unit (unlike Device ID), and the
+// tag never goes into Device ID: loto-web splices Device ID into Section 1's
+// Method. Asked on every row, linked or not; a link never copies its target's
+// tag, and Duplicate / Copy Source / the count's copies start not checked.
+// The question follows the UNIT's own facility: on by default for the three
+// Atlanta codes, off elsewhere, changeable per facility in Settings.
+const EXISTING_TAG_DEFAULT_ON = ['Atlanta', 'Atlanta - Fort McPherson', 'Atlanta - Trinka Davis'];
+function getExistingTagPrefs() {
+  try { return JSON.parse(localStorage.getItem('loto_existing_tag_prefs') || '{}') || {}; } catch (e) { return {}; }
+}
+function existingTagPromptOn(code) {
+  const key = (code !== undefined ? code : getHospitalCode()) || '';
+  const pref = getExistingTagPrefs()[key];
+  if (pref === 'on') return true;
+  if (pref === 'off') return false;
+  return EXISTING_TAG_DEFAULT_ON.includes(key);
+}
+function setExistingTagPrefForFacility(code, on) {
+  const prefs = getExistingTagPrefs();
+  prefs[code || ''] = on ? 'on' : 'off';
+  try { localStorage.setItem('loto_existing_tag_prefs', JSON.stringify(prefs)); } catch (e) {}
+}
+// The facility of the unit on the form: a saved unit's own stamp, else the setting.
+function formFacilityCode() {
+  return entryHospitalCode(savedEquipment.find(e => e && sameEntryId(e.id, currentEntryId)));
+}
+function existingTagEntries(src) { return Array.isArray(src && src.existingTag) ? src.existingTag : []; }
+// As the sheet carries it: ";" removed (it would split the cell), spaces collapsed.
+function cleanExistingTag(text) { return String(text || '').replace(/;/g, ' ').split(/\s+/).filter(Boolean).join(' '); }
+function existingTagState(e) {
+  if (e && e.none === true) return 'none';
+  return (e && cleanExistingTag(e.tag)) ? 'tag' : 'unchecked';
+}
+// The units that print (Quantity), as loto-web stores them.
+function existingTagsForJson(src) {
+  const list = existingTagEntries(src);
+  return Array.from({ length: valveMarkSlots(src) }, (_, k) => {
+    const st = existingTagState(list[k]);
+    return st === 'none' ? { none: true } : (st === 'tag' ? { tag: cleanExistingTag(list[k].tag) } : null);
+  });
+}
+// Column 16: one position per unit joined "; ", a not-checked unit empty; the
+// empty positions at the end dropped ("E-1" alone = unit 2 not checked).
+function existingTagCellText(src) {
+  const parts = existingTagsForJson(src).map(e => e ? (e.none ? 'No tag' : e.tag) : '');
+  while (parts.length && !parts[parts.length - 1]) parts.pop();
+  return parts.join('; ');
+}
+function sourceHasExistingTagAnswer(src) { return existingTagsForJson(src).some(Boolean); }
+// The sheet's column 16 header goes only on a unit where the question applies:
+// its facility asks, or one of its rows already holds an answer. Elsewhere it
+// stays blank, so loto-web never reads Marion's or KC's empty cells as "not checked".
+function existingTagAppliesToEntry(entryLike) {
+  return existingTagPromptOn(entryHospitalCode(entryLike)) || (entryLike.sources || []).some(sourceHasExistingTagAnswer);
+}
+// The units of a row nobody answered, by name ("Unit 2", "Out"); [""] for a quantity-1 row.
+function existingTagGaps(src) {
+  const n = valveMarkSlots(src), inOut = isInOutPair(src);
+  const list = existingTagEntries(src);
+  const out = [];
+  for (let k = 0; k < n; k++) if (existingTagState(list[k]) === 'unchecked') out.push(n < 2 ? '' : (inOut ? (k ? 'Out' : 'In') : 'Unit ' + (k + 1)));
+  return out;
+}
+function setExistingTagEntry(src, k, value) {
+  const list = existingTagEntries(src).slice();
+  while (list.length <= k) list.push(null);
+  list[k] = value;
+  while (list.length && !list[list.length - 1]) list.pop();
+  if (list.length) src.existingTag = list; else delete src.existingTag;
+}
+function updateExistingTag(index, unit, value) {
+  const src = sources[index];
+  if (!src) return;
+  const box = document.getElementById('src_extag_' + index + '_' + unit);
+  const v = String(value || '').replace(/;/g, ' ');
+  if (box && box.value !== v) box.value = v;
+  markSourceEdited(index);
+  setExistingTagEntry(src, unit, v.trim() ? { tag: v } : null);
+  const none = document.getElementById('src_extagnone_' + index + '_' + unit);
+  if (none) none.disabled = !!v.trim();   // a typed tag is never thrown away by "No tag"
+  autoSaveCurrent();
+}
+function setExistingTagNone(index, unit, checked) {
+  const src = sources[index];
+  if (!src) return;
+  const cur = existingTagEntries(src)[unit];
+  if (checked && existingTagState(cur) === 'tag') { renderSources(); return; }   // clear the tag first
+  markSourceEdited(index);
+  setExistingTagEntry(src, unit, checked ? { none: true } : null);
+  const box = document.getElementById('src_extag_' + index + '_' + unit);
+  if (box) box.disabled = !!checked;
+  const scan = document.getElementById('src_extagscan_' + index + '_' + unit);
+  if (scan) scan.disabled = !!checked;
+  autoSaveCurrent();
+}
+// The card's block: shown where the unit's facility asks, and on any row that
+// already holds an answer (data is never hidden).
+function existingTagBlock(src, i) {
+  if (!existingTagPromptOn(formFacilityCode()) && !existingTagEntries(src).some(e => existingTagState(e) !== 'unchecked')) return '';
+  const n = valveMarkSlots(src), inOut = isInOutPair(src);
+  const list = existingTagEntries(src);
+  const name = k => inOut ? (k ? 'Out' : 'In') : 'Unit ' + (k + 1);
+  const extra = list.slice(n).map(e => existingTagState(e) === 'none' ? 'No tag' : (existingTagState(e) === 'tag' ? cleanExistingTag(e.tag) : '')).filter(Boolean);
+  return html`<div class="form-group" id="extagGroup_${i}">
+    <label>Existing LOTO tag${n > 1 ? raw(' <span style="font-weight:400;color:var(--text-dim);">&mdash; one per unit</span>') : ''}</label>
+    ${Array.from({ length: n }, (_, k) => {
+      const e = list[k], st = existingTagState(e), typed = (e && typeof e.tag === 'string') ? e.tag : '';
+      return html`<div class="scan-input-row" style="margin-bottom:6px;align-items:center;">
+        ${n > 1 ? html`<span style="min-width:64px;font-size:12px;color:var(--text-dim);">${name(k)}</span>` : ''}
+        <input type="text" id="src_extag_${i}_${k}" value="${typed}" placeholder="e.g. E-1" ${st === 'none' ? 'disabled' : ''}
+          oninput="updateExistingTag(${i},${k},this.value)">
+        <button type="button" class="scan-btn" id="src_extagscan_${i}_${k}" onclick="scanTextToField('src_extag_${i}_${k}')" title="Scan the tag" ${st === 'none' ? 'disabled' : ''}>&#128247;</button>
+        <label style="display:flex;align-items:center;gap:6px;margin:0 0 0 8px;font-size:13px;white-space:nowrap;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500;">
+          <input type="checkbox" class="painted-check" id="src_extagnone_${i}_${k}" ${st === 'none' ? 'checked' : ''} ${typed.trim() ? 'disabled' : ''}
+            onchange="setExistingTagNone(${i},${k},this.checked)">No tag
+        </label>
+      </div>`;
+    })}
+    ${extra.length ? html`<div style="font-size:11px;color:#b5451b;">More answers than Quantity, not printed: ${extra.join('; ')}</div>` : ''}
+  </div>`;
+}
+
 // Pull one physical valve out of a multi-quantity source into its own quantity-1
 // source so the tech can state and photograph it individually. This is the
 // reliable way to flag a single bypass / normally-closed valve when a source has
@@ -6791,6 +6935,17 @@ function splitSource(index) {
     // (build 110: those were deleted without a word — still shown, as before,
     // under "More tags than Quantity")
     src.deviceId = joinUnitIds(unitIds.slice(0, qty - 1).concat(unitIds.slice(qty)));
+  }
+  // The existing tag (build 119) moves the same way: the split-off valve takes
+  // the last unit's answer, the original keeps the others (and any past its quantity).
+  delete newSrc.existingTag;
+  if (existingTagEntries(src).length) {
+    const tags = existingTagEntries(src).slice();
+    while (tags.length < qty) tags.push(null);
+    if (tags[qty - 1]) newSrc.existingTag = [tags[qty - 1]];
+    const rest = tags.slice(0, qty - 1).concat(tags.slice(qty));
+    while (rest.length && !rest[rest.length - 1]) rest.pop();
+    if (rest.length) src.existingTag = rest; else delete src.existingTag;
   }
   const prev = sources.slice();
   sources.splice(index + 1, 0, newSrc);
@@ -7098,7 +7253,8 @@ function applyCopySource(entryIndex, sourceIndex) {
   dest.auto = false;
   dest.userEdited = true;
   dest.collapsed = false;
-  // Explicitly do NOT copy: deviceId (typically unique per device), photos,
+  // Explicitly do NOT copy: deviceId (typically unique per device), the
+  // existing tag (build 119: the tag on THAT device), photos,
   // linkedTo (linking is per-source, per-entry). Photo-slot visibility
   // follows the copied energy kind, never hiding a photographed slot (build 91).
   applyNoPhotoDefault(targetIndex);
@@ -7129,6 +7285,7 @@ function duplicateSource(index) {
   delete newSrc.linkedTo;
   delete newSrc.priorSourceIds;
   newSrc.deviceId = '';          // its own device → its own tag (build 93)
+  delete newSrc.existingTag;     // …and its own existing tag, not checked yet (build 119)
   const prev = sources.slice();
   sources.splice(index + 1, 0, newSrc);
   rebindSourcePhotos(prev);
@@ -10117,11 +10274,22 @@ function collectIncompleteFields() {
     missing.push(`Energy sources — no Electrical source (expected for ${equipType})`);
   }
 
+  // Build 119: where the unit's facility asks for existing tags, each unit
+  // with neither a tag nor "No tag" (wilkins: warn here, not only at pre-QC).
+  const askTags = existingTagPromptOn(formFacilityCode());
+  const tagGap = s => {
+    const g = askTags ? existingTagGaps(s) : [];
+    return g.length ? 'Existing LOTO tag' + (g[0] ? ' (' + g.join(', ') + ')' : '') : '';
+  };
   sources.forEach((s, i) => {
     if (s.linkedTo) {
       // Linked sources skip the rest, but not the energy source (build 93):
-      // without it the office import drops the row.
-      if (!s.energySource) missing.push(`Source #${i + 1} (linked) \u2014 Energy Source`);
+      // without it the office import drops the row. Nor the existing tag
+      // (build 119): a link never carries its target's.
+      const lg = [];
+      if (!s.energySource) lg.push('Energy Source');
+      if (tagGap(s)) lg.push(tagGap(s));
+      if (lg.length) missing.push(`Source #${i + 1} (linked) \u2014 ${lg.join(', ')}`);
       return;
     }
     const gaps = [];
@@ -10136,6 +10304,7 @@ function collectIncompleteFields() {
     // build 102: its photo slot is shown but empty (a duplicate, a linked source
     // and a kind that needs no photo are never flagged — sourceExpectsPhoto)
     if (sourceExpectsPhoto(s) && !sourcePhotoTaken(i)) gaps.push('Photo');
+    if (tagGap(s)) gaps.push(tagGap(s));
     if (gaps.length) {
       const label = s.energySource ? `Source #${i + 1} (${s.energySource})` : `Source #${i + 1}`;
       missing.push(`${label} — ${gaps.join(', ')}`);
@@ -11098,7 +11267,8 @@ async function executeDuplicate(index, withPhotos) {
   // …and each Device ID is the tag of the ORIGINAL unit's breaker / valve
   // (build 93): copied, the duplicate's procedure told the worker to lock out
   // the other unit's breaker. The tech enters this unit's own.
-  sources.forEach(s => { if (s) { delete s.sourceId; delete s.priorSourceIds; s.deviceId = ''; ensureSourceId(s); } });
+  // Build 119: the existing tags too — the copy starts "not checked" (loto-web Q6).
+  sources.forEach(s => { if (s) { delete s.sourceId; delete s.priorSourceIds; s.deviceId = ''; delete s.existingTag; ensureSourceId(s); } });
   const dupSources = sources.slice();   // the source OBJECTS the copies belong to
 
   // With photos, the copy counts as running from here (build 110): a source's
@@ -11985,6 +12155,7 @@ async function runCombinedExport(opts) {
     const map = entryMaps[ei];
     // Drop bulky/binary-ish fields; keep all structural data.
     const { photos, miscPhotos, ...rest } = entry;
+    const tagsApply = existingTagAppliesToEntry(entry);
     const srcOut = (rest.sources || []).map((src, i) => {
       const ref = (photos || {})['source_' + i];
       const cap = captureInfoOf(ref, map.sourceHs[i]) || {};
@@ -12001,6 +12172,9 @@ async function runCombinedExport(opts) {
         photoMarks: map.sourceHs[i] ? sourceMarksForExport(entry, i) : []
       };
       if (out.duplicate !== src.duplicate) delete out.dupAuto;
+      // Existing tags (build 119, backup only): one entry per unit where the
+      // question applies — { tag } / { none: true } / null — else no key.
+      if (tagsApply) out.existingTag = existingTagsForJson(src); else delete out.existingTag;
       return out;
     });
     const miscOut = miscFileNames[ei]
@@ -12088,7 +12262,8 @@ async function runCombinedExport(opts) {
         { width: 14 }, { width: 10 }, { width: 22 }, { width: 18 }, { width: 8 }, { width: 22 }, { width: 30 },
         { width: 34 },  // 13: Linked To (build 94)
         { width: 34 },  // 14: Drain Location (build 118)
-        { width: 10 }   // 15: Lock Open (build 118)
+        { width: 10 },  // 15: Lock Open (build 118)
+        { width: 22 }   // 16: Existing Tag (build 119)
       ];
 
       // Style definitions matching original info sheet
@@ -12104,7 +12279,7 @@ async function runCombinedExport(opts) {
       const VALVE_STATE_SHEET_TEXT = { normally_closed: 'Normally Closed', normally_open: 'Normally Open' };
       function applyRow(row, font, fill, borders) {
         row.eachCell({ includeEmpty: true }, (cell, colNum) => {
-          if (colNum <= 15) {
+          if (colNum <= 16) {
             cell.font = font;
             if (fill) cell.fill = fill;
             if (borders) cell.border = borders;
@@ -12158,6 +12333,9 @@ async function runCombinedExport(opts) {
         // Merge C across header+data (like original: quantity header spans 2 rows)
         ws.mergeCells(eqHdrNum, 3, eqDataNum, 3);
 
+        // Existing tags (build 119): column 16's header only where the question
+        // applies to this unit (existingTagAppliesToEntry).
+        const tagsApply = existingTagAppliesToEntry(entry);
         // 10 energy source rows — FIXED: loto-web's office importer reads this
         // sheet as 27-row blocks, so a taller block would shift every unit after
         // it. Sources 11+ are in the CSV and entries.json (the export warns).
@@ -12172,7 +12350,8 @@ async function runCombinedExport(opts) {
             ` Source #${n} Location`, `Source #${n} Photo`, '', 'Dup Photo',
             `Source #${n} Verification`, `Verification Photo #${n}`, 'Valve State', 'Valve Mark', 'Linked To',
             // build 118: loto-web reads each only under its own header
-            'Drain Location', 'Lock Open'
+            'Drain Location', 'Lock Open',
+            tagsApply ? 'Existing Tag' : ''   // build 119
           ]);
           applyRow(srcLabelRow, labelFont, labelFill, allBorders);
 
@@ -12210,7 +12389,9 @@ async function runCombinedExport(opts) {
             linkCell,
             // Drain location and lock-open (build 118)
             src ? drainLocationSheetText(src) : '',
-            src ? lockOpenSheetText(src) : ''
+            src ? lockOpenSheetText(src) : '',
+            // Existing tag (build 119): one position per unit, "; "-joined
+            (src && tagsApply) ? existingTagCellText(src) : ''
           ]);
           applyRow(srcDataRow, dataFont, null, allBorders);
         }
@@ -14979,7 +15160,7 @@ async function scanTextToField(inputId, pick) {
   // while it read put the scanned name or tag on the NEXT unit, silently when
   // that box was empty, and a source moved meanwhile got another's tag.
   const session = formSession;
-  const srcBox = /^src_(deviceId|locid|detail)_(\d+)(_\d+)?$/.exec(inputId);
+  const srcBox = /^src_(deviceId|locid|detail|extag)_(\d+)(_\d+)?$/.exec(inputId);
   const srcObj = srcBox ? sources[parseInt(srcBox[2], 10)] : null;
 
   let photo;

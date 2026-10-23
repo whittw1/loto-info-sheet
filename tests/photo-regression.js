@@ -75,6 +75,9 @@
 //   T237      build 115: Dental Air Compressor (the compressor, its discharge, the duplex dryers' inlets and discharges)
 //   T238      build 116: DA Tank is a template of its own (the Heat Exchanger - Steam rows, sketch and no-Electrical rule)
 //   T239      build 117: Overhead Door type and template (a panel breaker, Potential, Kinetic; no voltage prompt)
+//   T248–T251 build 119: the existing LOTO tag (Atlanta) — the prompt follows the unit's facility (one box per
+//             unit, scan, No tag), copies start not checked and Split moves the last unit's, the Save & New
+//             warning, the sheet's column 16 and entries.json existingTag
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -7608,11 +7611,13 @@
     const s = (fac) => sheets['Information_Sheet_' + stamp + fac + '.xlsx'] || {};
     want(Object.keys(sheets).sort().join() === ['Information_Sheet_' + stamp + '.xlsx', 'Information_Sheet_' + stamp + '_Atlanta.xlsx', 'Information_Sheet_' + stamp + '_Atlanta_Fort_McPherson.xlsx'].sort().join(), 'three sheets, named by date and facility');
     want(s('_Atlanta').units === 'MAIN-241' && s('_Atlanta_Fort_McPherson').units === 'FTM-241,FTM-241b' && s('').units === 'NOFAC-241', 'each sheet holds only its facility\'s units');
-    want(/\[Atlanta\] · VA LOTO Collector build 118$/.test(s('_Atlanta').banner || '') && /\[Atlanta - Fort McPherson\] · VA LOTO Collector build 118$/.test(s('_Atlanta_Fort_McPherson').banner || ''), 'each banner names its facility and the build');
+    // the build is the page's own (APP_BUILD) since build 119 — it was the literal 118
+    const bTail = ' · VA LOTO Collector build ' + APP_BUILD;
+    want((s('_Atlanta').banner || '').endsWith('[Atlanta]' + bTail) && (s('_Atlanta_Fort_McPherson').banner || '').endsWith('[Atlanta - Fort McPherson]' + bTail), 'each banner names its facility and the build');
     want(s('').bannerRow === false, 'the sheet of units with no facility has no banner (never another sheet\'s facility)');
     const m = u.manifest || {};
     got.manifest = { appBuild: m.appBuild, sheets: ((m.files || {}).xlsxSheets || []).length };
-    want(m.appBuild === APP_BUILD && APP_BUILD === 118 && got.manifest.sheets === 3, 'manifest.json');
+    want(m.appBuild === APP_BUILD && APP_BUILD >= 118 && got.manifest.sheets === 3, 'manifest.json');
     const ex8 = String(m.exportId || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8);
     got.zipName = zip.filename;
     want(!!ex8 && new RegExp('^FieldExport_NoFacility_\\d{6}_[A-Za-z0-9]{8}_' + ex8 + '\\.zip$').test(zip.filename || ''), 'the ZIP name ends with the export id');
@@ -7767,7 +7772,7 @@
     got.noShop = DATA.templates.filter(t => t !== '** New Template **' && !defaultShopFor(t, []));
     want(!got.noShop.length && defaultShopFor('Glycol Pump', [{ energySource: 'Glycol HW In/Out' }]) === 'HVAC Shop' && defaultShopFor('Glycol Pump', []) === 'Plumbing Shop' && defaultShopFor('Day Tank', []) === 'Electric Shop', 'the Shop hints');
     const lists = appListsSnapshot(APP_BUILD);
-    want(lists.build === 118 && (lists.answers || {}).vacuumExhaust && lists.answers.vacuumExhaust.join() === DATA.vacuumExhaust.join() && lists.answers.atsBackfeed.length === 6 && lists.answers.refrigerants.includes('R-410A'), 'app-lists.json answers');
+    want(lists.build === APP_BUILD && (lists.answers || {}).vacuumExhaust && lists.answers.vacuumExhaust.join() === DATA.vacuumExhaust.join() && lists.answers.atsBackfeed.length === 6 && lists.answers.refrigerants.includes('R-410A'), 'app-lists.json answers');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -7921,6 +7926,211 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ==========================================================================
+  // BUILD 119 — the existing LOTO tag (Atlanta, loto-web 2026-10-22 spec).
+  // Each test fails on build 118.
+  // ==========================================================================
+  async function withTagSetting(fn) {
+    const prevCode = getHospitalCode();
+    let prevPrefs = null;
+    try { prevPrefs = localStorage.getItem('loto_existing_tag_prefs'); localStorage.removeItem('loto_existing_tag_prefs'); } catch (e) {}
+    try { return await fn(); } finally {
+      setHospitalCode(prevCode);
+      try { if (prevPrefs === null) localStorage.removeItem('loto_existing_tag_prefs'); else localStorage.setItem('loto_existing_tag_prefs', prevPrefs); } catch (e) {}
+    }
+  }
+
+  // T248 — the prompt follows the unit's own facility; one box per unit
+  async function t248_theExistingTagPromptFollowsTheUnitsFacility() {
+    const N = 'T248 the existing-tag question is on by default for the three Atlanta facilities and off elsewhere, a Settings change per facility wins; it follows the UNIT\'s facility (an Atlanta unit opened while the setting is Marion still asks); each row gets one box per unit (In/Out names on a pair) with a scan button, the hint "e.g. E-1" and a painted "No tag" box; a typed tag loses its ";" and never touches Device ID; No tag disables the box and a typed tag disables No tag; off, a row that holds an answer still shows it; a linked row asks too and never takes its target\'s tag';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withTagSetting(async () => {
+      got.defaults = ['Atlanta', 'Atlanta - Fort McPherson', 'Atlanta - Trinka Davis', 'Marion', 'Kansas City', ''].map(c => existingTagPromptOn(c));
+      want(got.defaults.join() === 'true,true,true,false,false,false', 'defaults');
+      setExistingTagPrefForFacility('Atlanta', false); setExistingTagPrefForFacility('Marion', true);
+      want(!existingTagPromptOn('Atlanta') && existingTagPromptOn('Marion') && existingTagPromptOn('Atlanta - Trinka Davis'), 'Settings override');
+      try { localStorage.removeItem('loto_existing_tag_prefs'); } catch (e) {}
+      setHospitalCode('Atlanta');
+      fillFormNoSources('ET-248');
+      sources = [Object.assign(mkSrc('Electrical 480V'), { collapsed: false }),
+                 Object.assign(mkSrc('HHW In/Out'), { deviceType: 'Ball Valve', quantity: 2, collapsed: false }),
+                 Object.assign(mkSrc('Electrical 208V'), { quantity: 3, collapsed: false })];
+      renderSources();
+      got.boxes = [0, 1, 2].map(i => document.querySelectorAll('[id^="src_extag_' + i + '_"]').length);
+      want(got.boxes.join() === '1,2,3', 'one box per unit');
+      const g1 = document.getElementById('extagGroup_1');
+      got.pair = g1 ? g1.textContent.replace(/\s+/g, ' ').trim() : '';
+      want(/\bIn\b/.test(got.pair) && /\bOut\b/.test(got.pair) && !/Unit 1/.test(got.pair), 'In/Out names');
+      const none00 = document.getElementById('src_extagnone_0_0');
+      want(!!none00 && none00.classList.contains('painted-check') && !!document.getElementById('src_extagscan_0_0')
+        && document.getElementById('src_extag_0_0').placeholder === 'e.g. E-1', 'scan, hint, painted No tag');
+      updateExistingTag(0, 0, 'E-1;x');
+      got.typed = { box: document.getElementById('src_extag_0_0').value, cell: existingTagCellText(sources[0]), deviceId: sources[0].deviceId, noneDisabled: document.getElementById('src_extagnone_0_0').disabled };
+      want(got.typed.box === 'E-1 x' && got.typed.cell === 'E-1 x' && got.typed.deviceId === '' && got.typed.noneDisabled, 'typed tag');
+      setExistingTagNone(1, 1, true);
+      got.none = { list: JSON.stringify(sources[1].existingTag), boxDisabled: document.getElementById('src_extag_1_1').disabled, cell: existingTagCellText(sources[1]) };
+      want(got.none.list === '[null,{"none":true}]' && got.none.boxDisabled && got.none.cell === '; No tag', 'No tag');
+      // off at this facility: the answered rows still show, the others don't ask
+      setHospitalCode('Marion');
+      renderSources();
+      got.off = ['extagGroup_0', 'extagGroup_1', 'extagGroup_2'].map(id => !!document.getElementById(id));
+      want(got.off.join() === 'true,true,false', 'off keeps answers visible');
+      // the unit's own facility: an Atlanta unit opened while the setting is Marion
+      const A = Object.assign(mkEntry('ET-248-A', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid() })] }), { hospitalCode: 'Atlanta' });
+      const T = Object.assign(mkEntry('ET-248-T', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), existingTag: [{ tag: 'E-9' }] })] }), { hospitalCode: 'Atlanta' });
+      savedEquipment = [A, T]; saveAll();
+      await withDialogs({ confirm: true }, async () => { editSaved(0); });
+      sources.forEach(x => { x.collapsed = false; });
+      renderSources();
+      got.ownFacility = !!document.getElementById('extagGroup_0');
+      want(got.ownFacility, 'follows the unit\'s facility');
+      // a linked row asks too and takes nothing of its target's tag
+      showLinkDialog(0);
+      applyLink(1, 0);
+      closeLinkDialog();
+      sources[0].collapsed = false;
+      renderSources();
+      got.linked = { linked: !!sources[0].linkedTo, tag: sources[0].existingTag === undefined, shown: !!document.getElementById('extagGroup_0') };
+      want(got.linked.linked && got.linked.tag && got.linked.shown, 'linked row');
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T249 — copies start not checked; Split moves the last unit's answer
+  async function t249_copiesStartNotCheckedAndSplitMovesTheTag() {
+    const N = 'T249 a Duplicate of the unit, Duplicate source and the count prompt\'s copies start with no existing tag (loto-web Q6), Copy Source never carries one; Split gives the split-off valve the last unit\'s answer and the original keeps the others (an In/Out pair: In keeps unit 1\'s, Out takes unit 2\'s)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withTagSetting(async () => {
+      setHospitalCode('Atlanta');
+      const A = Object.assign(mkEntry('ET-249', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), existingTag: [{ tag: 'E-1' }] })] }), { hospitalCode: 'Atlanta' });
+      savedEquipment = [A]; saveAll();
+      await withDialogs({ confirm: true }, async () => { await executeDuplicate(0, false); });
+      got.dupUnit = sources.map(x => x.existingTag === undefined);
+      want(got.dupUnit.length === 1 && got.dupUnit[0], 'Duplicate unit');
+      fillFormNoSources('ET-249b');
+      sources = [Object.assign(mkSrc('Electrical 480V'), { existingTag: [{ tag: 'E-1' }] })];
+      duplicateSource(0);
+      got.dupSrc = sources.map(x => JSON.stringify(x.existingTag || null));
+      want(got.dupSrc.join('|') === '[{"tag":"E-1"}]|null', 'Duplicate source');
+      got.countCopy = countCopyOf({ energySource: 'Electrical 480V', existingTag: [{ tag: 'E-1' }] }).existingTag === undefined;
+      want(got.countCopy, 'count copy');
+      // Copy Source from another unit
+      const B = Object.assign(mkEntry('ET-249-B', { sources: [Object.assign(mkSrc('Electrical 208V'), { sourceId: genUuid(), existingTag: [{ tag: 'E-7' }] })] }), { hospitalCode: 'Atlanta' });
+      savedEquipment = [B];
+      fillFormNoSources('ET-249c');
+      sources = [mkSrc('Electrical 480V')];
+      renderSources();
+      if (typeof showCopySourceDialog === 'function') showCopySourceDialog(0);
+      await withDialogs({ confirm: true }, async () => { applyCopySource(0, 0); });
+      if (typeof closeCopySourceDialog === 'function') closeCopySourceDialog();
+      got.copySrc = { energy: sources[0].energySource, tag: sources[0].existingTag === undefined };
+      want(got.copySrc.energy === 'Electrical 208V' && got.copySrc.tag, 'Copy Source');
+      // Split
+      fillFormNoSources('ET-249d');
+      sources = [Object.assign(mkSrc('Electrical 480V'), { quantity: 3, existingTag: [{ tag: 'E-1' }, { none: true }, { tag: 'E-3' }] }),
+                 Object.assign(mkSrc('HHW In/Out'), { deviceType: 'Ball Valve', quantity: 2, existingTag: [{ tag: 'W-1' }, { none: true }] })];
+      renderSources();
+      await withDialogs({ confirm: true }, async () => { splitSource(1); });
+      await withDialogs({ confirm: true }, async () => { splitSource(0); });
+      got.split = sources.map(x => x.energySource + '=' + JSON.stringify(x.existingTag || null));
+      want(got.split.join('|') === 'Electrical 480V=[{"tag":"E-1"},{"none":true}]|Electrical 480V=[{"tag":"E-3"}]|HHW In=[{"tag":"W-1"}]|HHW Out=[{"none":true}]', 'Split');
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T250 — Save & New warns about an unanswered unit where the question is on
+  async function t250_saveAndNewWarnsAboutAnUnansweredTag() {
+    const N = 'T250 where the unit\'s facility asks, Save & New lists each row with a unit that has neither a tag nor No tag ("Existing LOTO tag", with the units of a multi-unit row, a linked row too); answered rows and a facility that doesn\'t ask list nothing; it only warns';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withTagSetting(async () => {
+      setHospitalCode('Atlanta');
+      fillFormNoSources('ET-250');
+      sources = [mkSrc('Electrical 480V'),
+                 Object.assign(mkSrc('Electrical 208V'), { quantity: 2, existingTag: [{ tag: 'E-2' }] }),
+                 Object.assign(mkSrc('Electrical 120V'), { linkedTo: { equipName: 'X', sourceIndex: 0, sourceLabel: 'Electrical 120V' } })];
+      renderSources();
+      const tagItems = () => collectIncompleteFields().filter(m => /Existing LOTO tag/.test(m));
+      got.on = tagItems();
+      want(got.on.length === 3 && /^Source #1 \(Electrical 480V\) — .*Existing LOTO tag$/.test(got.on[0])
+        && /^Source #2 \(Electrical 208V\) — .*Existing LOTO tag \(Unit 2\)$/.test(got.on[1])
+        && /^Source #3 \(linked\) — Existing LOTO tag$/.test(got.on[2]), 'listed');
+      sources[0].existingTag = [{ none: true }];
+      sources[1].existingTag = [{ tag: 'E-2' }, { tag: 'E-3' }];
+      sources[2].existingTag = [{ tag: 'E-4' }];
+      got.answered = tagItems();
+      want(!got.answered.length, 'answered');
+      sources[0].existingTag = null; sources[1].existingTag = null; sources[2].existingTag = null;
+      setHospitalCode('Marion');
+      got.off = tagItems();
+      want(!got.off.length, 'facility off');
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T251 — column 16 and entries.json
+  async function t251_theExistingTagTravelsInColumn16() {
+    const N = 'T251 the export writes "Existing Tag" in column 16 of every source label row of a unit where the question applies (an Atlanta unit; a Marion unit with an answer) and leaves it blank elsewhere; each data row holds one position per unit joined "; " ("e-1" for a qty-2 row with unit 2 unchecked, "No tag", "No tag; E 3", a blank for an unchecked row, only Quantity positions); entries.json carries existingTag per unit ({tag} / {none:true} / null) only where it applies; column 16 is formatted';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withTagSetting(async () => {
+      setHospitalCode('Marion');
+      const S = (es, extra) => Object.assign(mkSrc(es), { sourceId: genUuid() }, extra || {});
+      const A = Object.assign(mkEntry('ET-251-ATL', { sources: [
+        S('Electrical 480V', { quantity: 2, existingTag: [{ tag: 'e-1' }, null] }),
+        S('Electrical 208V', { existingTag: [{ none: true }] }),
+        S('Electrical 120V', { quantity: 2, existingTag: [{ none: true }, { tag: 'E  3' }] }),
+        S('Electrical 277V'),
+        S('Electrical 24V', { existingTag: [{ tag: 'E-4' }, { tag: 'E-5' }] })] }), { hospitalCode: 'Atlanta' });
+      const M = Object.assign(mkEntry('ET-251-MAR', { sources: [S('Electrical 480V')] }), { hospitalCode: 'Marion' });
+      const M2 = Object.assign(mkEntry('ET-251-MAR2', { sources: [S('Electrical 480V', { existingTag: [{ tag: 'E-8' }] })] }), { hospitalCode: 'Marion' });
+      savedEquipment = [A, M, M2]; saveAll();
+      const { zip, confirms } = await runExport({ confirmResponse: true });
+      if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); return; }
+      const u = await unzipExport(zip.blob);
+      const byName = {};
+      for (const xpath of Object.keys(u.files).filter(p => /Information_Sheet_.*\.xlsx$/.test(p))) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        const ws = wb.worksheets[0];
+        let cur = null;
+        ws.eachRow(row => {
+          const a = String(row.getCell(1).value || '');
+          if (a === 'Equipment ID/Name') { cur = String(ws.getRow(row.number + 1).getCell(1).value || ''); byName[cur] = { headers: [], values: [], width: ws.getColumn(16).width, fill: !!(row.getCell(16).fill) }; }
+          if (cur && /^Energy Source #\d+$/.test(a)) {
+            byName[cur].headers.push(String(row.getCell(16).value || ''));
+            const d = ws.getRow(row.number + 1);
+            if (String(d.getCell(1).value || '')) byName[cur].values.push(String(d.getCell(16).value || ''));
+            if (row.number === 0) {}
+            byName[cur].labelFill = byName[cur].labelFill || !!(row.getCell(16).fill && row.getCell(16).fill.fgColor);
+          }
+        });
+      }
+      got.sheet = byName;
+      const atl = byName['ET-251-ATL'] || {}, mar = byName['ET-251-MAR'] || {}, mar2 = byName['ET-251-MAR2'] || {};
+      want((atl.headers || []).length === 10 && atl.headers.every(h => h === 'Existing Tag'), 'Atlanta headers');
+      want(JSON.stringify(atl.values) === JSON.stringify(['e-1', 'No tag', 'No tag; E 3', '', 'E-4']), 'Atlanta values');
+      want((mar.headers || []).length === 10 && mar.headers.every(h => h === '') && JSON.stringify(mar.values) === '[""]', 'Marion blank');
+      want((mar2.headers || []).every(h => h === 'Existing Tag') && JSON.stringify(mar2.values) === '["E-8"]', 'Marion with an answer');
+      want(atl.width === 22 && atl.labelFill, 'column 16 formatted');
+      const je = {};
+      ((u.entriesJson && u.entriesJson.entries) || []).forEach(e => { je[e.equipName] = (e.sources || []).map(x => ('existingTag' in x) ? x.existingTag : 'NO KEY'); });
+      got.json = je;
+      want(JSON.stringify(je['ET-251-ATL']) === JSON.stringify([[{ tag: 'e-1' }, null], [{ none: true }], [{ none: true }, { tag: 'E 3' }], [null], [{ tag: 'E-4' }]]), 'entries.json Atlanta');
+      want(JSON.stringify(je['ET-251-MAR']) === '["NO KEY"]' && JSON.stringify(je['ET-251-MAR2']) === '[[{"tag":"E-8"}]]', 'entries.json Marion');
+      // the cell read back as loto-web's existing_tags.parse_sheet_cell reads it
+      const parse = (text, qty) => { const parts = String(text).split(';'); return Array.from({ length: qty }, (_, i) => { const t = (parts[i] || '').replace(/;/g, ' ').split(/\s+/).filter(Boolean).join(' ').toUpperCase(); return !t ? null : (t.toLowerCase() === 'no tag' ? { none: true } : { tag: t }); }); };
+      got.parsed = parse(atl.values[2], 2);
+      want(JSON.stringify(got.parsed) === '[{"none":true},{"tag":"E 3"}]' && JSON.stringify(parse(atl.values[0], 2)) === '[{"tag":"E-1"},null]', 'parsed as loto-web');
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -8026,7 +8236,9 @@
     t239_overheadDoorTypeAndTemplate,
     t240_theAnswersSitUnderTheirLabels, t241_oneSheetPerFacilityPerDay, t242_theTypeVoltageQuestions,
     t243_theVacuumPumpsExhaustAndJoint, t244_theListsLotoWebAskedFor, t245_drainLocationAndLockOpen,
-    t246_aDrivesFeeder, t247_theAnswersTravelWithTheUnit];
+    t246_aDrivesFeeder, t247_theAnswersTravelWithTheUnit,
+    t248_theExistingTagPromptFollowsTheUnitsFacility, t249_copiesStartNotCheckedAndSplitMovesTheTag,
+    t250_saveAndNewWarnsAboutAnUnansweredTag, t251_theExistingTagTravelsInColumn16];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
