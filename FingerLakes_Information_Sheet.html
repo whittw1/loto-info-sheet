@@ -1514,6 +1514,16 @@ function parseWaterVerification(v) {
   }
   return { drain: false, gauge: false, recognized: false, blank: false };
 }
+// A drain the APP put in a row's code (an AHU's HHW / CHW pre-tick, a template
+// or source default) is marked _drainDefault, so a "None found" drain answer
+// can take it back; one the tech ticked or picked never is (loto-web review
+// 2026-10-23). Called wherever a default code is written.
+function noteDefaultDrain(src) {
+  if (!src) return src;
+  if (parseWaterVerification(src.verification).drain) src._drainDefault = true;
+  else delete src._drainDefault;
+  return src;
+}
 // A template-scoped verification override still gets the checkbox UI when
 // its curated list is PURE drain/gauge/temp variants (e.g. the Boiler HHW
 // override is exactly the four "- Hot" combos). Mixed/electrical overrides
@@ -1541,6 +1551,7 @@ function updateSimpleVerif(index, which, checked) {
   const cur = parseWaterVerification(src.verification);
   const drain = which === 'drain' ? checked : cur.drain;
   const gauge = which === 'gauge' ? checked : cur.gauge;
+  if (which === 'drain') delete src._drainDefault;   // the tech's own drain answer
   src.verification = synthesizeWaterVerification(drain, gauge, simpleVerifSuffix(src));
   renderSources();
   autoSaveCurrent();
@@ -1585,6 +1596,7 @@ function applySimpleVerifDefaults() {
       if (p.blank) {
         const drainDefault = equipIsAHU && (es.startsWith('CHW') || es.startsWith('HHW'));
         src.verification = synthesizeWaterVerification(drainDefault, false, simpleVerifSuffix(src));
+        noteDefaultDrain(src);
         changed = true;
       } else if (p.recognized && !/^G\/Tmp\/Drain/.test(src.verification)) {
         const resynth = synthesizeWaterVerification(p.drain, p.gauge, simpleVerifSuffix(src));
@@ -2616,7 +2628,7 @@ function equipTypeChanged(equipType) {
     for (const autoSrc of autoSources) {
       const alreadyExists = sources.some(s => s.energySource === autoSrc.energySource && s.auto === true);
       if (!alreadyExists) {
-        const src = { ...autoSrc, collapsed: true };
+        const src = noteDefaultDrain({ ...autoSrc, collapsed: true });
         sources.push(src);
         added++;
       }
@@ -2954,7 +2966,11 @@ function updateDrainWhere(index, where) {
   if (!where) { undo(); delete src.drainLocation; }
   else if (DRAIN_FOUND.includes(where)) {
     const d = { where: where, text: prev.text || '' };
-    if (ours) { d._codeBefore = prev._codeBefore; d._codeSet = prev._codeSet; }
+    // From a "None found" that took back a default drain: the drain returns
+    // first, and the found answer then keeps it.
+    const fromNone = ours && prev.where === 'None found';
+    if (fromNone) undo();
+    if (ours && !fromNone) { d._codeBefore = prev._codeBefore; d._codeSet = prev._codeSet; }
     else {
       const before = src.verification || '';
       const after = verificationWithDrain(src);
@@ -2963,7 +2979,18 @@ function updateDrainWhere(index, where) {
     src.drainLocation = d;
   } else {   // None found
     undo();
-    src.drainLocation = { where: where, text: prev.text || '' };
+    const d = { where: where, text: prev.text || '' };
+    // A Drain box the app ticked by default is taken back: the tech looked
+    // and found none (loto-web review 2026-10-23). One the tech ticked stays,
+    // and loto-web prints its "If no drain is present" stop either way.
+    const p = parseWaterVerification(src.verification);
+    if (src._drainDefault && p.recognized && !p.blank && p.drain) {
+      const before = src.verification;
+      const m = /\s*-\s*(Hot|CHW)$/i.exec(before);
+      const after = synthesizeWaterVerification(false, p.gauge, m ? m[1].toLowerCase() : '');
+      src.verification = after; d._codeBefore = before; d._codeSet = after;
+    }
+    src.drainLocation = d;
   }
   renderSources();
   autoSaveCurrent();
@@ -3448,7 +3475,7 @@ function showVoltageDialog(equipType) {
     for (const autoSrc of EQUIPMENT_AUTO_SOURCES[equipType]) {
       const alreadyExists = sources.some(s => s.energySource === autoSrc.energySource && s.auto === true);
       if (!alreadyExists) {
-        sources.push({ ...autoSrc, collapsed: true });
+        sources.push(noteDefaultDrain({ ...autoSrc, collapsed: true }));
       }
     }
   }
@@ -5288,7 +5315,7 @@ function applyTemplate(val) {
       // Equipment-specific electrical voltage override: lets an equipment type reuse a
       // shared template (e.g. Standard Pump) but at a different default voltage.
       if (voltOverride && /^Electrical/.test(src.energySource)) src.energySource = voltOverride;
-      sources.push(src);
+      sources.push(noteDefaultDrain(src));
     }
 
     // Append any equipment-type-specific extras AFTER the template's sources.
@@ -5299,7 +5326,7 @@ function applyTemplate(val) {
     const extras = EQUIPMENT_EXTRA_SOURCES[equipType];
     if (extras) {
       for (const extra of extras) {
-        sources.push({ ...extra, collapsed: true, auto: true });
+        sources.push(noteDefaultDrain({ ...extra, collapsed: true, auto: true }));
       }
     }
 
@@ -6625,11 +6652,12 @@ function kineticDefaultLocation() {
 function updateSource(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
+  if (field === 'verification') delete sources[index]._drainDefault;   // the tech picked the code
   if (field === 'energySource' && value && SOURCE_DEFAULTS[value]) {
     const defaults = SOURCE_DEFAULTS[value];
     if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
     if (!sources[index].location) sources[index].location = value === 'Kinetic' ? kineticDefaultLocation() : defaults.location;
-    if (!sources[index].verification) sources[index].verification = defaults.verification;
+    if (!sources[index].verification) { sources[index].verification = defaults.verification; noteDefaultDrain(sources[index]); }
     applyNoPhotoDefault(index);
     const cleared = reconcileSourceMarks(index, true);
     renderSources();
@@ -6828,6 +6856,7 @@ function handleEnergySourceChange(index, value) {
       const water = isWaterFamilySource(value);
       if ((waterCheck && !water && /^(Electrical|Stored|Battery)/i.test(value || '')) || (water && v === 'Controls')) {
         sources[index].verification = '';
+        delete sources[index]._drainDefault;
       }
     }
     // Auto-fill defaults for special energy sources
@@ -6835,7 +6864,7 @@ function handleEnergySourceChange(index, value) {
       const defaults = SOURCE_DEFAULTS[value];
       if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
       if (!sources[index].location) sources[index].location = value === 'Kinetic' ? kineticDefaultLocation() : defaults.location;
-      if (!sources[index].verification) sources[index].verification = defaults.verification;
+      if (!sources[index].verification) { sources[index].verification = defaults.verification; noteDefaultDrain(sources[index]); }
       showToast(`Auto-filled defaults for ${value}`);
     }
     applyNoPhotoDefault(index);

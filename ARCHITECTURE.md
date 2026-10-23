@@ -1297,7 +1297,13 @@ all but the change-later note):
 - **Drain for this isolation point** on each valve row of a water, steam, condensate, glycol or compressed-air line:
   On this valve / Between this valve and the equipment / On the equipment / None found, plus an optional "where
   exactly". A found drain gives the row's code a drain as if the Drain box were ticked (Temp Only → Drain Only, GaugeOnly
-  → Gauge/Drain, suffix kept; `verificationWithDrain`).
+  → Gauge/Drain, suffix kept; `verificationWithDrain`). Since 2026-10-23 (loto-web code review), "None found" also
+  takes back a Drain box the APP ticked by default (an AHU's HHW / CHW pre-tick, a template or source default:
+  `_drainDefault`, set by `noteDefaultDrain` wherever a default code is written, cleared when the tech toggles Drain or
+  picks a code), never one the tech ticked; a found drain or a cleared answer gives it back. The undo compares codes
+  without their Hot/CHW suffix, so it still works after a source change re-derived it. Rows saved before carry no
+  `_drainDefault`, so their drains stay; loto-web prints its "If no drain is present" stop for a drain code beside
+  "None found" either way.
 - **Locked open** (valve rows): "Opened and locked open during lockout (rare)" — a valve that carries live flow, so it
   takes the drain question away. Valve State keeps its own values.
 - **Feeder** on a VFD row: "+ Add the breaker that feeds this drive" asks the panel, the breaker and the drive tag (the

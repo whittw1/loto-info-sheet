@@ -7773,7 +7773,7 @@
 
   // T245 — drain location and lock-open on a source.
   async function t245_drainLocationAndLockOpen() {
-    const N = 'T245 a valve row of a water, steam, condensate, glycol or compressed-air line asks "Drain for this isolation point" (a found drain gives its code a drain: Temp Only - Hot → Drain Only - Hot, GaugeOnly → Gauge/Drain; None found leaves the code and writes the change-later note) and offers "Locked open" (which takes the drain question away); an electrical row gets neither; the typed detail rides along';
+    const N = 'T245 a valve row of a water, steam, condensate, glycol or compressed-air line asks "Drain for this isolation point" (a found drain gives its code a drain: Temp Only - Hot → Drain Only - Hot, GaugeOnly → Gauge/Drain; None found leaves a code the tech set, takes back a Drain box the app pre-ticked, and writes the change-later note) and offers "Locked open" (which takes the drain question away); an electrical row gets neither; the typed detail rides along';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -7820,6 +7820,23 @@
     updateDrainWhere(k, 'None found');
     got.resuffixed = sources[k].verification;
     want(got.resuffixed === 'Temp Only - CHW', 'None found puts back the code before the answer, with the row\'s new suffix');
+    // A Drain box the app pre-ticked (an AHU's CHW / HHW row) is taken back by None found; one the tech ticked stays (loto-web review 2026-10-23).
+    document.getElementById('equipType').value = 'Air Handler';
+    sources.push(Object.assign(mkSrc('CHW In/Out'), { deviceType: 'Ball Valve', verification: '', collapsed: false }));
+    sources.push(Object.assign(mkSrc('HHW In/Out'), { deviceType: 'Ball Valve', verification: '', collapsed: false }));
+    renderSources();
+    const c = sources.length - 2, h = sources.length - 1;
+    got.preticked = sources[c].verification + ' / ' + sources[h].verification;
+    updateSimpleVerif(h, 'drain', false); updateSimpleVerif(h, 'drain', true);
+    updateDrainWhere(c, 'None found'); updateDrainWhere(h, 'None found');
+    got.noneFound = sources[c].verification + ' / ' + sources[h].verification;
+    updateDrainWhere(c, 'On this valve');
+    got.refound = sources[c].verification;
+    updateDrainWhere(c, 'None found'); updateDrainWhere(c, '');
+    got.cleared = sources[c].verification;
+    want(got.preticked === 'Drain Only - CHW / Drain Only - Hot' && got.noneFound === 'Temp Only - CHW / Drain Only - Hot'
+      && got.refound === 'Drain Only - CHW' && got.cleared === 'Drain Only - CHW',
+      'None found takes back a Drain box the app pre-ticked, never the tech\'s; a found drain or a cleared answer gives it back');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
