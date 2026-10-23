@@ -2936,13 +2936,21 @@ function verificationWithDrain(src) {
 }
 // The code this answer changed (_codeBefore → _codeSet) is put back when the
 // answer moves to "None found" or blank — unless the tech changed it since.
+// The - Hot / - CHW suffix follows the source (a source change re-derives
+// it), so codes compare without it and the code put back takes the row's
+// current one (loto-web review 2026-10-23).
+const drainCodeBase = v => String(v || '').replace(/\s*-\s*(Hot|CHW)$/i, '').trim();
 function updateDrainWhere(index, where) {
   const src = sources[index];
   if (!src) return;
   markSourceEdited(index);
   const prev = src.drainLocation || {};
-  const ours = !!prev._codeSet && src.verification === prev._codeSet;
-  const undo = () => { if (ours) src.verification = prev._codeBefore || ''; };
+  const ours = !!prev._codeSet && drainCodeBase(src.verification) === drainCodeBase(prev._codeSet);
+  const undo = () => {
+    if (!ours) return;
+    const sfx = /\s*-\s*(Hot|CHW)$/i.exec(src.verification || '');
+    src.verification = prev._codeBefore ? drainCodeBase(prev._codeBefore) + (sfx ? ' - ' + sfx[1] : '') : '';
+  };
   if (!where) { undo(); delete src.drainLocation; }
   else if (DRAIN_FOUND.includes(where)) {
     const d = { where: where, text: prev.text || '' };

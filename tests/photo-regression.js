@@ -7811,6 +7811,15 @@
     want(got.locked === 'false/Yes/', 'locked open takes the drain question away');
     updateDrainWhere(1, '');
     want(!sources[1].drainLocation && !changeLaterAutoNotes(formEntryLike()).length, 'a cleared answer drops its note');
+    // A source change re-derives the code's suffix; the code is still the answer's (loto-web review 2026-10-23).
+    sources.push(Object.assign(mkSrc('HHW In'), { deviceType: 'Gate Valve', verification: 'Temp Only - Hot', collapsed: false }));
+    renderSources();
+    const k = sources.length - 1;
+    updateDrainWhere(k, 'Between this valve and the equipment');
+    sources[k].energySource = 'CHW In'; sources[k].verification = 'Drain Only - CHW';
+    updateDrainWhere(k, 'None found');
+    got.resuffixed = sources[k].verification;
+    want(got.resuffixed === 'Temp Only - CHW', 'None found puts back the code before the answer, with the row\'s new suffix');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
