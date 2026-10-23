@@ -1293,6 +1293,18 @@ in loto-web). Comment S-12 asks for every placard value to be traceable to a lab
     `photos/`;
   - its capacitor row, carrying `5`;
   - a Chiller and a Marion pump, with neither header.
+  - A second sample at loto-web's request is in `build121_sample_export_v2/`: a VFD with `20; No label` / `680` and a
+    label photo, a Condensing Unit capacitor bank with `5` and a photo, and an unasked Marion pump. It was read with
+    loto-web's live `label_wait` / `label_photo_value` / `asked()`, which agree with the app's rule on every row.
+  - **loto-web cleared build 121 on 2026-10-23.** Its reader has been live since 16:47Z. The end-to-end run (pull →
+    generate → pre-QC on a copy of the live code) gave:
+    - the VFD row stored `[15, No label]`, `[650, —]` and the label photo, which is view-only and never printed;
+    - Section 3 printed "Wait at least 15 minutes after E-2 is opened…" and ES-2 650V DC;
+    - the capacitor bank printed "Wait at least 10 minutes (the label says 5 minutes)";
+    - no label-wait pre-QC findings.
+    loto-web fixed its own side at 17:42Z: rows that don't take the question are no longer stored as "asked, not
+    checked". The app's sheet format is unchanged. loto-web's entries.json route imports no label field or photo,
+    by design.
 
 | Test | What it holds |
 |---|---|
