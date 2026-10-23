@@ -271,17 +271,18 @@ if ('serviceWorker' in navigator) {
     padding-right: 36px;
   }
   /* Simplified-verification checkboxes (build 79): .form-group input strips
-     native checkbox appearance, so paint our own box + checkmark. */
-  .form-group input.simple-verif-check {
+     native checkbox appearance, so paint our own box + checkmark. The same
+     for every other checkbox in a .form-group (.painted-check, build 118). */
+  .form-group input.simple-verif-check, .form-group input.painted-check {
     -webkit-appearance: none; appearance: none;
     width: 24px; height: 24px; min-width: 24px; padding: 0; margin: 0;
     border: 1.5px solid var(--border); border-radius: 6px;
     background: var(--input-bg); position: relative; flex: 0 0 auto;
   }
-  .form-group input.simple-verif-check:checked {
+  .form-group input.simple-verif-check:checked, .form-group input.painted-check:checked {
     background: var(--accent); border-color: var(--accent);
   }
-  .form-group input.simple-verif-check:checked::after {
+  .form-group input.simple-verif-check:checked::after, .form-group input.painted-check:checked::after {
     content: ''; position: absolute; left: 8px; top: 3px;
     width: 5px; height: 11px; border: solid #fff;
     border-width: 0 2.5px 2.5px 0; transform: rotate(45deg);
@@ -478,7 +479,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b117</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b118</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -625,6 +626,13 @@ if ('serviceWorker' in navigator) {
 
   <button class="add-source-btn" onclick="addSource()">+ Add Energy Source</button>
 
+  <!-- Answers for loto-web (build 118): renderUnitQuestions -->
+  <div class="equipment-section" id="unitQuestionsSection" style="margin-bottom:20px;">
+    <h2>&#128203; For loto-web</h2>
+    <p style="font-size:12px;color:var(--text-dim);margin:0 0 10px;">These answers go on the Information Sheet for the office. A blank answer means &ldquo;not asked&rdquo;.</p>
+    <div id="unitQuestions"></div>
+  </div>
+
   <!-- Misc Photos Section -->
   <div class="equipment-section" id="miscPhotoSection" style="margin-bottom:20px;">
     <h2>&#128247; Miscellaneous Photos</h2>
@@ -679,6 +687,12 @@ if ('serviceWorker' in navigator) {
     <h2>&#128221; Notes</h2>
     <textarea id="equipNotes" rows="3" placeholder="Any additional notes about this equipment..." oninput="autoSaveCurrent()"
       style="width:100%;padding:12px 14px;background:var(--input-bg);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-size:15px;font-family:inherit;resize:vertical;"></textarea>
+    <!-- build 118: loto-web prints a line that starts "NOTE:" or "CAUTION:" as a Section 2 band -->
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
+      <button type="button" class="btn btn-sm" id="addNoteLineBtn" onclick="addNoteLine('NOTE')" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);">+ NOTE</button>
+      <button type="button" class="btn btn-sm" id="addCautionLineBtn" onclick="addNoteLine('CAUTION')" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);">+ CAUTION</button>
+      <span style="font-size:11px;color:var(--text-dim);">Each NOTE: or CAUTION: line prints in Section 2 as written.</span>
+    </div>
   </div>
 
   <div class="bottom-spacer"></div>
@@ -1093,6 +1107,11 @@ function resetPhotoSettings() {
   updateEstimates();
 }
 
+// The build this page is (build 118): the export records it in manifest.json and
+// on every Information Sheet's Facility banner. The header label says the same
+// (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
+const APP_BUILD = 118;
+
 // ============================================================================
 // DATA
 // ============================================================================
@@ -1109,6 +1128,9 @@ const DATA = {
   ],
   energySources: [
     "Electrical 24V","Electrical 120V","Electrical 208V","Electrical 240V","Electrical 277V","Electrical 480V","Electrical 4160V",
+    // A battery is its own source (build 118, loto-web's 2026-10-09 spec): loto-web
+    // prints "Battery / 24V DC" with an E ID. The exported name must be exactly this.
+    "Battery 12V DC","Battery 24V DC","Battery 48V DC","Battery 125V DC",
     "LPS 10 PSI","MPS 20 PSI","HPS 100 PSI",
     "Condensate In/Out","Condensate In","Condensate Out",
     "HHW In/Out","HHW In","HHW Out",
@@ -1126,7 +1148,9 @@ const DATA = {
     "Glycol HW In/Out","Glycol CHW In/Out",
     "Glycol ER Water In/Out","Glycol ER Water In","Glycol ER Water Out",
     "Kinetic","Stored Electrical Energy",
-    "Thermal","Refrigerant","Hydraulic"
+    // No "Thermal" since build 118: loto-web adds the Thermal row itself, at the
+    // temperature of the unit's hottest source (a field row printed a flat 300 F).
+    "Refrigerant","Hydraulic"
   ],
   deviceTypes: [
     "Disconnect","VFD","Switch","Switch w/Padlock","Breaker","Breaker w/Padlock",
@@ -1141,6 +1165,7 @@ const DATA = {
     "Front Left Corner of Equipment","Front Right Corner of Equipment",
     "Back Left Corner of Equipment","Back Right Corner of Equipment",
     "At Supply Fan","At Return Fan","At Exhaust Fan","At Relief Fan",
+    "At Fan Assembly",     // a cooling tower's Kinetic default (build 118)
     "At Capacitor Bank",   // the Stored Electrical Energy default (build 109: it showed as "-- Select --")
     "Front of","Above","** Custom Location **"
   ],
@@ -1183,7 +1208,22 @@ const DATA = {
     "Standard Electrical","Electrical with Stored Energy","Switchgear","Heat Exchanger - Steam","DA Tank","Heat Exchanger - CHW/Glycol",
     "Steam PRV Station","Boiler - Natural Gas - HHW","Boiler - Natural Gas - STM"
   ],
-  tiedToOptions: ["Shut Down","Shut Down & LOTO"]
+  tiedToOptions: ["Shut Down","Shut Down & LOTO"],
+  // ---- Answers for loto-web (build 118) ----------------------------------------
+  // loto-web/docs/Field_App_Build_118_Sync_Spec_2026-10-22.md. Each answer goes on
+  // the Information Sheet in a cell under its own label (UNIT_SHEET_SLOTS); loto-web
+  // reads a value only where the label matches, and a blank means "not asked". The
+  // sheet text is exactly the entry here.
+  shops: ["HVAC Shop","Plumbing Shop","Electric Shop","Boiler Plant","Clinical Engineering","Elevator Contractor"],
+  refrigerants: ["R-22","R-32","R-123","R-134a","R-290","R-404A","R-407C","R-410A","R-454B","R-513A","R-600a"],
+  atsMakes: ["ASCO","Zenith","Other"],
+  atsBackfeed: ["UPS","Temporary or portable generator connections","Tie breakers to live buses",
+                "Downstream transfer switches on other generators","PV or battery storage",
+                "Transformers with an alternate secondary feed"],
+  vacuumExhaust: ["Own valve","Check valve only","Shared line, no valve","Can't see"],
+  drainLocations: ["On this valve","Between this valve and the equipment","On the equipment","None found"],
+  yesNoCantTell: ["Yes","No","Can't tell"],
+  yesNo: ["Yes","No"]
 };
 
 // Auto-fill defaults when energy source is selected
@@ -1202,6 +1242,11 @@ const SOURCE_DEFAULTS = {
   'LPS 10 PSI':         { device: 'Gate Valve' },
   'MPS 20 PSI':         { device: 'Gate Valve' },
   'HPS 100 PSI':        { device: 'Gate Valve' },
+  // A battery (build 118): its cable is disconnected and the terminal bagged.
+  'Battery 12V DC':     { device: 'Bag', location: 'On Equipment', verification: 'Controls' },
+  'Battery 24V DC':     { device: 'Bag', location: 'On Equipment', verification: 'Controls' },
+  'Battery 48V DC':     { device: 'Bag', location: 'On Equipment', verification: 'Controls' },
+  'Battery 125V DC':    { device: 'Bag', location: 'On Equipment', verification: 'Controls' },
 };
 
 // Device → Verification mapping (filtered by device type + energy source temperature variant)
@@ -1209,7 +1254,8 @@ const DEVICE_VERIFICATION_MAP = {
   'Breaker':              ['Meter','Controls','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
   'Breaker w/Padlock':    ['Meter','Controls','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
   'Disconnect':           ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','SW (H/O/A)','SW (Other)','Button (Start/Stop)','Button (Other)'],
-  'Quick Disconnect':     ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','SW (H/O/A)','SW (Other)','Button (Start/Stop)','Button (Other)'],
+  // A fitting on an air, gas or chemical line since build 118: the line's own checks, as for its valves
+  'Quick Disconnect':     ['_temponly','_gauge','_gaugeonly','_drain'],
   'VFD':                  ['Controls','Meter','SW (Hand/Off/Auto)','SW (H/O/A)','SW (Drive/Off/Bypass)','SW (VFD/Off/Bypass)','SW (Other)','Button (Start/Stop) - VFD','Button (Hand/Off/Auto) - VFD','Button (Other)'],
   'Switch':               ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
   'Switch w/Padlock':     ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
@@ -1257,7 +1303,19 @@ function appListsSnapshot(build) {
     energySources: DATA.energySources.slice(),
     devices: DATA.deviceTypes.slice(),
     verifications: verifications,
-    locations: strip(DATA.locations, '** Custom Location **')
+    locations: strip(DATA.locations, '** Custom Location **'),
+    // build 118: the answers' choices as the Information Sheet writes them
+    // (a typed Other is written as typed; a blank answer means not asked)
+    answers: {
+      shops: DATA.shops.slice(),
+      refrigerants: DATA.refrigerants.slice(),
+      atsMakes: DATA.atsMakes.slice(),
+      atsBackfeed: DATA.atsBackfeed.slice(),
+      vacuumExhaust: DATA.vacuumExhaust.slice(),
+      drainLocations: DATA.drainLocations.slice(),
+      yesNoCantTell: DATA.yesNoCantTell.slice(),
+      yesNo: DATA.yesNo.slice()
+    }
   };
 }
 
@@ -1267,7 +1325,8 @@ function appListsSnapshot(build) {
 // should show plain Gauge/Drain, GaugeOnly, Drain Only (no -Hot variants).
 const HOT_ENERGY_SOURCES = [
   'LPS','MPS','HPS','Steam',
-  'HHW','DHW','Feedwater','Condensate'
+  'HHW','DHW','Feedwater','Condensate',
+  'Glycol HW'   // build 118: loto-web treats glycol heating water as 140 F water
 ];
 
 // Energy sources that get "- CHW" suffix on gauge/drain verifications.
@@ -1455,6 +1514,16 @@ function parseWaterVerification(v) {
   }
   return { drain: false, gauge: false, recognized: false, blank: false };
 }
+// A drain the APP put in a row's code (an AHU's HHW / CHW pre-tick, a template
+// or source default) is marked _drainDefault, so a "None found" drain answer
+// can take it back; one the tech ticked or picked never is (loto-web review
+// 2026-10-23). Called wherever a default code is written.
+function noteDefaultDrain(src) {
+  if (!src) return src;
+  if (parseWaterVerification(src.verification).drain) src._drainDefault = true;
+  else delete src._drainDefault;
+  return src;
+}
 // A template-scoped verification override still gets the checkbox UI when
 // its curated list is PURE drain/gauge/temp variants (e.g. the Boiler HHW
 // override is exactly the four "- Hot" combos). Mixed/electrical overrides
@@ -1482,6 +1551,7 @@ function updateSimpleVerif(index, which, checked) {
   const cur = parseWaterVerification(src.verification);
   const drain = which === 'drain' ? checked : cur.drain;
   const gauge = which === 'gauge' ? checked : cur.gauge;
+  if (which === 'drain') delete src._drainDefault;   // the tech's own drain answer
   src.verification = synthesizeWaterVerification(drain, gauge, simpleVerifSuffix(src));
   renderSources();
   autoSaveCurrent();
@@ -1526,6 +1596,7 @@ function applySimpleVerifDefaults() {
       if (p.blank) {
         const drainDefault = equipIsAHU && (es.startsWith('CHW') || es.startsWith('HHW'));
         src.verification = synthesizeWaterVerification(drainDefault, false, simpleVerifSuffix(src));
+        noteDefaultDrain(src);
         changed = true;
       } else if (p.recognized && !/^G\/Tmp\/Drain/.test(src.verification)) {
         const resynth = synthesizeWaterVerification(p.drain, p.gauge, simpleVerifSuffix(src));
@@ -1652,11 +1723,21 @@ function togglePhotoSlot(index) {
 }
 
 // Energy Source → Device type mapping (filters device dropdown based on selected energy source)
-const ELECTRICAL_DEVICES = ['Disconnect','VFD','Switch','Switch w/Padlock','Breaker','Breaker w/Padlock','Plug','Fuse','Quick Disconnect'];
+// No Quick Disconnect since build 118: it is the quick-disconnect FITTING on an
+// air, gas or chemical line (FITTING_DEVICES), which loto-web isolates by
+// disconnecting the fitting. As an electrical device it printed the "move
+// disconnect" Method. A row saved with it before keeps it.
+const ELECTRICAL_DEVICES = ['Disconnect','VFD','Switch','Switch w/Padlock','Breaker','Breaker w/Padlock','Plug','Fuse'];
 const VALVE_DEVICES_WITH_CKT = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Butterfly Valve','Butterfly w/Padlock','Ckt Setter - Universal Valve','Chain','Cable'];
 const VALVE_DEVICES_NO_CKT = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Butterfly Valve','Butterfly w/Padlock','Chain','Cable'];
 // Propane: butterfly valves aren't used on propane service.
 const VALVE_DEVICES_NO_BUTTERFLY = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Chain','Cable'];
+// Compressed air, vacuum air, natural gas, propane and chemical lines (wilkins
+// 2026-10-22): their valves plus the quick-disconnect fitting.
+const FITTING_DEVICES = VALVE_DEVICES_NO_CKT.concat(['Quick Disconnect']);
+const FITTING_DEVICES_NO_BUTTERFLY = VALVE_DEVICES_NO_BUTTERFLY.concat(['Quick Disconnect']);
+// A battery (build 118): bagged by default, or a DC disconnect / breaker / fuse.
+const BATTERY_DEVICES = ['Bag','Disconnect','Breaker','Breaker w/Padlock','Switch','Switch w/Padlock','Fuse'];
 
 const ENERGY_DEVICE_MAP = {
   'Electrical': ELECTRICAL_DEVICES,
@@ -1675,18 +1756,18 @@ const ENERGY_DEVICE_MAP = {
   'Feedwater': VALVE_DEVICES_WITH_CKT,
   'Domestic': VALVE_DEVICES_WITH_CKT,
   'Glycol': VALVE_DEVICES_WITH_CKT,
-  'CA': VALVE_DEVICES_NO_CKT,
-  'Compressed': VALVE_DEVICES_NO_CKT,
-  'Vacuum Air': VALVE_DEVICES_NO_CKT,
+  'Battery': BATTERY_DEVICES,
+  'CA': FITTING_DEVICES,
+  'Compressed': FITTING_DEVICES,
+  'Vacuum Air': FITTING_DEVICES,
   'Pneumatic': VALVE_DEVICES_NO_CKT,
   'Fuel Oil': VALVE_DEVICES_NO_CKT,
   'Fuel': VALVE_DEVICES_NO_CKT,
   'Diesel': VALVE_DEVICES_NO_CKT,
-  'Natural Gas': VALVE_DEVICES_NO_CKT,
-  'Propane': VALVE_DEVICES_NO_BUTTERFLY,
+  'Natural Gas': FITTING_DEVICES,
+  'Propane': FITTING_DEVICES_NO_BUTTERFLY,
   'Refrigerant': VALVE_DEVICES_NO_CKT,
-  'Chemical': VALVE_DEVICES_NO_CKT,
-  'Thermal': VALVE_DEVICES_NO_CKT,
+  'Chemical': FITTING_DEVICES,
   'Kinetic': ['Rotating'],
   'Gravity': ['Potential'],
   'Hydraulic': ['Hydraulic'],
@@ -1855,7 +1936,8 @@ const EQUIPMENT_AUTO_SOURCES = {
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
   'Cooling Tower': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    // "At Fan Assembly" since build 118 (wilkins): the row names the fan it blocks
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'At Fan Assembly', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   'Chemical Pump': [
@@ -2001,6 +2083,8 @@ function askChoice(opts) {
       input = document.createElement('input');
       input.type = opts.input.type || 'text';
       if (opts.input.max) input.max = opts.input.max;
+      if (opts.input.placeholder) input.placeholder = opts.input.placeholder;
+      if (opts.input.value) input.value = opts.input.value;   // a prefilled answer (build 118)
       input.style.cssText = 'width:100%;padding:10px;margin-bottom:12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:15px;';
       box.appendChild(input);
     }
@@ -2012,7 +2096,7 @@ function askChoice(opts) {
       b.className = 'btn ' + (c.primary ? 'btn-primary' : (c.danger ? 'btn-danger' : 'btn-outline'));
       b.style.cssText = 'padding:11px;font-size:14px;';
       b.textContent = c.label;
-      if (c.needsInput && input) { b.disabled = true; gated.push(b); b.onclick = () => { if (inputOk()) done(input.value); }; }
+      if (c.needsInput && input) { b.disabled = !inputOk(); gated.push(b); b.onclick = () => { if (inputOk()) done(input.value); }; }
       else b.onclick = () => done(c.value);
       col.appendChild(b);
     });
@@ -2544,7 +2628,7 @@ function equipTypeChanged(equipType) {
     for (const autoSrc of autoSources) {
       const alreadyExists = sources.some(s => s.energySource === autoSrc.energySource && s.auto === true);
       if (!alreadyExists) {
-        const src = { ...autoSrc, collapsed: true };
+        const src = noteDefaultDrain({ ...autoSrc, collapsed: true });
         sources.push(src);
         added++;
       }
@@ -2735,30 +2819,586 @@ function onTemplateSelectChange() {
   });
 }
 
-// A medical vacuum pump's exhaust (build 112). "Its own valve" adds a Vacuum
-// Air Out ball valve row for its photo; loto-web prints its close and open
-// steps. The other answers loto-web asked for (a check valve only, a shared
-// line with no valve, can't see) wait for a field both apps agree on, so they
-// are one "no" here for now. Asked after the template's voltage.
+// ============================================================================
+// ANSWERS FOR LOTO-WEB (build 118)
+// ============================================================================
+// The questions loto-web asked in the 2026-10-22 sync review, answered on the
+// unit and carried on the Information Sheet in label-gated cells: each value
+// sits under its own label (or a source's under its column header), loto-web
+// reads a value only where the label matches, and a blank means "not asked",
+// never "no". Spec: loto-web/docs/Field_App_Build_118_Sync_Spec_2026-10-22.md.
+//
+// unitAnswers is the open form's copy; a saved unit holds its own in
+// entry.unitAnswers. Keys: shop + shopOther, changeLater (the tech's own text),
+// uvLights, confinedSpace, atsMake, atsBackfeed (a list), capacitors,
+// vacuumExhaust, reliefJoint, refrigerant + refrigerantOther, refrigerantPsi.
+// Per source: drainLocation { where, text } and lockOpen.
+let unitAnswers = {};
+
+// Where each answer goes: [label row, column] in loto-web's numbering of a
+// 27-row block (row 24 = the Tied to \u2026 Template labels, row 25 their values;
+// row 26 = "Notes:", row 27 the notes). The value sits one row below its label.
+// U1 Shop is loto-web's 2026-10-09 contract; U7 and U8 are spare.
+const UNIT_SHEET_SLOTS = { U1: [24, 10], U2: [24, 11], U3: [24, 12], U4: [24, 13],
+                           U5: [26, 10], U6: [26, 11], U7: [26, 12], U8: [26, 13] };
+
+// The five templates loto-web gives a refrigerant row of its own: the app
+// doesn't offer a Refrigerant source on them (wilkins 2026-10-22), and asks
+// the refrigerant on the unit instead.
+const REFRIGERANT_TEMPLATES = ['Chiller', 'Condensing Unit', 'Mini Split', 'Refrigerator', 'Air Dryer'];
+
+// The shop a template prints when the unit's Shop is blank (loto-web's
+// templates, 2026-10-22) \u2014 the Shop field's hint. Glycol Pump: defaultShopFor.
+const TEMPLATE_DEFAULT_SHOP = (() => {
+  const by = {
+    'HVAC Shop': ['AHU - Steam', 'AHU - HHW', 'AHU - Geothermal', 'AHU - Steam, CHW, HHW', 'Air Dryer',
+      'Chilled Water Pump', 'Heating Hot Water Pump', 'Feedwater Pump', 'Chiller', 'Condensing Unit', 'Mini Split',
+      'Cooling Tower', 'Exhaust Fan', 'Emergency Generator', 'Heat Exchanger - Steam', 'Heat Exchanger - CHW/Glycol',
+      'Unit Heater - Steam', 'Unit Heater - HHW', 'Unit Heater - Natural Gas', 'Refrigerator', 'Humidifier',
+      'Steam PRV Station'],
+    // loto-web prints Plumbing for every domestic water heater, whatever its template says
+    'Plumbing Shop': ['Air Compressor', 'Medical Air', 'Vacuum Pump', 'Medical Vacuum', 'Medical Vacuum Pump',
+      'Lab Vacuum', 'Dental Vacuum', 'Dental Air Compressor', 'Compressed Air Tank', 'Blower', 'Standard Pump',
+      'Fire Pump', 'Condensate Return Unit', 'Condensate Return Unit - Steam', 'Boiler - Natural Gas - HHW',
+      'Boiler - Natural Gas - STM', 'Overhead Door', 'Water Heater - Steam', 'Water Heater - Gas',
+      'Water Heater - Electric'],
+    'Boiler Plant': ['Chemical Pump', 'DA Tank'],
+    'Electric Shop': ['ATS - Generic', 'Standard Electrical', 'Switchgear', 'Electrical with Stored Energy', 'Day Tank'],
+    'Elevator Contractor': ['Elevator - Traction', 'Elevator - Hydraulic']
+  };
+  const out = {};
+  Object.keys(by).forEach(shop => by[shop].forEach(t => { out[t] = shop; }));
+  return out;
+})();
+function defaultShopFor(template, srcs) {
+  if (template === 'Glycol Pump') {
+    const glycol = (srcs || []).some(s => s && /^Glycol (HW|CHW)\b/.test(String(s.energySource || '')));
+    return glycol ? 'HVAC Shop' : 'Plumbing Shop';
+  }
+  return TEMPLATE_DEFAULT_SHOP[template] || '';
+}
+
+// Which questions a unit gets. A unit is at most one of AHU / ATS / Chiller /
+// Medical Vacuum Pump; the refrigerant question goes with any of them.
+function unitKinds(type, template, srcs) {
+  const t = String(template || '');
+  return {
+    ahu: type === 'Air Handler' || /^AHU\b/.test(t),
+    ats: type === 'ATS' || t === 'ATS - Generic',
+    chiller: type === 'Chiller' || t === 'Chiller',
+    vacPump: t === 'Medical Vacuum Pump',
+    refrigerant: REFRIGERANT_TEMPLATES.includes(t)
+      || (srcs || []).some(s => s && /refrigerant/i.test(String(s.energySource || '')))
+  };
+}
+function formEntryLike() {
+  return { equipType: getEquipType(), template: getTemplate(), sources: sources, unitAnswers: unitAnswers };
+}
+
+function shopSheetValue(a) { return a.shop === 'Other' ? String(a.shopOther || '').trim() : String(a.shop || ''); }
+function refrigerantSheetValue(a) {
+  return a.refrigerant === 'Other' ? String(a.refrigerantOther || '').trim() : String(a.refrigerant || '');
+}
+// The first whole number in the box: a data plate often lists both sides
+// ("450/250", "HI 450 LO 250") and the high side comes first; "185.5" → 185.
+function refrigerantPsiValue(a) { return (String(a.refrigerantPsi == null ? '' : a.refrigerantPsi).match(/\d+/) || [''])[0]; }
+function atsBackfeedList(a) {
+  const got = Array.isArray(a.atsBackfeed) ? a.atsBackfeed : [];
+  return DATA.atsBackfeed.filter(c => got.includes(c));   // always in the list's order
+}
+
+// ---- Drain location and lock-open (per source) -------------------------------
+// The Drain box asks about a drain ON the valve, and a gate valve has none, so
+// most rows recorded Temp Only and the drain was never identified (loto-web's
+// field-capture priority #1). This asks where the drain for the isolated side is.
+const DRAIN_FOUND = ['On this valve', 'Between this valve and the equipment', 'On the equipment'];
+const DRAIN_CHOICE_LABEL = {
+  'On this valve': 'On this valve (drain or bleed port)',
+  'Between this valve and the equipment': 'Between this valve and the equipment',
+  'On the equipment': 'On the equipment (casing, coil, strainer or tank)',
+  'None found': 'None found'
+};
+// Valve rows of a water, steam, condensate, glycol or compressed-air line. A
+// valve locked open carries live flow and is never a relief point.
+function sourceTakesDrainLocation(src) {
+  if (!src || src.lockOpen) return false;
+  const es = String(src.energySource || '');
+  if (!(isWaterFamilySource(es) || /^(Compressed Air|CA)\b/.test(es))) return false;
+  return !src.deviceType || isValveDevice(src.deviceType);
+}
+function drainLocationSheetText(src) {
+  const d = src && src.drainLocation;
+  if (!d || !d.where || !sourceTakesDrainLocation(src)) return '';
+  const t = String(d.text || '').replace(/\s+/g, ' ').trim();
+  return d.where + (t ? ': ' + t : '');
+}
+function lockOpenSheetText(src) { return (src && src.lockOpen && sourceTakesValveState(src)) ? 'Yes' : ''; }
+
+// A drain found for the isolated side is a drain the row's check can use: the
+// code gains it as if the Drain box were ticked (Temp Only \u2192 Drain Only,
+// GaugeOnly \u2192 Gauge/Drain), keeping its - Hot / - CHW suffix. A code the boxes
+// don't make (Zero Flow, a custom one) is left alone.
+function verificationWithDrain(src) {
+  const v = String(src.verification || '');
+  const p = parseWaterVerification(v);
+  if (!p.recognized || (!p.blank && p.drain)) return v;
+  const m = /\s*-\s*(Hot|CHW)$/i.exec(v);
+  const sfx = p.blank ? simpleVerifSuffix(src) : (m ? m[1].toLowerCase() : '');
+  return synthesizeWaterVerification(true, p.gauge, sfx);
+}
+// The code this answer changed (_codeBefore → _codeSet) is put back when the
+// answer moves to "None found" or blank — unless the tech changed it since.
+// The - Hot / - CHW suffix follows the source (a source change re-derives
+// it), so codes compare without it and the code put back takes the row's
+// current one (loto-web review 2026-10-23).
+const drainCodeBase = v => String(v || '').replace(/\s*-\s*(Hot|CHW)$/i, '').trim();
+function updateDrainWhere(index, where) {
+  const src = sources[index];
+  if (!src) return;
+  markSourceEdited(index);
+  const prev = src.drainLocation || {};
+  const ours = !!prev._codeSet && drainCodeBase(src.verification) === drainCodeBase(prev._codeSet);
+  const undo = () => {
+    if (!ours) return;
+    const sfx = /\s*-\s*(Hot|CHW)$/i.exec(src.verification || '');
+    src.verification = prev._codeBefore ? drainCodeBase(prev._codeBefore) + (sfx ? ' - ' + sfx[1] : '') : '';
+  };
+  if (!where) { undo(); delete src.drainLocation; }
+  else if (DRAIN_FOUND.includes(where)) {
+    const d = { where: where, text: prev.text || '' };
+    // From a "None found" that took back a default drain: the drain returns
+    // first, and the found answer then keeps it.
+    const fromNone = ours && prev.where === 'None found';
+    if (fromNone) undo();
+    if (ours && !fromNone) { d._codeBefore = prev._codeBefore; d._codeSet = prev._codeSet; }
+    else {
+      const before = src.verification || '';
+      const after = verificationWithDrain(src);
+      if (after !== before) { src.verification = after; d._codeBefore = before; d._codeSet = after; }
+    }
+    src.drainLocation = d;
+  } else {   // None found
+    undo();
+    const d = { where: where, text: prev.text || '' };
+    // A Drain box the app ticked by default is taken back: the tech looked
+    // and found none (loto-web review 2026-10-23). One the tech ticked stays,
+    // and loto-web prints its "If no drain is present" stop either way.
+    const p = parseWaterVerification(src.verification);
+    if (src._drainDefault && p.recognized && !p.blank && p.drain) {
+      const before = src.verification;
+      const m = /\s*-\s*(Hot|CHW)$/i.exec(before);
+      const after = synthesizeWaterVerification(false, p.gauge, m ? m[1].toLowerCase() : '');
+      src.verification = after; d._codeBefore = before; d._codeSet = after;
+    }
+    src.drainLocation = d;
+  }
+  renderSources();
+  autoSaveCurrent();
+}
+function updateDrainText(index, text) {
+  const src = sources[index];
+  if (!src || !src.drainLocation) return;
+  markSourceEdited(index);
+  src.drainLocation.text = text;
+  autoSaveCurrent();
+}
+function updateLockOpen(index, checked) {
+  const src = sources[index];
+  if (!src) return;
+  markSourceEdited(index);
+  if (checked) src.lockOpen = true; else delete src.lockOpen;
+  renderSources();
+  autoSaveCurrent();
+}
+
+// The Energy Source list a row offers: no Refrigerant on the five templates
+// loto-web gives a refrigerant row of its own (a row that has one keeps it).
+function offeredEnergySources() {
+  return REFRIGERANT_TEMPLATES.includes(getTemplate())
+    ? DATA.energySources.filter(s => s !== 'Refrigerant') : DATA.energySources;
+}
+
+// ---- Drive feeder -------------------------------------------------------------
+// A drive with its own disconnect is fed from a breaker upstream, recorded as an
+// extra Electrical row in loto-web's format (its _is_drive_feeder reads a
+// Location that STARTS with "Feeder"): "Feeder: MCC-2A bkr 14 (VFD-1)". A unit
+// with a feeder row for each drive gets loto-web's Tier 1 steps.
+async function addFeederForDrive(index) {
+  const drive = sources[index];
+  if (!drive) return;
+  const tags = splitUnitIds(drive.deviceId).map(t => t.trim()).filter(Boolean);
+  const fed = t => sources.some(s => s && /^Feeder\b/i.test(String(s.location || '')) && String(s.location).includes('(' + t + ')'));
+  const nextTag = tags.find(t => !fed(t)) || tags[0] || '';
+  const filled = v => !!String(v || '').trim();
+  const panel = await askChoice({ id: 'feeder-panel', defaultValue: 'cancel', title: 'Feeder: the panel',
+    html: html`The panel or MCC that feeds this drive, as labelled.`,
+    input: { type: 'text', placeholder: 'e.g. MCC-2A', valid: filled },
+    choices: [{ label: 'Next', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] });
+  if (!filled(panel) || panel === 'cancel') return;
+  const bkr = await askChoice({ id: 'feeder-breaker', defaultValue: '', title: 'Feeder: the breaker',
+    html: html`Its breaker or bucket number in ${panel.trim()}.`,
+    input: { type: 'text', placeholder: 'e.g. 14', valid: filled },
+    choices: [{ label: 'Next', needsInput: true, primary: true }, { value: '', label: 'No number' }, { value: 'cancel', label: 'Cancel' }] });
+  if (bkr === 'cancel') return;
+  const tag = await askChoice({ id: 'feeder-drive', defaultValue: nextTag || 'cancel', title: 'Feeder: the drive',
+    html: html`The drive this breaker feeds, as tagged.`,
+    input: { type: 'text', placeholder: 'e.g. VFD-1', value: nextTag, valid: filled },
+    choices: [{ label: 'Add the feeder', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] });
+  if (!filled(tag) || tag === 'cancel' || !sources.includes(drive)) return;
+  const one = v => String(v || '').replace(/\s+/g, ' ').trim();
+  const at = sources.length;
+  delete photos['source_' + at];   // never inherit a stale ref
+  sources.push({ energySource: drive.energySource || 'Electrical', deviceType: 'Breaker', quantity: 1,
+    location: 'Feeder: ' + one(panel) + (one(bkr) ? ' bkr ' + one(bkr) : '') + ' (' + one(tag) + ')',
+    duplicate: 'No', verification: '', detail: '', collapsed: false });
+  renderSources();
+  autoSaveCurrent();
+  showToast('Added the feeder for ' + one(tag) + ' — photograph the panel and the breaker');
+  setTimeout(() => {
+    const cards = document.querySelectorAll('.source-card');
+    if (cards[at]) cards[at].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 100);
+}
+
+// ---- Change later / not located ---------------------------------------------
+// The tech's own note, plus the ones an answer writes by itself. loto-web shows
+// it on the unit and flags it at pre-QC; it never blocks.
+const RELIEF_JOINT_NOTE = 'No union or flange between the inlet valve and the pump: check the inlet relief step';
+function changeLaterAutoNotes(entryLike) {
+  const a = entryLike.unitAnswers || {};
+  const k = unitKinds(entryLike.equipType, entryLike.template, entryLike.sources);
+  const notes = [];
+  if (k.vacPump && a.reliefJoint === 'No') notes.push(RELIEF_JOINT_NOTE);
+  (entryLike.sources || []).forEach((s, i) => {
+    if (s && s.drainLocation && s.drainLocation.where === 'None found' && sourceTakesDrainLocation(s)) {
+      notes.push('No drain found for source #' + (i + 1) + ' (' + (s.energySource || 'no energy source')
+        + (s.deviceId ? ', ' + s.deviceId : '') + ')');
+    }
+  });
+  return notes;
+}
+function changeLaterSheetText(entryLike) {
+  const own = String((entryLike.unitAnswers || {}).changeLater || '').replace(/\s*\n\s*/g, '; ').trim();
+  return [own].concat(changeLaterAutoNotes(entryLike)).filter(Boolean).join(' | ');
+}
+
+// ---- The sheet cells and the entries.json keys ------------------------------
+// { U1: [label, value], \u2026 } \u2014 only the slots this unit has (UNIT_SHEET_SLOTS).
+function unitSheetCells(entryLike) {
+  const a = entryLike.unitAnswers || {};
+  const k = unitKinds(entryLike.equipType, entryLike.template, entryLike.sources);
+  const cells = { U1: ['Shop', shopSheetValue(a)], U2: ['Change Later', changeLaterSheetText(entryLike)] };
+  if (k.ahu) { cells.U3 = ['UV Lights', a.uvLights || '']; cells.U4 = ['Confined Space', a.confinedSpace || '']; }
+  else if (k.ats) { cells.U3 = ['ATS Make', a.atsMake || '']; cells.U4 = ['Backfeed', atsBackfeedList(a).join('; ')]; }
+  else if (k.chiller) cells.U3 = ['Capacitors', a.capacitors || ''];
+  else if (k.vacPump) { cells.U3 = ['Exhaust', a.vacuumExhaust || '']; cells.U4 = ['Union/Flange', a.reliefJoint || '']; }
+  if (k.refrigerant) {
+    cells.U5 = ['Refrigerant', refrigerantSheetValue(a)];
+    cells.U6 = ['Refrigerant PSI', refrigerantPsiValue(a)];
+  }
+  return cells;
+}
+// The same answers as entries.json keys (backup only: loto-web imports the sheet).
+function unitAnswersForJson(entryLike) {
+  const cells = unitSheetCells(entryLike);
+  const byLabel = {};
+  Object.keys(cells).forEach(s => { byLabel[cells[s][0]] = cells[s][1]; });
+  const out = { shop: byLabel['Shop'],
+                changeLater: { text: byLabel['Change Later'], auto: changeLaterAutoNotes(entryLike).length > 0 } };
+  [['UV Lights', 'uvLights'], ['Confined Space', 'confinedSpace'], ['ATS Make', 'atsMake'],
+   ['Capacitors', 'capacitors'], ['Exhaust', 'vacuumExhaust'], ['Union/Flange', 'reliefJoint']]
+    .forEach(([label, key]) => { if (label in byLabel) out[key] = byLabel[label]; });
+  if ('Backfeed' in byLabel) out.atsBackfeed = atsBackfeedList(entryLike.unitAnswers || {});
+  if ('Refrigerant' in byLabel) out.refrigerant = { type: byLabel['Refrigerant'], psi: byLabel['Refrigerant PSI'] };
+  return out;
+}
+// A facility code as it goes into a file name — the ZIP name's rule:
+// "Atlanta - Fort McPherson" → "Atlanta_Fort_McPherson".
+function sheetFacilityPart(code) { return String(code || '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, ''); }
+
+// ---- The form's "For loto-web" section --------------------------------------
+// Rebuilt only when what it shows changes (the unit's kind, its template's shop,
+// the automatic notes) or when told to. autoSaveCurrent checks it after every
+// change to the form, so it never waits for the source list to redraw; a box
+// being typed in keeps its focus and caret through a rebuild.
+let _unitQKey = null;
+function renderUnitQuestions(force) {
+  const box = document.getElementById('unitQuestions');
+  if (!box) return;
+  const el = formEntryLike();
+  const k = unitKinds(el.equipType, el.template, el.sources);
+  const auto = changeLaterAutoNotes(el);
+  const key = JSON.stringify([k, defaultShopFor(el.template, el.sources), auto]);
+  if (!force && key === _unitQKey) return;
+  _unitQKey = key;
+  const active = document.activeElement;
+  const keep = (active && active.id && box.contains(active))
+    ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
+  box.innerHTML = buildUnitQuestionsHtml(k, el.template, auto);
+  if (keep) {
+    const again = document.getElementById(keep.id);
+    if (again) { again.focus(); try { if (keep.start != null) again.setSelectionRange(keep.start, keep.end); } catch (e) {} }
+  }
+}
+function buildUnitQuestionsHtml(k, template, auto) {
+  const a = unitAnswers;
+  const dim = 'font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-dim);';
+  const group = (label, inner, hint) => html`<div class="form-group"><label>${label}${hint
+    ? html` <span style="${dim}">&mdash; ${hint}</span>` : ''}</label>${inner}</div>`;
+  const pick = (key, list, blank) => html`<select id="uq_${key}" onchange="setUnitAnswer(${jsArg(key)},this.value)">
+      <option value="">${blank || '-- Not answered --'}</option>
+      ${list.map(v => html`<option value="${v}" ${a[key] === v ? 'selected' : ''}>${v}</option>`)}
+      ${a[key] && !list.includes(a[key]) && a[key] !== 'Other' ? html`<option value="${a[key]}" selected>${a[key]}</option>` : ''}
+    </select>`;
+  const text = (key, placeholder, extra) => html`<input type="text" id="uq_${key}" value="${a[key] || ''}"
+      placeholder="${placeholder}" ${raw(extra || '')} oninput="setUnitText(${jsArg(key)},this.value)" style="margin-top:6px;">`;
+  const parts = [];
+  const def = defaultShopFor(template, sources);
+  parts.push(group('Shop', html`<select id="uq_shop" onchange="setUnitAnswer('shop',this.value)">
+      <option value="">${def ? 'Default: ' + def : '-- The template\u2019s shop --'}</option>
+      ${DATA.shops.map(v => html`<option value="${v}" ${a.shop === v ? 'selected' : ''}>${v}</option>`)}
+      <option value="Other" ${a.shop === 'Other' ? 'selected' : ''}>Other&hellip;</option>
+    </select>${a.shop === 'Other' ? text('shopOther', 'The shop, as it should print') : ''}`,
+    'only when it differs from the template\u2019s'));
+  if (k.ahu) {
+    parts.push(group('UV lights in this unit?', pick('uvLights', DATA.yesNoCantTell)));
+    parts.push(group('Permit-required confined space?', pick('confinedSpace', DATA.yesNo), 'the cabinet'));
+  }
+  if (k.ats) {
+    parts.push(group('ATS make', pick('atsMake', DATA.atsMakes), 'from the data plate'));
+    const got = atsBackfeedList(a);
+    parts.push(group('Backfeed sources on the load side', html`${DATA.atsBackfeed.map((c, n) => html`<label
+        style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:14px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500;">
+        <input type="checkbox" class="uq-backfeed painted-check" id="uq_backfeed_${n}" ${got.includes(c) ? 'checked' : ''}
+          onchange="toggleUnitBackfeed(${jsArg(c)},this.checked)"> ${c}</label>`)}`, 'tick all that apply'));
+  }
+  if (k.chiller) parts.push(group('Capacitor bank?', pick('capacitors', DATA.yesNoCantTell)));
+  if (k.vacPump) {
+    parts.push(group('This pump\u2019s exhaust', pick('vacuumExhaust', DATA.vacuumExhaust)));
+    parts.push(group('Union or flange between the inlet valve and the pump?', pick('reliefJoint', DATA.yesNo)));
+  }
+  if (k.refrigerant) {
+    parts.push(group('Refrigerant', html`<select id="uq_refrigerant" onchange="setUnitAnswer('refrigerant',this.value)">
+        <option value="">-- Not recorded --</option>
+        ${DATA.refrigerants.map(v => html`<option value="${v}" ${a.refrigerant === v ? 'selected' : ''}>${v}</option>`)}
+        <option value="Other" ${a.refrigerant === 'Other' ? 'selected' : ''}>Other&hellip;</option>
+      </select>${a.refrigerant === 'Other' ? text('refrigerantOther', 'e.g. R-1234ze') : ''}`, 'from the data plate'));
+    parts.push(group('High-side design pressure (PSI)', html`<input type="text" id="uq_refrigerantPsi" inputmode="numeric"
+        value="${a.refrigerantPsi || ''}" placeholder="e.g. 550" oninput="setUnitText('refrigerantPsi',this.value)">`,
+      'from the data plate; optional'));
+  }
+  parts.push(html`<div class="form-group" style="grid-column:1 / -1;"><label>Mark for the office <span style="${dim}">&mdash; what
+      should change, or what you couldn&rsquo;t find</span></label>
+    <textarea id="uq_changeLater" rows="2" oninput="setUnitText('changeLater',this.value)"
+      placeholder="e.g. Couldn't find the feeder breaker; the panel was locked"
+      style="width:100%;padding:10px 12px;background:var(--input-bg);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:inherit;resize:vertical;">${a.changeLater || ''}</textarea>
+    ${auto.length ? html`<div id="uq_autoNotes" style="font-size:12px;color:#b5451b;margin-top:6px;">${auto.map((n, i) =>
+      html`${i ? raw('<br>') : ''}&#9888; ${n}`)}</div>` : ''}</div>`);
+  return html`<div class="form-grid">${parts}</div>`;
+}
+function setUnitAnswer(key, value) {
+  if (value) unitAnswers[key] = value; else delete unitAnswers[key];
+  // The row an answer stands for follows it, as the prompts do: "Own valve"
+  // adds the exhaust row and any other exhaust answer takes an untouched one
+  // away; a chiller's capacitor bank Yes / Can't tell adds the Stored
+  // Electrical Energy row and No takes an untouched one away. A row with a
+  // photo or anything typed stays (Save & New then notes the mismatch).
+  if (key === 'vacuumExhaust' && value) {
+    const isOut = s => /^Vacuum Air Out/.test(String(s.energySource || ''));
+    if (value === 'Own valve') addVacuumExhaustRow();
+    else removeUntouchedAutoRow(isOut);
+  }
+  if (key === 'capacitors' && value && unitKinds(getEquipType(), getTemplate(), sources).chiller) {
+    const isCap = s => s.energySource === 'Stored Electrical Energy';
+    if (value === 'No') removeUntouchedAutoRow(isCap);
+    else if (!sources.some(s => s && isCap(s))) {
+      sources.push({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank',
+        verification: '', quantity: 1, duplicate: 'No', detail: '', collapsed: true, auto: true, noPhoto: true });
+      renderSources();
+    }
+  }
+  renderUnitQuestions(true);
+  autoSaveCurrent();
+}
+// Take away the first row matching test that the app added and nobody has
+// touched since (no edit, no Device ID, no photo); photos stay with their rows.
+function removeUntouchedAutoRow(test) {
+  const i = sources.findIndex((s, k) => s && test(s) && s.auto && !s.userEdited && !String(s.deviceId || '').trim()
+    && !(photos['source_' + k] && photos['source_' + k].dbKey));
+  if (i < 0) return false;
+  const prev = sources.slice();
+  sources.splice(i, 1);
+  rebindSourcePhotos(prev);
+  renderSources();
+  return true;
+}
+function setUnitText(key, value) {
+  if (String(value || '').trim()) unitAnswers[key] = value; else delete unitAnswers[key];
+  autoSaveCurrent();
+}
+function toggleUnitBackfeed(choice, checked) {
+  const got = new Set(atsBackfeedList(unitAnswers));
+  if (checked) got.add(choice); else got.delete(choice);
+  const list = DATA.atsBackfeed.filter(c => got.has(c));
+  if (list.length) unitAnswers.atsBackfeed = list; else delete unitAnswers.atsBackfeed;
+  autoSaveCurrent();
+}
+// The answers the form holds, as saved (blanks dropped, the list copied).
+function savedUnitAnswers() {
+  const out = {};
+  Object.keys(unitAnswers).forEach(k => {
+    const v = unitAnswers[k];
+    if (Array.isArray(v) ? v.length : String(v == null ? '' : v).trim()) out[k] = Array.isArray(v) ? v.slice() : v;
+  });
+  return out;
+}
+function loadUnitAnswers(a) {
+  unitAnswers = (a && typeof a === 'object') ? JSON.parse(JSON.stringify(a)) : {};
+  renderUnitQuestions(true);
+}
+
+// "+ NOTE" / "+ CAUTION" under Notes (build 118): a new line that loto-web
+// prints as a Section 2 band, word for word. The rest of Notes stays free text.
+function addNoteLine(kind) {
+  const ta = document.getElementById('equipNotes');
+  if (!ta) return;
+  const v = ta.value;
+  ta.value = v + (v && !/\n$/.test(v) ? '\n' : '') + kind + ': ';
+  ta.focus();
+  try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) {}
+  autoSaveCurrent();
+}
+
+// ---- Medical vacuum pump: its exhaust and the inlet union / flange ----------
+// The exhaust (build 112 asked yes/no; build 118 the four answers loto-web
+// asked for): "Own valve" adds a Vacuum Air Out ball valve row for its photo,
+// and loto-web drops the shared-exhaust CAUTION; any other answer keeps it.
+// Then the union or flange loto-web's inlet relief step loosens: Yes is the
+// default; No also writes a change-later note. Asked after the template's
+// voltage, once \u2014 a unit that already answered is not asked again.
+const VACUUM_EXHAUST_CHOICES = [
+  { value: 'own', answer: 'Own valve', label: 'Its own valve', primary: true },
+  { value: 'check', answer: 'Check valve only', label: 'A check valve only' },
+  { value: 'shared', answer: 'Shared line, no valve', label: 'A shared line, no valve' },
+  { value: 'unknown', answer: 'Can\'t see', label: 'I can\u2019t see' }
+];
+function hasVacuumExhaustRow() { return sources.some(s => /^Vacuum Air Out/.test((s && s.energySource) || '')); }
+function addVacuumExhaustRow() {
+  if (hasVacuumExhaustRow()) return;
+  sources.push({ energySource: 'Vacuum Air Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '',
+                 duplicate: 'No', detail: '', auto: true, collapsed: true });
+  renderSources();
+  showToast('Added the exhaust valve (Vacuum Air Out) \u2014 photograph it');
+}
 function maybeAskVacuumExhaust() {
-  const hasOut = () => sources.some(s => /^Vacuum Air Out/.test((s && s.energySource) || ''));
-  if (getTemplate() !== 'Medical Vacuum Pump' || hasOut()) return Promise.resolve(null);
-  return askChoice({
-    id: 'vacuum-exhaust', defaultValue: 'no',
+  if (getTemplate() !== 'Medical Vacuum Pump') return Promise.resolve(null);
+  if (hasVacuumExhaustRow() && !unitAnswers.vacuumExhaust) { unitAnswers.vacuumExhaust = 'Own valve'; renderUnitQuestions(true); }
+  // A template change drops the app's exhaust row; "Own valve" brings it back
+  if (unitAnswers.vacuumExhaust === 'Own valve' && !hasVacuumExhaustRow()) addVacuumExhaustRow();
+  const exhaust = unitAnswers.vacuumExhaust ? Promise.resolve(null) : askChoice({
+    id: 'vacuum-exhaust', defaultValue: 'unknown',
     title: 'This pump&rsquo;s exhaust',
-    html: html`Does this pump&rsquo;s exhaust have its own valve? If it does, it gets a row of its own (Vacuum Air Out) &mdash; photograph it.`,
-    choices: [
-      { value: 'own', label: 'Yes, its own valve', primary: true },
-      { value: 'no', label: 'No, or I can\u2019t see one' }
-    ]
+    html: html`Where does this pump&rsquo;s exhaust go? With its own valve, it gets a row of its own (Vacuum Air Out) &mdash; photograph it.`,
+    choices: VACUUM_EXHAUST_CHOICES.map(c => ({ value: c.value, label: c.label, primary: c.primary }))
   }).then(v => {
-    if (v !== 'own' || getTemplate() !== 'Medical Vacuum Pump' || hasOut()) return v;
-    sources.push({ energySource: 'Vacuum Air Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '',
-                   duplicate: 'No', detail: '', auto: true, collapsed: true });
+    const c = VACUUM_EXHAUST_CHOICES.find(x => x.value === v);
+    if (!c || getTemplate() !== 'Medical Vacuum Pump') return v;
+    unitAnswers.vacuumExhaust = c.answer;
+    if (c.value === 'own') addVacuumExhaustRow();
+    renderUnitQuestions(true);
+    autoSaveCurrent();
+    return v;
+  });
+  return exhaust.then(v => {
+    if (getTemplate() !== 'Medical Vacuum Pump' || unitAnswers.reliefJoint) return v;
+    unitAnswers.reliefJoint = 'Yes';   // the default, as on the form
+    renderUnitQuestions(true);
+    autoSaveCurrent();
+    return askChoice({
+      id: 'vacuum-relief-joint', defaultValue: 'Yes',
+      title: 'Union or flange at the inlet',
+      html: html`Is there a union or flange between the inlet valve and the pump? loto-web&rsquo;s relief step loosens it (or opens the inlet filter cover).`,
+      choices: [{ value: 'Yes', label: 'Yes', primary: true }, { value: 'No', label: 'No' }]
+    }).then(r => {
+      if (r === 'No' && getTemplate() === 'Medical Vacuum Pump') {
+        unitAnswers.reliefJoint = 'No';
+        renderUnitQuestions(true);
+        autoSaveCurrent();
+      }
+      return v;
+    });
+  });
+}
+
+// ---- After a type's voltage: an ATS's two feeds, a chiller's capacitors -------
+// ATS: loto-web reads each breaker's side from its Location words, emergency
+// first (its ats_sources.py), so the two rows are labelled in that order, each
+// with the panel and breaker the tech gives (blank leaves the bare label).
+function askAtsFeeds(rows) {
+  const ask = (id, side) => askChoice({
+    id: id, defaultValue: '',
+    title: side + ' feed',
+    html: html`The panel and breaker of the ATS&rsquo;s <strong>${side.toLowerCase()}</strong> ${side === 'Emergency'
+      ? '(generator)' : '(utility)'} feed, as labelled. loto-web reads the side from this row&rsquo;s Location.`,
+    input: { type: 'text', placeholder: side === 'Emergency' ? 'e.g. EDP-1 bkr 3' : 'e.g. NDP-2 bkr 7' },
+    choices: [{ label: 'OK', needsInput: true, primary: true }, { value: '', label: 'Skip' }]
+  }).then(t => (t === 'cancel' ? '' : String(t || '').replace(/\s+/g, ' ').trim()));
+  const label = (side, t) => side + ' Feed' + (t ? ': ' + t : '');
+  if (rows[0]) rows[0].location = label('Emergency', '');
+  if (rows[1]) rows[1].location = label('Normal', '');
+  renderSources();
+  return ask('ats-emergency-feed', 'Emergency').then(e => {
+    if (rows[0] && sources.includes(rows[0])) rows[0].location = label('Emergency', e);
+    return ask('ats-normal-feed', 'Normal');
+  }).then(n => {
+    if (rows[1] && sources.includes(rows[1])) rows[1].location = label('Normal', n);
     renderSources();
     autoSaveCurrent();
-    showToast('Added the exhaust valve (Vacuum Air Out) \u2014 photograph it');
+  });
+}
+// Chiller: loto-web adds its own capacitor row unless the unit says it has no
+// capacitor bank, so the answer travels on the sheet; the app's row follows it.
+// No answer (the box closed) keeps the row, as before build 118.
+function askChillerCapacitors() {
+  return askChoice({
+    id: 'chiller-capacitors', defaultValue: 'Yes',
+    title: 'Capacitor bank?',
+    html: html`Does this chiller have a capacitor bank? loto-web prints its discharge steps only on a chiller that has one.`,
+    choices: [{ value: 'Yes', label: 'Yes', primary: true }, { value: 'No', label: 'No' }, { value: 'Can\'t tell', label: 'Can\u2019t tell' }]
+  }).then(v => {
+    if (DATA.yesNoCantTell.includes(v)) unitAnswers.capacitors = v;
+    const hasRow = sources.some(s => s && s.energySource === 'Stored Electrical Energy');
+    if (v !== 'No' && !hasRow) {
+      sources.push({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank',
+        verification: '', quantity: 1, duplicate: 'No', detail: '', collapsed: true, auto: true, noPhoto: true, _voltagePick: true });
+    }
+    renderSources();
+    renderUnitQuestions(true);
+    autoSaveCurrent();
     return v;
+  });
+}
+function afterTypeVoltage(equipType, added) {
+  if (equipType === 'ATS') return askAtsFeeds(added.filter(s => s && s.deviceType === 'Breaker'));
+  if (equipType === 'Chiller') return askChillerCapacitors();
+  return Promise.resolve(null);
+}
+// "Other voltage\u2026" (build 118): loto-web needs a voltage (the Section 1
+// magnitude and a drive's DC-bus voltage), so there is no blank choice.
+function otherVoltageChoices() {
+  return DATA.energySources.filter(s => /^Electrical \d+V$/.test(s)).map(s => s.replace('Electrical ', ''));
+}
+function chooseOtherVoltage() {
+  const ov = document.getElementById('voltageOverlay');
+  if (ov) ov.style.display = 'none';
+  return askChoice({
+    id: 'other-voltage', defaultValue: 'back',
+    title: 'Other voltage',
+    html: 'Pick the voltage on the data plate.',
+    choices: otherVoltageChoices().map(v => ({ value: v, label: v })).concat([{ value: 'back', label: 'Back' }])
+  }).then(v => {
+    if (v && v !== 'back' && v !== 'cancel') return applyVoltageChoice(v);
+    if (ov && document.body.contains(ov)) ov.style.display = 'flex';
   });
 }
 
@@ -2799,10 +3439,8 @@ const VOLTAGE_PROMPT_CONFIG = {
         energySource: energyName, deviceType: 'Disconnect', quantity: 1, location: 'On Equipment',
         duplicate: 'No', verification: 'Controls', detail: '', collapsed: true, auto: true
       });
-      sources.push({
-        energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank',
-        verification: '', quantity: 1, duplicate: 'No', detail: '', collapsed: true, auto: true, noPhoto: true
-      });
+      // The Stored Electrical Energy row follows the "Capacitor bank?" answer
+      // since build 118 (askChillerCapacitors); it was added to every chiller.
       showToast(`Added Electrical source${voltage ? ' (' + voltage + ')' : ''} for Chiller`);
     }
   }
@@ -2824,7 +3462,7 @@ function showVoltageDialog(equipType) {
       <div style="display:flex;flex-direction:column;gap:10px;">
         <button class="btn btn-primary" onclick="applyVoltageChoice('208V')" style="padding:12px;font-size:16px;">208V</button>
         <button class="btn btn-primary" onclick="applyVoltageChoice('480V')" style="padding:12px;font-size:16px;">480V</button>
-        <button class="btn" onclick="applyVoltageChoice('')" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Other (leave blank)</button>
+        <button class="btn" onclick="chooseOtherVoltage()" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Other voltage&hellip;</button>
         <button class="btn" onclick="closeVoltageDialog()" style="padding:10px;font-size:13px;background:transparent;color:var(--text-dim);">Cancel</button>
       </div>
     </div>
@@ -2837,7 +3475,7 @@ function showVoltageDialog(equipType) {
     for (const autoSrc of EQUIPMENT_AUTO_SOURCES[equipType]) {
       const alreadyExists = sources.some(s => s.energySource === autoSrc.energySource && s.auto === true);
       if (!alreadyExists) {
-        sources.push({ ...autoSrc, collapsed: true });
+        sources.push(noteDefaultDrain({ ...autoSrc, collapsed: true }));
       }
     }
   }
@@ -2868,6 +3506,10 @@ function applyVoltageChoice(voltage) {
     const before = sources.length;
     VOLTAGE_PROMPT_CONFIG[equipType].apply(voltage);
     for (let i = before; i < sources.length; i++) if (sources[i]) sources[i]._voltagePick = true;
+    renderSources();
+    autoSaveCurrent();
+    // An ATS's two feeds, a chiller's capacitor bank (build 118)
+    return afterTypeVoltage(equipType, sources.slice(before));
   }
   renderSources();
   autoSaveCurrent();
@@ -3733,7 +4375,7 @@ const SKETCH_DIAGRAMS = {
 
 // Energy source prefix mapping for auto-labels
 const ENERGY_LABEL_PREFIX = {
-  'Electrical': 'E', 'HPS': 'S', 'LPS': 'S', 'MPS': 'S', 'Steam': 'S',
+  'Electrical': 'E', 'Battery': 'E', 'HPS': 'S', 'LPS': 'S', 'MPS': 'S', 'Steam': 'S',
   'Condensate': 'W',
   'CHW': 'W', 'HHW': 'W', 'CW': 'W', 'Domestic': 'W', 'Water': 'W',
   'DHW': 'W', 'DW': 'W', 'Condenser': 'W', 'Geothermal': 'W', 'Feedwater': 'W',
@@ -4673,7 +5315,7 @@ function applyTemplate(val) {
       // Equipment-specific electrical voltage override: lets an equipment type reuse a
       // shared template (e.g. Standard Pump) but at a different default voltage.
       if (voltOverride && /^Electrical/.test(src.energySource)) src.energySource = voltOverride;
-      sources.push(src);
+      sources.push(noteDefaultDrain(src));
     }
 
     // Append any equipment-type-specific extras AFTER the template's sources.
@@ -4684,7 +5326,7 @@ function applyTemplate(val) {
     const extras = EQUIPMENT_EXTRA_SOURCES[equipType];
     if (extras) {
       for (const extra of extras) {
-        sources.push({ ...extra, collapsed: true, auto: true });
+        sources.push(noteDefaultDrain({ ...extra, collapsed: true, auto: true }));
       }
     }
 
@@ -5233,9 +5875,10 @@ const TEMPLATE_AUTO_SOURCES = {
   // Cooling Tower: fan (Kinetic) + its Electrical disconnect. The template
   // auto-applies and REPLACES the type's standard sources, so it has to carry
   // the disconnect itself (build 91 — it used to leave a Cooling Tower with no
-  // electrical isolation point and skip the 120/208/480 prompt).
+  // electrical isolation point and skip the 120/208/480 prompt). Its Kinetic
+  // row is "At Fan Assembly" since build 118, as on the type.
   'Cooling Tower': [
-    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Kinetic', deviceType: 'Rotating', location: 'At Fan Assembly', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   // Chiller intentionally has no template auto-sources — the Kinetic source
@@ -5532,7 +6175,7 @@ function populateDropdown(selectEl, options, placeholder) {
 function getSourceColorClass(sourceType) {
   if (!sourceType) return 'source-default';
   const s = sourceType.toLowerCase();
-  if (s.startsWith('electrical') || s.startsWith('stored')) return 'source-electrical';
+  if (s.startsWith('electrical') || s.startsWith('stored') || s.startsWith('battery')) return 'source-electrical';
   if (s.includes('lps') || s.includes('mps') || s.includes('hps') || s.includes('condensate')) return 'source-steam';
   if (s.includes('hhw') || s.includes('chw') || s.includes('dhw') || s.includes('dw ') ||
       s.includes('condenser water') || s.includes('feedwater') || s.includes('glycol')) return 'source-water';
@@ -5651,6 +6294,7 @@ function renderSources() {
   sources.forEach((src, i) => { container.appendChild(buildSourceCard(src, i)); });
 
   document.getElementById('sourceCountNum').textContent = sources.length;
+  renderUnitQuestions(false);   // which questions show follows the type, template and rows (build 118)
   autoSaveCurrent();
 }
 
@@ -5756,8 +6400,8 @@ function buildSourceCard(src, i) {
               <label>Energy Source</label>
               <select onchange="handleEnergySourceChange(${i},this.value)" id="src_energy_${i}">
                 <option value="">-- Select --</option>
-                ${DATA.energySources.map(s => html`<option value="${s}" ${src.energySource===s&&!src._customEnergy?'selected':''}>${s}</option>`)}
-                ${src.energySource && !src._customEnergy && !DATA.energySources.includes(src.energySource) ? html`<option value="${src.energySource}" selected>${src.energySource}</option>` : ''}
+                ${offeredEnergySources().map(s => html`<option value="${s}" ${src.energySource===s&&!src._customEnergy?'selected':''}>${s}</option>`)}
+                ${src.energySource && !src._customEnergy && !offeredEnergySources().includes(src.energySource) ? html`<option value="${src.energySource}" selected>${src.energySource}</option>` : ''}
                 <option value="** Custom Energy **" ${src._customEnergy?'selected':''}>Custom...</option>
               </select>
             </div>
@@ -5880,6 +6524,27 @@ function buildSourceCard(src, i) {
                 ${src.valveState && !DATA.valveStateOptions.some(o => o.value === src.valveState) ? html`<option value="${src.valveState}" selected>${src.valveState}</option>` : ''}
               </select>
             </div>` : html`<div id="valveStateGroup_${i}" style="display:none;"></div>`}
+            ${sourceTakesValveState(src) ? html`<div class="form-group" id="lockOpenGroup_${i}">
+              <label>Locked open</label>
+              <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;font-size:14px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500;">
+                <input type="checkbox" class="painted-check" id="src_lockopen_${i}" ${src.lockOpen ? 'checked' : ''} onchange="updateLockOpen(${i},this.checked)">
+                Opened and locked open during lockout (rare)
+              </label>
+            </div>` : html`<div id="lockOpenGroup_${i}" style="display:none;"></div>`}
+            ${sourceTakesDrainLocation(src) ? html`<div class="form-group" id="drainLocGroup_${i}">
+              <label>Drain for this isolation point</label>
+              <select id="src_drainwhere_${i}" onchange="updateDrainWhere(${i},this.value)">
+                <option value="">-- Not answered --</option>
+                ${DATA.drainLocations.map(w => html`<option value="${w}" ${(src.drainLocation || {}).where === w ? 'selected' : ''}>${DRAIN_CHOICE_LABEL[w] || w}</option>`)}
+              </select>
+              ${src.drainLocation && src.drainLocation.where ? html`<input type="text" id="src_draintext_${i}" value="${src.drainLocation.text || ''}"
+                placeholder="${src.drainLocation.where === 'None found' ? 'Where you looked (optional)' : 'Where exactly, e.g. low point of coil return'}"
+                oninput="updateDrainText(${i},this.value)" style="margin-top:6px;">` : ''}
+            </div>` : html`<div id="drainLocGroup_${i}" style="display:none;"></div>`}
+            ${src.deviceType === 'VFD' ? html`<div class="form-group" id="feederGroup_${i}">
+              <label>Feeder</label>
+              <button type="button" class="btn btn-sm" id="src_addfeeder_${i}" onclick="addFeederForDrive(${i})" style="padding:10px 12px;font-size:13px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">+ Add the breaker that feeds this drive</button>
+            </div>` : html`<div id="feederGroup_${i}" style="display:none;"></div>`}
             <div class="form-group">
               <label>Quantity</label>
               <select onchange="updateSource(${i},'quantity',parseInt(this.value))">
@@ -5963,6 +6628,9 @@ function refreshSourceDependents(index) {
   if (va && vb && live.querySelector('#src_ver_' + index) && fresh.querySelector('#src_ver_' + index)) swapInner('src_ver_' + index);
   else swapNode(va, vb);
   swapNode(live.querySelector('#valveStateGroup_' + index), fresh.querySelector('#valveStateGroup_' + index));
+  // build 118: they follow the source and device too
+  ['lockOpenGroup_', 'drainLocGroup_', 'feederGroup_'].forEach(p =>
+    swapNode(live.querySelector('#' + p + index), fresh.querySelector('#' + p + index)));
 }
 
 // Build 107: a Kinetic row on an air handler or exhaust fan names its fan.
@@ -5973,6 +6641,7 @@ function refreshSourceDependents(index) {
 function kineticDefaultLocation() {
   const type = getEquipType(), tmpl = getTemplate();
   if (type === 'Exhaust Fan' || tmpl === 'Exhaust Fan') return 'At Exhaust Fan';
+  if (type === 'Cooling Tower' || tmpl === 'Cooling Tower') return 'At Fan Assembly';   // build 118
   if (type === 'Air Handler' || /^AHU\b/.test(tmpl)) {
     const supplyNamed = sources.some(s => s.energySource === 'Kinetic' && s.location === 'At Supply Fan');
     return supplyNamed ? 'At Return Fan' : 'At Supply Fan';
@@ -5983,11 +6652,12 @@ function kineticDefaultLocation() {
 function updateSource(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
+  if (field === 'verification') delete sources[index]._drainDefault;   // the tech picked the code
   if (field === 'energySource' && value && SOURCE_DEFAULTS[value]) {
     const defaults = SOURCE_DEFAULTS[value];
     if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
     if (!sources[index].location) sources[index].location = value === 'Kinetic' ? kineticDefaultLocation() : defaults.location;
-    if (!sources[index].verification) sources[index].verification = defaults.verification;
+    if (!sources[index].verification) { sources[index].verification = defaults.verification; noteDefaultDrain(sources[index]); }
     applyNoPhotoDefault(index);
     const cleared = reconcileSourceMarks(index, true);
     renderSources();
@@ -6184,8 +6854,9 @@ function handleEnergySourceChange(index, value) {
       const pw = parseWaterVerification(v);
       const waterCheck = !!v && pw.recognized && !pw.blank;
       const water = isWaterFamilySource(value);
-      if ((waterCheck && !water && /^(Electrical|Stored)/i.test(value || '')) || (water && v === 'Controls')) {
+      if ((waterCheck && !water && /^(Electrical|Stored|Battery)/i.test(value || '')) || (water && v === 'Controls')) {
         sources[index].verification = '';
+        delete sources[index]._drainDefault;
       }
     }
     // Auto-fill defaults for special energy sources
@@ -6193,7 +6864,7 @@ function handleEnergySourceChange(index, value) {
       const defaults = SOURCE_DEFAULTS[value];
       if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
       if (!sources[index].location) sources[index].location = value === 'Kinetic' ? kineticDefaultLocation() : defaults.location;
-      if (!sources[index].verification) sources[index].verification = defaults.verification;
+      if (!sources[index].verification) { sources[index].verification = defaults.verification; noteDefaultDrain(sources[index]); }
       showToast(`Auto-filled defaults for ${value}`);
     }
     applyNoPhotoDefault(index);
@@ -9485,6 +10156,21 @@ const VACUUM_RECORD_LABEL = {
 };
 function collectSaveNotices() {
   const notices = [];
+  // The name still the type (build 118): loto-web binds a sheet block to its
+  // inventory unit by name, so "Air Handler" binds to nothing.
+  const nm = String((document.getElementById('equipName') || {}).value || '').trim().toLowerCase();
+  if (nm && (nm === String(getEquipType() || '').trim().toLowerCase() || nm === String(getTemplate() || '').trim().toLowerCase())) {
+    notices.push('The name is still the type. loto-web matches units by name: give it the unit’s tag (for example AHU-3).');
+  }
+  // An answer for loto-web and its row disagree (build 118) — the app keeps a
+  // row that carries a photo or something typed when the answer changes
+  {
+    const k = unitKinds(getEquipType(), getTemplate(), sources), a = unitAnswers;
+    const hasOut = hasVacuumExhaustRow(), hasCap = sources.some(s => s && s.energySource === 'Stored Electrical Energy');
+    if (k.vacPump && a.vacuumExhaust === 'Own valve' && !hasOut) notices.push('The exhaust has its own valve, but there’s no Vacuum Air Out row for it.');
+    if (k.vacPump && a.vacuumExhaust && a.vacuumExhaust !== 'Own valve' && hasOut) notices.push('The exhaust is “' + a.vacuumExhaust + '”, but the unit has a Vacuum Air Out row.');
+    if (k.chiller && a.capacitors === 'No' && hasCap) notices.push('Capacitor bank is No, but the unit has a Stored Electrical Energy row.');
+  }
   const other = VACUUM_RECORD_OTHER[getTemplate()];
   const room = placeKey((document.getElementById('equipRoom') || {}).value);
   if (other && room) {
@@ -9538,7 +10224,8 @@ function formHasData() {
     Object.keys(photos).some(k => photos[k] && photos[k].dbKey) ||
     miscPhotos.some(mp => mp && mp.dbKey) ||
     (typeof sketchStrokes !== 'undefined' && sketchStrokes && sketchStrokes.length) ||
-    (typeof sketchLabels !== 'undefined' && sketchLabels && sketchLabels.length));
+    (typeof sketchLabels !== 'undefined' && sketchLabels && sketchLabels.length) ||
+    Object.keys(unitAnswers).length > 0);
 }
 
 function saveAndNew() {
@@ -9598,6 +10285,7 @@ function performSaveAndNew() {
     tiedTo: document.getElementById('equipTiedTo').value,
     tiedToName: document.getElementById('equipTiedToName').value.trim(),
     notes: document.getElementById('equipNotes').value.trim(),
+    unitAnswers: savedUnitAnswers(),   // the answers for loto-web (build 118)
     sources: JSON.parse(JSON.stringify(sources)),
     photoCount: Object.keys(photos).filter(k => photos[k] && photos[k].timestamp).length,
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -9714,6 +10402,7 @@ function clearForm(confirm_first = true) {
   document.getElementById('tiedToNameGroup').style.display = 'none';
   document.getElementById('equipNotes').value = '';
   setSurveyDateField('');
+  loadUnitAnswers({});
   rememberTemplateBefore();   // a blank form: Cancel puts back no template
   paintEquipPhotoSlots();
   // Clear the sketch BEFORE anything autosaves (renderSources does): the old
@@ -9854,10 +10543,13 @@ function renderSavedPanel() {
     const photoSuspect = Object.values(entry.photos || {}).some(p => p && p.legacySuspect) ||
       (entry.miscPhotos || []).some(p => p && p.legacySuspect);
     const twinBadge = savedTwice ? raw(' <span style="background:#b5451b;color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="This unit is saved twice with the same entry id (an edit saved after an app reload, before build 89). Export ships only the most recent copy. Delete the copy you don\'t want \u2014 its photos stay on the device.">&#9888; SAVED TWICE</span>') : '';
+    // Marked for the office (build 118), so the tech can find it again
+    const officeNote = changeLaterSheetText(entry);
+    const officeBadge = officeNote ? html` <span class="office-mark-badge" style="background:#7a5a00;color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="${officeNote}">&#9998; FOR THE OFFICE</span>` : '';
     return html`
     <div class="saved-item" style="${isEditing ? 'border:2px solid var(--accent);background:rgba(74,144,217,0.08);' : ''}">
       <div class="saved-item-info">
-        <div class="saved-item-name">${entry.equipName}${isEditing ? raw(' <span style="background:var(--accent);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">EDITING</span>') : ''}${photoSuspect ? raw(' <span style="background:rgba(200,40,40,0.92);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="This entry\'s photo was shared with other equipment in the old photo store — verify it shows THIS unit (Settings → Photo Store Report).">&#9888; PHOTO SUSPECT</span>') : ''}${twinBadge}</div>
+        <div class="saved-item-name">${entry.equipName}${isEditing ? raw(' <span style="background:var(--accent);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">EDITING</span>') : ''}${photoSuspect ? raw(' <span style="background:rgba(200,40,40,0.92);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="This entry\'s photo was shared with other equipment in the old photo store — verify it shows THIS unit (Settings → Photo Store Report).">&#9888; PHOTO SUSPECT</span>') : ''}${twinBadge}${officeBadge}</div>
         <div class="saved-item-detail">
           ${entry.equipType || 'No type'} &#183; ${entry.template || 'No template'}
           &#183; ${entry.sources.length} source${entry.sources.length !== 1 ? 's' : ''}
@@ -10250,6 +10942,7 @@ function editSaved(index) {
   document.getElementById('equipNotes').value = entry.notes || '';
   // The unit's survey date (build 109; a pre-109 unit shows the day it was saved)
   setSurveyDateField(getEntryDate(entry) || '');
+  loadUnitAnswers(entry.unitAnswers);   // build 118
 
   // Restore template "" check if it's a custom value
   const templateSel = document.getElementById('equipTemplate');
@@ -10380,6 +11073,9 @@ async function executeDuplicate(index, withPhotos) {
   document.getElementById('equipNotes').value = entry.notes || '';
   // A duplicate is another unit, surveyed now: its date is the day it's saved (build 109)
   setSurveyDateField('');
+  // Its answers for loto-web come along (build 118), but not a change-later
+  // mark: that note is about the unit it was written on.
+  { const a = Object.assign({}, entry.unitAnswers || {}); delete a.changeLater; loadUnitAnswers(a); }
 
   // Restore template — check if it's a custom value
   const templateSel = document.getElementById('equipTemplate');
@@ -10889,6 +11585,7 @@ function snapshotFormEntry() {
     tiedTo:        document.getElementById('equipTiedTo').value,
     tiedToName:    document.getElementById('equipTiedToName').value.trim(),
     notes:         document.getElementById('equipNotes').value.trim(),
+    unitAnswers:   savedUnitAnswers(),
     savedAt:       (editingEntry && editingEntry.savedAt) || undefined,
     // the box, else an edited unit's own date, else (a new unit) today — what Save & New would give it
     surveyDate:    surveyDateFieldValue() || (editingEntry ? (getEntryDate(editingEntry) || undefined) : localDateStr(new Date())),
@@ -11314,6 +12011,7 @@ async function runCombinedExport(opts) {
       (entry.miscPhotos || []).some(p => p && p.legacySuspect);
     return {
       ...rest,
+      ...unitAnswersForJson(entry),   // the answers for loto-web, as the sheet carries them (build 118)
       hospitalCode: entryHospitalCode(entry),   // resolved (falls back to setting)
       photoSuspect: entrySuspect || entryUnsafe.length > 0,
       unsafeSlots: entryUnsafe.map(u => u.slot),
@@ -11364,11 +12062,20 @@ async function runCombinedExport(opts) {
       // 95: it moved to today's sheet, where loto-web could bind it to a
       // same-named unit surveyed today).
       const d = fixedDay || getEntryDate(entry) || (entry === newFormEntry ? localDateStr(new Date()) : null);
-      const name = d ? 'Information_Sheet_' + getDateStamp(exportDateFrom(d)) + '.xlsx' : 'Information_Sheet_undated.xlsx';
-      if (!byName.has(name)) { const g = { name: name, day: d || '', idx: [] }; byName.set(name, g); infoSheetGroups.push(g); }
+      // And one sheet per FACILITY (build 118, loto-web's item 23): a crew that
+      // surveys two facilities in a day on one iPad got both on one sheet, which
+      // goes into ONE hospital's SharePoint folder, and loto-web matched the
+      // other facility's units against the wrong inventory and dropped them.
+      // The facility follows the date in the name (loto-web reads the date from
+      // the first six digits); a unit with no facility at all keeps the old name.
+      const fac = entryHospitalCode(entry);
+      const facPart = sheetFacilityPart(fac);
+      const name = (d ? 'Information_Sheet_' + getDateStamp(exportDateFrom(d)) : 'Information_Sheet_undated')
+        + (facPart ? '_' + facPart : '') + '.xlsx';
+      if (!byName.has(name)) { const g = { name: name, day: d || '', facility: fac, idx: [] }; byName.set(name, g); infoSheetGroups.push(g); }
       byName.get(name).idx.push(ei);
     });
-    infoSheetGroups.sort((x, y) => (x.day || '9999').localeCompare(y.day || '9999'));
+    infoSheetGroups.sort((x, y) => (x.day || '9999').localeCompare(y.day || '9999') || String(x.facility).localeCompare(String(y.facility)));
   }
   if (typeof ExcelJS !== 'undefined') {
    for (const sheetGroup of infoSheetGroups) {
@@ -11379,7 +12086,9 @@ async function runCombinedExport(opts) {
       ws.columns = [
         { width: 28 }, { width: 22 }, { width: 16 }, { width: 26 }, { width: 18 },
         { width: 14 }, { width: 10 }, { width: 22 }, { width: 18 }, { width: 8 }, { width: 22 }, { width: 30 },
-        { width: 34 }   // 13: Linked To (build 94) — past the columns loto-web reads
+        { width: 34 },  // 13: Linked To (build 94)
+        { width: 34 },  // 14: Drain Location (build 118)
+        { width: 10 }   // 15: Lock Open (build 118)
       ];
 
       // Style definitions matching original info sheet
@@ -11395,7 +12104,7 @@ async function runCombinedExport(opts) {
       const VALVE_STATE_SHEET_TEXT = { normally_closed: 'Normally Closed', normally_open: 'Normally Open' };
       function applyRow(row, font, fill, borders) {
         row.eachCell({ includeEmpty: true }, (cell, colNum) => {
-          if (colNum <= 13) {
+          if (colNum <= 15) {
             cell.font = font;
             if (fill) cell.fill = fill;
             if (borders) cell.border = borders;
@@ -11404,12 +12113,14 @@ async function runCombinedExport(opts) {
         });
       }
 
-      // Facility banner row (only if a facility is known for this export) — a
-      // single sheet-level header; the CSV/JSON carry the authoritative per-entry
-      // code. Prefer the current setting, else the first stamped entry.
-      const sheetHospitalCode = effectiveFacilityCode || (allEntries.find(e => e.hospitalCode) || {}).hospitalCode || '';
+      // Facility banner row — a sheet-level header; the CSV/JSON carry the
+      // authoritative per-entry code. Since build 118 it is the sheet's own
+      // facility (one sheet per facility) and nothing else: a sheet of units with
+      // no facility gets no banner, never another sheet's facility. It also names
+      // the build that wrote the sheet; loto-web never reads the banner's text.
+      const sheetHospitalCode = sheetGroup.facility || '';
       if (sheetHospitalCode) {
-        const facRow = ws.addRow(['Facility', hospitalName(sheetHospitalCode) + ' [' + sheetHospitalCode + ']']);
+        const facRow = ws.addRow(['Facility', hospitalName(sheetHospitalCode) + ' [' + sheetHospitalCode + '] · VA LOTO Collector build ' + APP_BUILD]);
         applyRow(facRow, { bold: true, size: 10, name: 'Calibri' }, topHeaderFill, allBorders);
         ws.mergeCells(facRow.number, 2, facRow.number, 13); // span the name across the row
         ws.addRow([]); // spacer before the column titles
@@ -11459,7 +12170,9 @@ async function runCombinedExport(opts) {
           const srcLabelRow = ws.addRow([
             `Energy Source #${n}`, ` Source #${n} Device`, 'Device ID', 'Total Device Quantity',
             ` Source #${n} Location`, `Source #${n} Photo`, '', 'Dup Photo',
-            `Source #${n} Verification`, `Verification Photo #${n}`, 'Valve State', 'Valve Mark', 'Linked To'
+            `Source #${n} Verification`, `Verification Photo #${n}`, 'Valve State', 'Valve Mark', 'Linked To',
+            // build 118: loto-web reads each only under its own header
+            'Drain Location', 'Lock Open'
           ]);
           applyRow(srcLabelRow, labelFont, labelFill, allBorders);
 
@@ -11494,28 +12207,47 @@ async function runCombinedExport(opts) {
             // row's photo — "x,y" fractions, qty-N rows "x,y; x,y". loto-web
             // starts the box + arrow there. Blank without a photo.
             srcH ? valveMarksText(sourceMarksForExport(entry, s)) : '',
-            linkCell
+            linkCell,
+            // Drain location and lock-open (build 118)
+            src ? drainLocationSheetText(src) : '',
+            src ? lockOpenSheetText(src) : ''
           ]);
           applyRow(srcDataRow, dataFont, null, allBorders);
         }
 
+        // The answers for loto-web (build 118): each under its label, in the
+        // blank columns 10–13 of the two summary label rows (UNIT_SHEET_SLOTS).
+        const unitCells = unitSheetCells(entry);
+        const metaLabels = ['Tied to Equipment','','Other Hazards','','Stored Energy','','','Template','','','','',''];
+        const metaValues = [
+          entry.tiedTo ? `${entry.tiedTo}${entry.tiedToName ? ' — ' + entry.tiedToName : ''}` : '',
+          '', '', '', '', '', '', entry.template || '', '', '', '', '', ''
+        ];
+        const notesLabels = ['Notes:', '', '', '', '', '', '', '', '', '', '', '', ''];
+        const notesValues = [entry.notes || '', '', '', '', '', '', '', '', '', '', '', '', ''];
+        for (const slot of Object.keys(unitCells)) {
+          const [r, c] = UNIT_SHEET_SLOTS[slot];
+          (r === 24 ? metaLabels : notesLabels)[c - 1] = unitCells[slot][0];
+          (r === 24 ? metaValues : notesValues)[c - 1] = unitCells[slot][1];
+        }
+
         // Tied to / Other Hazards / Stored Energy / Template label row
-        const metaLabelRow = ws.addRow(['Tied to Equipment','','Other Hazards','','Stored Energy','','','Template','','']);
+        const metaLabelRow = ws.addRow(metaLabels);
         applyRow(metaLabelRow, labelFont, labelFill, allBorders);
 
         // Meta data row
-        const metaDataRow = ws.addRow([
-          entry.tiedTo ? `${entry.tiedTo}${entry.tiedToName ? ' — ' + entry.tiedToName : ''}` : '',
-          '', '', '', '', '', '', entry.template || '', '', ''
-        ]);
+        const metaDataRow = ws.addRow(metaValues);
         applyRow(metaDataRow, dataFont, null, allBorders);
 
-        // Notes label row
-        const notesLabelRow = ws.addRow(['Notes:', '', '', '', '', '', '', '', '', '']);
+        // Notes label row (an answer's label in it is styled as a label)
+        const notesLabelRow = ws.addRow(notesLabels);
         applyRow(notesLabelRow, boldData, null, allBorders);
+        for (let c = 10; c <= 13; c++) {
+          if (notesLabels[c - 1]) { const cell = notesLabelRow.getCell(c); cell.font = labelFont; cell.fill = labelFill; }
+        }
 
         // Notes data row (merged across B:I like original)
-        const notesDataRow = ws.addRow([entry.notes || '', '', '', '', '', '', '', '', '', '']);
+        const notesDataRow = ws.addRow(notesValues);
         applyRow(notesDataRow, dataFont, null, allBorders);
         const notesNum = notesDataRow.number;
         ws.mergeCells(notesNum, 2, notesNum, 9);
@@ -11541,6 +12273,7 @@ async function runCombinedExport(opts) {
   zip.file('manifest.json', JSON.stringify({
     schema: 'loto-field-export',
     version: 1,
+    appBuild: APP_BUILD,   // which build wrote this export (build 118)
     exportId: exportId,
     exported: new Date().toISOString(),
     deviceId: exportDeviceId,
@@ -11650,13 +12383,17 @@ async function runCombinedExport(opts) {
     // in memory) re-deflating them.
     const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
     zip = photosFolder = diagramsFolder = null;   // the photos' bytes are in the ZIP now — let them go (build 110)
-    // FieldExport_{code}_{MMDDYY}_{deviceShort}.zip — facility + date + a short
-    // per-device id so same-day exports from two iPads don't collide. Date
-    // filter / full ids live in manifest.json. Facility falls back to
-    // "NoFacility" when unset; the code is sanitised to filename-safe chars.
+    // FieldExport_{code}_{MMDDYY}_{deviceShort}_{exportShort}.zip — facility +
+    // date + a short per-device id so same-day exports from two iPads don't
+    // collide, and (build 118) the export's own id, so two same-day exports from
+    // ONE iPad don't either — saving the second could replace the first. The
+    // SharePoint backup already named its copy so. Date filter / full ids live in
+    // manifest.json. Facility falls back to "NoFacility" when unset; the code is
+    // sanitised to filename-safe chars.
     const codeSan = (effectiveFacilityCode || 'NoFacility').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'NoFacility';
     const deviceShort = (exportDeviceId || '').replace(/-/g, '').slice(0, 8) || 'device';
-    const exportFilename = 'FieldExport_' + codeSan + '_' + dateStamp + '_' + deviceShort + '.zip';
+    const exportShort = String(exportId || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8);
+    const exportFilename = 'FieldExport_' + codeSan + '_' + dateStamp + '_' + deviceShort + (exportShort ? '_' + exportShort : '') + '.zip';
     // Reserve these photo numbers BEFORE the ZIP leaves the device.
     if (seqCounter > startNum) reservePhotoSeq(datePrefix, seqCounter);
     // Export to SharePoint files the ZIP by the data: the facility every unit in
@@ -12159,6 +12896,7 @@ function buildWipState() {
     tiedToName: document.getElementById('equipTiedToName').value.trim(),
     notes: document.getElementById('equipNotes').value.trim(),
     surveyDate: surveyDateFieldValue(),
+    unitAnswers: unitAnswers,
     sources: sources,
     photos: photos,
     miscPhotos: miscPhotos,
@@ -12200,6 +12938,7 @@ function releaseWipHold(hold) {
 }
 function autoSaveCurrent() {
   try { updateDiscardButton(); } catch (e) {}   // the form's Discard / Cancel edit follows what it holds (build 109)
+  try { renderUnitQuestions(false); } catch (e) {}   // the "For loto-web" questions follow the type, template and rows (build 118)
   if (!_bootWipSettled || !tabMayWrite()) return;
   setAutosaveStatus('saving');
   if (_wipHold) {
@@ -12781,7 +13520,8 @@ function wipHasContent(st) {
     Object.keys(st.photos || {}).some(k => st.photos[k] && st.photos[k].dbKey) ||
     (st.miscPhotos || []).some(m => m && m.dbKey) ||
     (st.sketch && (((st.sketch.strokes || []).length) || ((st.sketch.labels || []).length))) ||
-    String(st.notes || '').trim() || String(st.lotoId || '').trim());
+    String(st.notes || '').trim() || String(st.lotoId || '').trim() ||
+    String((st.unitAnswers || {}).changeLater || '').trim());   // a typed note for the office (build 118)
 }
 // An autosaved form that would otherwise be lost becomes a saved entry,
 // flagged recoveredDraft, keyed by its own entry id (its photo keys are).
@@ -12801,6 +13541,7 @@ function keepWipAsRecoveredEntry(st) {
     lotoId: st.lotoId || '', hospitalCode: getHospitalCode(),
     equipRoom: st.equipRoom || '', equipBuilding: st.equipBuilding || '',
     template: st.template || '', tiedTo: st.tiedTo || '', tiedToName: st.tiedToName || '', notes: st.notes || '',
+    unitAnswers: (st.unitAnswers && typeof st.unitAnswers === 'object') ? JSON.parse(JSON.stringify(st.unitAnswers)) : {},
     surveyDate: isIsoDay(st.surveyDate) ? st.surveyDate : (localDateStr(st.at || now) || undefined),
     sources: JSON.parse(JSON.stringify(st.sources || [])),
     photoCount: Object.keys(photosMap).filter(k => photosMap[k] && photosMap[k].timestamp).length,
@@ -13177,6 +13918,7 @@ async function loadAll() {
     // Restore notes
     document.getElementById('equipNotes').value = state.notes || '';
     setSurveyDateField(state.surveyDate || (editingEntry ? getEntryDate(editingEntry) : '') || '');
+    loadUnitAnswers(state.unitAnswers);   // build 118
 
     // Restore template
     if (state.template) {
@@ -13742,7 +14484,8 @@ async function sendExportToSharePoint(zipBlob, name, meta) {
   try {
     say('Sending ' + name + ' (' + mb(zipBlob.size) + ' MB) to SharePoint — keep the app open…');
     const tag = '_' + String(meta.exportId || Date.now()).replace(/[^A-Za-z0-9]/g, '').slice(0, 8);   // never the name of an earlier export (build 102)
-    name = name.replace(/(\.zip)?$/i, tag + '.zip');
+    // The export's name carries the id itself since build 118: not twice
+    if (!name.toLowerCase().endsWith((tag + '.zip').toLowerCase())) name = name.replace(/(\.zip)?$/i, tag + '.zip');
     await backupUploadBig(zipBlob, folder, 'export/' + name, (done, total) =>
       say('Sending ' + name + ' to SharePoint: ' + Math.floor(done / total * 100) + '% (' + mb(done) + ' of ' + mb(total) + ' MB) — keep the app open…'));
     let sheetFails = 0;
