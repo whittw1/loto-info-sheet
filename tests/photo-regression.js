@@ -78,6 +78,8 @@
 //   T248–T251 build 119: the existing LOTO tag (Atlanta) — the prompt follows the unit's facility (one box per
 //             unit, scan, No tag), copies start not checked and Split moves the last unit's, the Save & New
 //             warning, the sheet's column 16 and entries.json existingTag
+//   T252–T255 build 120: damper actuators (Atlanta) — the setting per facility and the types that ask, the row's
+//             fields and copies, the Can't tell note and "No damper actuators", column 17 / U7 / entries.json
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8131,6 +8133,202 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ==========================================================================
+  // BUILD 120 — damper actuators: spring return (loto-web 2026-10-23 spec).
+  // Each test fails on build 119.
+  // ==========================================================================
+  async function withDamperSetting(fn) {
+    const prevCode = getHospitalCode();
+    let prev = null;
+    try { prev = localStorage.getItem('loto_damper_prefs'); localStorage.removeItem('loto_damper_prefs'); } catch (e) {}
+    try { return await fn(); } finally {
+      setHospitalCode(prevCode);
+      try { if (prev === null) localStorage.removeItem('loto_damper_prefs'); else localStorage.setItem('loto_damper_prefs', prev); } catch (e) {}
+    }
+  }
+  function formOfType(name, type, template) {
+    fillFormNoSources(name);
+    document.getElementById('equipType').value = type;
+    filterTemplateDropdown(type);
+    if (template) document.getElementById('equipTemplate').value = template;
+  }
+
+  // T252 — the setting per facility, and which types ask
+  async function t252_theDamperQuestionFollowsFacilityAndType() {
+    const N = 'T252 the damper actuator question is on by default for the three Atlanta facilities and off elsewhere (a Settings change per facility wins, in its own Settings box); it asks only on Air Handlers, Exhaust Fans and Boilers, and follows the unit\'s facility; where it asks, the Energy Source list offers "Damper Actuator", elsewhere not';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withDamperSetting(async () => {
+      got.defaults = ['Atlanta', 'Atlanta - Fort McPherson', 'Atlanta - Trinka Davis', 'Marion', 'Kansas City', ''].map(c => damperPromptOn(c));
+      want(got.defaults.join() === 'true,true,true,false,false,false', 'defaults');
+      setDamperPrefForFacility('Atlanta', false); setDamperPrefForFacility('Marion', true);
+      want(!damperPromptOn('Atlanta') && damperPromptOn('Marion') && existingTagPromptOn('Atlanta'), 'Settings override, separate from the tags');
+      try { localStorage.removeItem('loto_damper_prefs'); } catch (e) {}
+      want(!!document.getElementById('settingsDampers'), 'Settings box');
+      setHospitalCode('Atlanta');
+      const offers = (type) => { formOfType('D-252', type); return offeredEnergySources().includes('Damper Actuator'); };
+      got.types = {};
+      ['Air Handler', 'Exhaust Fan', 'Boiler', 'Chiller', 'Heating HW Pump', 'Unit Heater'].forEach(t => { got.types[t] = offers(t); });
+      want(got.types['Air Handler'] && got.types['Exhaust Fan'] && got.types['Boiler'] && !got.types['Chiller'] && !got.types['Heating HW Pump'] && !got.types['Unit Heater'], 'which types ask');
+      setHospitalCode('Marion');
+      got.marion = offers('Air Handler');
+      want(!got.marion, 'off at Marion');
+      // the unit's own facility: an Atlanta AHU opened while the setting is Marion
+      const A = Object.assign(mkEntry('D-252-A', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid() })] }), { hospitalCode: 'Atlanta', equipType: 'Air Handler', template: 'AHU - Steam' });
+      savedEquipment = [A]; saveAll();
+      await withDialogs({ confirm: true }, async () => { editSaved(0); });
+      got.own = offeredEnergySources().includes('Damper Actuator');
+      want(got.own, 'follows the unit\'s facility');
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T253 — the Damper Actuator row's fields, Save & New, links and copies
+  async function t253_theDamperActuatorRow() {
+    const N = 'T253 a Damper Actuator row offers the Electric / Pneumatic Actuator devices, the damper locations plus "Other…", and a required Spring return (Yes / No / Can\'t tell) with the nameplate hint; Save & New lists an unanswered Spring return (also on a linked row) and asks no Verification of it; a link never takes its target\'s answer; Duplicate source, a count copy and a Duplicate of the unit start unanswered';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withDamperSetting(async () => {
+      setHospitalCode('Atlanta');
+      formOfType('D-253', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('Damper Actuator'), { deviceType: 'Electric Actuator', location: 'Outside Air Damper', verification: '', collapsed: false })];
+      renderSources();
+      got.devices = getFilteredDevices('Damper Actuator').join();
+      want(got.devices === 'Electric Actuator,Pneumatic Actuator', 'devices');
+      const loc = document.getElementById('src_loc_0');
+      got.locations = loc ? [...loc.options].map(o => o.textContent.trim()).filter(t => t && !/Select/.test(t)) : [];
+      want(got.locations.join('|') === 'Outside Air Damper|Return Air Damper|Exhaust / Relief Damper|Mixed Air Damper|Isolation Damper|Backdraft Damper|Combustion Air Damper|Flue Damper|Other…', 'locations');
+      const sel = document.getElementById('src_spring_0');
+      got.spring = sel ? [...sel.options].map(o => o.textContent.trim()) : [];
+      want(got.spring.join('|') === "-- Not answered --|Yes|No|Can't tell", 'spring return choices');
+      const grp = document.getElementById('springGroup_0');
+      want(!!grp && /nameplate/i.test(grp.textContent) && /model number shows spring return/i.test(grp.textContent), 'nameplate hint');
+      const items = () => collectIncompleteFields().filter(m => /^Source #/.test(m));
+      got.unanswered = items();
+      want(got.unanswered.some(m => /^Source #1 \(Damper Actuator\) — .*Spring return/.test(m)) && !got.unanswered.some(m => /Verification/.test(m)), 'Save & New: Spring return, no Verification');
+      updateSpringReturn(0, 'yes');
+      want(sources[0].springReturn === 'yes' && !items().some(m => /Spring return/.test(m)), 'answered');
+      // copies
+      duplicateSource(0);
+      got.dup = sources.map(x => x.springReturn || null);
+      want(got.dup.join() === 'yes,', 'Duplicate source');
+      want(countCopyOf({ energySource: 'Damper Actuator', springReturn: 'yes' }).springReturn === undefined, 'count copy');
+      const U = Object.assign(mkEntry('D-253-U', { sources: [Object.assign(mkSrc('Damper Actuator'), { sourceId: genUuid(), springReturn: 'no' })] }), { hospitalCode: 'Atlanta', equipType: 'Air Handler' });
+      const T = Object.assign(mkEntry('D-253-T', { sources: [Object.assign(mkSrc('Damper Actuator'), { sourceId: genUuid(), springReturn: 'yes' })] }), { hospitalCode: 'Atlanta', equipType: 'Air Handler' });
+      savedEquipment = [U, T]; saveAll();
+      await withDialogs({ confirm: true }, async () => { await executeDuplicate(0, false); });
+      got.dupUnit = sources.map(x => x.springReturn === undefined);
+      want(got.dupUnit.join() === 'true', 'Duplicate unit');
+      // a linked damper row
+      formOfType('D-253-L', 'Air Handler', 'AHU - Steam');
+      sources = [mkSrc('')];
+      renderSources();
+      showLinkDialog(0); applyLink(1, 0); closeLinkDialog();
+      got.linked = { energy: sources[0].energySource, spring: sources[0].springReturn === undefined,
+                     item: collectIncompleteFields().some(m => /^Source #1 \(linked\) — .*Spring return/.test(m)) };
+      want(got.linked.energy === 'Damper Actuator' && got.linked.spring && got.linked.item, 'linked row');
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T254 — "Can't tell" writes the change-later note; "No damper actuators"
+  async function t254_cantTellNoteAndNoDampers() {
+    const N = 'T254 "Can\'t tell" adds "Damper actuator #N: spring return not determined" (N among the unit\'s damper rows) to the change-later note; a unit asked about dampers with no Damper Actuator row shows "No damper actuators on this unit" (not at Marion, not once a damper row exists), Save & New asks for one or the other, and the choice fills U7 "Damper Actuators" = "None" only while the unit has no damper row';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withDamperSetting(async () => {
+      setHospitalCode('Atlanta');
+      const el = (srcs, a) => ({ equipType: 'Air Handler', template: 'AHU - Steam', sources: srcs, unitAnswers: a || {} });
+      got.note = changeLaterAutoNotes(el([mkSrc('Electrical 480V'), Object.assign(mkSrc('Damper Actuator'), { springReturn: 'yes' }), Object.assign(mkSrc('Damper Actuator'), { springReturn: 'cant_tell' })]));
+      want(got.note.join() === 'Damper actuator #2: spring return not determined', 'the note');
+      want(/Damper actuator #2: spring return not determined/.test(changeLaterSheetText(el([Object.assign(mkSrc('Damper Actuator'), { springReturn: 'no' }), Object.assign(mkSrc('Damper Actuator'), { springReturn: 'cant_tell' })]))), 'in the sheet text');
+      // the None choice
+      formOfType('D-254', 'Exhaust Fan', 'Exhaust Fan');
+      sources = [mkSrc('Electrical 208V')];
+      renderSources(); loadUnitAnswers({});
+      got.shown = !!document.getElementById('uq_dampersNone');
+      got.itemBefore = collectIncompleteFields().some(m => /^Damper actuators/.test(m));
+      setUnitFlag('dampersNone', true);
+      got.itemAfter = collectIncompleteFields().some(m => /^Damper actuators/.test(m));
+      want(got.shown && got.itemBefore && !got.itemAfter && unitAnswers.dampersNone === true, 'None choice and Save & New');
+      got.u7 = unitSheetCells(formEntryLike()).U7;
+      want(JSON.stringify(got.u7) === '["Damper Actuators","None"]', 'U7');
+      sources.push(Object.assign(mkSrc('Damper Actuator'), { springReturn: 'no' }));
+      renderSources(); renderUnitQuestions(true);
+      got.withRow = { shown: !!document.getElementById('uq_dampersNone'), u7: unitSheetCells(formEntryLike()).U7 || null };
+      want(!got.withRow.shown && got.withRow.u7 === null, 'a damper row hides it');
+      setHospitalCode('Marion');
+      formOfType('D-254-M', 'Exhaust Fan', 'Exhaust Fan');
+      sources = [mkSrc('Electrical 208V')];
+      renderSources(); loadUnitAnswers({});
+      got.marion = { shown: !!document.getElementById('uq_dampersNone'), item: collectIncompleteFields().some(m => /^Damper actuators/.test(m)) };
+      want(!got.marion.shown && !got.marion.item, 'not at Marion');
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T255 — column 17, U7 and entries.json
+  async function t255_springReturnTravelsInColumn17AndU7() {
+    const N = 'T255 the export writes "Spring Return" in column 17 of every source label row of a unit with a Damper Actuator row (Yes / Can\'t tell on those rows, blank on others; col 1 "Damper Actuator", col 2 the device, col 5 the location), and nothing in column 17 elsewhere; an Exhaust Fan marked "No damper actuators" gets U7 (26,12) "Damper Actuators" / "None"; a Marion AHU gets neither; entries.json carries springReturn on damper rows and dampersNone on the unit; the change-later cell holds the Can\'t tell note';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withDamperSetting(async () => {
+      setHospitalCode('Marion');
+      const S = (es, extra) => Object.assign(mkSrc(es), { sourceId: genUuid() }, extra || {});
+      const A = Object.assign(mkEntry('D-255-AHU', { sources: [S('Electrical 480V'),
+        S('Damper Actuator', { deviceType: 'Electric Actuator', location: 'Outside Air Damper', verification: '', springReturn: 'yes' }),
+        S('Damper Actuator', { deviceType: 'Pneumatic Actuator', location: 'Return Air Damper', verification: '', springReturn: 'cant_tell' })] }),
+        { hospitalCode: 'Atlanta', equipType: 'Air Handler', template: 'AHU - Steam' });
+      const F = Object.assign(mkEntry('D-255-EF', { sources: [S('Electrical 208V')] }), { hospitalCode: 'Atlanta', equipType: 'Exhaust Fan', template: 'Exhaust Fan', unitAnswers: { dampersNone: true } });
+      const M = Object.assign(mkEntry('D-255-MAR', { sources: [S('Electrical 480V')] }), { hospitalCode: 'Marion', equipType: 'Air Handler', template: 'AHU - Steam' });
+      savedEquipment = [A, F, M]; saveAll();
+      const { zip, confirms } = await runExport({ confirmResponse: true });
+      if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); return; }
+      const u = await unzipExport(zip.blob);
+      const by = {};
+      for (const xpath of Object.keys(u.files).filter(p => /Information_Sheet_.*\.xlsx$/.test(p))) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        const ws = wb.worksheets[0];
+        let cur = null;
+        ws.eachRow(row => {
+          const a = String(row.getCell(1).value || '');
+          if (a === 'Equipment ID/Name') { cur = String(ws.getRow(row.number + 1).getCell(1).value || ''); by[cur] = { h17: [], v17: [], rows: [], width: ws.getColumn(17).width }; }
+          if (!cur) return;
+          if (/^Energy Source #\d+$/.test(a)) {
+            by[cur].h17.push(String(row.getCell(17).value || ''));
+            const d = ws.getRow(row.number + 1);
+            if (String(d.getCell(1).value || '')) {
+              by[cur].v17.push(String(d.getCell(17).value || ''));
+              by[cur].rows.push([1, 2, 5].map(c => String(d.getCell(c).value || '')).join('/'));
+            }
+          }
+          if (a === 'Notes:') { by[cur].u7 = [String(row.getCell(12).value || ''), String(ws.getRow(row.number + 1).getCell(12).value || '')]; }
+          if (a === 'Tied to Equipment') { by[cur].changeLater = String(ws.getRow(row.number + 1).getCell(11).value || ''); }
+        });
+      }
+      got.sheet = by;
+      const ahu = by['D-255-AHU'] || {}, ef = by['D-255-EF'] || {}, mar = by['D-255-MAR'] || {};
+      want((ahu.h17 || []).length === 10 && ahu.h17.every(h => h === 'Spring Return'), 'AHU column 17 header');
+      want(JSON.stringify(ahu.v17) === JSON.stringify(['', 'Yes', "Can't tell"]), 'AHU values');
+      want(JSON.stringify(ahu.rows) === JSON.stringify(['Electrical 480V/Breaker/P1', 'Damper Actuator/Electric Actuator/Outside Air Damper', 'Damper Actuator/Pneumatic Actuator/Return Air Damper']), 'damper rows');
+      want(/Damper actuator #2: spring return not determined/.test(ahu.changeLater || ''), 'change-later cell');
+      want(JSON.stringify(ahu.u7) === '["",""]', 'AHU no U7');
+      want((ef.h17 || []).every(h => h === '') && JSON.stringify(ef.u7) === '["Damper Actuators","None"]', 'Exhaust Fan U7');
+      want((mar.h17 || []).every(h => h === '') && JSON.stringify(mar.u7) === '["",""]', 'Marion AHU neither');
+      want(ahu.width === 14, 'column 17 width');
+      const je = {};
+      ((u.entriesJson && u.entriesJson.entries) || []).forEach(e => { je[e.equipName] = { spring: (e.sources || []).map(x => ('springReturn' in x) ? x.springReturn : 'NO KEY'), none: e.dampersNone }; });
+      got.json = je;
+      want(JSON.stringify(je['D-255-AHU']) === JSON.stringify({ spring: ['NO KEY', 'yes', 'cant_tell'] }), 'entries.json AHU');
+      want(JSON.stringify(je['D-255-EF']) === JSON.stringify({ spring: ['NO KEY'], none: true }) && JSON.stringify(je['D-255-MAR']) === JSON.stringify({ spring: ['NO KEY'] }), 'entries.json EF / Marion');
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -8238,7 +8436,9 @@
     t243_theVacuumPumpsExhaustAndJoint, t244_theListsLotoWebAskedFor, t245_drainLocationAndLockOpen,
     t246_aDrivesFeeder, t247_theAnswersTravelWithTheUnit,
     t248_theExistingTagPromptFollowsTheUnitsFacility, t249_copiesStartNotCheckedAndSplitMovesTheTag,
-    t250_saveAndNewWarnsAboutAnUnansweredTag, t251_theExistingTagTravelsInColumn16];
+    t250_saveAndNewWarnsAboutAnUnansweredTag, t251_theExistingTagTravelsInColumn16,
+    t252_theDamperQuestionFollowsFacilityAndType, t253_theDamperActuatorRow, t254_cantTellNoteAndNoDampers,
+    t255_springReturnTravelsInColumn17AndU7];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

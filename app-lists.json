@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 119,
+  "build": 120,
   "hospitals": [
     {
       "code": "Marion",
@@ -330,7 +330,8 @@
     "Kinetic",
     "Stored Electrical Energy",
     "Refrigerant",
-    "Hydraulic"
+    "Hydraulic",
+    "Damper Actuator"
   ],
   "devices": [
     "Disconnect",
@@ -354,7 +355,9 @@
     "Rotating",
     "Hydraulic",
     "Fuse",
-    "Quick Disconnect"
+    "Quick Disconnect",
+    "Electric Actuator",
+    "Pneumatic Actuator"
   ],
   "verifications": [
     "Temp Only - Hot",
@@ -470,6 +473,16 @@
     "yesNo": [
       "Yes",
       "No"
+    ],
+    "damperLocations": [
+      "Outside Air Damper",
+      "Return Air Damper",
+      "Exhaust / Relief Damper",
+      "Mixed Air Damper",
+      "Isolation Damper",
+      "Backdraft Damper",
+      "Combustion Air Damper",
+      "Flue Damper"
     ]
   }
 }

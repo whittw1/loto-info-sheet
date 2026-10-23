@@ -479,7 +479,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b119</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b120</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -810,6 +810,11 @@ if ('serviceWorker' in navigator) {
         Ask for each source's existing LOTO tag at this facility
       </label>
       <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">On by default for the three Atlanta facilities, off elsewhere. Sources that already hold an answer still show it.</div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="settingsDampers" style="width:18px;height:18px;">
+        Ask about damper actuators (spring return) at this facility
+      </label>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">Air Handlers, Exhaust Fans and Boilers. On by default for the three Atlanta facilities, off elsewhere.</div>
     </div>
     <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
     <div style="margin-bottom:16px;">
@@ -965,6 +970,8 @@ function onHospitalSelectChange() {
   if (sketchChk && sel.value !== '__custom__') sketchChk.checked = sketchEnabledForFacility(sel.value);
   const tagChk = document.getElementById('settingsExistingTags');
   if (tagChk && sel.value !== '__custom__') tagChk.checked = existingTagPromptOn(sel.value);
+  const damperChk = document.getElementById('settingsDampers');
+  if (damperChk && sel.value !== '__custom__') damperChk.checked = damperPromptOn(sel.value);
 }
 
 // Small header chip showing the active facility (or a warning when unset, so a
@@ -1015,6 +1022,8 @@ function showSettings() {
   if (sketchChk) sketchChk.checked = sketchEnabledForFacility(hc);
   const tagChk = document.getElementById('settingsExistingTags');
   if (tagChk) tagChk.checked = existingTagPromptOn(hc);
+  const damperChk = document.getElementById('settingsDampers');
+  if (damperChk) damperChk.checked = damperPromptOn(hc);
   document.getElementById('photoPreset').value = s.preset || PHOTO_DEFAULTS.preset;
   document.getElementById('photoMaxW').value = s.maxWidth;
   document.getElementById('photoMaxH').value = s.maxHeight;
@@ -1105,7 +1114,10 @@ function savePhotoSettings() {
   // its default keeps following it.
   const tagChk = document.getElementById('settingsExistingTags');
   if (tagChk && tagChk.checked !== existingTagPromptOn(hc)) setExistingTagPrefForFacility(hc, tagChk.checked);
+  const damperChk = document.getElementById('settingsDampers');
+  if (damperChk && damperChk.checked !== damperPromptOn(hc)) setDamperPrefForFacility(hc, damperChk.checked);
   renderSources();
+  renderUnitQuestions(true);
 
   document.getElementById('settingsOverlay').style.display = 'none';
   showToast('Settings saved');
@@ -1124,7 +1136,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 119;
+const APP_BUILD = 120;
 
 // ============================================================================
 // DATA
@@ -1164,7 +1176,9 @@ const DATA = {
     "Kinetic","Stored Electrical Energy",
     // No "Thermal" since build 118: loto-web adds the Thermal row itself, at the
     // temperature of the unit's hottest source (a field row printed a flat 300 F).
-    "Refrigerant","Hydraulic"
+    "Refrigerant","Hydraulic",
+    // Build 120: offered only where the damper question is on (offeredEnergySources)
+    "Damper Actuator"
   ],
   deviceTypes: [
     "Disconnect","VFD","Switch","Switch w/Padlock","Breaker","Breaker w/Padlock",
@@ -1237,7 +1251,12 @@ const DATA = {
   vacuumExhaust: ["Own valve","Check valve only","Shared line, no valve","Can't see"],
   drainLocations: ["On this valve","Between this valve and the equipment","On the equipment","None found"],
   yesNoCantTell: ["Yes","No","Can't tell"],
-  yesNo: ["Yes","No"]
+  yesNo: ["Yes","No"],
+  // Damper actuators (build 120, loto-web's 2026-10-23 spec): where each one is,
+  // and what powers it (P3). A typed location goes through "Other…".
+  damperLocations: ["Outside Air Damper","Return Air Damper","Exhaust / Relief Damper","Mixed Air Damper",
+                    "Isolation Damper","Backdraft Damper","Combustion Air Damper","Flue Damper"],
+  damperDevices: ["Electric Actuator","Pneumatic Actuator"]
 };
 
 // Auto-fill defaults when energy source is selected
@@ -1315,7 +1334,8 @@ function appListsSnapshot(build) {
     typeToTemplates: JSON.parse(JSON.stringify(EQUIPMENT_TEMPLATE_MAP)),
     templates: strip(DATA.templates, '** New Template **'),
     energySources: DATA.energySources.slice(),
-    devices: DATA.deviceTypes.slice(),
+    // build 120: the actuator devices too (offered on Damper Actuator rows only)
+    devices: DATA.deviceTypes.concat(DATA.damperDevices.filter(function (d) { return DATA.deviceTypes.indexOf(d) < 0; })),
     verifications: verifications,
     locations: strip(DATA.locations, '** Custom Location **'),
     // build 118: the answers' choices as the Information Sheet writes them
@@ -1328,7 +1348,8 @@ function appListsSnapshot(build) {
       vacuumExhaust: DATA.vacuumExhaust.slice(),
       drainLocations: DATA.drainLocations.slice(),
       yesNoCantTell: DATA.yesNoCantTell.slice(),
-      yesNo: DATA.yesNo.slice()
+      yesNo: DATA.yesNo.slice(),
+      damperLocations: DATA.damperLocations.slice()
     }
   };
 }
@@ -1754,6 +1775,7 @@ const FITTING_DEVICES_NO_BUTTERFLY = VALVE_DEVICES_NO_BUTTERFLY.concat(['Quick D
 const BATTERY_DEVICES = ['Bag','Disconnect','Breaker','Breaker w/Padlock','Switch','Switch w/Padlock','Fuse'];
 
 const ENERGY_DEVICE_MAP = {
+  'Damper Actuator': DATA.damperDevices,   // build 120
   'Electrical': ELECTRICAL_DEVICES,
   'LPS': VALVE_DEVICES_WITH_CKT,
   'MPS': VALVE_DEVICES_WITH_CKT,
@@ -3028,8 +3050,11 @@ function updateLockOpen(index, checked) {
 // The Energy Source list a row offers: no Refrigerant on the five templates
 // loto-web gives a refrigerant row of its own (a row that has one keeps it).
 function offeredEnergySources() {
-  return REFRIGERANT_TEMPLATES.includes(getTemplate())
+  let list = REFRIGERANT_TEMPLATES.includes(getTemplate())
     ? DATA.energySources.filter(s => s !== 'Refrigerant') : DATA.energySources;
+  // Damper Actuator only where the unit is asked about dampers (build 120)
+  if (!damperAskedOnForm()) list = list.filter(s => s !== 'Damper Actuator');
+  return list;
 }
 
 // ---- Drive feeder -------------------------------------------------------------
@@ -3089,6 +3114,14 @@ function changeLaterAutoNotes(entryLike) {
         + (s.deviceId ? ', ' + s.deviceId : '') + ')');
     }
   });
+  // Build 120: a damper actuator nobody could read ("Can't tell"; loto-web's
+  // pre-QC blocks it, D4), numbered among the unit's damper actuator rows.
+  let damperN = 0;
+  (entryLike.sources || []).forEach(s => {
+    if (!isDamperRow(s)) return;
+    damperN++;
+    if (s.springReturn === 'cant_tell') notes.push('Damper actuator #' + damperN + ': spring return not determined');
+  });
   return notes;
 }
 function changeLaterSheetText(entryLike) {
@@ -3110,6 +3143,8 @@ function unitSheetCells(entryLike) {
     cells.U5 = ['Refrigerant', refrigerantSheetValue(a)];
     cells.U6 = ['Refrigerant PSI', refrigerantPsiValue(a)];
   }
+  // Build 120: "No damper actuators on this unit" (P1), only while it has none
+  if (a.dampersNone && !(entryLike.sources || []).some(isDamperRow)) cells.U7 = ['Damper Actuators', 'None'];
   return cells;
 }
 // The same answers as entries.json keys (backup only: loto-web imports the sheet).
@@ -3124,6 +3159,7 @@ function unitAnswersForJson(entryLike) {
     .forEach(([label, key]) => { if (label in byLabel) out[key] = byLabel[label]; });
   if ('Backfeed' in byLabel) out.atsBackfeed = atsBackfeedList(entryLike.unitAnswers || {});
   if ('Refrigerant' in byLabel) out.refrigerant = { type: byLabel['Refrigerant'], psi: byLabel['Refrigerant PSI'] };
+  if ('Damper Actuators' in byLabel) out.dampersNone = true;   // build 120
   return out;
 }
 // A facility code as it goes into a file name — the ZIP name's rule:
@@ -3142,7 +3178,7 @@ function renderUnitQuestions(force) {
   const el = formEntryLike();
   const k = unitKinds(el.equipType, el.template, el.sources);
   const auto = changeLaterAutoNotes(el);
-  const key = JSON.stringify([k, defaultShopFor(el.template, el.sources), auto]);
+  const key = JSON.stringify([k, defaultShopFor(el.template, el.sources), auto, damperAskedOnForm(), (el.sources || []).some(isDamperRow)]);
   if (!force && key === _unitQKey) return;
   _unitQKey = key;
   const active = document.activeElement;
@@ -3201,6 +3237,14 @@ function buildUnitQuestionsHtml(k, template, auto) {
         value="${a.refrigerantPsi || ''}" placeholder="e.g. 550" oninput="setUnitText('refrigerantPsi',this.value)">`,
       'from the data plate; optional'));
   }
+  // Build 120 (P1): a unit asked about dampers that has no Damper Actuator row
+  // says so, so "none" and "not surveyed" don't look the same.
+  if (damperAskedOnForm() && !sources.some(isDamperRow)) {
+    parts.push(group('Damper actuators', html`<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;font-size:14px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500;">
+        <input type="checkbox" class="painted-check" id="uq_dampersNone" ${a.dampersNone ? 'checked' : ''}
+          onchange="setUnitFlag('dampersNone',this.checked)"> No damper actuators on this unit</label>`,
+      'otherwise add a Damper Actuator row for each one'));
+  }
   parts.push(html`<div class="form-group" style="grid-column:1 / -1;"><label>Mark for the office <span style="${dim}">&mdash; what
       should change, or what you couldn&rsquo;t find</span></label>
     <textarea id="uq_changeLater" rows="2" oninput="setUnitText('changeLater',this.value)"
@@ -3248,6 +3292,10 @@ function removeUntouchedAutoRow(test) {
 }
 function setUnitText(key, value) {
   if (String(value || '').trim()) unitAnswers[key] = value; else delete unitAnswers[key];
+  autoSaveCurrent();
+}
+function setUnitFlag(key, checked) {
+  if (checked) unitAnswers[key] = true; else delete unitAnswers[key];
   autoSaveCurrent();
 }
 function toggleUnitBackfeed(choice, checked) {
@@ -5649,6 +5697,7 @@ function countCopyOf(base) {
   delete c.userEdited;
   delete c.deviceId;
   delete c.existingTag;   // another device: not checked yet (build 119)
+  delete c.springReturn;  // …nor read from its nameplate (build 120)
   return c;
 }
 // A lower count removes only rows that hold nothing of the user's (build 113):
@@ -6472,16 +6521,17 @@ function buildSourceCard(src, i) {
             </div>`;
             })()}
             ${existingTagBlock(src, i)}
+            ${springReturnBlock(src, i)}
             <div class="form-group">
               <label>Location</label>
               <select onchange="handleLocationChange(${i},this.value)" id="src_loc_${i}">
                 <option value="">-- Select --</option>
-                ${DATA.locations.filter(s=>s!=='** Custom Location **').map(s => {
+                ${sourceLocationChoices(src).map(s => {
                   const sel = !src._customLoc && (src.location===s || (LOCATION_ID_PREFIXES.includes(s) && (locationIdInfo(src.location)||{}).prefix===s));
                   return html`<option value="${s}" ${sel?'selected':''}>${s}</option>`;
                 })}
-                ${src.location && !src._customLoc && !DATA.locations.includes(src.location) && !locationIdInfo(src.location) ? html`<option value="${src.location}" selected>${src.location}</option>` : ''}
-                <option value="** Custom Location **" ${src._customLoc?'selected':''}>Custom...</option>
+                ${src.location && !src._customLoc && !sourceLocationChoices(src).includes(src.location) && !locationIdInfo(src.location) ? html`<option value="${src.location}" selected>${src.location}</option>` : ''}
+                <option value="** Custom Location **" ${src._customLoc?'selected':''}>${isDamperRow(src) ? 'Other\u2026' : 'Custom...'}</option>
               </select>
             </div>
             ${(() => { const li = !src._customLoc ? locationIdInfo(src.location) : null; return li ? html`<div class="form-group">
@@ -6760,20 +6810,68 @@ function updateUnitDeviceId(index, unit, value) {
 // The question follows the UNIT's own facility: on by default for the three
 // Atlanta codes, off elsewhere, changeable per facility in Settings.
 const EXISTING_TAG_DEFAULT_ON = ['Atlanta', 'Atlanta - Fort McPherson', 'Atlanta - Trinka Davis'];
-function getExistingTagPrefs() {
-  try { return JSON.parse(localStorage.getItem('loto_existing_tag_prefs') || '{}') || {}; } catch (e) { return {}; }
+// A per-facility on/off question setting (build 119's existing tags, build
+// 120's damper actuators): a stored 'on' / 'off' wins, else the default list.
+function getFacilityPrefs(store) {
+  try { return JSON.parse(localStorage.getItem(store) || '{}') || {}; } catch (e) { return {}; }
 }
-function existingTagPromptOn(code) {
+function facilityPrefOn(store, defaultsOn, code) {
   const key = (code !== undefined ? code : getHospitalCode()) || '';
-  const pref = getExistingTagPrefs()[key];
+  const pref = getFacilityPrefs(store)[key];
   if (pref === 'on') return true;
   if (pref === 'off') return false;
-  return EXISTING_TAG_DEFAULT_ON.includes(key);
+  return defaultsOn.includes(key);
 }
-function setExistingTagPrefForFacility(code, on) {
-  const prefs = getExistingTagPrefs();
+function setFacilityPref(store, code, on) {
+  const prefs = getFacilityPrefs(store);
   prefs[code || ''] = on ? 'on' : 'off';
-  try { localStorage.setItem('loto_existing_tag_prefs', JSON.stringify(prefs)); } catch (e) {}
+  try { localStorage.setItem(store, JSON.stringify(prefs)); } catch (e) {}
+}
+function existingTagPromptOn(code) { return facilityPrefOn('loto_existing_tag_prefs', EXISTING_TAG_DEFAULT_ON, code); }
+function setExistingTagPrefForFacility(code, on) { setFacilityPref('loto_existing_tag_prefs', code, on); }
+
+// ---- Damper actuators: spring return (build 120, Atlanta) --------------------
+// loto-web's docs/Damper_Actuator_Spring_Return_Spec_2026-10-23.md (wilkins):
+// a spring-return actuator is stored mechanical energy (Batch 1 comment 072-13),
+// so on Air Handlers, Exhaust Fans and Boilers the tech records one Damper
+// Actuator row per actuator, with its nameplate photo and "Spring return" Yes /
+// No / Can't tell, or says the unit has none. The question follows the UNIT's
+// facility like the existing tags: on by default for the three Atlanta
+// facilities, off elsewhere (then the sheet is exactly build 119's).
+const DAMPER_DEFAULT_ON = EXISTING_TAG_DEFAULT_ON;
+const DAMPER_TYPES = ['Air Handler', 'Exhaust Fan', 'Boiler'];
+function damperPromptOn(code) { return facilityPrefOn('loto_damper_prefs', DAMPER_DEFAULT_ON, code); }
+function setDamperPrefForFacility(code, on) { setFacilityPref('loto_damper_prefs', code, on); }
+function isDamperRow(s) { return !!s && String(s.energySource || '') === 'Damper Actuator'; }
+function damperAskedFor(type, code) { return DAMPER_TYPES.includes(type) && damperPromptOn(code); }
+function damperAskedOnForm() { return damperAskedFor(getEquipType(), formFacilityCode()); }
+const SPRING_RETURN_SHEET = { yes: 'Yes', no: 'No', cant_tell: "Can't tell" };
+function springReturnSheetText(s) { return isDamperRow(s) ? (SPRING_RETURN_SHEET[s.springReturn] || '') : ''; }
+function updateSpringReturn(index, value) {
+  const src = sources[index];
+  if (!src) return;
+  markSourceEdited(index);
+  if (SPRING_RETURN_SHEET[value]) src.springReturn = value; else delete src.springReturn;
+  const sel = document.getElementById('src_spring_' + index);
+  if (sel) sel.style.borderColor = src.springReturn ? '' : '#d9a441';
+  autoSaveCurrent();
+}
+// The row's Spring return box (required) and its nameplate hint.
+function springReturnBlock(src, i) {
+  if (!isDamperRow(src)) return '';
+  const v = src.springReturn || '';
+  return html`<div class="form-group" id="springGroup_${i}">
+    <label>Spring return <span style="font-weight:400;color:var(--text-dim);">&mdash; required</span></label>
+    <select id="src_spring_${i}" onchange="updateSpringReturn(${i},this.value)" style="${v ? '' : 'border-color:#d9a441;'}">
+      <option value="">-- Not answered --</option>
+      ${Object.keys(SPRING_RETURN_SHEET).map(k => html`<option value="${k}" ${v === k ? 'selected' : ''}>${SPRING_RETURN_SHEET[k]}</option>`)}
+    </select>
+    <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Photograph the actuator&rsquo;s nameplate &mdash; the model number shows spring return.</div>
+  </div>`;
+}
+// The location list a row offers: a damper actuator's own (build 120).
+function sourceLocationChoices(src) {
+  return isDamperRow(src) ? DATA.damperLocations : DATA.locations.filter(s => s !== '** Custom Location **');
 }
 // The facility of the unit on the form: a saved unit's own stamp, else the setting.
 function formFacilityCode() {
@@ -7286,6 +7384,7 @@ function duplicateSource(index) {
   delete newSrc.priorSourceIds;
   newSrc.deviceId = '';          // its own device → its own tag (build 93)
   delete newSrc.existingTag;     // …and its own existing tag, not checked yet (build 119)
+  delete newSrc.springReturn;    // …and its own nameplate's spring return (build 120)
   const prev = sources.slice();
   sources.splice(index + 1, 0, newSrc);
   rebindSourcePhotos(prev);
@@ -10274,6 +10373,10 @@ function collectIncompleteFields() {
     missing.push(`Energy sources — no Electrical source (expected for ${equipType})`);
   }
 
+  // Build 120: a unit asked about dampers either has its actuator rows or says it has none.
+  if (damperAskedOnForm() && !sources.some(isDamperRow) && !unitAnswers.dampersNone) {
+    missing.push('Damper actuators \u2014 add a Damper Actuator row for each one, or tick "No damper actuators on this unit"');
+  }
   // Build 119: where the unit's facility asks for existing tags, each unit
   // with neither a tag nor "No tag" (wilkins: warn here, not only at pre-QC).
   const askTags = existingTagPromptOn(formFacilityCode());
@@ -10289,6 +10392,7 @@ function collectIncompleteFields() {
       const lg = [];
       if (!s.energySource) lg.push('Energy Source');
       if (tagGap(s)) lg.push(tagGap(s));
+      if (isDamperRow(s) && !s.springReturn) lg.push('Spring return');   // a link never takes it (build 120)
       if (lg.length) missing.push(`Source #${i + 1} (linked) \u2014 ${lg.join(', ')}`);
       return;
     }
@@ -10300,7 +10404,10 @@ function collectIncompleteFields() {
     if (!s.energySource) gaps.push('Energy Source');
     if (!s.deviceType && !ackOnly)   gaps.push('Device Type');
     if (!s.location)     gaps.push('Location');
-    if (!s.verification && !ackOnly) gaps.push('Verification');
+    // A damper actuator's verification is loto-web's own (D5); its spring
+    // return is what the row needs (build 120).
+    if (!s.verification && !ackOnly && !isDamperRow(s)) gaps.push('Verification');
+    if (isDamperRow(s) && !s.springReturn) gaps.push('Spring return');
     // build 102: its photo slot is shown but empty (a duplicate, a linked source
     // and a kind that needs no photo are never flagged — sourceExpectsPhoto)
     if (sourceExpectsPhoto(s) && !sourcePhotoTaken(i)) gaps.push('Photo');
@@ -11268,7 +11375,8 @@ async function executeDuplicate(index, withPhotos) {
   // (build 93): copied, the duplicate's procedure told the worker to lock out
   // the other unit's breaker. The tech enters this unit's own.
   // Build 119: the existing tags too — the copy starts "not checked" (loto-web Q6).
-  sources.forEach(s => { if (s) { delete s.sourceId; delete s.priorSourceIds; s.deviceId = ''; delete s.existingTag; ensureSourceId(s); } });
+  // Build 120: and the spring return, read from each copy's own nameplate.
+  sources.forEach(s => { if (s) { delete s.sourceId; delete s.priorSourceIds; s.deviceId = ''; delete s.existingTag; delete s.springReturn; ensureSourceId(s); } });
   const dupSources = sources.slice();   // the source OBJECTS the copies belong to
 
   // With photos, the copy counts as running from here (build 110): a source's
@@ -12175,6 +12283,8 @@ async function runCombinedExport(opts) {
       // Existing tags (build 119, backup only): one entry per unit where the
       // question applies — { tag } / { none: true } / null — else no key.
       if (tagsApply) out.existingTag = existingTagsForJson(src); else delete out.existingTag;
+      // Spring return (build 120, backup only): on a Damper Actuator row, else no key.
+      if (isDamperRow(src)) out.springReturn = SPRING_RETURN_SHEET[src.springReturn] ? src.springReturn : null; else delete out.springReturn;
       return out;
     });
     const miscOut = miscFileNames[ei]
@@ -12263,7 +12373,8 @@ async function runCombinedExport(opts) {
         { width: 34 },  // 13: Linked To (build 94)
         { width: 34 },  // 14: Drain Location (build 118)
         { width: 10 },  // 15: Lock Open (build 118)
-        { width: 22 }   // 16: Existing Tag (build 119)
+        { width: 22 },  // 16: Existing Tag (build 119)
+        { width: 14 }   // 17: Spring Return (build 120)
       ];
 
       // Style definitions matching original info sheet
@@ -12279,7 +12390,7 @@ async function runCombinedExport(opts) {
       const VALVE_STATE_SHEET_TEXT = { normally_closed: 'Normally Closed', normally_open: 'Normally Open' };
       function applyRow(row, font, fill, borders) {
         row.eachCell({ includeEmpty: true }, (cell, colNum) => {
-          if (colNum <= 16) {
+          if (colNum <= 17) {
             cell.font = font;
             if (fill) cell.fill = fill;
             if (borders) cell.border = borders;
@@ -12336,6 +12447,8 @@ async function runCombinedExport(opts) {
         // Existing tags (build 119): column 16's header only where the question
         // applies to this unit (existingTagAppliesToEntry).
         const tagsApply = existingTagAppliesToEntry(entry);
+        // Spring return (build 120): column 17's header only on a unit with a Damper Actuator row.
+        const dampersHere = (entry.sources || []).some(isDamperRow);
         // 10 energy source rows — FIXED: loto-web's office importer reads this
         // sheet as 27-row blocks, so a taller block would shift every unit after
         // it. Sources 11+ are in the CSV and entries.json (the export warns).
@@ -12351,7 +12464,8 @@ async function runCombinedExport(opts) {
             `Source #${n} Verification`, `Verification Photo #${n}`, 'Valve State', 'Valve Mark', 'Linked To',
             // build 118: loto-web reads each only under its own header
             'Drain Location', 'Lock Open',
-            tagsApply ? 'Existing Tag' : ''   // build 119
+            tagsApply ? 'Existing Tag' : '',   // build 119
+            dampersHere ? 'Spring Return' : ''   // build 120
           ]);
           applyRow(srcLabelRow, labelFont, labelFill, allBorders);
 
@@ -12391,7 +12505,9 @@ async function runCombinedExport(opts) {
             src ? drainLocationSheetText(src) : '',
             src ? lockOpenSheetText(src) : '',
             // Existing tag (build 119): one position per unit, "; "-joined
-            (src && tagsApply) ? existingTagCellText(src) : ''
+            (src && tagsApply) ? existingTagCellText(src) : '',
+            // Spring return (build 120): Yes / No / Can't tell on a Damper Actuator row
+            (src && dampersHere) ? springReturnSheetText(src) : ''
           ]);
           applyRow(srcDataRow, dataFont, null, allBorders);
         }
