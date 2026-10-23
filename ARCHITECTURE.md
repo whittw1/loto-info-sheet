@@ -1290,6 +1290,11 @@ the field now records each actuator, its nameplate photo and whether it is sprin
   - An Atlanta exhaust fan with U7 None.
   - A Marion AHU with no column-17 header and no U7.
   - Read back cell by cell as intended.
+  - **loto-web's end-to-end check passed (2026-10-23; its reader live 15:57Z, switch off; the check on a throwaway database
+    with the switch on).** AHU-1 imported Yes / Can't tell and the U2 note, and printed MS-1 / MS-2 with their Section 3
+    pin, check and stop and Section 4 pin removals. The steam AHU matrix's damper task isolates both. Pre-QC blocks the
+    Can't tell row. EF-2 imported `dampers_none` with no damper finding; Marion had no damper fields. loto-web's ZIP route
+    reads entries.json, which carries none of the build 118–120 fields by design: the sheets are the transport.
 
 | Test | What it holds |
 |---|---|
