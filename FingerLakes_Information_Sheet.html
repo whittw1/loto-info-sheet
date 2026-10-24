@@ -3232,7 +3232,8 @@ async function addFeederForDrive(index, unit) {
   if (!drive) return null;
   const tags = splitUnitIds(drive.deviceId).map(t => t.trim()).filter(Boolean);
   const unfed = unitDrives(sources).find(d => d.src === drive && !d.fed);
-  const nextTag = unit != null ? (driveUnitTags(drive)[unit] || '') : ((unfed && unfed.tag) || tags[0] || '');
+  // an untagged drive is offered no tag (never another drive's); with every drive fed, the row's first
+  const nextTag = unit != null ? (driveUnitTags(drive)[unit] || '') : (unfed ? unfed.tag : (tags[0] || ''));
   const filled = v => !!String(v || '').trim();
   const one = v => String(v || '').replace(/\s+/g, ' ').trim();
   const done = (row, tag, msg) => {
@@ -3246,7 +3247,7 @@ async function addFeederForDrive(index, unit) {
   // drive of the unit is offered first — its drive retagged since, or (an
   // untagged drive) recorded before the drive's Device ID was typed.
   const target = unit != null ? unitDrives(sources).find(d => d.src === drive && d.k === unit) : unfed;
-  const orphan = target && !target.fed && orphanFeederRows(sources)[0];
+  const orphan = target && !target.fed && orphanFeederRows(sources, target)[0];
   const named = orphan ? feederTagsOf(orphan.location) : [];
   const asTag = !nextTag && named.length === 1 ? named[0] : '';
   if (orphan && (nextTag || asTag)) {
@@ -3280,11 +3281,20 @@ async function addFeederForDrive(index, unit) {
     input: { type: 'text', placeholder: 'e.g. VFD-1', value: nextTag, valid: filled },
     choices: [{ label: 'Add the feeder', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] });
   if (!filled(tag) || tag === 'cancel' || !sources.includes(drive)) return null;
+  // The drive recorded had no tag: the one typed is its tag, in its blank box
+  // (never one another drive of the unit carries) — else neither the app nor
+  // loto-web can tell its feeder from another drive's (build 122 second review).
+  let tagNote = '';
+  if (target && !target.tag && !unitDrives(sources).some(d => d.tag && d.tag.toLowerCase() === one(tag).toLowerCase())) {
+    setDriveUnitTag(drive, target.k, one(tag));
+    markSourceEdited(sources.indexOf(drive));
+    tagNote = ' — and tagged the drive ' + one(tag);
+  }
   const body = one(panel) + (one(bkr) ? ' bkr ' + one(bkr) : '');
   const same = one(bkr) && sources.find(s => isFeederRow(s) && feederBreakerKey(s.location) === feederBreakerKey(body));
   if (same) {
     if (!feederNamesTag(same.location, tag)) same.location = feederLocationNaming(same.location, feederTagsOf(same.location).concat(one(tag)));
-    return done(same, tag, 'Source #' + (sources.indexOf(same) + 1) + ' (' + body + ') now feeds ' + one(tag) + ' too');
+    return done(same, tag, 'Source #' + (sources.indexOf(same) + 1) + ' (' + body + ') now feeds ' + one(tag) + ' too' + tagNote);
   }
   const at = sources.length;
   delete photos['source_' + at];   // never inherit a stale ref
@@ -3293,7 +3303,7 @@ async function addFeederForDrive(index, unit) {
     duplicate: 'No', verification: '', detail: '', collapsed: false });
   renderSources();
   autoSaveCurrent();
-  showToast('Added the feeder for ' + one(tag) + ' — photograph the panel and the breaker');
+  showToast('Added the feeder for ' + one(tag) + tagNote + ' — photograph the panel and the breaker');
   setTimeout(() => {
     const cards = document.querySelectorAll('.source-card');
     if (cards[at]) cards[at].scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -3335,9 +3345,9 @@ function isFeederRow(s) { return !!s && (s.role === 'feeder' || /^\s*Feeder/i.te
 // fix, 2026-10-24 19:34Z): the whole tag, any case, inside the Location's
 // closing "( … )" only — "VFD-1" is not in "(VFD-10)", a tag "26" is not
 // "bkr 26" — so "(VFD-1, VFD-2)" feeds both.
+function feederParenText(loc) { const m = /\(([^()]*)\)\s*$/.exec(String(loc || '')); return m ? m[1] : ''; }
 function feederNamesTag(loc, tag) {
-  const m = /\(([^()]*)\)\s*$/.exec(String(loc || ''));
-  const t = String(tag || '').trim().toLowerCase(), s = m ? m[1].toLowerCase() : '';
+  const t = String(tag || '').trim().toLowerCase(), s = feederParenText(loc).toLowerCase();
   if (!t || !s) return false;
   const edge = c => !c || !/[\w-]/.test(c);
   for (let at = s.indexOf(t); at >= 0; at = s.indexOf(t, at + 1)) {
@@ -3346,10 +3356,7 @@ function feederNamesTag(loc, tag) {
   return false;
 }
 // The drive tags in a feeder's closing "( … )", and its Location naming `tags` instead.
-function feederTagsOf(loc) {
-  const m = /\(([^()]*)\)\s*$/.exec(String(loc || ''));
-  return m ? m[1].split(/[,;]/).map(t => t.trim()).filter(Boolean) : [];
-}
+function feederTagsOf(loc) { return feederParenText(loc).split(/[,;]/).map(t => t.trim()).filter(Boolean); }
 function feederLocationNaming(loc, tags) {
   const list = (tags || []).map(t => String(t || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
   const base = String(loc || '').replace(/\s*\([^()]*\)\s*$/, '').trim();
@@ -3370,8 +3377,13 @@ function setDriveUnitTag(src, k, tag) {
   src.deviceId = joinUnitIds(next);
 }
 // Feeder rows that name drive tags, none of them a drive of the unit any more.
-function orphanFeederRows(srcList) {
-  const tags = unitDrives(srcList).map(d => d.tag).filter(Boolean);
+// None while another drive of the unit (not `except`, the one being recorded)
+// has no tag: such a feeder may be that drive's own, recorded before its
+// Device ID was typed (build 122 second review).
+function orphanFeederRows(srcList, except) {
+  const drives = unitDrives(srcList);
+  if (drives.some(d => !d.tag && !(except && d.src === except.src && d.k === except.k))) return [];
+  const tags = drives.map(d => d.tag).filter(Boolean);
   return (srcList || []).filter(s => isFeederRow(s) && feederTagsOf(s.location).length
     && !tags.some(t => feederNamesTag(s.location, t)));
 }
@@ -3421,8 +3433,10 @@ function driveAnswerPosition(src, tag, prefer) {
 }
 // The question. Resolves 'yes' / 'no' / 'cant_tell', or null (Cancel / closed).
 async function askDriveIsolates(src, prefer, tag) {
-  const tags = driveUnitTags(src), t = String(tag || '').trim();
-  const d = { tag: t, k: prefer || 0, n: tags.length, shared: !!t && tags.filter(x => x.toLowerCase() === t.toLowerCase()).length > 1 };
+  // the drive as unitDrives names it (a shared tag says its unit); a tag typed at the feeder that isn't its own, as typed
+  const k = prefer || 0, t = String(tag || '').trim();
+  const own = unitDrives(sources).find(x => x.src === src && x.k === k);
+  const d = (own && own.tag.toLowerCase() === t.toLowerCase()) ? own : { tag: t, k, n: valveMarkSlots(src) };
   const v = await askChoice({ id: 'drive-isolates', defaultValue: 'cancel', drive: d.tag,
     title: html`Does ${driveRef(d)}&rsquo;s own disconnect isolate all incoming power?`,
     html: html`Look for a lockable handle on the drive that switches the incoming line.`,
@@ -3568,6 +3582,50 @@ function sourceLocationForExport(src) {
   return loc;
 }
 function isAlternateSourceRow(s) { return !!alternateSourceKindOf(s); }
+// The role a row is read with — its own, or its Location's — shown on its card
+// with a way out (build 122 second review): a row the tech makes ordinary must
+// not keep exporting as a feeder or a transformer's breaker.
+function sourceRoleOf(s) {
+  if (isFeederRow(s)) return 'feeder';
+  if (isSecondaryMainRow(s)) return 'secondaryMain';
+  return isAlternateSourceRow(s) ? 'alternate' : '';
+}
+// The row becomes an ordinary isolation point: its role goes, and so does the
+// Location prefix that says it, so neither the app nor loto-web reads it as one.
+function clearSourceRole(src) {
+  if (!src) return;
+  const role = sourceRoleOf(src);
+  const loc = String(src.location || '');
+  if (role === 'feeder') src.location = loc.replace(/^\s*Feeder\b\s*:?\s*/i, '');
+  else if (role === 'secondaryMain') src.location = loc.replace(/^\s*Secondary\s+Main\b\s*:?\s*/i, '');
+  else if (role === 'alternate') src.location = loc.replace(/^\s*Alternate\s+Source\b\s*(\([^)]*\))?\s*:?\s*/i, '');
+  delete src.role; delete src.altKind;
+}
+function clearSourceRoleAt(index) {
+  const src = sources[index];
+  if (!src || !sourceRoleOf(src)) return;
+  markSourceEdited(index);
+  clearSourceRole(src);
+  renderSources();
+  renderUnitQuestions(true);
+  autoSaveCurrent();
+  showToast('Source #' + (index + 1) + ' is an ordinary isolation point now');
+}
+const SOURCE_ROLE_CARD = {
+  feeder: ['loto-web reads this row as the breaker that feeds a drive', 'Not a feeder'],
+  secondaryMain: ['loto-web reads this row as the transformer\u2019s secondary main', 'Not the secondary main'],
+  alternate: ['loto-web reads this row as an alternate source', 'Not an alternate source']
+};
+function sourceRoleBlock(src, i) {
+  const role = sourceRoleOf(src);
+  if (!role) return html`<div id="roleGroup_${i}" style="display:none;"></div>`;
+  const [what, out] = SOURCE_ROLE_CARD[role];
+  const kind = role === 'alternate' ? ' (' + alternateSourceKindOf(src) + ')' : '';
+  return html`<div class="form-group" id="roleGroup_${i}">
+    <div style="font-size:12px;color:var(--text-dim);line-height:1.4;">${what}${kind}.</div>
+    <button type="button" class="btn btn-sm" id="src_clearrole_${i}" onclick="clearSourceRoleAt(${i})" style="margin-top:6px;padding:8px 10px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">${out}</button>
+  </div>`;
+}
 // A row naming one of the unit's OWN breakers in its Location: never copied to a duplicate.
 function isUnitBreakerRow(s) { return isFeederRow(s) || isSecondaryMainRow(s) || isAlternateSourceRow(s); }
 // The kinds the unit's rows record, in the list's order (a kind typed by hand after them).
@@ -3624,11 +3682,13 @@ function setXfmrAltNone(checked) {
 // feeder's are (build 122 review): the row's Location reads "<panel> bkr <n>",
 // " bkr <n>" left out with No number (spec §1.4). Other… lists the other
 // voltages, and Back there returns to the voltage with the panel and breaker
-// kept. Resolves { text, voltage }, or null (Skip / closed).
+// kept. Resolves { text, voltage }, or null (Skip / closed). Closed once a
+// panel was typed, it says what wasn't added (build 122 second review).
 async function askXfmrFeed(opts) {
   const filled = v => !!String(v || '').trim();
   const one = v => String(v || '').replace(/\s+/g, ' ').trim();
   const kind = opts.kind || '';
+  const closed = (typed) => { showToast('Not added: ' + opts.title + ' (' + typed + ') — the question was closed', true); return null; };
   const panel = await askChoice({ id: opts.id, defaultValue: 'skip', kind, title: opts.title, html: opts.html,
     input: { type: 'text', placeholder: opts.placeholder, valid: filled },
     choices: [{ label: 'Next', needsInput: true, primary: true }, { value: 'skip', label: 'Skip' }] });
@@ -3637,7 +3697,8 @@ async function askXfmrFeed(opts) {
     html: html`Its breaker number in ${one(panel)}.`,
     input: { type: 'text', placeholder: 'e.g. 1', valid: filled },
     choices: [{ label: 'Next', needsInput: true, primary: true }, { value: '', label: 'No number' }, { value: 'skip', label: 'Skip' }] });
-  if (bkr === 'skip' || bkr === 'cancel') return null;
+  if (bkr === 'cancel') return closed(one(panel));
+  if (bkr === 'skip') return null;
   const text = one(panel) + (one(bkr) ? ' bkr ' + one(bkr) : '');
   const MAIN = ['208V', '240V', '480V'];
   for (let round = 0; round < 50; round++) {
@@ -3645,6 +3706,7 @@ async function askXfmrFeed(opts) {
       html: html`The voltage at ${text}.`,
       choices: MAIN.map(x => ({ value: x, label: x })).concat([{ value: 'other', label: 'Other…' }, { value: 'skip', label: 'Skip' }]) });
     if (MAIN.includes(v)) return { text, voltage: v };
+    if (v === 'cancel') return closed(text);
     if (v !== 'other') return null;
     const ov = await askChoice({ id: 'other-voltage', defaultValue: 'back', title: 'Other voltage', html: 'Pick the voltage on the data plate.',
       choices: otherVoltageChoices().map(x => ({ value: x, label: x })).concat([{ value: 'back', label: 'Back' }]) });
@@ -7320,6 +7382,7 @@ function buildSourceCard(src, i) {
               <button type="button" class="btn btn-sm" id="src_addfeeder_${i}" onclick="addFeederFromCard(${i})" style="padding:10px 12px;font-size:13px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">+ Add the breaker that feeds this drive</button>
             </div>` : html`<div id="feederGroup_${i}" style="display:none;"></div>`}
             ${driveIsolatesBlock(src, i)}
+            ${sourceRoleBlock(src, i)}
             <div class="form-group">
               <label>Quantity</label>
               <select onchange="updateSource(${i},'quantity',parseInt(this.value))">
@@ -7404,7 +7467,7 @@ function refreshSourceDependents(index) {
   else swapNode(va, vb);
   swapNode(live.querySelector('#valveStateGroup_' + index), fresh.querySelector('#valveStateGroup_' + index));
   // build 118: they follow the source and device too (build 122: the drive's answer)
-  ['lockOpenGroup_', 'drainLocGroup_', 'feederGroup_', 'driveIsoGroup_'].forEach(p =>
+  ['lockOpenGroup_', 'drainLocGroup_', 'feederGroup_', 'driveIsoGroup_', 'roleGroup_'].forEach(p =>
     swapNode(live.querySelector('#' + p + index), fresh.querySelector('#' + p + index)));
 }
 
@@ -7976,6 +8039,10 @@ function handleEnergySourceChange(index, value) {
   } else {
     sources[index]._customEnergy = false;
     sources[index].energySource = value;
+    // A row that is no longer Electrical is no feeder or transformer breaker
+    // (build 122 second review): its role and the prefix that says it go. (A
+    // custom energy source being typed keeps them; the card's button clears them.)
+    if (sourceRoleOf(sources[index]) && !/^Electrical\b/.test(String(value || ''))) clearSourceRole(sources[index]);
     // A check that belongs to the previous source's family is never valid on
     // the new one (build 93): a water check auto-filled for "HHW In" stayed on
     // the source after it became "Electrical 208V", and a temperature check
@@ -8217,6 +8284,9 @@ function applyCopySource(entryIndex, sourceIndex) {
   for (const k of carry) {
     if (src[k] !== undefined) dest[k] = src[k];
   }
+  // …and is that source, not the role this row had (build 122 second review): a
+  // copied Location that says a role still reads as one, as typed
+  delete dest.role; delete dest.altKind;
   // Duplicate follows THIS source's own photo (build 109): a copy never brings
   // the other source's photo. A reused photo here makes it an automatic Yes;
   // the other source's automatic Yes stays automatic, and renderSources then
@@ -12363,6 +12433,9 @@ async function executeDuplicate(index, withPhotos) {
   // are not copied either.
   sources = sources.filter(s => !isUnitBreakerRow(s));
   const droppedBreakerRows = dupSources.length - sources.length;
+  // the kinds left behind, for the message (build 122 second review)
+  const droppedKinds = [...new Set(dupSources.filter(isUnitBreakerRow).map(s =>
+    ({ feeder: 'feeder', secondaryMain: 'secondary main', alternate: 'alternate source' })[sourceRoleOf(s)]))];
 
   // With photos, the copy counts as running from here (build 110): a source's
   // automatic Duplicate = Yes waits for its copied photo before it is settled
@@ -12459,7 +12532,7 @@ async function executeDuplicate(index, withPhotos) {
     showToast(`⚠ Duplicated "${entry.equipName}" but ${dupFailed} of ${dupFailed + dupCopied} photo cop${dupFailed === 1 ? 'y' : 'ies'} FAILED — retake those slots`, true);
   } else {
     // Build 122 review: say so when the original's own breaker rows stayed behind
-    const own = droppedBreakerRows ? ` — record its own feeder / secondary main / alternate source breaker${droppedBreakerRows !== 1 ? 's' : ''}` : '';
+    const own = droppedBreakerRows ? ` — record its own ${droppedKinds.join(' / ')} breaker${droppedBreakerRows !== 1 ? 's' : ''}` : '';
     if (withPhotos) showToast(`Duplicated "${entry.equipName}" with ${photoCount} photo${photoCount !== 1 ? 's' : ''} (copies) — update name` + own);
     else showToast(`Duplicated "${entry.equipName}" (info only) — update name` + own);
   }

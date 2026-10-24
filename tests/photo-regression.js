@@ -90,6 +90,9 @@
 //   T269–T277 the build 122 review (2026-10-24): feeders matched as loto-web does, one breaker never two rows,
 //             a Duplicate's own breakers, "<panel> bkr <n>", the arc flash photo / No label, a shared tag's unit, D5,
 //             a row's role (T261 holds the Save & New list no longer repeating the drives)
+//   T278–T283 the second review: Copy Source / a non-Electrical change / the card's button clear a row's role, an
+//             untagged drive takes its feeder's tag, the card's suggestion, an untagged drive's feeder kept,
+//             a closed transformer question says so (T271 holds the Duplicate message naming only what stayed)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -9241,7 +9244,7 @@
 
   // T271 — a Duplicate records its own breakers
   async function t271_aDuplicateRecordsItsOwnBreakers() {
-    const N = 'T271 build 122 review: a Duplicate of a unit copies none of its Feeder, Secondary Main or Alternate Source rows (their Location names the original\'s own breakers — by role, or by Location alone for a row typed by hand) nor their photos; the copy then asks for its own (Save & New lists the transformer\'s secondary main and alternate sources; a drive is asked its feeder), and the message says so';
+    const N = 'T271 build 122 review: a Duplicate of a unit copies none of its Feeder, Secondary Main or Alternate Source rows (their Location names the original\'s own breakers — by role, or by Location alone for a row typed by hand) nor their photos; the copy then asks for its own (Save & New lists the transformer\'s secondary main and alternate sources; a drive is asked its feeder), and the message says so, naming only the kinds left behind (second review)';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -9265,16 +9268,18 @@
       got.photos = Object.keys(photos).filter(k => /^source_/.test(k) && photos[k] && photos[k].dbKey).join();
       got.toast = toasts.filter(t => /Duplicated/.test(t)).join(' / ');
       want(got.rows === 'MDP-1 bkr 12' && got.photos === 'source_0', 'rows and photos');
-      want(/record its own feeder \/ secondary main \/ alternate source breakers/.test(got.toast) && !/FAILED/.test(got.toast), 'the message');
+      want(/record its own secondary main \/ alternate source breakers$/.test(got.toast) && !/FAILED/.test(got.toast), 'the message names the kinds left behind');
       const miss = collectIncompleteFields();
       want(miss.includes('Transformer — secondary main') && miss.includes('Transformer — alternate sources (or None found)'), 'the copy asks for its own: ' + JSON.stringify(miss));
       // a drive's feeder stays behind too, and the copy's drive is asked
       const A = Object.assign(mkEntry('AHU-271', { sources: [Object.assign(DRIVE({ deviceId: 'VFD-1', driveIsolates: ['yes'] }), { sourceId: genUuid() }),
         Object.assign(FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), { sourceId: genUuid(), role: 'feeder' })] }), { equipType: 'Air Handler', template: 'AHU - Steam' });
       savedEquipment = [A]; saveAll();
+      toasts.length = 0;
       await withDialogs({ confirm: true }, async () => { await executeDuplicate(0, false); });
       got.drive = [sources.length, sources.some(isFeederRow), drivesToAskAtSave().length].join();
-      want(got.drive === '1,false,1', 'a drive asks its own feeder');
+      got.toast2 = toasts.filter(t => /Duplicated/.test(t)).join(' / ');
+      want(got.drive === '1,false,1' && /record its own feeder breaker$/.test(got.toast2), 'a drive asks its own feeder; the message says feeder only');
     } finally { window.showToast = prevToast; setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -9499,6 +9504,169 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ---- Build 122 second review (2026-10-24): one test per bug fixed -------------
+
+  // T278 — Copy Source onto a role row: the copy is that source, not the row's role
+  async function t278_copySourceOntoARoleRowDropsTheRole() {
+    const N = 'T278 build 122 second review: Copy Source of an ordinary source onto a row that was a Feeder (or a transformer\'s Secondary Main) leaves no role behind — the app no longer reads it as one and the export writes its own Location, not "Feeder: …"; a copied Location that says a role still reads as one, as typed';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      const S = (x) => Object.assign(mkSrc(x.energySource || 'Electrical 208V'), { sourceId: genUuid(), verification: 'Meter' }, x);
+      const O = Object.assign(mkEntry('P-278', { sources: [S({ deviceType: 'Disconnect', location: 'On Equipment' }), S({ location: 'Feeder: MCC-9 bkr 2 (VFD-9)' })] }), { equipType: 'CHW Pump', template: 'Chilled Water Pump' });
+      savedEquipment = [O]; saveAll();
+      formOfType('AHU-278', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), { role: 'feeder', collapsed: false }),
+        Object.assign(mkSrc('Electrical 208V'), { location: 'Secondary Main: MDP-2 bkr 1', role: 'secondaryMain', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      showCopySourceDialog(0); applyCopySource(0, 0);
+      showCopySourceDialog(1); applyCopySource(0, 0);
+      got.rows = sources.map(s => [s.location, s.role || '-', isFeederRow(s), isSecondaryMainRow(s), sourceLocationForExport(s)].join('|'));
+      want(got.rows[0] === 'On Equipment|-|false|false|On Equipment' && got.rows[1] === 'On Equipment|-|false|false|On Equipment', 'the role goes');
+      // a copied Location that says a role still reads as one
+      showCopySourceDialog(0); applyCopySource(0, 1);
+      got.typed = [sources[0].location, sources[0].role || '-', isFeederRow(sources[0])].join('|');
+      want(got.typed === 'Feeder: MCC-9 bkr 2 (VFD-9)|-|true', 'a copied feeder Location');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T279 — a row's role shows on its card and can be cleared
+  async function t279_aRowsRoleShowsAndCanBeCleared() {
+    const N = 'T279 build 122 second review: a Feeder / Secondary Main / Alternate Source row says on its card how loto-web reads it ("loto-web reads this row as the breaker that feeds a drive") with a "Not a feeder" (…) button that makes it ordinary — role and Location prefix gone, exported as typed; a row whose energy source stops being Electrical loses its role the same way; an ordinary row shows nothing';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('XF-279', 'Transformer', 'Standard Electrical');
+      sources = [Object.assign(mkSrc('Electrical 480V'), { location: 'MDP-1 bkr 12', verification: 'Meter', collapsed: false }),
+        Object.assign(FEEDER('MCC-2A bkr 14 (VFD-1)'), { role: 'feeder', collapsed: false }),
+        Object.assign(mkSrc('Electrical 208V'), { location: 'Secondary Main: MDP-2 bkr 1', role: 'secondaryMain', verification: 'Meter', collapsed: false }),
+        Object.assign(mkSrc('Electrical 208V'), { location: 'UPS-1 bkr 3', role: 'alternate', altKind: 'UPS output', verification: 'Meter', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      const card = (i) => { const g = document.getElementById('roleGroup_' + i); return g && g.style.display !== 'none' ? g.textContent.replace(/\s+/g, ' ').trim() : ''; };
+      got.cards = [0, 1, 2, 3].map(card);
+      want(got.cards[0] === '' && /reads this row as the breaker that feeds a drive\. Not a feeder$/.test(got.cards[1])
+        && /secondary main\. Not the secondary main$/.test(got.cards[2]) && /alternate source \(UPS output\)\. Not an alternate source$/.test(got.cards[3]), 'the cards: ' + JSON.stringify(got.cards));
+      document.getElementById('src_clearrole_1').click();
+      document.getElementById('src_clearrole_3').click();
+      got.cleared = [1, 3].map(i => [sources[i].location, sources[i].role || '-', sourceRoleOf(sources[i]) || '-', sourceLocationForExport(sources[i])].join('|'));
+      want(got.cleared[0] === 'MCC-2A bkr 14 (VFD-1)|-|-|MCC-2A bkr 14 (VFD-1)' && got.cleared[1] === 'UPS-1 bkr 3|-|-|UPS-1 bkr 3' && card(1) === '' && card(3) === '', 'cleared: ' + JSON.stringify(got.cleared));
+      // a row no longer Electrical
+      handleEnergySourceChange(2, 'Natural Gas');
+      got.gas = [sources[2].location, sources[2].role || '-', sourceRoleOf(sources[2]) || '-'].join('|');
+      want(got.gas === 'MDP-2 bkr 1|-|-', 'Natural Gas: ' + got.gas);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T280 — a drive recorded without a tag takes the one typed at its feeder
+  async function t280_anUntaggedDriveTakesItsFeedersTag() {
+    const N = 'T280 build 122 second review: recording the feeder of a drive whose Device ID box is blank writes the tag typed for it ("Feeder: the drive") into that box, so the drive is fed by the app\'s and loto-web\'s rule even beside a tagged drive; a tag another drive of the unit already carries is never written there; the message says so';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    const prevToast = window.showToast;
+    try {
+      setHospitalCode('');
+      const toasts = []; window.showToast = (m) => { toasts.push(String(m)); };
+      const form = (srcs) => { formOfType('AHU-280', 'Air Handler', 'AHU - Steam'); sources = srcs; sources.forEach(ensureSourceId); renderSources(); };
+      form([DRIVE({ deviceId: 'VFD-1' }), Object.assign(FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), { role: 'feeder' }), DRIVE({ deviceId: '' })]);
+      await withDialogs({ choice: (o) => ({ 'feeder-panel': 'MCC-2A', 'feeder-breaker': '15', 'feeder-drive': 'VFD-2', 'drive-isolates': 'yes' })[o.id] || 'cancel' },
+        async () => { await promptDriveFeeder(2); });
+      got.second = [sources[2].deviceId, unitDrives(sources).map(d => d.fed).join(), toasts.some(t => /and tagged the drive VFD-2/.test(t))].join('|');
+      want(got.second === 'VFD-2|true,true|true', 'the second drive: ' + got.second);
+      // a tag the other drive carries: not written into the blank box
+      form([DRIVE({ deviceId: 'VFD-1' }), Object.assign(FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), { role: 'feeder' }), DRIVE({ deviceId: '' })]);
+      await withDialogs({ choice: (o) => ({ 'feeder-panel': 'MCC-3', 'feeder-breaker': '1', 'feeder-drive': 'vfd-1' })[o.id] || 'cancel' },
+        async () => { await promptDriveFeeder(2); });
+      want(sources[2].deviceId === '', 'another drive\'s tag stays out: ' + JSON.stringify(sources[2].deviceId));
+    } finally { window.showToast = prevToast; setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T281 — the card's suggestion for an untagged drive is blank
+  async function t281_theCardOffersNoTagForAnUntaggedDrive() {
+    const N = 'T281 build 122 second review: on a row "VFD-1; " (unit 2 untagged) with VFD-1 fed, the card\'s "+ Add the breaker" offers no tag — never VFD-1, which has its feeder — and an orphan feeder is offered as this drive\'s ("Is this drive VFD-7?"), never as VFD-1\'s; with every drive fed it offers the row\'s first tag';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      const offer = async (srcs) => {
+        formOfType('AHU-281', 'Air Handler', 'AHU - Steam'); sources = srcs; sources.forEach(ensureSourceId); renderSources();
+        const asked = []; let offered = null;
+        await withDialogs({ choice: (o) => { asked.push(o.id + (o.id === 'feeder-orphan' ? ':' + unq(o.html) : '')); if (o.id === 'feeder-drive') { offered = o.input && o.input.value; return 'cancel'; } return ({ 'feeder-panel': 'MCC-2A', 'feeder-breaker': '20' })[o.id] || (o.id === 'feeder-orphan' ? 'new' : 'cancel'); } },
+          async () => { await addFeederFromCard(0); });
+        return { offered, asked };
+      };
+      const a = await offer([DRIVE({ deviceId: 'VFD-1; ', quantity: 2 }), FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), FEEDER('Feeder: MCC-2A bkr 15 (VFD-7)')]);
+      const b = await offer([DRIVE({ deviceId: 'VFD-1' }), FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)')]);
+      got.a = a; got.b = b;
+      const orphanQ = a.asked.find(x => /^feeder-orphan:/.test(x)) || '';
+      want(a.offered === '' && /Is this drive VFD-7\? Its Device ID is blank\.$/.test(orphanQ) && !/feeds VFD-1/.test(orphanQ), 'unit 2 untagged: no tag; the orphan offered as its own: ' + orphanQ);
+      want(b.offered === 'VFD-1', 'every drive fed: the first tag');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T282 — a feeder an untagged drive may own is never offered away
+  async function t282_anUntaggedDrivesFeederIsNotOfferedAway() {
+    const N = 'T282 build 122 second review: while another drive of the unit has no tag, a Feeder row naming no tagged drive may be that drive\'s own, so recording a tagged drive\'s feeder offers it no orphan question and the untagged drive keeps its feeder; with no untagged drive the orphan is offered as before';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-282', 'Air Handler', 'AHU - Steam');
+      // A untagged with its own feeder (recorded before its Device ID); C fed by name, so B (VFD-9) is unfed
+      sources = [DRIVE({ deviceId: '' }), FEEDER('Feeder: MCC-2A bkr 15 (VFD-5)'), DRIVE({ deviceId: 'VFD-9' }),
+        DRIVE({ deviceId: 'VFD-3' }), FEEDER('Feeder: MCC-2A bkr 16 (VFD-3)')];
+      sources.forEach(ensureSourceId); renderSources();
+      const dB = unitDrives(sources).find(d => d.tag === 'VFD-9');
+      got.bFed = dB.fed;
+      got.orphansBlank = orphanFeederRows(sources, dB).length;
+      const asked = [];
+      await withDialogs({ choice: (o) => { asked.push(o.id); return o.id === 'feeder-orphan' ? 'reuse' : 'cancel'; } },
+        async () => { await recordDrive(dB); });
+      got.asked = asked.join(' > ');
+      want(!got.bFed && got.orphansBlank === 0 && asked[0] === 'feeder-panel' && sources[1].location === 'Feeder: MCC-2A bkr 15 (VFD-5)', 'no question while a drive is untagged: ' + got.asked);
+      sources[0].deviceId = 'VFD-4'; renderSources();
+      got.orphansTagged = orphanFeederRows(sources, unitDrives(sources).find(d => d.tag === 'VFD-9')).map(s => s.location);
+      want(JSON.stringify(got.orphansTagged) === JSON.stringify(['Feeder: MCC-2A bkr 15 (VFD-5)']), 'every drive tagged: offered as before');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T283 — closing the transformer's question says what wasn't added
+  async function t283_closingATransformerQuestionSaysWhatWasntAdded() {
+    const N = 'T283 build 122 second review: closing the breaker or voltage step of a transformer\'s secondary main / alternate source (tapping outside) says "Not added: Secondary main (MDP-2 bkr 1) — the question was closed"; Skip, a choice the tech made, adds nothing quietly';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevToast = window.showToast;
+    try {
+      const toasts = []; window.showToast = (m) => { toasts.push(String(m)); };
+      const run = async (answers) => { let r; await withDialogs({ choice: (o) => (o.id in answers) ? answers[o.id] : 'cancel' }, async () => { r = await askXfmrFeed({ id: 'xfmr-secondary-main', title: 'Secondary main', html: '', placeholder: '' }); }); return r; };
+      const v = await run({ 'xfmr-secondary-main': 'MDP-2', 'xfmr-secondary-main-breaker': '1', 'xfmr-secondary-main-voltage': 'cancel' });
+      const b = await run({ 'xfmr-secondary-main': 'MDP-3', 'xfmr-secondary-main-breaker': 'cancel' });
+      const n0 = toasts.length;
+      const sk = await run({ 'xfmr-secondary-main': 'MDP-4', 'xfmr-secondary-main-breaker': '2', 'xfmr-secondary-main-voltage': 'skip' });
+      got.toasts = toasts;
+      want(v === null && b === null && sk === null, 'nothing added');
+      want(toasts[0] === 'Not added: Secondary main (MDP-2 bkr 1) — the question was closed' && toasts[1] === 'Not added: Secondary main (MDP-3) — the question was closed' && toasts.length === n0, 'the messages');
+    } finally { window.showToast = prevToast; }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -9617,7 +9785,9 @@
     t267_drainsToAndDriveIsolatesTravelInColumns20And21, t268_build122,
     t269_aDrivesFeederIsMatchedAsLotoWebMatchesIt, t270_oneBreakerIsNeverRecordedTwice, t271_aDuplicateRecordsItsOwnBreakers,
     t272_aTransformerRowReadsPanelBkrN, t273_anArcFlashPhotoIsNamedWhateverTheType, t274_noLabelHoldsOverAnUnsavedRef,
-    t275_aSharedTagSaysWhichUnit, t276_aKeptDrainAnswerNeverRewritesANewMediumsCode, t277_aRowsRoleOutlivesALocationEdit];
+    t275_aSharedTagSaysWhichUnit, t276_aKeptDrainAnswerNeverRewritesANewMediumsCode, t277_aRowsRoleOutlivesALocationEdit,
+    t278_copySourceOntoARoleRowDropsTheRole, t279_aRowsRoleShowsAndCanBeCleared, t280_anUntaggedDriveTakesItsFeedersTag,
+    t281_theCardOffersNoTagForAnUntaggedDrive, t282_anUntaggedDrivesFeederIsNotOfferedAway, t283_closingATransformerQuestionSaysWhatWasntAdded];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
