@@ -1595,6 +1595,11 @@ T284–T289 and the extended T277 fail on `a553396`'s page, each for the behavio
 headless web and native-mock; loto-web's `check_field_app_lists.py` 0 errors. The iOS bundle was synced after the
 fixes.
 
+**loto-web cleared these on 2026-10-24.** It asked to keep "VFD-1;" for a half-recorded Qty-2 drive row: its pre-QC
+note ("Device ID names 1 of 2 units") is a FIX, not a BLOCK. loto-web is changing that note's hint on drive rows to
+"record the other drive's own tag and feeder", since one tag for both drives would tie drive 2 to drive 1's feeder.
+The typed-tag cleaning also closed a loto-web gap: a tag with parentheses could never match its feeder.
+
 ### Build 121 — the label discharge wait
 
 The contract drafted at wilkins' request ("draft a label-discharge-wait field (drives, capacitor banks, UPS) for
