@@ -87,6 +87,9 @@
 //             pick, Save & New, copies), the arc flash label (slot, box, question, export), a transformer's
 //             secondary main / other sources / survey (prompts, section, U3/U4/U7/U8), the release question for
 //             every medium (setting, labels, no code rewrite, Drains To), columns 13 / 20 / 21, the build bump
+//   T269–T277 the build 122 review (2026-10-24): feeders matched as loto-web does, one breaker never two rows,
+//             a Duplicate's own breakers, "<panel> bkr <n>", the arc flash photo / No label, a shared tag's unit, D5,
+//             a row's role (T261 holds the Save & New list no longer repeating the drives)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8615,7 +8618,7 @@
 
   // T261 — Save & New asks about each drive; copies carry no answer
   async function t261_saveAndNewAsksAboutEachDrive() {
-    const N = 'T261 Save & New asks about each drive without its feeder ("Drive VFD-1 has no feeder recorded") or its answer ("… has no answer about its disconnect"): Record it now runs the feeder steps and the question, Not now goes on to the list, which names "Feeder for VFD-2" and "Drive disconnect answer (Unit 2)"; closing the question saves nothing; a unit whose drives are complete gets the list at once (Save & New runs straight through); Duplicate source, Copy Source, a count copy and a Duplicate of the unit carry no answer, Split moves the last unit\'s';
+    const N = 'T261 Save & New asks about each drive without its feeder ("Drive VFD-1 has no feeder recorded") or its answer ("… has no answer about its disconnect"): Record it now runs the feeder steps and the question, Not now goes on to the list, which does not name the drives again (build 122 review: they were just asked); closing the question saves nothing; a unit whose drives are complete gets the list at once (Save & New runs straight through); Duplicate source, Copy Source, a count copy and a Duplicate of the unit carry no answer, Split moves the last unit\'s';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -8638,7 +8641,7 @@
       got.warn = overlayText(); closeIncompleteWarning();
       want(got.asked === 'drive-save:Drive VFD-1 has no feeder recorded > feeder-panel > feeder-breaker > feeder-drive > drive-isolates > drive-save:Drive VFD-2 has no feeder recorded'
         && got.saveChoices === 'Record it now/Not now', 'the questions');
-      want(/Source #1 \(Electrical 480V\) — .*Feeder for VFD-2, Drive disconnect answer \(Unit 2\)/.test(got.warn) && !savedEquipment.length
+      want(!!got.warn && !/Feeder for|Drive disconnect answer/.test(got.warn) && !savedEquipment.length
         && JSON.stringify(sources[0].driveIsolates) === '["yes"]' && /^Feeder: MCC-2A bkr 14 \(VFD-1\)$/.test((sources[1] || {}).location || ''), 'the list names what is left');
       // closed: back to the form, nothing saved, no list
       form([DRIVE({ deviceId: 'VFD-7' })]);
@@ -8801,7 +8804,7 @@
 
   // T264 — a transformer's secondary main and other sources, after the voltage
   async function t264_aTransformerAsksItsSecondaryMainAndOtherSources() {
-    const N = 'T264 after a Transformer\'s template voltage the app asks for the secondary main (the panel or switch and breaker typed, then 208V / 240V / 480V / Other… / Skip) and the other sources that can energize the secondary (six tick boxes and an exclusive None found); each answer adds an Electrical breaker row, Meter-verified, not automatic, Located "Secondary Main: <text>" / "Alternate Source (<kind>): <text>"; Other… picks from the other voltages; None found records the date; a template change keeps the rows and asks neither again; the VFD type, which shares Electrical with Stored Energy, asks nothing';
+    const N = 'T264 after a Transformer\'s template voltage the app asks for the secondary main (the panel or switch, then its breaker or No number, then 208V / 240V / 480V / Other… / Skip — build 122 review: the Location reads "<panel> bkr <n>" as a feeder\'s does) and the other sources that can energize the secondary (six tick boxes and an exclusive None found); each answer adds an Electrical breaker row, Meter-verified, not automatic, Located "Secondary Main: <panel> bkr <n>" / "Alternate Source (<kind>): <panel> bkr <n>", with its role on the row; Other… picks from the other voltages; None found records the date; a template change keeps the rows and asks neither again; the VFD type, which shares Electrical with Stored Energy, asks nothing';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -8823,17 +8826,26 @@
       return asked;
     };
     got.asked = await pickXfmr('XF-264', 'Standard Electrical', (o) => {
-      if (o.id === 'xfmr-secondary-main') { got.mainQ = { title: unq(o.title), text: unq(o.html), buttons: o.choices.map(c => c.label).join('/'), withChoice: !!(o.input && o.input.withChoice) }; return { value: '208V', text: ' MDP-2  bkr 1 ' }; }
-      if (o.id === 'xfmr-other-sources') { got.otherQ = { title: unq(o.title), checks: (o.checks || []).map(c => c.label + (c.exclusive ? '*' : '')).join('/'), buttons: o.choices.map(c => c.label).join('/') }; return { value: 'ok', checked: ['Generator connection', 'UPS output'] }; }
-      if (o.id === 'xfmr-alternate') return o.kind === 'UPS output' ? { value: 'other', text: 'UPS-1 output bkr 3' } : { value: '480V', text: 'GEN-CONN-1' };
+      const buttons = o.choices.map(c => c.label).join('/');
+      if (o.id === 'xfmr-secondary-main') { got.mainQ = { title: unq(o.title), text: unq(o.html), buttons, input: !!o.input }; return ' MDP-2 '; }
+      if (o.id === 'xfmr-secondary-main-breaker') { got.bkrQ = buttons; return ' 1 '; }
+      if (o.id === 'xfmr-secondary-main-voltage') { got.voltQ = buttons; return '208V'; }
+      if (o.id === 'xfmr-other-sources') { got.otherQ = { title: unq(o.title), checks: (o.checks || []).map(c => c.label + (c.exclusive ? '*' : '')).join('/'), buttons }; return { value: 'ok', checked: ['Generator connection', 'UPS output'] }; }
+      if (o.id === 'xfmr-alternate') return o.kind === 'UPS output' ? 'UPS-1 output' : 'GEN-CONN-1';
+      if (o.id === 'xfmr-alternate-breaker') return o.kind === 'UPS output' ? '3' : '';
+      if (o.id === 'xfmr-alternate-voltage') return o.kind === 'UPS output' ? 'other' : '480V';
       if (o.id === 'other-voltage') return '120V';
       return 'cancel';
     });
     got.rows = rowsOf();
-    want(got.asked.join(' > ') === 'xfmr-secondary-main > xfmr-other-sources > xfmr-alternate(UPS output) > other-voltage > xfmr-alternate(Generator connection)', 'the questions, in order');
+    want(got.asked.join(' > ') === 'xfmr-secondary-main > xfmr-secondary-main-breaker > xfmr-secondary-main-voltage > xfmr-other-sources'
+      + ' > xfmr-alternate(UPS output) > xfmr-alternate-breaker(UPS output) > xfmr-alternate-voltage(UPS output) > other-voltage'
+      + ' > xfmr-alternate(Generator connection) > xfmr-alternate-breaker(Generator connection) > xfmr-alternate-voltage(Generator connection)', 'the questions, in order');
     want(got.rows.join(' / ') === 'Electrical 480V|||Meter|auto / Electrical 208V|Breaker|Secondary Main: MDP-2 bkr 1|Meter| / Electrical 120V|Breaker|Alternate Source (UPS output): UPS-1 output bkr 3|Meter| / Electrical 480V|Breaker|Alternate Source (Generator connection): GEN-CONN-1|Meter|', 'the rows');
-    want(!!got.mainQ && got.mainQ.title === 'Secondary main' && /panel or switch and breaker the secondary feeds, as labelled/.test(got.mainQ.text)
-      && got.mainQ.buttons === '208V/240V/480V/Other…/Skip' && got.mainQ.withChoice, 'the secondary main question');
+    got.roles = sources.map(s => (s.role || '') + (s.altKind ? '(' + s.altKind + ')' : '')).join('/');
+    want(got.roles === '/secondaryMain/alternate(UPS output)/alternate(Generator connection)', 'the rows carry their role');
+    want(!!got.mainQ && got.mainQ.title === 'Secondary main' && /panel or switch the secondary feeds, as labelled/.test(got.mainQ.text)
+      && got.mainQ.buttons === 'Next/Skip' && got.mainQ.input && got.bkrQ === 'Next/No number/Skip' && got.voltQ === '208V/240V/480V/Other…/Skip', 'the secondary main questions');
     want(!!got.otherQ && got.otherQ.title === 'Other sources that can energize the secondary'
       && got.otherQ.checks === 'ATS/UPS output/Generator connection/Tie breaker/Another transformer/PV or battery/None found*' && got.otherQ.buttons === 'OK/Skip', 'the other sources question');
     // a template change keeps the rows and asks neither again
@@ -8862,18 +8874,28 @@
     });
     closeAllPrompts();
     want(getTemplate() === 'Electrical with Stored Energy' && !asked4.some(id => /^xfmr-/.test(id)) && !unitKinds('VFD', 'Electrical with Stored Energy', []).xfmr && unitKinds('Transformer', 'Electrical with Stored Energy', []).xfmr, 'the VFD type asks nothing');
-    // the question boxes themselves: a typed panel with a voltage button; tick boxes with an exclusive None found
+    // the question boxes themselves: a typed panel (Next waits for it), its breaker, a voltage button; tick boxes with an exclusive None found
     formOfType('XF-264d', 'Transformer', 'Standard Electrical');
     sources = []; renderSources(); loadUnitAnswers({});
     const rp = window.__askChoiceAuto; window.__askChoiceAuto = undefined;
     try {
+      const typeAndNext = async (text) => {
+        await sleep(0);
+        const o = document.getElementById('choiceDialogOverlay');
+        const input = o && o.querySelector('input[type="text"]');
+        const next = o && [...o.querySelectorAll('button')].find(b => b.textContent === 'Next');
+        const off = !!(next && next.disabled);
+        if (input) { input.value = text; input.dispatchEvent(new Event('input', { bubbles: true })); }
+        const on = !!(next && !next.disabled);
+        if (next) next.click();
+        return off && on;
+      };
       const p1 = addSecondaryMain();
+      got.dlgOff = await typeAndNext('SWBD-2');
+      got.dlgOn = await typeAndNext('4');
+      await sleep(0);
       let ov = document.getElementById('choiceDialogOverlay');
-      const input = ov && ov.querySelector('input[type="text"]');
       const b240 = ov && [...ov.querySelectorAll('button')].find(b => b.textContent === '240V');
-      got.dlgOff = !!(b240 && b240.disabled);
-      if (input) { input.value = 'SWBD-2 bkr 4'; input.dispatchEvent(new Event('input', { bubbles: true })); }
-      got.dlgOn = !!(b240 && !b240.disabled);
       if (b240) b240.click();
       await Promise.race([p1, sleep(2000)]);
       const m = sources.find(isSecondaryMainRow) || {};
@@ -8919,7 +8941,8 @@
       want(got.itemsBefore.join(' | ') === 'Transformer — secondary main | Transformer — alternate sources (or None found) | Transformer — nameplate', 'the Save & New items');
       setXfmrAltNone(true);
       got.u3None = unitSheetCells(formEntryLike()).U3;
-      await withDialogs({ choice: (o) => o.id === 'xfmr-alternate-kind' ? 'Tie breaker' : (o.id === 'xfmr-alternate' ? { value: '480V', text: 'SWBD-1 tie' } : 'cancel') }, async () => { await addAlternateSource(); });
+      const altAnswers = { 'xfmr-alternate-kind': 'Tie breaker', 'xfmr-alternate': 'SWBD-1 tie', 'xfmr-alternate-breaker': '', 'xfmr-alternate-voltage': '480V' };
+      await withDialogs({ choice: (o) => (o.id in altAnswers) ? altAnswers[o.id] : 'cancel' }, async () => { await addAlternateSource(); });
       got.afterAlt = { none: unitAnswers.xfmrAltNone === undefined, box: !document.getElementById('uq_xfmrAltNone'), list: (document.getElementById('uq_xfmrAltKinds') || {}).textContent || '', u3: unitSheetCells(formEntryLike()).U3 };
       want(JSON.stringify(got.u3None) === JSON.stringify(['Alternate Sources', 'None found (' + localDateStr(new Date()) + ')']) && got.afterAlt.none && got.afterAlt.box
         && /Recorded: Tie breaker/.test(got.afterAlt.list) && JSON.stringify(got.afterAlt.u3) === '["Alternate Sources","Tie breaker"]'
@@ -9132,6 +9155,347 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ---- Build 122 review (2026-10-24): one test per bug fixed --------------------
+
+  // T269 — a drive's feeder is matched as loto-web matches it
+  async function t269_aDrivesFeederIsMatchedAsLotoWebMatchesIt() {
+    const N = 'T269 build 122 review: a drive is fed by a Feeder row naming its tag as a whole word in any case ("VFD-1" is not "VFD-10"), "(VFD-1, VFD-2)" feeds both, and Feeder rows that name no drive of the unit count for its drives (loto-web\'s feeders_for) — so "VFD1" under a "(VFD-1)" feeder is not asked again at Save & New and gets no second feeder row; the card\'s "+ Add the breaker" offers the next drive without a feeder by the same rule';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      const fed = (srcs) => unitDrives(srcs).map(d => (d.tag || '-') + ':' + (d.fed ? 'fed' : 'no')).join(' ');
+      got.mismatch = fed([DRIVE({ deviceId: 'VFD1' }), FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)')]);
+      got.lower = fed([DRIVE({ deviceId: 'vfd-1' }), FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)')]);
+      got.shared = fed([DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2 }), FEEDER('Feeder: MCC-2A bkr 14 (VFD-1, VFD-2)')]);
+      got.whole = fed([DRIVE({ deviceId: 'VFD-1' }), DRIVE({ deviceId: 'VFD-10' }), FEEDER('Feeder: MCC-2A bkr 10 (VFD-10)')]);
+      want(got.mismatch === 'VFD1:fed' && got.lower === 'vfd-1:fed' && got.shared === 'VFD-1:fed VFD-2:fed' && got.whole === 'VFD-1:no VFD-10:fed', 'the rule');
+      // Save & New: not asked again, no second feeder row
+      formOfType('AHU-269', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD1', driveIsolates: ['yes'] }), FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)')]; sources.forEach(ensureSourceId); renderSources();
+      const asked = [];
+      await withDialogs({ confirm: true, choice: (o) => { asked.push(o.id); return o.defaultValue || 'cancel'; } }, async () => { await saveAndNew(); });
+      closeIncompleteWarning();
+      got.asked = asked.join(' > ');
+      want(!asked.some(id => /^(drive-save|feeder-)/.test(id)) && sources.filter(isFeederRow).length === 1, 'Save & New does not ask again: ' + got.asked);
+      // the card's suggestion: the next drive without a feeder, by the same rule
+      formOfType('AHU-269b', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2 }), FEEDER('Feeder: MCC-2A bkr 14 (vfd-1)')]; sources.forEach(ensureSourceId); renderSources();
+      let offered = null;
+      await withDialogs({ choice: (o) => {
+        if (o.id === 'feeder-drive') { offered = o.input && o.input.value; return 'cancel'; }
+        return ({ 'feeder-panel': 'MCC-2A', 'feeder-breaker': '15' })[o.id] || 'cancel';
+      } }, async () => { await addFeederFromCard(0); });
+      got.offered = offered;
+      want(offered === 'VFD-2', 'the card offers the drive without a feeder');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T270 — one breaker is never recorded twice
+  async function t270_oneBreakerIsNeverRecordedTwice() {
+    const N = 'T270 build 122 review: a feeder on a breaker already recorded as one (same panel and breaker, any case or spacing) joins that row — "Feeder: MCC-2A bkr 14 (VFD-1, VFD-2)" — instead of a second row; a Feeder row left naming no drive of the unit (its drive retagged) is offered first and Yes renames it, No records a new row (with its role); for an untagged drive, Yes takes the feeder\'s tag as its Device ID';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      const form = (srcs) => { formOfType('AHU-270', 'Air Handler', 'AHU - Steam'); sources = srcs; sources.forEach(ensureSourceId); renderSources(); };
+      // the same breaker
+      form([DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2 }), FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)')]);
+      await withDialogs({ choice: (o) => ({ 'feeder-panel': ' mcc-2a ', 'feeder-breaker': '14', 'feeder-drive': 'VFD-2' })[o.id] || 'cancel' },
+        async () => { await recordDrive(unitDrives(sources).find(d => d.k === 1)); });
+      got.same = sources.map(s => s.location).join(' | ');
+      want(sources.length === 2 && sources[1].location === 'Feeder: MCC-2A bkr 14 (VFD-1, VFD-2)' && unitDrives(sources).every(d => d.fed), 'the same breaker joins its row');
+      // a retagged drive: its old feeder first
+      const retagged = () => [DRIVE({ deviceId: 'VFD-1' }), DRIVE({ deviceId: 'AHU-1-VFD' }), FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), FEEDER('Feeder: MCC-2A bkr 15 (VFD-2)')];
+      form(retagged());
+      const asked = [];
+      await withDialogs({ choice: (o) => { asked.push(o.id + ':' + unq(o.html)); return o.id === 'feeder-orphan' ? 'reuse' : 'cancel'; } },
+        async () => { await recordDrive(unitDrives(sources).find(d => d.tag === 'AHU-1-VFD')); });
+      got.retag = sources.map(s => s.location).join(' | ');
+      want(sources.length === 4 && sources[3].location === 'Feeder: MCC-2A bkr 15 (AHU-1-VFD)' && /^feeder-orphan:.*names no drive on this unit now/.test(asked[0] || '')
+        && unitDrives(sources).every(d => d.fed), 'a retagged drive takes its old feeder: ' + JSON.stringify(asked));
+      form(retagged());
+      await withDialogs({ choice: (o) => ({ 'feeder-orphan': 'new', 'feeder-panel': 'MCC-3', 'feeder-breaker': '2', 'feeder-drive': 'AHU-1-VFD' })[o.id] || 'cancel' },
+        async () => { await recordDrive(unitDrives(sources).find(d => d.tag === 'AHU-1-VFD')); });
+      want(sources.length === 5 && sources[4].location === 'Feeder: MCC-3 bkr 2 (AHU-1-VFD)' && sources[4].role === 'feeder', 'No: a new row, with its role');
+      // an untagged drive next to tagged ones: the feeder's tag is offered as its Device ID
+      form([DRIVE({ deviceId: 'VFD-1' }), DRIVE({ deviceId: '' }), FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), FEEDER('Feeder: MCC-2A bkr 15 (VFD-2)')]);
+      const dU = unitDrives(sources).find(d => !d.tag);
+      got.untaggedFed = !!(dU && dU.fed);
+      const asked2 = [];
+      await withDialogs({ choice: (o) => { asked2.push(unq(o.html)); return o.id === 'feeder-orphan' ? 'reuse' : 'cancel'; } }, async () => { await recordDrive(dU); });
+      got.untagged = sources.map(s => s.deviceId || '-').join(' | ');
+      want(!got.untaggedFed && sources[1].deviceId === 'VFD-2' && sources.length === 4 && /is the feeder for VFD-2\. Is this drive VFD-2\?/.test(asked2[0] || '')
+        && unitDrives(sources).every(d => d.fed), 'an untagged drive: ' + JSON.stringify(asked2));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T271 — a Duplicate records its own breakers
+  async function t271_aDuplicateRecordsItsOwnBreakers() {
+    const N = 'T271 build 122 review: a Duplicate of a unit copies none of its Feeder, Secondary Main or Alternate Source rows (their Location names the original\'s own breakers — by role, or by Location alone for a row typed by hand) nor their photos; the copy then asks for its own (Save & New lists the transformer\'s secondary main and alternate sources; a drive is asked its feeder), and the message says so';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    const prevToast = window.showToast;
+    try {
+      setHospitalCode('');
+      formOfType('XF-271', 'Transformer', 'Standard Electrical');
+      sources = [Object.assign(mkSrc('Electrical 480V'), { location: 'MDP-1 bkr 12', verification: 'Meter', collapsed: false }),
+        Object.assign(mkSrc('Electrical 208V'), { location: 'Secondary Main: MDP-2 bkr 1', role: 'secondaryMain', verification: 'Meter' }),
+        Object.assign(mkSrc('Electrical 208V'), { location: 'Alternate Source (UPS output): UPS-1 bkr 3', role: 'alternate', altKind: 'UPS output', verification: 'Meter' }),
+        Object.assign(mkSrc('Electrical 208V'), { location: 'Alternate Source (ATS): ATS-1', verification: 'Meter' })];
+      sources.forEach(ensureSourceId); renderSources();
+      await captureInto('source_0', await makePhotoFile('t271p'));
+      await captureInto('source_1', await makePhotoFile('t271s'));
+      const X = saveEntry();
+      const toasts = [];
+      window.showToast = (m) => { toasts.push(String(m)); };
+      await withDialogs({ confirm: true }, async () => { await executeDuplicate(savedEquipment.findIndex(e => e.id === X.id), true); });
+      got.rows = sources.map(s => s.location).join(' | ');
+      got.photos = Object.keys(photos).filter(k => /^source_/.test(k) && photos[k] && photos[k].dbKey).join();
+      got.toast = toasts.filter(t => /Duplicated/.test(t)).join(' / ');
+      want(got.rows === 'MDP-1 bkr 12' && got.photos === 'source_0', 'rows and photos');
+      want(/record its own feeder \/ secondary main \/ alternate source breakers/.test(got.toast) && !/FAILED/.test(got.toast), 'the message');
+      const miss = collectIncompleteFields();
+      want(miss.includes('Transformer — secondary main') && miss.includes('Transformer — alternate sources (or None found)'), 'the copy asks for its own: ' + JSON.stringify(miss));
+      // a drive's feeder stays behind too, and the copy's drive is asked
+      const A = Object.assign(mkEntry('AHU-271', { sources: [Object.assign(DRIVE({ deviceId: 'VFD-1', driveIsolates: ['yes'] }), { sourceId: genUuid() }),
+        Object.assign(FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), { sourceId: genUuid(), role: 'feeder' })] }), { equipType: 'Air Handler', template: 'AHU - Steam' });
+      savedEquipment = [A]; saveAll();
+      await withDialogs({ confirm: true }, async () => { await executeDuplicate(0, false); });
+      got.drive = [sources.length, sources.some(isFeederRow), drivesToAskAtSave().length].join();
+      want(got.drive === '1,false,1', 'a drive asks its own feeder');
+    } finally { window.showToast = prevToast; setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T272 — a transformer's row reads "<panel> bkr <n>"; Back never drops what was typed
+  async function t272_aTransformerRowReadsPanelBkrN() {
+    const N = 'T272 build 122 review: a transformer\'s secondary main and alternate sources are asked as a feeder\'s are — the panel or switch, its breaker (or No number), then the voltage — so the Location reads "<panel> bkr <n>" (no " bkr" with No number, spaces collapsed); Other… → Back returns to the voltage as often as the tech likes, the panel and breaker kept; a voltage never picked ends with a message, not silently; Skip adds nothing';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevToast = window.showToast;
+    try {
+      const toasts = [];
+      window.showToast = (m) => { toasts.push(String(m)); };
+      const run = async (answers) => {
+        const asked = []; let r;
+        await withDialogs({ choice: (o) => {
+          asked.push(o.id);
+          const l = answers[o.id];
+          if (Array.isArray(l)) return l.length > 1 ? l.shift() : l[0];
+          return l !== undefined ? l : 'cancel';
+        } }, async () => { r = await askXfmrFeed({ id: 'xfmr-secondary-main', title: 'Secondary main', html: '', placeholder: '' }); });
+        return { r, asked };
+      };
+      const a = await run({ 'xfmr-secondary-main': ' SWBD  2 ', 'xfmr-secondary-main-breaker': ' 4 ', 'xfmr-secondary-main-voltage': '240V' });
+      const b = await run({ 'xfmr-secondary-main': 'SWBD-2', 'xfmr-secondary-main-breaker': '', 'xfmr-secondary-main-voltage': '480V' });
+      const c = await run({ 'xfmr-secondary-main': 'SWBD-2', 'xfmr-secondary-main-breaker': '7',
+        'xfmr-secondary-main-voltage': ['other', 'other', 'other', 'other', 'other', 'other', '480V'], 'other-voltage': ['back'] });
+      const d = await run({ 'xfmr-secondary-main': 'SWBD-2', 'xfmr-secondary-main-breaker': 'skip' });
+      const e = await run({ 'xfmr-secondary-main': 'SWBD-2', 'xfmr-secondary-main-breaker': '9', 'xfmr-secondary-main-voltage': ['other'], 'other-voltage': ['back'] });
+      got.r = [a.r, b.r, c.r, d.r, e.r].map(x => x ? x.text + '@' + x.voltage : 'null');
+      got.backs = c.asked.filter(x => x === 'other-voltage').length;
+      got.toast = toasts.join(' / ');
+      want(got.r[0] === 'SWBD 2 bkr 4@240V' && got.r[1] === 'SWBD-2@480V', 'the Location');
+      want(got.r[2] === 'SWBD-2 bkr 7@480V' && got.backs === 6, 'six Backs: nothing dropped');
+      want(got.r[3] === 'null' && got.r[4] === 'null' && /Not added: no voltage was picked for SWBD-2 bkr 9/.test(got.toast), 'Skip; never a voltage: a message');
+    } finally { window.showToast = prevToast; }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T273 — an arc flash photo is named on the sheet whatever the unit's type now
+  async function t273_anArcFlashPhotoIsNamedWhateverTheType() {
+    const N = 'T273 build 122 review: a unit holding an arc flash photo whose type is no longer ATS, Generator or Transformer still has column 13 headed "Arc Flash Label" with the photo\'s file name (the photo ships in photos/ and is never left unnamed); a leftover "No label" on such a type stays blank';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('ATS-273', 'ATS', 'ATS - Generic');
+      sources = [Object.assign(mkSrc('Electrical 480V'), { location: 'EDP-1 bkr 3', verification: 'Meter', collapsed: false })];
+      renderSources();
+      await captureInto('equip_arcflash', await makePhotoFile('t273a'));
+      const A = saveEntry();
+      const saved = savedEquipment.find(e => e.id === A.id) || A;
+      saved.equipType = 'Switchgear';   // the type corrected after the photo
+      const P = Object.assign(mkEntry('P-273', { sources: [Object.assign(mkSrc('Electrical 208V'), { sourceId: genUuid() })] }), { equipType: 'CHW Pump', template: 'Chilled Water Pump', unitAnswers: { arcFlashNone: true } });
+      savedEquipment = [saved, P]; saveAll();
+      const { zip, confirms } = await runExport({ confirmResponse: true });
+      if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); return; }
+      const u = await unzipExport(zip.blob);
+      const by = {};
+      for (const xpath of Object.keys(u.files).filter(p => /Information_Sheet_.*\.xlsx$/.test(p))) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        const ws = wb.worksheets[0];
+        ws.eachRow(row => {
+          if (String(row.getCell(1).value || '') !== 'Equipment ID/Name') return;
+          const d = ws.getRow(row.number + 1);
+          by[String(d.getCell(1).value || '')] = String(row.getCell(13).value || '') + '|' + String(d.getCell(13).value || '');
+        });
+      }
+      got.sheet = by;
+      const [h, v] = String(by['ATS-273'] || '|').split('|');
+      want(h === 'Arc Flash Label' && /\.jpg$/.test(v) && !!u.files['photos/' + v], 'the photo is named');
+      want(by['P-273'] === '|', 'a leftover No label on a pump stays blank');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T274 — "No label" holds while the arc flash slot holds only a ref that never saved
+  async function t274_noLabelHoldsOverAnUnsavedRef() {
+    const N = 'T274 build 122 review: an arc flash slot holding a ref whose bytes never saved (unsaved) still shows "No arc flash label on this equipment", and it — or Save & New\'s "No label on it" — is kept; a saved photo still overrules it';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('ATS-274', 'ATS', 'ATS - Generic');
+      sources = [Object.assign(mkSrc('Electrical 480V'), { location: 'EDP-1 bkr 3', verification: 'Meter', collapsed: false })]; renderSources();
+      const id = ensureCurrentEntryId();
+      photos.equip_arcflash = { dbKey: photoStoreKey(id, 'arcflash', 'deadbeef'), unsaved: true, timestamp: new Date().toISOString() };
+      syncArcFlashSlot();
+      got.shown = document.getElementById('arcFlashNoneLabel').style.display !== 'none';
+      setArcFlashNone(true);
+      got.box = [unitAnswers.arcFlashNone === true, document.getElementById('arcFlashNone').checked].join();
+      want(got.shown && got.box === 'true,true', 'the box');
+      setArcFlashNone(false);
+      await withDialogs({ confirm: true, choice: (o) => o.id === 'arc-flash-save' ? 'none' : 'cancel' }, async () => { await saveAndNew(); });
+      closeIncompleteWarning();
+      want(unitAnswers.arcFlashNone === true, 'Save & New\'s No label on it');
+      // a saved photo overrules it
+      setArcFlashNone(false);
+      await captureInto('equip_arcflash', await makePhotoFile('t274a'));
+      setArcFlashNone(true);
+      want(!unitAnswers.arcFlashNone && document.getElementById('arcFlashNoneLabel').style.display === 'none', 'a saved photo');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T275 — a shared tag says which unit
+  async function t275_aSharedTagSaysWhichUnit() {
+    const N = 'T275 build 122 review: a Quantity-2 drive row with one Device ID for both drives names each by its unit — "Drive VFD-1 (unit 2) has no answer about its disconnect", "Does drive VFD-1 (unit 2)\'s own disconnect…", the card\'s "VFD-1 (unit 1)" / "VFD-1 (unit 2)", the change-later note — so each answer lands on its own unit; distinct tags read as before';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-275', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-1', quantity: 2 }), FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)')]; sources.forEach(ensureSourceId); renderSources();
+      const titles = [];
+      const answers = ['yes', 'no'];
+      await withDialogs({ confirm: true, choice: (o) => {
+        titles.push(o.id + ':' + unq(o.title));
+        return o.id === 'drive-save' ? 'record' : (o.id === 'drive-isolates' ? answers.shift() : 'cancel');
+      } }, async () => { await saveAndNew(); });
+      closeIncompleteWarning();
+      got.titles = titles;
+      want(JSON.stringify(titles.slice(0, 4)) === JSON.stringify([
+        'drive-save:Drive VFD-1 (unit 1) has no answer about its disconnect', "drive-isolates:Does drive VFD-1 (unit 1)'s own disconnect isolate all incoming power?",
+        'drive-save:Drive VFD-1 (unit 2) has no answer about its disconnect', "drive-isolates:Does drive VFD-1 (unit 2)'s own disconnect isolate all incoming power?"]), 'the questions');
+      want(JSON.stringify(sources[0].driveIsolates) === '["yes","no"]', 'each answer on its unit');
+      renderSources();
+      got.labels = [...document.querySelectorAll('#driveIsoGroup_0 .scan-input-row > span')].map(e => e.textContent.trim()).join(' / ');
+      want(got.labels === 'VFD-1 (unit 1) / VFD-1 (unit 2)', 'the card');
+      sources[0].driveIsolates = ['yes', 'cant_tell'];
+      want(changeLaterAutoNotes(formEntryLike()).includes("Drive VFD-1 (unit 2): can't tell whether its disconnect isolates all incoming power"), 'the note');
+      sources[0].deviceId = 'VFD-1; VFD-2'; renderSources();
+      got.distinct = [...document.querySelectorAll('#driveIsoGroup_0 .scan-input-row > span')].map(e => e.textContent.trim()).join(' / ');
+      want(got.distinct === 'VFD-1 / VFD-2', 'distinct tags');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T276 — D5: a drain answer kept from before the medium changed never rewrites the code
+  async function t276_aKeptDrainAnswerNeverRewritesANewMediumsCode() {
+    const N = 'T276 build 122 review (D5): a found drain recorded while a row was hot water changes its code as before, and None found puts it back; once the row\'s medium is a build 122 one (fuel oil), None found or a blank answer leaves the code as it is';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    formOfType('AHU-276', 'Air Handler', 'AHU - HHW');
+    const V = () => Object.assign(mkSrc('HHW In'), { deviceType: 'Ball Valve', verification: 'GaugeOnly - Hot', collapsed: false });
+    sources = [V(), V()]; renderSources();
+    updateDrainWhere(0, 'On this valve'); updateDrainWhere(1, 'On this valve');
+    got.found = [sources[0].verification, sources[1].verification].join();
+    updateDrainWhere(1, 'None found');
+    got.water = sources[1].verification;
+    sources[0].energySource = 'Fuel Oil In';   // the medium changed, the code kept
+    updateDrainWhere(0, 'None found');
+    got.fuelNone = sources[0].verification;
+    updateDrainWhere(0, '');
+    got.fuelBlank = sources[0].verification;
+    want(got.found === 'Gauge/Drain - Hot,Gauge/Drain - Hot' && got.water === 'GaugeOnly - Hot', 'water as before');
+    want(got.fuelNone === 'Gauge/Drain - Hot' && got.fuelBlank === 'Gauge/Drain - Hot', 'fuel oil: the code stays');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T277 — a row's role outlives an edit of its Location
+  async function t277_aRowsRoleOutlivesALocationEdit() {
+    const N = 'T277 build 122 review: the rows the app adds for a unit\'s own breakers carry their role (feeder / secondaryMain / alternate + kind); a Location edited without its prefix still counts as that row in the app, and the sheet, the CSV and entries.json write the prefix back so loto-web reads the same row; a prefix typed in the Location wins over the stored kind, and one an edit broke is mended (loto-web reads it with its colon); rows typed by hand still go by their Location';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      got.app = [isSecondaryMainRow({ role: 'secondaryMain', location: 'MDP-2 bkr 1' }), alternateSourceKindOf({ role: 'alternate', altKind: 'UPS output', location: 'UPS-1 bkr 3' }),
+        alternateSourceKindOf({ role: 'alternate', altKind: 'UPS output', location: 'Alternate Source (ATS): ATS-1' }), isFeederRow({ role: 'feeder', location: 'MCC-2A bkr 14 (VFD-1)' }),
+        isSecondaryMainRow({ location: 'Secondary Main: X' }), isFeederRow({ location: 'Panel LP-2 bkr 14' })].join();
+      want(got.app === 'true,UPS output,ATS,true,true,false', 'the app');
+      // loto-web reads the prefix with its colon: one an edit only broke is mended, a row typed without it is not that row
+      got.mend = [sourceLocationForExport({ role: 'secondaryMain', location: 'Secondary Main MDP-2 bkr 1' }),
+        sourceLocationForExport({ role: 'alternate', altKind: 'ATS', location: 'Alternate Source (ATS) ATS-1' }),
+        String(isSecondaryMainRow({ location: 'Secondary Main MDP-2' }))].join(' | ');
+      want(got.mend === 'Secondary Main: MDP-2 bkr 1 | Alternate Source (ATS): ATS-1 | false', 'a broken prefix');
+      const S = (loc, extra) => Object.assign(mkSrc('Electrical 208V'), { sourceId: genUuid(), location: loc, verification: 'Meter' }, extra || {});
+      const X = Object.assign(mkEntry('XF-277', { sources: [S('MDP-1 bkr 12'), S('MDP-2 bkr 1', { role: 'secondaryMain' }), S('UPS-1 bkr 3', { role: 'alternate', altKind: 'UPS output' })] }),
+        { equipType: 'Transformer', template: 'Standard Electrical' });
+      const A = Object.assign(mkEntry('AHU-277', { sources: [S('MCC', { energySource: 'Electrical 480V', deviceType: 'VFD', deviceId: 'VFD-1' }), S('MCC-2A bkr 14 (VFD-1)', { role: 'feeder' })] }),
+        { equipType: 'Air Handler', template: 'AHU - Steam' });
+      savedEquipment = [X, A]; saveAll();
+      const { zip, confirms } = await runExport({ confirmResponse: true });
+      if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); return; }
+      const u = await unzipExport(zip.blob);
+      const sheet = {};
+      for (const xpath of Object.keys(u.files).filter(p => /Information_Sheet_.*\.xlsx$/.test(p))) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        const ws = wb.worksheets[0];
+        let cur = null;
+        ws.eachRow(row => {
+          const a = String(row.getCell(1).value || '');
+          if (a === 'Equipment ID/Name') { cur = String(ws.getRow(row.number + 1).getCell(1).value || ''); sheet[cur] = { locs: [], u3: '' }; }
+          if (!cur) return;
+          if (/^Energy Source #\d+$/.test(a)) { const d = ws.getRow(row.number + 1); if (String(d.getCell(1).value || '')) sheet[cur].locs.push(String(d.getCell(5).value || '')); }
+          if (String(row.getCell(12).value || '') === 'Alternate Sources') sheet[cur].u3 = String(ws.getRow(row.number + 1).getCell(12).value || '');
+        });
+      }
+      got.sheet = sheet;
+      want(JSON.stringify((sheet['XF-277'] || {}).locs) === JSON.stringify(['MDP-1 bkr 12', 'Secondary Main: MDP-2 bkr 1', 'Alternate Source (UPS output): UPS-1 bkr 3'])
+        && (sheet['XF-277'] || {}).u3 === 'UPS output', 'the sheet (transformer)');
+      want(JSON.stringify((sheet['AHU-277'] || {}).locs) === JSON.stringify(['MCC', 'Feeder: MCC-2A bkr 14 (VFD-1)']), 'the sheet (feeder)');
+      const cp = Object.keys(u.files).find(q => /\.csv$/.test(q));
+      const rows = parseCsvRows(new TextDecoder().decode(u.files[cp]));
+      const li = (rows[0] || []).indexOf('Location');
+      got.csv = rows.filter(r => r[2] === 'XF-277' || r[2] === 'AHU-277').map(r => r[li]);
+      want(JSON.stringify(got.csv) === JSON.stringify(['MDP-1 bkr 12', 'Secondary Main: MDP-2 bkr 1', 'Alternate Source (UPS output): UPS-1 bkr 3', 'MCC', 'Feeder: MCC-2A bkr 14 (VFD-1)']), 'the CSV');
+      const je = {}; ((u.entriesJson && u.entriesJson.entries) || []).forEach(e => { je[e.equipName] = e; });
+      got.json = ((je['XF-277'] || {}).sources || []).map(s => s.location);
+      want(JSON.stringify(got.json) === JSON.stringify(['MDP-1 bkr 12', 'Secondary Main: MDP-2 bkr 1', 'Alternate Source (UPS output): UPS-1 bkr 3']), 'entries.json');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -9247,7 +9611,10 @@
     t260_aDriveIsAskedItsFeederAndItsDisconnect, t261_saveAndNewAsksAboutEachDrive, t262_theArcFlashLabelSlot,
     t263_theArcFlashLabelInTheExport, t264_aTransformerAsksItsSecondaryMainAndOtherSources,
     t265_theTransformerSectionAndItsSheetSlots, t266_theReleaseQuestionOnEveryMedium,
-    t267_drainsToAndDriveIsolatesTravelInColumns20And21, t268_build122];
+    t267_drainsToAndDriveIsolatesTravelInColumns20And21, t268_build122,
+    t269_aDrivesFeederIsMatchedAsLotoWebMatchesIt, t270_oneBreakerIsNeverRecordedTwice, t271_aDuplicateRecordsItsOwnBreakers,
+    t272_aTransformerRowReadsPanelBkrN, t273_anArcFlashPhotoIsNamedWhateverTheType, t274_noLabelHoldsOverAnUnsavedRef,
+    t275_aSharedTagSaysWhichUnit, t276_aKeptDrainAnswerNeverRewritesANewMediumsCode, t277_aRowsRoleOutlivesALocationEdit];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
