@@ -96,6 +96,9 @@
 //   T284–T289 the third review: a Qty-2 untagged row keeps a tag per unit ("VFD-1;"), the typed tag is one tag,
 //             a drive row is never a feeder, Duplicate source makes a role row ordinary, a repurposed role row,
 //             the transformer's first question closed (T277 holds a role counting only on an Electrical row)
+//   T290–T295 the whole review: the contract with loto-web (tests/contract/lotoweb-rules.json, from its own
+//             functions), a feeder / a drive as loto-web calls one, the stored feeder → drive link, a panel
+//             named "Feeder …", a tag that cleans to nothing
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -9735,7 +9738,7 @@
 
   // T286 — a drive row is never a feeder
   async function t286_aDriveRowIsNeverAFeeder() {
-    const N = 'T286 build 122 third review: a drive row (Device VFD) or a Stored Electrical Energy row whose Location starts with "Feeder" is not a feeder — as loto-web\'s _is_drive_feeder never takes one — so it feeds no drive, shows no role line, and a Duplicate of the unit keeps it';
+    const N = 'T286 build 122 third review: a drive row (Device VFD) or a VFD\'s DC bus (a Stored Electrical row whose Location names a VFD) whose Location starts with "Feeder" is not a feeder — as loto-web\'s _is_drive_feeder never takes one — so it feeds no drive, shows no role line, and a Duplicate of the unit keeps it';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -9743,7 +9746,7 @@
     try {
       setHospitalCode('');
       formOfType('AHU-286', 'Air Handler', 'AHU - Steam');
-      sources = [DRIVE({ deviceId: 'VFD-1', location: 'Feeder end of AHU-3 (VFD-1)' }), Object.assign(mkSrc('Stored Electrical Energy'), { deviceType: 'Capacitor', location: 'Feeder side cap bank', collapsed: false })];
+      sources = [DRIVE({ deviceId: 'VFD-1', location: 'Feeder end of AHU-3 (VFD-1)' }), Object.assign(mkSrc('Stored Electrical Energy'), { deviceType: 'Capacitor', location: 'Feeder side of the VFD-1 DC bus', collapsed: false })];
       sources.forEach(ensureSourceId); renderSources();
       got.r = [isFeederRow(sources[0]), isFeederRow(sources[1]), sourceRoleOf(sources[0]) || '-', unitDrives(sources).map(d => d.fed).join(),
         document.getElementById('roleGroup_0').style.display === 'none'].join(' / ');
@@ -9820,6 +9823,193 @@
       got.toasts = toasts;
       want(r1 === null && r2 === null && JSON.stringify(toasts) === JSON.stringify(['Not added: Secondary main — the question was closed']), 'the message');
     } finally { window.showToast = prevToast; }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+
+  // ---- Build 122 whole review (2026-10-24): the contract with loto-web, and one test per bug ----
+
+  // T290 — the app's rules agree with loto-web's own functions
+  async function t290_theAppsRulesAgreeWithLotoWeb() {
+    const N = 'T290 build 122 whole review: the app decides as loto-web\'s own functions do (tests/contract/lotoweb-rules.json, written by make_lotoweb_rules.py from _is_drive_feeder, _is_vfd_device, _is_vfd_dc_bus, names_tag, unit_ids, role_of_location, feeders_for, label_wait.asked and the col 18 / 19 parsers): every feeder, drive and DC-bus case, every tag match, every unit\'s Device ID, every transformer role, and for every drive of every unit the same drives — the app never calling a drive fed that loto-web leaves not identified (it may ask more: a second untagged drive on one feeder)';
+    const fails = [], got = { counts: {} };
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    let fx = null;
+    try { const r = await fetch('/tests/contract/lotoweb-rules.json?v=' + Date.now()); if (r.ok) fx = await r.json(); } catch (e) {}
+    if (!fx) {
+      const inApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+      record(N, inApp, inApp ? 'skipped inside the iOS app (the fixture is not bundled)' : 'FAILED: tests/contract/lotoweb-rules.json not served');
+      return;
+    }
+    const R = (x) => ({ energySource: x.energySource, deviceType: x.deviceType, deviceId: x.deviceId, quantity: x.quantity, location: x.location });
+    const check = (name, list, fn) => { got.counts[name] = list.length; list.forEach((c, i) => { const r = fn(c); if (!r.ok) fails.push(name + ' #' + (i + 1) + ': ' + r.what); }); };
+    check('feeder', fx.feeder, c => ({ ok: isFeederRow(R(c)) === c.isFeeder, what: JSON.stringify([c.deviceType, c.location, c.energySource]) + ' loto-web ' + c.isFeeder }));
+    check('drive', fx.drive, c => ({ ok: isDriveDevice(c.deviceType) === c.isDrive, what: JSON.stringify(c.deviceType) + ' loto-web ' + c.isDrive }));
+    check('dcBus', fx.dcBus, c => ({ ok: isDcBusRow(R(c)) === c.isDcBus, what: JSON.stringify([c.energySource, c.location]) + ' loto-web ' + c.isDcBus }));
+    check('namesTag', fx.namesTag, c => ({ ok: feederNamesTag(c.location, c.tag) === c.names, what: JSON.stringify([c.tag, c.location]) + ' loto-web ' + c.names }));
+    check('unitIds', fx.unitIds, c => { const a = driveUnitTags({ deviceId: c.deviceId, quantity: c.quantity }); return { ok: JSON.stringify(a) === JSON.stringify(c.units), what: JSON.stringify([c.deviceId, c.quantity]) + ' app ' + JSON.stringify(a) + ' loto-web ' + JSON.stringify(c.units) }; });
+    check('role', fx.role, c => {
+      const s = { energySource: 'Electrical 208V', deviceType: 'Breaker', location: c.location };
+      const role = isSecondaryMainRow(s) ? 'secondary_main' : (alternateSourceKindOf(s) ? 'alternate' : '');
+      const kind = role === 'alternate' ? alternateSourceKindOf(s) : '';
+      return { ok: role === c.role && kind.toLowerCase() === String(c.kind || '').toLowerCase(), what: JSON.stringify(c.location) + ' app ' + role + '/' + kind + ' loto-web ' + c.role + '/' + c.kind };
+    });
+    got.stricter = [];
+    check('units', fx.units, c => {
+      const rows = c.rows.map(R);
+      const app = unitDrives(rows).map(d => ({ row: rows.indexOf(d.src), unit: d.k, fed: d.fed }));
+      const key = d => d.row + '.' + d.unit;
+      const same = JSON.stringify(app.map(key)) === JSON.stringify(c.drives.map(key));
+      const wrong = c.drives.filter(w => { const a = app.find(x => key(x) === key(w)); return a && a.fed && !w.identified; });
+      c.drives.forEach(w => { const a = app.find(x => key(x) === key(w)); if (a && !a.fed && w.identified) got.stricter.push(c.name + ' ' + key(w)); });
+      return { ok: same && !wrong.length, what: c.name + (same ? '' : ' (drives differ: app ' + JSON.stringify(app.map(key)) + ')') + (wrong.length ? ' (app fed, loto-web not identified: ' + wrong.map(key).join() + ')' : '') };
+    });
+    // The label discharge wait (build 121): which rows take it, and columns 18 / 19 as written and read back
+    check('labelAsked', fx.labelAsked || [], c => {
+      const src = { energySource: c.energySource, deviceType: c.deviceType, linkedTo: c.linked ? { equipName: 'X', sourceIndex: 0 } : undefined };
+      return { ok: sourceTakesLabelWait(src, 'Air Handler', 'AHU - Steam') === c.asked, what: JSON.stringify([c.energySource, c.deviceType, c.linked]) + ' loto-web ' + c.asked };
+    });
+    const asLotoWeb = e => e ? (e.noLabel ? { no_label: true } : { minutes: e.minutes }) : null;
+    check('waitCells', fx.waitCells || [], c => {
+      const src = { labelWait: c.labelWait, quantity: c.quantity };
+      const text = labelWaitCellText(src), read = labelWaitForJson(src).map(asLotoWeb);
+      return { ok: text === c.text && JSON.stringify(read) === JSON.stringify(c.parsed), what: 'app writes ' + JSON.stringify(text) + ' (fixture ' + JSON.stringify(c.text) + '), means ' + JSON.stringify(read) + ', loto-web reads ' + JSON.stringify(c.parsed) };
+    });
+    check('voltCells', fx.voltCells || [], c => {
+      const src = { dcBusV: c.dcBusV, quantity: c.quantity };
+      const text = dcBusCellText(src), read = dcBusForJson(src);
+      return { ok: text === c.text && JSON.stringify(read) === JSON.stringify(c.parsed), what: 'app writes ' + JSON.stringify(text) + ', means ' + JSON.stringify(read) + ', loto-web reads ' + JSON.stringify(c.parsed) };
+    });
+    want((fx.labelAsked || []).length && (fx.waitCells || []).length && (fx.voltCells || []).length, 'the fixture carries the label-wait cases');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  // T291 — a feeder is what loto-web calls one
+  async function t291_aFeederIsWhatLotoWebCallsOne() {
+    const N = 'T291 build 122 whole review: a breaker row Located "Upstream …" or with a Device containing "feeder" is a drive\'s feeder, as loto-web\'s _is_drive_feeder reads it, so Save & New doesn\'t ask that drive\'s feeder again — and "Record it now" can\'t add a second row for that breaker; the card says so without a clear button (its wording says so)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-291', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-1', driveIsolates: ['yes'] }), DRIVE({ deviceId: 'VFD-2', driveIsolates: ['no'] }),
+        FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), Object.assign(FEEDER('Upstream MCC-2A bkr 15 (VFD-2)'), { collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      got.fed = unitDrives(sources).map(d => d.fed).join();
+      got.due = drivesToAskAtSave().length;
+      const g = document.getElementById('roleGroup_3');
+      got.card = g ? g.textContent.replace(/\s+/g, ' ').trim() : '';
+      got.button = !!document.getElementById('src_clearrole_3');
+      want(got.fed === 'true,true' && got.due === 0, 'fed: ' + got.fed + ', due ' + got.due);
+      want(/breaker that feeds a drive\. Its Location or Device says so/.test(got.card) && !got.button, 'the card: ' + got.card);
+      sources[3] = Object.assign(FEEDER('MCC-2A bkr 15 (VFD-2)'), { deviceType: 'Feeder Breaker' }); ensureSourceId(sources[3]); renderSources();
+      want(unitDrives(sources).every(d => d.fed), 'a Device containing "feeder"');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T292 — a custom drive device is a drive
+  async function t292_aCustomDriveDeviceIsADrive() {
+    const N = 'T292 build 122 whole review: a Device that loto-web takes for a drive (containing "VFD" or "variable frequency", e.g. a custom "VFD Bypass") is asked its feeder and disconnect like "VFD": the card shows the feeder button and the answer box, Save & New asks, and column 21 is written';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-292', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceType: 'VFD Bypass', deviceId: 'VFD-3' })]; sources.forEach(ensureSourceId); renderSources();
+      got.card = [!!document.getElementById('src_addfeeder_0'), !!document.getElementById('src_driveiso_0_0')].join();
+      got.due = drivesToAskAtSave().length;
+      got.cell = [isDriveRow(sources[0]), driveIsolatesCellText(Object.assign({}, sources[0], { driveIsolates: ['no'] }))].join('|');
+      want(got.card === 'true,true' && got.due === 1 && got.cell === 'true|No', JSON.stringify(got));
+      want(!isDriveRow(Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Soft Starter' })), 'not every Device');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T293 — the feeder → drive link
+  async function t293_theFeederKeepsItsLinkToItsDrive() {
+    const N = 'T293 build 122 whole review: a feeder the app records keeps which drive unit it feeds (feeds: sourceId + unit); retagging the drive renames it in the feeder\'s "( … )" (so it stays fed, and loto-web reads the new tag); a tag taken out of the feeder\'s Location takes its link with it; Split moves the split-off drive\'s link to its new row; Copy Source and Duplicate source onto / of a feeder drop the link';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-293', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2 })]; sources.forEach(ensureSourceId); renderSources();
+      const q = { 'feeder-panel': ['MCC-2A', 'MCC-2A'], 'feeder-breaker': ['14', '15'], 'feeder-drive': ['VFD-1', 'VFD-2'] };
+      await withDialogs({ choice: (o) => { const l = q[o.id]; if (l) return l.shift() || 'cancel'; return o.id === 'drive-isolates' ? 'yes' : 'cancel'; } },
+        async () => { await promptDriveFeeder(0); });
+      const drive = sources[0];
+      got.links = sources.slice(1).map(f => (f.feeds || []).map(l => (l.sourceId === drive.sourceId ? 'drive' : '?') + '.' + l.unit + '=' + l.tag).join());
+      want(JSON.stringify(got.links) === JSON.stringify(['drive.0=VFD-1', 'drive.1=VFD-2']), 'the links: ' + JSON.stringify(got.links));
+      // retag unit 2 by its box: its feeder follows
+      updateUnitDeviceId(0, 1, 'AHU-1-RF');
+      got.retag = [sources[2].location, unitDrives(sources).every(d => d.fed)].join('|');
+      want(got.retag === 'Feeder: MCC-2A bkr 15 (AHU-1-RF)|true', 'retag: ' + got.retag);
+      // the tech takes the tag out of the feeder's Location: the link goes
+      updateSourceCustomLoc(1, 'Feeder: MCC-2A bkr 14');
+      got.pruned = JSON.stringify(sources[1].feeds || null);
+      want(got.pruned === 'null', 'pruned: ' + got.pruned);
+      // Split moves unit 2's link to the new row
+      await withDialogs({ confirm: true }, async () => { splitSource(0); });
+      const newRow = sources[1];
+      got.split = [newRow.deviceId, (sources.find(f => /bkr 15/.test(f.location || '')).feeds || [])[0].sourceId === newRow.sourceId].join('|');
+      want(got.split === 'AHU-1-RF|true', 'split: ' + got.split);
+      // Copy Source onto a feeder, Duplicate source of a feeder: no link
+      const fi = sources.findIndex(f => /bkr 15/.test(f.location || ''));
+      duplicateSource(fi);
+      want(!sources[fi + 1].feeds, 'Duplicate source drops it');
+      const O = Object.assign(mkEntry('P-293', { sources: [Object.assign(mkSrc('Electrical 208V'), { deviceType: 'Disconnect', location: 'On Equipment', sourceId: genUuid() })] }), { equipType: 'CHW Pump', template: 'Chilled Water Pump' });
+      savedEquipment = [O]; saveAll();
+      showCopySourceDialog(fi); applyCopySource(0, 0);
+      want(!sources[fi].feeds && !sources[fi].role, 'Copy Source drops it');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T294 — a panel named "Feeder …" still keys as one breaker
+  async function t294_aPanelNamedFeederKeysAsOneBreaker() {
+    const N = 'T294 build 122 whole review: a second drive recorded on a breaker of a panel whose name starts with "Feeder" ("Feeder Panel FP-1", breaker 3) joins that breaker\'s feeder row, as any panel\'s does — never a second row';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-294', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2 }), Object.assign(FEEDER('Feeder: Feeder Panel FP-1 bkr 3 (VFD-1)'), { role: 'feeder' })];
+      sources.forEach(ensureSourceId); renderSources();
+      await withDialogs({ choice: (o) => ({ 'feeder-panel': 'Feeder Panel FP-1', 'feeder-breaker': '3', 'feeder-drive': 'VFD-2' })[o.id] || 'cancel' },
+        async () => { await recordDrive(unitDrives(sources).find(d => d.k === 1)); });
+      got.rows = sources.filter(isFeederRow).map(s => s.location);
+      want(JSON.stringify(got.rows) === JSON.stringify(['Feeder: Feeder Panel FP-1 bkr 3 (VFD-1, VFD-2)']), JSON.stringify(got.rows));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T295 — a drive tag that cleans to nothing says so
+  async function t295_aTagThatCleansToNothingSaysSo() {
+    const N = 'T295 build 122 whole review: a drive tag typed as only ";", "," or brackets adds no feeder and says "Not added: the drive\'s tag was only …" instead of nothing';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    const prevToast = window.showToast;
+    try {
+      setHospitalCode('');
+      const toasts = []; window.showToast = (m) => { toasts.push(String(m)); };
+      formOfType('AHU-295', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: '' })]; sources.forEach(ensureSourceId); renderSources();
+      let r;
+      await withDialogs({ choice: (o) => ({ 'feeder-panel': 'MCC-2A', 'feeder-breaker': '14', 'feeder-drive': ' ( ; ) ' })[o.id] || 'cancel' },
+        async () => { r = await addFeederForDrive(0, 0); });
+      got.r = [r === null, sources.length, toasts.some(t => /^Not added: the drive.s tag was only/.test(t))].join('|');
+      want(got.r === 'true|1|true', got.r);
+    } finally { window.showToast = prevToast; setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -9945,7 +10135,9 @@
     t278_copySourceOntoARoleRowDropsTheRole, t279_aRowsRoleShowsAndCanBeCleared, t280_anUntaggedDriveTakesItsFeedersTag,
     t281_theCardOffersNoTagForAnUntaggedDrive, t282_anUntaggedDrivesFeederIsNotOfferedAway, t283_closingATransformerQuestionSaysWhatWasntAdded,
     t284_aQty2UntaggedRowKeepsOneTagPerUnit, t285_theTypedFeederTagIsOneTag, t286_aDriveRowIsNeverAFeeder,
-    t287_duplicatingARoleRowMakesAnOrdinaryRow, t288_aRepurposedRoleRowLosesItsRole, t289_closingTheTransformersFirstQuestionSaysSo];
+    t287_duplicatingARoleRowMakesAnOrdinaryRow, t288_aRepurposedRoleRowLosesItsRole, t289_closingTheTransformersFirstQuestionSaysSo,
+    t290_theAppsRulesAgreeWithLotoWeb, t291_aFeederIsWhatLotoWebCallsOne, t292_aCustomDriveDeviceIsADrive,
+    t293_theFeederKeepsItsLinkToItsDrive, t294_aPanelNamedFeederKeysAsOneBreaker, t295_aTagThatCleansToNothingSaysSo];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

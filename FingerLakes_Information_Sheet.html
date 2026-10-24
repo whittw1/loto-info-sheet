@@ -3263,9 +3263,12 @@ async function addFeederForDrive(index, unit) {
     if (reuse === 'reuse' && sources.includes(orphan)) {
       if (nextTag) {
         orphan.location = feederLocationNaming(orphan.location, [nextTag]);
+        orphan.feeds = [];
+        addFeederLink(orphan, target.src, target.k);
         return done(orphan, nextTag, 'Source #' + n + ' is now the feeder for ' + one(nextTag));
       }
       setDriveUnitTag(drive, target.k, asTag);   // the unit's box was blank: nothing typed is replaced
+      addFeederLink(orphan, drive, target.k);
       return done(drive, asTag, 'Drive tagged ' + one(asTag) + ' — source #' + n + ' is its feeder');
     }
   }
@@ -3285,27 +3288,34 @@ async function addFeederForDrive(index, unit) {
     choices: [{ label: 'Add the feeder', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] });
   if (!filled(tag) || tag === 'cancel' || !sources.includes(drive)) return null;
   tag = cleanTag(tag);
-  if (!tag) return null;
+  if (!tag) { showToast('Not added: the drive\u2019s tag was only ";", "," or brackets \u2014 type its tag', true); return null; }   // build 122 whole review
   // The drive recorded had no tag: the one typed is its tag, in its blank box
   // (never one another drive of the unit carries) — else neither the app nor
   // loto-web can tell its feeder from another drive's (build 122 second review).
   let tagNote = '';
   if (target && !target.tag && !unitDrives(sources).some(d => d.tag && d.tag.toLowerCase() === one(tag).toLowerCase())) {
     setDriveUnitTag(drive, target.k, one(tag));
+    syncFeederTags(sources);
     markSourceEdited(sources.indexOf(drive));
     tagNote = ' — and tagged the drive ' + one(tag);
   }
   const body = one(panel) + (one(bkr) ? ' bkr ' + one(bkr) : '');
+  // The drive unit the feeder is linked to: the one carrying the tag typed, else the one being recorded
+  const namedDrive = unitDrives(sources).find(d => d.tag && d.tag.toLowerCase() === tag.toLowerCase());
+  const linkTo = namedDrive || target;
   const same = one(bkr) && sources.find(s => isFeederRow(s) && feederBreakerKey(s.location) === feederBreakerKey(body));
   if (same) {
     if (!feederNamesTag(same.location, tag)) same.location = feederLocationNaming(same.location, feederTagsOf(same.location).concat(one(tag)));
+    if (linkTo) addFeederLink(same, linkTo.src, linkTo.k);
     return done(same, tag, 'Source #' + (sources.indexOf(same) + 1) + ' (' + body + ') now feeds ' + one(tag) + ' too' + tagNote);
   }
   const at = sources.length;
   delete photos['source_' + at];   // never inherit a stale ref
-  sources.push({ energySource: drive.energySource || 'Electrical', deviceType: 'Breaker', quantity: 1,
+  const row = { energySource: drive.energySource || 'Electrical', deviceType: 'Breaker', quantity: 1,
     location: 'Feeder: ' + body + ' (' + one(tag) + ')', role: 'feeder',
-    duplicate: 'No', verification: '', detail: '', collapsed: false });
+    duplicate: 'No', verification: '', detail: '', collapsed: false };
+  if (linkTo) addFeederLink(row, linkTo.src, linkTo.k);
+  sources.push(row);
   renderSources();
   autoSaveCurrent();
   showToast('Added the feeder for ' + one(tag) + tagNote + ' — photograph the panel and the breaker');
@@ -3325,11 +3335,18 @@ async function addFeederForDrive(index, unit) {
 // 'no' / 'cant_tell' / null — in Device ID order; every facility. Asked when
 // Device = VFD is picked (promptDriveFeeder) and at Save & New (askBeforeSave).
 const DRIVE_ISOLATES_SHEET = { yes: 'Yes', no: 'No', cant_tell: "Can't tell" };
-function isDriveRow(s) { return !!s && !s.linkedTo && s.deviceType === 'VFD' && /^Electrical\b/.test(String(s.energySource || '')); }
+// A drive is a Device that loto-web's _is_vfd_device takes for one — containing
+// "VFD" or "variable frequency", so a custom "VFD Bypass" too (build 122 whole
+// review) — on an Electrical row, not linked.
+function isDriveDevice(device) { return /vfd|variable frequency/i.test(String(device || '')); }
+function isDriveRow(s) { return !!s && !s.linkedTo && isDriveDevice(s.deviceType) && /^Electrical\b/.test(String(s.energySource || '')); }
 function driveIsolatesEntries(src) { return Array.isArray(src && src.driveIsolates) ? src.driveIsolates : []; }
-// Each unit's tag: its own in an "a; b" list, else the one tag (it covers every unit).
+// Each unit's tag: its own in an "a; b" list, else the one tag (it covers every
+// unit) — loto-web's unit_ids, which also keeps a Quantity-1 row's Device ID
+// whole even with a ";" in it (build 122 whole review, the contract test).
 function driveUnitTags(src) {
   const n = valveMarkSlots(src);
+  if (n < 2) return [String((src && src.deviceId) || '').trim()];
   const isList = String((src && src.deviceId) || '').includes(';');
   const parts = splitUnitIds(src && src.deviceId).map(t => t.trim());
   return Array.from({ length: n }, (_, k) => (isList ? parts[k] : parts[0]) || '');
@@ -3341,28 +3358,50 @@ function driveIsolatesForJson(src) {
 }
 function driveIsolatesCellText(src) { return joinUnitPositions(driveIsolatesForJson(src).map(v => v ? DRIVE_ISOLATES_SHEET[v] : '')); }
 // A row the app added for a unit's own breaker carries its role (build 122
-// review): 'feeder', 'secondaryMain' or 'alternate' (+ altKind). The role is
-// what the app goes by, and the export writes the Location's role prefix back
-// if an edit took it away (sourceLocationForExport); rows recorded before
+// review): 'feeder', 'secondaryMain' or 'alternate' (+ altKind); a Feeder row
+// also its drives (`feeds`, below). The export writes the Location's role prefix
+// back if an edit took it away (sourceLocationForExport); rows recorded before
 // build 122 — or typed by hand — go by their Location alone.
-// A drive (Device containing "VFD", as loto-web's _is_vfd_device reads it) or a
-// DC bus is never a feeder (its _is_drive_feeder); a stored role counts only on
-// an Electrical row (build 122 third review: a row repurposed — Device VFD, a
-// custom energy source being typed — is no longer read by a role it can't have).
-function isDriveDeviceRow(s) { return /vfd|variable frequency/i.test(String((s && s.deviceType) || '')) || /^Stored Electrical/i.test(String((s && s.energySource) || '')); }
-function roleLive(s, role) { return !!s && s.role === role && /^Electrical\b/.test(String(s.energySource || '')); }
-function isFeederRow(s) { return !!s && !isDriveDeviceRow(s) && (roleLive(s, 'feeder') || /^\s*Feeder/i.test(String(s.location || ''))); }   // loto-web: starts with "feeder"
-// Does a feeder's Location name this drive tag? loto-web's rule (its tier
-// fix, 2026-10-24 19:34Z): the whole tag, any case, inside the Location's
-// closing "( … )" only — "VFD-1" is not in "(VFD-10)", a tag "26" is not
-// "bkr 26" — so "(VFD-1, VFD-2)" feeds both.
+//
+// What counts as a feeder and as a drive mirrors loto-web exactly (build 122
+// whole review; held by the contract test against its own functions):
+// - a drive: Device containing "VFD" / "variable frequency" (_is_vfd_device);
+// - a DC bus: a Stored Electrical or capacitor row whose Location names a VFD (_is_vfd_dc_bus);
+// - a feeder (_is_drive_feeder), never a drive or a DC bus: a Location starting
+//   "feeder", a Device containing "feeder", or "upstream" in the Location on a
+//   breaker or disconnect — and, in the app, a row whose own role says so.
+function isDcBusRow(s) {
+  return /stored electric|capacitor/i.test(String((s && s.energySource) || ''))
+    && /vfd|variable frequency/i.test(String((s && s.location) || ''));
+}
+function isDriveDeviceRow(s) { return isDriveDevice(s && s.deviceType) || isDcBusRow(s); }
+// The role a row's own field gives it, where the app reads one: an Electrical row,
+// and a feeder never on a drive or a DC bus (build 122 third / whole reviews).
+function liveRoleOf(s) {
+  if (!s || !s.role || !/^Electrical\b/.test(String(s.energySource || ''))) return '';
+  if (!['feeder', 'secondaryMain', 'alternate'].includes(s.role)) return '';
+  return (s.role === 'feeder' && isDriveDeviceRow(s)) ? '' : s.role;
+}
+// loto-web's _is_drive_feeder, on the Location and Device alone.
+function feederByText(s) {
+  const loc = String((s && s.location) || '').trim().toLowerCase(), dev = String((s && s.deviceType) || '').toLowerCase();
+  if (loc.startsWith('feeder') || dev.includes('feeder')) return true;
+  return loc.includes('upstream') && (dev.includes('breaker') || dev.includes('disconnect'));
+}
+function isFeederRow(s) { return !!s && !isDriveDeviceRow(s) && (liveRoleOf(s) === 'feeder' || feederByText(s)); }
+// Does a feeder's Location name this drive tag? loto-web's names_tag: the whole
+// tag, any case, inside a "( … )" of the Location — "VFD-1" is not in
+// "(VFD-10)", a tag "26" is not "bkr 26" — so "(VFD-1, VFD-2)" feeds both.
 function feederParenText(loc) { const m = /\(([^()]*)\)\s*$/.exec(String(loc || '')); return m ? m[1] : ''; }
 function feederNamesTag(loc, tag) {
-  const t = String(tag || '').trim().toLowerCase(), s = feederParenText(loc).toLowerCase();
-  if (!t || !s) return false;
+  const t = String(tag || '').trim().toLowerCase();
+  if (!t) return false;
   const edge = c => !c || !/[\w-]/.test(c);
-  for (let at = s.indexOf(t); at >= 0; at = s.indexOf(t, at + 1)) {
-    if (edge(s[at - 1]) && edge(s[at + t.length])) return true;
+  for (const g of String(loc || '').matchAll(/\(([^)]*)\)/g)) {
+    const s = g[1].toLowerCase();
+    for (let at = s.indexOf(t); at >= 0; at = s.indexOf(t, at + 1)) {
+      if (edge(s[at - 1]) && edge(s[at + t.length])) return true;
+    }
   }
   return false;
 }
@@ -3374,9 +3413,11 @@ function feederLocationNaming(loc, tags) {
   return list.length ? base + ' (' + list.join(', ') + ')' : base;
 }
 // The panel and breaker part of a feeder's Location, to spot one breaker
-// recorded twice: "Feeder: MCC-2A bkr 14 (VFD-1)" → "MCC-2A BKR 14".
+// recorded twice: "Feeder: MCC-2A bkr 14 (VFD-1)" → "MCC-2A BKR 14". Only the
+// "Feeder:" prefix the app writes goes (with its colon), so a panel whose name
+// starts with "Feeder" keys the same typed or recorded (build 122 whole review).
 function feederBreakerKey(loc) {
-  return String(loc || '').replace(/^\s*Feeder\b:?/i, '').replace(/\([^()]*\)\s*$/, '').replace(/\s+/g, ' ').trim().toUpperCase();
+  return String(loc || '').replace(/^\s*Feeder\s*:\s*/i, '').replace(/\([^()]*\)\s*$/, '').replace(/\s+/g, ' ').trim().toUpperCase();
 }
 // A blank unit's Device ID box takes `tag` (one unit: the whole Device ID). On
 // a Quantity 2+ row it stays a list even when only unit 1 is named ("VFD-1;"):
@@ -3390,6 +3431,47 @@ function setDriveUnitTag(src, k, tag) {
   if (!String(next[k] || '').trim()) next[k] = tag;
   const joined = joinUnitIds(next);
   src.deviceId = joined.includes(';') ? joined : joined + ';';
+}
+// ---- The feeder → drive link (build 122 whole review) ------------------------
+// A Feeder row the app records keeps the drive units it feeds:
+// feeds = [{ sourceId, unit, tag }] — the drive row's sourceId (or one in its
+// priorSourceIds), the unit, and the tag it was last named by. The Location's
+// "( … )", which loto-web reads, follows the link: a drive retagged renames
+// itself in its feeder (syncFeederTags), so a Device ID edit no longer silently
+// unfeeds it. A tag the tech takes out of the Location takes its link with it
+// (pruneFeederLinks). The fed rule stays loto-web's, read off that text.
+function driveOfLink(srcList, l) {
+  return (srcList || []).find(s => isDriveRow(s) && s.sourceId && l && (s.sourceId === l.sourceId || (s.priorSourceIds || []).includes(l.sourceId)));
+}
+function addFeederLink(feeder, drive, k) {
+  if (!feeder || !drive || k == null) return;
+  ensureSourceId(drive);
+  const l = { sourceId: drive.sourceId, unit: k, tag: driveUnitTags(drive)[k] || '' };
+  feeder.feeds = (feeder.feeds || []).filter(x => !(x.sourceId === l.sourceId && x.unit === l.unit)).concat(l);
+}
+function syncFeederTags(srcList) {
+  (srcList || []).forEach(f => {
+    if (!f || !Array.isArray(f.feeds) || !f.feeds.length || !isFeederRow(f)) return;
+    let tags = feederTagsOf(f.location);
+    const before = tags.join('\u0001');
+    f.feeds.forEach(l => {
+      const d = driveOfLink(srcList, l);
+      const cur = (d && l.unit < valveMarkSlots(d)) ? String(driveUnitTags(d)[l.unit] || '').trim() : '';
+      if (!cur) return;   // its drive gone or untagged now: the text keeps what it said
+      const prev = String(l.tag || '').trim();
+      if (prev) tags = tags.map(t => t.toLowerCase() === prev.toLowerCase() ? cur : t);
+      else if (!tags.some(t => t.toLowerCase() === cur.toLowerCase())) tags.push(cur);
+      l.tag = cur;
+    });
+    const seen = new Set();
+    tags = tags.filter(t => { const k = t.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+    if (tags.join('\u0001') !== before) f.location = feederLocationNaming(f.location, tags);
+  });
+}
+function pruneFeederLinks(f) {
+  if (!f || !Array.isArray(f.feeds)) return;
+  f.feeds = f.feeds.filter(l => !l.tag || feederNamesTag(f.location, l.tag));
+  if (!f.feeds.length) delete f.feeds;
 }
 // Feeder rows that name drive tags, none of them a drive of the unit any more.
 // None while another drive of the unit (not `except`, the one being recorded)
@@ -3576,19 +3658,18 @@ function scrollToArcFlashSlot() {
 // isFeederRow) wins when the Location was edited.
 const SECONDARY_MAIN_RE = /^\s*Secondary\s+Main\s*:/i;
 const ALTERNATE_SOURCE_RE = /^\s*Alternate\s+Source\s*\(([^)]*)\)\s*:/i;
-function isSecondaryMainRow(s) { return !!s && (roleLive(s, 'secondaryMain') || SECONDARY_MAIN_RE.test(String(s.location || ''))); }
+function isSecondaryMainRow(s) { return !!s && (liveRoleOf(s) === 'secondaryMain' || SECONDARY_MAIN_RE.test(String(s.location || ''))); }
 function alternateSourceKindOf(s) {
   const m = ALTERNATE_SOURCE_RE.exec(String((s && s.location) || ''));
   if (m) return m[1].trim();
-  return roleLive(s, 'alternate') ? String(s.altKind || '').trim() : '';
+  return liveRoleOf(s) === 'alternate' ? String(s.altKind || '').trim() : '';
 }
 // The Location as the sheet, the CSV and entries.json carry it: a row with a
 // role keeps its role's prefix even when an edit took the prefix away, so
 // loto-web reads the same row the app does (build 122 review).
 function sourceLocationForExport(src) {
   const loc = String((src && src.location) || '');
-  // a role counts only where the app reads it (roleLive; a feeder never on a drive row)
-  const role = src && src.role && roleLive(src, src.role) && !(src.role === 'feeder' && isDriveDeviceRow(src)) ? src.role : '';
+  const role = liveRoleOf(src);   // a role counts only where the app reads it
   // what is left of a prefix the edit only broke ("Secondary Main MDP-2") goes
   if (role === 'feeder' && !/^\s*Feeder/i.test(loc)) return 'Feeder: ' + loc.trim();
   if (role === 'secondaryMain' && !SECONDARY_MAIN_RE.test(loc)) return 'Secondary Main: ' + loc.replace(/^\s*Secondary\s+Main\b\s*/i, '').trim();
@@ -3615,11 +3696,20 @@ function clearSourceRole(src) {
   if (role === 'feeder') src.location = loc.replace(/^\s*Feeder\b\s*:?\s*/i, '');
   else if (role === 'secondaryMain') src.location = loc.replace(/^\s*Secondary\s+Main\b\s*:?\s*/i, '');
   else if (role === 'alternate') src.location = loc.replace(/^\s*Alternate\s+Source\b\s*(\([^)]*\))?\s*:?\s*/i, '');
-  delete src.role; delete src.altKind;
+  delete src.role; delete src.altKind; delete src.feeds;
+}
+// Can the card's button make the row ordinary? Not when only its wording says
+// feeder ("upstream" on a breaker, a Device containing "feeder"): the tech
+// changes that wording (build 122 whole review).
+function roleClearable(src) {
+  if (!src) return false;
+  if (src.role) return true;
+  const loc = String(src.location || '');
+  return /^\s*Feeder\b/i.test(loc) || SECONDARY_MAIN_RE.test(loc) || ALTERNATE_SOURCE_RE.test(loc);
 }
 function clearSourceRoleAt(index) {
   const src = sources[index];
-  if (!src || !sourceRoleOf(src)) return;
+  if (!src || !sourceRoleOf(src) || !roleClearable(src)) return;
   markSourceEdited(index);
   clearSourceRole(src);
   renderSources();
@@ -3638,9 +3728,11 @@ function sourceRoleBlock(src, i) {
   if (!role) return html`<div id="roleGroup_${i}" style="display:none;"></div>`;
   const { line: what, button: out } = SOURCE_ROLES[role];
   const kind = role === 'alternate' ? ' (' + alternateSourceKindOf(src) + ')' : '';
+  const clearable = roleClearable(src);
   return html`<div class="form-group" id="roleGroup_${i}">
-    <div style="font-size:12px;color:var(--text-dim);line-height:1.4;">${what}${kind}.</div>
-    <button type="button" class="btn btn-sm" id="src_clearrole_${i}" onclick="clearSourceRoleAt(${i})" style="margin-top:6px;padding:8px 10px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">${out}</button>
+    <div style="font-size:12px;color:var(--text-dim);line-height:1.4;">${what}${kind}.${clearable ? ''
+      : ' Its Location or Device says so \u2014 change that wording to make it an ordinary row.'}</div>
+    ${clearable ? html`<button type="button" class="btn btn-sm" id="src_clearrole_${i}" onclick="clearSourceRoleAt(${i})" style="margin-top:6px;padding:8px 10px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">${out}</button>` : ''}
   </div>`;
 }
 // A row naming one of the unit's OWN breakers in its Location: never copied to a duplicate.
@@ -7127,6 +7219,7 @@ function paintEquipPhotoSlots() { ['equip_main', 'equip_dataplate', 'equip_ee', 
 function renderSources() {
   applySimpleVerifDefaults();
   settleAutoDuplicates();   // an automatic Duplicate = Yes follows its photo (build 110)
+  try { syncFeederTags(sources); } catch (e) {}   // each feeder names its linked drives as tagged now (build 122)
   const container = document.getElementById('sourcesContainer');
   container.innerHTML = '';
 
@@ -7396,7 +7489,7 @@ function buildSourceCard(src, i) {
               ${toOther ? html`<input type="text" id="src_draintotext_${i}" value="${String(d.to).replace(/^Other:\s*/, '')}"
                 placeholder="Where it drains to" oninput="updateDrainToText(${i},this.value)" style="margin-top:6px;">` : ''}` : ''}
             </div>`; })() : html`<div id="drainLocGroup_${i}" style="display:none;"></div>`}
-            ${src.deviceType === 'VFD' ? html`<div class="form-group" id="feederGroup_${i}">
+            ${isDriveDevice(src.deviceType) ? html`<div class="form-group" id="feederGroup_${i}">
               <label>Feeder</label>
               <button type="button" class="btn btn-sm" id="src_addfeeder_${i}" onclick="addFeederFromCard(${i})" style="padding:10px 12px;font-size:13px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">+ Add the breaker that feeds this drive</button>
             </div>` : html`<div id="feederGroup_${i}" style="display:none;"></div>`}
@@ -7509,6 +7602,8 @@ function kineticDefaultLocation() {
 function updateSource(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
+  if (field === 'deviceId') syncFeederTags(sources);   // a retagged drive renames itself in its feeder (build 122)
+  if (field === 'location') pruneFeederLinks(sources[index]);
   if (field === 'verification') delete sources[index]._drainDefault;   // the tech picked the code
   if (field === 'energySource' && value && SOURCE_DEFAULTS[value]) {
     const defaults = SOURCE_DEFAULTS[value];
@@ -7687,8 +7782,13 @@ const LABEL_WAIT_SKIP = ['Chiller', 'Mini Split'];
 function sourceTakesLabelWait(src, type, template) {
   if (!src || src.linkedTo) return false;
   if (LABEL_WAIT_SKIP.includes(type) || LABEL_WAIT_SKIP.includes(template)) return false;
-  const es = String(src.energySource || '');
-  return (/^Electrical\b/.test(es) && src.deviceType === 'VFD') || /^Stored Electrical Energy/.test(es);
+  // loto-web's label_wait.asked, word for word (build 122 whole review, the
+  // contract test): a stored-electric or capacitor source; or an electric one —
+  // its name says "electric" or a voltage — whose Device is "VFD", any case
+  const es = String(src.energySource || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const dev = String(src.deviceType || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (es.includes('stored electric') || es.includes('capacitor')) return true;
+  return (es.includes('electric') || /\d\s*v\b/.test(es)) && dev === 'vfd';
 }
 function formTakesLabelWait(src) { return sourceTakesLabelWait(src, getEquipType(), getTemplate()); }
 function labelWaitEntries(src) { return Array.isArray(src && src.labelWait) ? src.labelWait : []; }
@@ -7973,6 +8073,14 @@ function splitSource(index) {
   delete newSrc.linkedTo;      // links belong to the original source only
   delete newSrc.sourceId;      // a distinct valve: fresh UUID minted at capture/save
   delete newSrc.priorSourceIds;
+  delete newSrc.feeds;         // a feeder's drives stay with the original row (build 122)
+  // The split-off drive takes its feeder's link with it (build 122 whole review)
+  if (isDriveRow(src) && src.sourceId) {
+    ensureSourceId(newSrc);
+    sources.forEach(f => (f && Array.isArray(f.feeds) ? f.feeds : []).forEach(l => {
+      if (l.sourceId === src.sourceId && l.unit === qty - 1) { l.sourceId = newSrc.sourceId; l.unit = 0; }
+    }));
+  }
   newSrc.deviceId = '';        // a distinct valve → its own tag (build 93)
   if (unitIds) {
     newSrc.deviceId = (unitIds[qty - 1] || '').trim();
@@ -8124,13 +8232,13 @@ function handleDeviceTypeChange(index, value) {
   } else {
     sources[index]._customDevice = false;
     // A row made a drive is no feeder or transformer breaker (build 122 third review)
-    if ((sources[index].role || sourceRoleOf(sources[index])) && /vfd|variable frequency/i.test(String(value || ''))) clearSourceRole(sources[index]);
+    if ((sources[index].role || sourceRoleOf(sources[index])) && isDriveDevice(value)) clearSourceRole(sources[index]);
     sources[index].deviceType = value;
     // Re-render to update verification dropdown based on new device type
     renderSources();
     autoSaveCurrent();
     // Build 122 (D1): a drive gets its feeder and its disconnect answer, asked now
-    if (value === 'VFD' && isDriveRow(sources[index])) promptDriveFeeder(index);
+    if (isDriveDevice(value) && isDriveRow(sources[index])) promptDriveFeeder(index);
   }
 }
 
@@ -8179,6 +8287,7 @@ function handleLocationChange(index, value) {
   } else {
     sources[index]._customLoc = false;
     sources[index].location = value;
+    pruneFeederLinks(sources[index]);
     renderSources();   // also drops the MCC ID field when leaving MCC
     autoSaveCurrent();
   }
@@ -8190,12 +8299,14 @@ function updateLocationId(index, value) {
   const li = locationIdInfo(sources[index].location);
   const pfx = li ? li.prefix : 'MCC';
   sources[index].location = (pfx + ' ' + (value || '').trim()).trim();
+  pruneFeederLinks(sources[index]);
   autoSaveCurrent();
 }
 
 function updateSourceCustomLoc(index, value) {
   markSourceEdited(index);
   sources[index].location = value;
+  pruneFeederLinks(sources[index]);   // a tag taken out of a feeder's Location takes its link (build 122)
   autoSaveCurrent();
 }
 
@@ -8307,7 +8418,7 @@ function applyCopySource(entryIndex, sourceIndex) {
   }
   // …and is that source, not the role this row had (build 122 second review): a
   // copied Location that says a role still reads as one, as typed
-  delete dest.role; delete dest.altKind;
+  delete dest.role; delete dest.altKind; delete dest.feeds;
   // Duplicate follows THIS source's own photo (build 109): a copy never brings
   // the other source's photo. A reused photo here makes it an automatic Yes;
   // the other source's automatic Yes stays automatic, and renderSources then
