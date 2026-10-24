@@ -93,6 +93,9 @@
 //   T278–T283 the second review: Copy Source / a non-Electrical change / the card's button clear a row's role, an
 //             untagged drive takes its feeder's tag, the card's suggestion, an untagged drive's feeder kept,
 //             a closed transformer question says so (T271 holds the Duplicate message naming only what stayed)
+//   T284–T289 the third review: a Qty-2 untagged row keeps a tag per unit ("VFD-1;"), the typed tag is one tag,
+//             a drive row is never a feeder, Duplicate source makes a role row ordinary, a repurposed role row,
+//             the transformer's first question closed (T277 holds a role counting only on an Electrical row)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -9457,14 +9460,17 @@
     const prevCode = getHospitalCode();
     try {
       setHospitalCode('');
-      got.app = [isSecondaryMainRow({ role: 'secondaryMain', location: 'MDP-2 bkr 1' }), alternateSourceKindOf({ role: 'alternate', altKind: 'UPS output', location: 'UPS-1 bkr 3' }),
-        alternateSourceKindOf({ role: 'alternate', altKind: 'UPS output', location: 'Alternate Source (ATS): ATS-1' }), isFeederRow({ role: 'feeder', location: 'MCC-2A bkr 14 (VFD-1)' }),
-        isSecondaryMainRow({ location: 'Secondary Main: X' }), isFeederRow({ location: 'Panel LP-2 bkr 14' })].join();
-      want(got.app === 'true,UPS output,ATS,true,true,false', 'the app');
+      const E = (x) => Object.assign({ energySource: 'Electrical 208V', deviceType: 'Breaker' }, x);
+      got.app = [isSecondaryMainRow(E({ role: 'secondaryMain', location: 'MDP-2 bkr 1' })), alternateSourceKindOf(E({ role: 'alternate', altKind: 'UPS output', location: 'UPS-1 bkr 3' })),
+        alternateSourceKindOf(E({ role: 'alternate', altKind: 'UPS output', location: 'Alternate Source (ATS): ATS-1' })), isFeederRow(E({ role: 'feeder', location: 'MCC-2A bkr 14 (VFD-1)' })),
+        isSecondaryMainRow(E({ location: 'Secondary Main: X' })), isFeederRow(E({ location: 'Panel LP-2 bkr 14' })),
+        // third review: a role counts only on an Electrical row that isn't a drive
+        isFeederRow({ role: 'feeder', energySource: 'Natural Gas', location: 'MCC-2A bkr 14' }), isFeederRow(E({ role: 'feeder', deviceType: 'VFD', location: 'Feeder end of AHU-3' }))].join();
+      want(got.app === 'true,UPS output,ATS,true,true,false,false,false', 'the app');
       // loto-web reads the prefix with its colon: one an edit only broke is mended, a row typed without it is not that row
-      got.mend = [sourceLocationForExport({ role: 'secondaryMain', location: 'Secondary Main MDP-2 bkr 1' }),
-        sourceLocationForExport({ role: 'alternate', altKind: 'ATS', location: 'Alternate Source (ATS) ATS-1' }),
-        String(isSecondaryMainRow({ location: 'Secondary Main MDP-2' }))].join(' | ');
+      got.mend = [sourceLocationForExport(E({ role: 'secondaryMain', location: 'Secondary Main MDP-2 bkr 1' })),
+        sourceLocationForExport(E({ role: 'alternate', altKind: 'ATS', location: 'Alternate Source (ATS) ATS-1' })),
+        String(isSecondaryMainRow(E({ location: 'Secondary Main MDP-2' })))].join(' | ');
       want(got.mend === 'Secondary Main: MDP-2 bkr 1 | Alternate Source (ATS): ATS-1 | false', 'a broken prefix');
       const S = (loc, extra) => Object.assign(mkSrc('Electrical 208V'), { sourceId: genUuid(), location: loc, verification: 'Meter' }, extra || {});
       const X = Object.assign(mkEntry('XF-277', { sources: [S('MDP-1 bkr 12'), S('MDP-2 bkr 1', { role: 'secondaryMain' }), S('UPS-1 bkr 3', { role: 'alternate', altKind: 'UPS output' })] }),
@@ -9667,6 +9673,156 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ---- Build 122 third review (2026-10-24): one test per bug fixed --------------
+
+  // T284 — a Quantity-2 untagged drive row keeps one tag per unit
+  async function t284_aQty2UntaggedRowKeepsOneTagPerUnit() {
+    const N = 'T284 build 122 third review: on a Quantity-2 drive row with a blank Device ID beside a tagged drive, recording unit 1\'s feeder writes "VFD-1;" — unit 1 only, as loto-web\'s unit_ids reads it — so unit 2 is still asked its own feeder; both recorded, the Device ID reads "VFD-1; VFD-2" and each drive has its own feeder';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      const form = () => { formOfType('AHU-284', 'Air Handler', 'AHU - Steam');
+        sources = [DRIVE({ deviceId: 'VFD-9' }), Object.assign(FEEDER('Feeder: MCC-1 bkr 1 (VFD-9)'), { role: 'feeder' }), DRIVE({ deviceId: '', quantity: 2 })];
+        sources.forEach(ensureSourceId); renderSources(); };
+      // unit 1 only (unit 2's feeder cancelled)
+      form();
+      const one = { panel: ['MCC-2A', 'cancel'], bkr: ['14'], drive: ['VFD-1'] };
+      await withDialogs({ choice: (o) => {
+        if (o.id === 'feeder-panel') return one.panel.shift() || 'cancel';
+        if (o.id === 'feeder-breaker') return one.bkr.shift() || 'cancel';
+        if (o.id === 'feeder-drive') return one.drive.shift() || 'cancel';
+        return o.id === 'drive-isolates' ? 'yes' : 'cancel';
+      } }, async () => { await promptDriveFeeder(2); });
+      got.half = [sources[2].deviceId, driveUnitTags(sources[2]).join('|'), unitDrives(sources).filter(d => d.src === sources[2]).map(d => d.fed).join()].join(' / ');
+      want(got.half === 'VFD-1; / VFD-1| / true,false', 'unit 1 only: ' + got.half);
+      // both units
+      form();
+      const asked = [];
+      const q = { 'feeder-panel': ['MCC-2A', 'MCC-2A'], 'feeder-breaker': ['14', '15'], 'feeder-drive': ['VFD-1', 'VFD-2'] };
+      await withDialogs({ choice: (o) => { asked.push(o.id); const l = q[o.id]; if (l) return l.shift() || 'cancel'; return o.id === 'drive-isolates' ? 'yes' : 'cancel'; } },
+        async () => { await promptDriveFeeder(2); });
+      got.both = [sources[2].deviceId, sources.filter(isFeederRow).map(s => s.location).join(' | '), unitDrives(sources).every(d => d.fed)].join(' / ');
+      want(sources[2].deviceId === 'VFD-1; VFD-2' && asked.filter(x => x === 'feeder-panel').length === 2
+        && sources.filter(isFeederRow).map(s => s.location).join(' | ') === 'Feeder: MCC-1 bkr 1 (VFD-9) | Feeder: MCC-2A bkr 14 (VFD-1) | Feeder: MCC-2A bkr 15 (VFD-2)'
+        && unitDrives(sources).every(d => d.fed), 'both units: ' + got.both);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T285 — the tag typed at the feeder is one tag
+  async function t285_theTypedFeederTagIsOneTag() {
+    const N = 'T285 build 122 third review: the drive tag typed at "Feeder: the drive" loses ";" "," and "( )" (as spaces) before it goes into the feeder\'s Location and a blank Device ID — so "VFD-1;A" never splits a one-drive row into two unit tags or the feeder\'s drive list into two drives';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-285', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-9' }), Object.assign(FEEDER('Feeder: MCC-1 bkr 1 (VFD-9)'), { role: 'feeder' }), DRIVE({ deviceId: '' })];
+      sources.forEach(ensureSourceId); renderSources();
+      await withDialogs({ choice: (o) => ({ 'feeder-panel': 'MCC-2A', 'feeder-breaker': '15', 'feeder-drive': 'VFD-1;A (supply)', 'drive-isolates': 'yes' })[o.id] || 'cancel' },
+        async () => { await promptDriveFeeder(2); });
+      const f = sources[sources.length - 1];
+      got.r = [sources[2].deviceId, driveUnitTags(sources[2]).join('|'), f.location, feederTagsOf(f.location).join('|'), unitDrives(sources).every(d => d.fed)].join(' / ');
+      want(got.r === 'VFD-1 A supply / VFD-1 A supply / Feeder: MCC-2A bkr 15 (VFD-1 A supply) / VFD-1 A supply / true', got.r);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T286 — a drive row is never a feeder
+  async function t286_aDriveRowIsNeverAFeeder() {
+    const N = 'T286 build 122 third review: a drive row (Device VFD) or a Stored Electrical Energy row whose Location starts with "Feeder" is not a feeder — as loto-web\'s _is_drive_feeder never takes one — so it feeds no drive, shows no role line, and a Duplicate of the unit keeps it';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-286', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-1', location: 'Feeder end of AHU-3 (VFD-1)' }), Object.assign(mkSrc('Stored Electrical Energy'), { deviceType: 'Capacitor', location: 'Feeder side cap bank', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      got.r = [isFeederRow(sources[0]), isFeederRow(sources[1]), sourceRoleOf(sources[0]) || '-', unitDrives(sources).map(d => d.fed).join(),
+        document.getElementById('roleGroup_0').style.display === 'none'].join(' / ');
+      want(got.r === 'false / false / - / false / true', got.r);
+      const U = Object.assign(mkEntry('AHU-286-U', { sources: sources.map(s => Object.assign(JSON.parse(JSON.stringify(s)), { sourceId: genUuid() })) }), { equipType: 'Air Handler', template: 'AHU - Steam' });
+      savedEquipment = [U]; saveAll();
+      await withDialogs({ confirm: true }, async () => { await executeDuplicate(0, false); });
+      got.dup = sources.length;
+      want(got.dup === 2, 'Duplicate keeps the drive row');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T287 — Duplicate source of a role row makes an ordinary row
+  async function t287_duplicatingARoleRowMakesAnOrdinaryRow() {
+    const N = 'T287 build 122 third review: Duplicate source on a Feeder or Secondary Main row keeps the original as it is and makes the copy an ordinary row (no role, no prefix) — one breaker, one role row — and says so';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    const prevToast = window.showSourceToast;
+    try {
+      setHospitalCode('');
+      const toasts = []; window.showSourceToast = (m) => { toasts.push(String(m)); };
+      formOfType('XF-287', 'Transformer', 'Standard Electrical');
+      sources = [Object.assign(FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), { role: 'feeder', collapsed: false }),
+        Object.assign(mkSrc('Electrical 208V'), { location: 'Secondary Main: MDP-2 bkr 1', role: 'secondaryMain', verification: 'Meter', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      duplicateSource(1); duplicateSource(0);
+      got.rows = sources.map(s => [s.location, s.role || '-', sourceRoleOf(s) || '-'].join('|'));
+      want(JSON.stringify(got.rows) === JSON.stringify(['Feeder: MCC-2A bkr 14 (VFD-1)|feeder|feeder', 'MCC-2A bkr 14 (VFD-1)|-|-',
+        'Secondary Main: MDP-2 bkr 1|secondaryMain|secondaryMain', 'MDP-2 bkr 1|-|-']), 'the rows');
+      want(toasts.some(t => /as an ordinary row: one breaker keeps one feeder row/.test(t)) && toasts.some(t => /one secondary main row/.test(t)), 'the message: ' + JSON.stringify(toasts));
+    } finally { window.showSourceToast = prevToast; setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T288 — a role row repurposed loses its role
+  async function t288_aRepurposedRoleRowLosesItsRole() {
+    const N = 'T288 build 122 third review: a Feeder row whose Device becomes VFD loses its role and prefix (it is the drive now); a role row given a custom energy source that isn\'t Electrical keeps the field but is no longer read by it — not a feeder, exported without the prefix';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-288', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), { role: 'feeder', collapsed: false }),
+        Object.assign(mkSrc('Electrical 208V'), { location: 'MDP-2 bkr 1', role: 'secondaryMain', verification: 'Meter', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      await withDialogs({ choice: () => 'cancel' }, async () => { handleDeviceTypeChange(0, 'VFD'); await sleep(0); });
+      got.vfd = [sources[0].location, sources[0].role || '-', isFeederRow(sources[0])].join('|');
+      want(got.vfd === 'MCC-2A bkr 14 (VFD-1)|-|false', 'Device VFD: ' + got.vfd);
+      handleEnergySourceChange(1, '** Custom Energy **');
+      updateSource(1, 'energySource', 'Natural Gas (LP)');
+      got.custom = [isSecondaryMainRow(sources[1]), sourceRoleOf(sources[1]) || '-', sourceLocationForExport(sources[1])].join('|');
+      want(got.custom === 'false|-|MDP-2 bkr 1', 'a custom energy source: ' + got.custom);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T289 — closing the transformer's first question says so
+  async function t289_closingTheTransformersFirstQuestionSaysSo() {
+    const N = 'T289 build 122 third review: closing the secondary main\'s (or an alternate source\'s) first question — the panel — says "Not added: Secondary main — the question was closed", as the later steps do; Skip stays quiet';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevToast = window.showToast;
+    try {
+      const toasts = []; window.showToast = (m) => { toasts.push(String(m)); };
+      let r1, r2;
+      await withDialogs({ choice: (o) => o.id === 'xfmr-secondary-main' ? 'cancel' : 'skip' }, async () => { r1 = await askXfmrFeed({ id: 'xfmr-secondary-main', title: 'Secondary main', html: '', placeholder: '' }); });
+      await withDialogs({ choice: () => 'skip' }, async () => { r2 = await askXfmrFeed({ id: 'xfmr-secondary-main', title: 'Secondary main', html: '', placeholder: '' }); });
+      got.toasts = toasts;
+      want(r1 === null && r2 === null && JSON.stringify(toasts) === JSON.stringify(['Not added: Secondary main — the question was closed']), 'the message');
+    } finally { window.showToast = prevToast; }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -9787,7 +9943,9 @@
     t272_aTransformerRowReadsPanelBkrN, t273_anArcFlashPhotoIsNamedWhateverTheType, t274_noLabelHoldsOverAnUnsavedRef,
     t275_aSharedTagSaysWhichUnit, t276_aKeptDrainAnswerNeverRewritesANewMediumsCode, t277_aRowsRoleOutlivesALocationEdit,
     t278_copySourceOntoARoleRowDropsTheRole, t279_aRowsRoleShowsAndCanBeCleared, t280_anUntaggedDriveTakesItsFeedersTag,
-    t281_theCardOffersNoTagForAnUntaggedDrive, t282_anUntaggedDrivesFeederIsNotOfferedAway, t283_closingATransformerQuestionSaysWhatWasntAdded];
+    t281_theCardOffersNoTagForAnUntaggedDrive, t282_anUntaggedDrivesFeederIsNotOfferedAway, t283_closingATransformerQuestionSaysWhatWasntAdded,
+    t284_aQty2UntaggedRowKeepsOneTagPerUnit, t285_theTypedFeederTagIsOneTag, t286_aDriveRowIsNeverAFeeder,
+    t287_duplicatingARoleRowMakesAnOrdinaryRow, t288_aRepurposedRoleRowLosesItsRole, t289_closingTheTransformersFirstQuestionSaysSo];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
