@@ -9159,7 +9159,7 @@
 
   // T269 — a drive's feeder is matched as loto-web matches it
   async function t269_aDrivesFeederIsMatchedAsLotoWebMatchesIt() {
-    const N = 'T269 build 122 review: a drive is fed by a Feeder row naming its tag as a whole word in any case ("VFD-1" is not "VFD-10"), "(VFD-1, VFD-2)" feeds both, and Feeder rows that name no drive of the unit count for its drives (loto-web\'s feeders_for) — so "VFD1" under a "(VFD-1)" feeder is not asked again at Save & New and gets no second feeder row; the card\'s "+ Add the breaker" offers the next drive without a feeder by the same rule';
+    const N = 'T269 build 122 review: a drive is fed by a Feeder row naming its tag as a whole word in any case inside its closing "( … )" ("VFD-1" is not "VFD-10"; a tag "26" is not "bkr 26"), "(VFD-1, VFD-2)" feeds both, and Feeder rows that name no drive of the unit count for its drives (loto-web\'s feeders_for) — so "VFD1" under a "(VFD-1)" feeder is not asked again at Save & New and gets no second feeder row; the card\'s "+ Add the breaker" offers the next drive without a feeder by the same rule';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -9171,7 +9171,10 @@
       got.lower = fed([DRIVE({ deviceId: 'vfd-1' }), FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)')]);
       got.shared = fed([DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2 }), FEEDER('Feeder: MCC-2A bkr 14 (VFD-1, VFD-2)')]);
       got.whole = fed([DRIVE({ deviceId: 'VFD-1' }), DRIVE({ deviceId: 'VFD-10' }), FEEDER('Feeder: MCC-2A bkr 10 (VFD-10)')]);
-      want(got.mismatch === 'VFD1:fed' && got.lower === 'vfd-1:fed' && got.shared === 'VFD-1:fed VFD-2:fed' && got.whole === 'VFD-1:no VFD-10:fed', 'the rule');
+      // inside the closing parentheses only: a drive tagged "26" is not fed by "bkr 26"
+      got.paren = fed([DRIVE({ deviceId: '26' }), DRIVE({ deviceId: 'VFD-1' }), FEEDER('Feeder: MCC-2A bkr 26 (VFD-1)')]);
+      want(got.mismatch === 'VFD1:fed' && got.lower === 'vfd-1:fed' && got.shared === 'VFD-1:fed VFD-2:fed' && got.whole === 'VFD-1:no VFD-10:fed'
+        && got.paren === '26:no VFD-1:fed', 'the rule');
       // Save & New: not asked again, no second feeder row
       formOfType('AHU-269', 'Air Handler', 'AHU - Steam');
       sources = [DRIVE({ deviceId: 'VFD1', driveIsolates: ['yes'] }), FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)')]; sources.forEach(ensureSourceId); renderSources();

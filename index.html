@@ -3331,12 +3331,14 @@ function driveIsolatesCellText(src) { return joinUnitPositions(driveIsolatesForJ
 // if an edit took it away (sourceLocationForExport); rows recorded before
 // build 122 — or typed by hand — go by their Location alone.
 function isFeederRow(s) { return !!s && (s.role === 'feeder' || /^\s*Feeder/i.test(String(s.location || ''))); }   // loto-web: starts with "feeder"
-// Does a feeder's Location name this drive tag? loto-web's rule
-// (drive_isolation._names_tag): the whole tag, any case — "VFD-1" is not in
-// "(VFD-10)" — anywhere in the Location, so "(VFD-1, VFD-2)" feeds both.
+// Does a feeder's Location name this drive tag? loto-web's rule (its tier
+// fix, 2026-10-24 19:34Z): the whole tag, any case, inside the Location's
+// closing "( … )" only — "VFD-1" is not in "(VFD-10)", a tag "26" is not
+// "bkr 26" — so "(VFD-1, VFD-2)" feeds both.
 function feederNamesTag(loc, tag) {
-  const t = String(tag || '').trim().toLowerCase(), s = String(loc || '').toLowerCase();
-  if (!t) return false;
+  const m = /\(([^()]*)\)\s*$/.exec(String(loc || ''));
+  const t = String(tag || '').trim().toLowerCase(), s = m ? m[1].toLowerCase() : '';
+  if (!t || !s) return false;
   const edge = c => !c || !/[\w-]/.test(c);
   for (let at = s.indexOf(t); at >= 0; at = s.indexOf(t, at + 1)) {
     if (edge(s[at - 1]) && edge(s[at + t.length])) return true;
