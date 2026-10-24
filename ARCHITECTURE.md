@@ -1355,6 +1355,10 @@ default: "Drains to" has no hose-destination text. Committed `1ee2f48` on `ios-t
     `groundingChoices`.
   - Build bump: `APP_BUILD` 122, header `b122`, cache v7.118, `CURRENT_PROJECT_VERSION` 122 in both entries (at
     loto-web's request this time — builds 120 and 121 held it until release), the FingerLakes copy.
+  - The commit didn't run `npm run sync`, so the iOS bundle still held build 121's page under build number 122 (the
+    build 105 trap). The field-app chat ran the sync on 2026-10-24 (the bundle is gitignored; `app-lists.json`
+    regenerated identical), so an archive is a true 122. It then re-ran the checks: suite 278 / 278 web and
+    native-mock, and loto-web's `check_field_app_lists.py` 0 errors (the same 16 warnings as build 121).
 - **Sample export** for loto-web's end-to-end check: `loto-web/docs/samples/FieldExport_b122_sample_2026-10-24.zip`.
   It was made in a fresh headless profile through the app's own handlers and `runCombinedExport`: synthetic units, 38
   small drawn photos, collector tag `SAMPLE`, two sheets (Atlanta, Marion). It holds:
