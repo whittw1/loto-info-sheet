@@ -1529,6 +1529,15 @@ T278–T283 and the extended T271 fail on `7f51c49`'s page, each for the behavio
 rebuilt so the tagged drive is unfed, as in the finding). Suite **293 / 293** headless web and native-mock. The iOS
 bundle was synced after the fixes.
 
+**loto-web cleared these on 2026-10-24** with no change on its side:
+- it reads col 3 per unit, so a Device ID filled from the feeder's tag names the drive in Section 1, and a re-pull
+  updates it unless edited in the office;
+- it takes a row's role only from the Location prefix, so a row made ordinary is read as one after the next pull;
+- it is untouched by which feeder row names which drive.
+One difference remains, harmless for the rows the app writes: loto-web looks for a drive tag in every "( … )" group
+of a feeder's Location, the app only in the trailing one. On a hand-typed "Feeder: MCC-2A (VFD-1) bkr 14", the app
+asks for a feeder that loto-web would read as recorded: an extra prompt, never a missed one.
+
 ### Build 121 — the label discharge wait
 
 The contract drafted at wilkins' request ("draft a label-discharge-wait field (drives, capacitor banks, UPS) for
