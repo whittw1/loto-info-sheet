@@ -1266,8 +1266,9 @@ review's 13 fixes are `c9c4c1b` ("The xhigh review" below). Not pushed.
     otherwise the first unanswered unit (`driveAnswerPosition`).
   - Which drives have a feeder (`unitDrives`, since the review): loto-web's rule (`drive_isolation.feeders_for`).
     A Feeder row (`isFeederRow`: its role, or a Location starting "Feeder") feeds a drive when it names the drive's
-    tag as a whole word, in any case, anywhere in the Location (`feederNamesTag`: "VFD-1" is not in "(VFD-10)";
-    "(VFD-1, VFD-2)" feeds both). When no Feeder row names any drive of the unit, the Feeder rows count for its
+    tag as a whole word, in any case, inside the Location's closing "( … )" (`feederNamesTag`: "VFD-1" is not in
+    "(VFD-10)", a tag "26" is not "bkr 26"; "(VFD-1, VFD-2)" feeds both) — loto-web's rule since its tier fix of
+    2026-10-24 19:34Z, so the drive list stays in those parentheses. When no Feeder row names any drive of the unit, the Feeder rows count for its
     drives; the app is a little stricter there, giving each such drive one of those rows, so a second drive without
     its own breaker is still asked. So a drive typed "VFD1" under a "(VFD-1)" feeder is fed, as loto-web reads it.
   - A drive is named to the tech by its tag, with its unit when the row's one tag covers several drives
@@ -1463,6 +1464,16 @@ T261, T264 and T265 changed with the fixes (the list, the transformer's three pr
 T261 fail on `1ee2f48`'s page, each for the behaviour it checks. Suite **287 / 287** headless web and native-mock;
 loto-web's `check_field_app_lists.py` 0 errors (the same 16 warnings). The iOS bundle was synced after the fixes
 (`CURRENT_PROJECT_VERSION` 122), so an archive is the reviewed build.
+
+**loto-web cleared the fixes on 2026-10-24.** Change (1) needed a loto-web change, live 19:34:13Z: its drive tier had
+counted Feeder rows against drives, so one row for two drives dropped the unit to the Tier 2 STOP. A unit is now
+Tier 1 when every drive tag is named inside a feeder's parentheses, and tags match only there. The app followed in
+`7f51c49` (suite 287 / 287 again, T269 extended). Changes (2)–(4) needed nothing.
+The review sample ran end to end on loto-web's new code:
+- the AHU printed "Before opening a drive enclosure, verify that feeder E-3 is locked out";
+- XFMR-5's Locations read right;
+- the Switchgear unit's arc flash photo was filed.
+Its pre-QC BLOCK on one Kinetic row for two drives is the sample's data, not a change of the app's.
 
 ### Build 121 — the label discharge wait
 
