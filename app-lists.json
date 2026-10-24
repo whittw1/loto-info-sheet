@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 121,
+  "build": 122,
   "hospitals": [
     {
       "code": "Marion",
@@ -483,6 +483,37 @@
       "Backdraft Damper",
       "Combustion Air Damper",
       "Flue Damper"
+    ],
+    "drainsTo": [
+      "Containment",
+      "Floor drain",
+      "Hose"
+    ],
+    "xfmrAltKinds": [
+      "ATS",
+      "UPS output",
+      "Generator connection",
+      "Tie breaker",
+      "Another transformer",
+      "PV or battery"
+    ],
+    "xfmrConnections": [
+      "Delta-Wye",
+      "Delta-Delta",
+      "Wye-Wye",
+      "Wye-Delta",
+      "Single-phase"
+    ],
+    "xfmrTempRises": [
+      "80 C",
+      "115 C",
+      "150 C"
+    ],
+    "groundingChoices": [
+      "Ground bus",
+      "Ground studs",
+      "None",
+      "Can't tell"
     ]
   }
 }

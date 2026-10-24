@@ -83,6 +83,10 @@
 //   T256–T259 build 121: the label discharge wait — which rows ask (VFD / Stored Electrical Energy, not Chiller /
 //             Mini Split / linked) and the per-unit boxes; the label photo bound to its row; copies, Split and the
 //             Save & New warning; columns 10 / 18 / 19 and entries.json
+//   T260–T268 build 122: loto-web's 2026-10-24 sync spec — a drive's feeder and its own disconnect (the device
+//             pick, Save & New, copies), the arc flash label (slot, box, question, export), a transformer's
+//             secondary main / other sources / survey (prompts, section, U3/U4/U7/U8), the release question for
+//             every medium (setting, labels, no code rewrite, Drains To), columns 13 / 20 / 21, the build bump
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -2367,7 +2371,7 @@
   const nearMark = (m, x, y) => !!m && Math.abs(m.x - x) <= 0.012 && Math.abs(m.y - y) <= 0.012;
   const marksText = (marks) => (marks || []).map(m => m.x.toFixed(3) + ',' + m.y.toFixed(3)).join('; ');
   // The last field of one CSV line (quoted or not).
-  function lastCsvField(line) {
+  function csvFields(line) {
     const out = []; let cur = '', q = false;
     for (let i = 0; i < line.length; i++) {
       const c = line[i];
@@ -2377,7 +2381,7 @@
       else cur += c;
     }
     out.push(cur);
-    return out[out.length - 1];
+    return out;
   }
   const artifacts = () => (window.__PHOTO_SUITE_ARTIFACTS = window.__PHOTO_SUITE_ARTIFACTS || {});
 
@@ -2424,12 +2428,16 @@
     const okX = xCell === want && xOther === '' && /valve mark/i.test(xLabel || '');
     const cpath = Object.keys(u.files).find(p => /\.csv$/.test(p));
     const lines = cpath ? new TextDecoder().decode(u.files[cpath]).split('\n').filter(Boolean) : [];
-    const csvHead = lines.length ? lastCsvField(lines[0]) : '';
+    // the "Valve Marks" column by its header (build 122 added "Arc Flash Photo Filename" after it)
+    const csvHeads = lines.length ? csvFields(lines[0]) : [];
+    const vmCol = csvHeads.findIndex(h => /^valve marks?$/i.test(h));
+    const csvHead = vmCol >= 0 ? csvHeads[vmCol] : '';
     const csvRow = lines.find(l => l.indexOf('LPS 10 PSI') >= 0);
-    const okCsv = /valve marks?/i.test(csvHead) && !!csvRow && lastCsvField(csvRow) === want;
+    const csvVal = (csvRow && vmCol >= 0) ? csvFields(csvRow)[vmCol] : 'no row';
+    const okCsv = /valve marks?/i.test(csvHead) && !!csvRow && csvVal === want;
     record(N, okRef && okJson && okX && okCsv,
       'ref=' + JSON.stringify(ref && ref.marks) + ' | json=' + JSON.stringify(pm0) + '/' + JSON.stringify(pm1) +
-      ' | xlsx col12 label="' + xLabel + '" value="' + xCell + '" other="' + xOther + '" | csv head="' + csvHead + '" value="' + (csvRow ? lastCsvField(csvRow) : 'no row') + '"');
+      ' | xlsx col12 label="' + xLabel + '" value="' + xCell + '" other="' + xOther + '" | csv head="' + csvHead + '" value="' + csvVal + '"');
   }
 
   // T79b — a source with 2 devices takes 2 marks; a third tap moves the
@@ -8508,6 +8516,622 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ==========================================================================
+  // BUILD 122 — loto-web's 2026-10-24 sync spec, field-app half: a drive's
+  // feeder and its own disconnect, the arc flash label, the transformer
+  // section, the release question for every medium. Each test fails on build 121.
+  // ==========================================================================
+  const settle = async (n) => { for (let k = 0; k < (n || 8); k++) await sleep(0); };
+  async function withReleaseSetting(fn) {
+    const prevCode = getHospitalCode();
+    let prevPrefs = null;
+    try { prevPrefs = localStorage.getItem('loto_release_prefs'); localStorage.removeItem('loto_release_prefs'); } catch (e) {}
+    try { return await fn(); } finally {
+      setHospitalCode(prevCode);
+      try { if (prevPrefs === null) localStorage.removeItem('loto_release_prefs'); else localStorage.setItem('loto_release_prefs', prevPrefs); } catch (e) {}
+    }
+  }
+  const DRIVE = (extra) => Object.assign(mkSrc('Electrical 480V'), { deviceType: 'VFD', location: 'MCC', collapsed: false }, extra || {});
+  const FEEDER = (loc) => Object.assign(mkSrc('Electrical 480V'), { location: loc, verification: 'Meter' });
+  const unq = (t) => String(t == null ? '' : t).replace(/&rsquo;/g, "'");
+
+  // T260 — Device = VFD: the feeder, then the question, per drive
+  async function t260_aDriveIsAskedItsFeederAndItsDisconnect() {
+    const N = 'T260 picking Device = VFD on an Electrical row asks, per drive (Quantity 2 = two drives), for the feeder (panel, breaker, the drive tag offered) and then "Does drive <tag>\'s own disconnect isolate all incoming power?" (Yes / No / Can\'t tell / Cancel, with the lockable-handle hint); the answer lands in driveIsolates in Device ID order; a drive with a feeder is asked only the question, and Can\'t tell writes the change-later note; Cancel stops; an untagged drive takes the tag typed at the feeder; a tag not in the list takes the first unanswered unit (the card\'s feeder button asks the question after the feeder); nothing on a linked or non-Electrical row; the card shows one answer per drive; a spare feeder counts only for an untagged drive';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const run = async (srcs, answers, fn) => {
+      fillFormNoSources('AHU-260');
+      sources = srcs; renderSources();
+      const asked = [];
+      const q = JSON.parse(JSON.stringify(answers));
+      await withDialogs({ choice: (o) => {
+        asked.push(o.id === 'feeder-drive' ? 'tag=' + (o.input && o.input.value) : (o.id === 'drive-isolates' ? 'Q:' + unq(o.title) : o.id));
+        if (o.id === 'drive-isolates') { got.choices = o.choices.map(c => c.label).join('/'); got.hint = String(o.html); }
+        const list = q[o.id];
+        if (Array.isArray(list) && list.length) return list.shift();
+        if (o.id === 'feeder-drive') return (o.input && o.input.value) || 'cancel';
+        return 'cancel';
+      } }, async () => { await fn(); await settle(); });
+      return asked;
+    };
+    const Q = (tag) => 'Q:Does drive ' + tag + "'s own disconnect isolate all incoming power?";
+    // two drives, nothing recorded: feeder 1 and its question, then feeder 2 and its question
+    got.two = await run([DRIVE({ deviceType: 'Disconnect', deviceId: 'VFD-1; VFD-2', quantity: 2 })],
+      { 'feeder-panel': ['MCC-2A', 'MCC-2A'], 'feeder-breaker': ['14', '15'], 'drive-isolates': ['yes', 'no'] },
+      async () => { handleDeviceTypeChange(0, 'VFD'); });
+    got.twoRows = sources.map(s => [s.energySource, s.deviceType, s.location].join('|'));
+    got.twoAns = JSON.stringify(sources[0].driveIsolates);
+    want(got.two.join(' > ') === ['feeder-panel', 'feeder-breaker', 'tag=VFD-1', Q('VFD-1'), 'feeder-panel', 'feeder-breaker', 'tag=VFD-2', Q('VFD-2')].join(' > '), 'the order');
+    want(got.twoRows.join(' / ') === 'Electrical 480V|VFD|MCC / Electrical 480V|Breaker|Feeder: MCC-2A bkr 14 (VFD-1) / Electrical 480V|Breaker|Feeder: MCC-2A bkr 15 (VFD-2)'
+      && got.twoAns === '["yes","no"]', 'rows and answers');
+    want(got.choices === 'Yes/No/Can’t tell/Cancel' && /lockable handle on the drive that switches the incoming line/.test(got.hint || ''), 'buttons and hint');
+    // a drive that already has its feeder: only the question; Can't tell writes the note
+    got.fed = await run([DRIVE({ deviceType: 'Disconnect', deviceId: 'VFD-3' }), FEEDER('Feeder: MCC-1 bkr 2 (VFD-3)')],
+      { 'drive-isolates': ['cant_tell'] }, async () => { handleDeviceTypeChange(0, 'VFD'); });
+    got.fedNote = changeLaterAutoNotes(formEntryLike()).join(' | ');
+    want(got.fed.join(' > ') === Q('VFD-3') && JSON.stringify(sources[0].driveIsolates) === '["cant_tell"]'
+      && got.fedNote === "Drive VFD-3: can't tell whether its disconnect isolates all incoming power"
+      && /Drive VFD-3: can't tell whether its disconnect isolates all incoming power/.test(changeLaterSheetText(formEntryLike())), 'a fed drive: the question only, and the note');
+    // Cancel stops the flow
+    got.cancel = await run([DRIVE({ deviceType: 'Disconnect', quantity: 2 })], {}, async () => { handleDeviceTypeChange(0, 'VFD'); });
+    want(got.cancel.join() === 'feeder-panel' && sources.length === 1 && !sources[0].driveIsolates, 'Cancel stops');
+    // nothing asked on a linked row, on a non-Electrical row, or when the drive is complete
+    got.linked = await run([DRIVE({ deviceType: 'Disconnect', linkedTo: { equipName: 'X', sourceIndex: 0, sourceLabel: 'Electrical 480V' } })], {}, async () => { handleDeviceTypeChange(0, 'VFD'); });
+    got.gas = await run([Object.assign(mkSrc('Natural Gas'), { deviceType: 'Ball Valve', collapsed: false })], {}, async () => { handleDeviceTypeChange(0, 'VFD'); });
+    got.done = await run([DRIVE({ deviceType: 'Disconnect', deviceId: 'VFD-4', driveIsolates: ['yes'] }), FEEDER('Feeder: P1 (VFD-4)')], {}, async () => { handleDeviceTypeChange(0, 'VFD'); });
+    want(!got.linked.length && !got.gas.length && !got.done.length, 'nothing asked: ' + JSON.stringify([got.linked, got.gas, got.done]));
+    // an untagged drive takes the tag typed at the feeder; "No number" leaves the bkr out
+    got.untagged = await run([DRIVE({ deviceType: 'Disconnect' })],
+      { 'feeder-panel': ['LP-4'], 'feeder-breaker': [''], 'feeder-drive': ['VFD-9'], 'drive-isolates': ['no'] }, async () => { handleDeviceTypeChange(0, 'VFD'); });
+    want(!!sources[1] && sources[1].location === 'Feeder: LP-4 (VFD-9)' && JSON.stringify(sources[0].driveIsolates) === '["no"]'
+      && got.untagged.join(' > ') === ['feeder-panel', 'feeder-breaker', 'tag=', Q('VFD-9')].join(' > '), 'untagged');
+    // the card's feeder button: a tag not in the Device ID list takes the first unanswered unit
+    got.card = await run([DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2, driveIsolates: [null, 'yes'] })],
+      { 'feeder-panel': ['MCC-9'], 'feeder-breaker': ['3'], 'feeder-drive': ['VFD-1X'], 'drive-isolates': ['no'] }, async () => { await addFeederFromCard(0); });
+    want(JSON.stringify(sources[0].driveIsolates) === '["no","yes"]' && got.card.join(' > ') === ['feeder-panel', 'feeder-breaker', 'tag=VFD-1', Q('VFD-1X')].join(' > '), 'a tag not in the list');
+    got.pos = [driveAnswerPosition(DRIVE({ deviceId: 'A; B', quantity: 2, driveIsolates: ['yes'] }), 'Z'),
+      driveAnswerPosition(DRIVE({ deviceId: 'A; B', quantity: 2 }), 'Z', 1), driveAnswerPosition(DRIVE({ deviceId: 'A; B', quantity: 2 }), 'B', 0),
+      driveAnswerPosition(DRIVE({ deviceId: 'A', quantity: 2, driveIsolates: ['no'] }), 'A')].join();
+    want(got.pos === '1,1,1,1', 'answer positions');
+    // the card: one answer per drive, changed by hand
+    renderSources();
+    got.boxes = [0, 1].map(k => (document.getElementById('src_driveiso_0_' + k) || {}).value);
+    updateDriveIsolates(0, 1, 'cant_tell'); updateDriveIsolates(0, 0, '');
+    got.byHand = JSON.stringify(sources[0].driveIsolates);
+    want(got.boxes.join() === 'no,yes' && got.byHand === '[null,"cant_tell"]', 'the card');
+    sources = [DRIVE({ linkedTo: { equipName: 'X', sourceIndex: 0, sourceLabel: 'E' } }), Object.assign(mkSrc('Electrical 208V'), { deviceType: 'Disconnect', collapsed: false })];
+    renderSources();
+    want(!document.getElementById('src_driveiso_0_0') && !document.getElementById('src_driveiso_1_0'), 'no answer box on a linked or non-drive row');
+    // which drives have a feeder: a tagged one by its tag; a spare feeder only for an untagged drive
+    const fed = (list) => unitDrives(list).map(d => (d.tag || '-') + ':' + (d.fed ? 1 : 0)).join(',');
+    got.fedRule = [fed([DRIVE({ quantity: 2 }), FEEDER('Feeder: X (VFD-A)')]),
+      fed([DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2 }), FEEDER('Feeder: X (VFD-1)'), FEEDER('Feeder: Y (VFD-9)')]),
+      fed([DRIVE({ deviceId: 'VFD-1', quantity: 2 }), FEEDER('Feeder: X bkr 1 (VFD-1)')])];
+    want(got.fedRule.join(' / ') === '-:1,-:0 / VFD-1:1,VFD-2:0 / VFD-1:1,VFD-1:1', 'the feeder rule');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T261 — Save & New asks about each drive; copies carry no answer
+  async function t261_saveAndNewAsksAboutEachDrive() {
+    const N = 'T261 Save & New asks about each drive without its feeder ("Drive VFD-1 has no feeder recorded") or its answer ("… has no answer about its disconnect"): Record it now runs the feeder steps and the question, Not now goes on to the list, which names "Feeder for VFD-2" and "Drive disconnect answer (Unit 2)"; closing the question saves nothing; a unit whose drives are complete gets the list at once (Save & New runs straight through); Duplicate source, Copy Source, a count copy and a Duplicate of the unit carry no answer, Split moves the last unit\'s';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      const overlayText = () => { const o = document.getElementById('incompleteWarningOverlay'); return o ? o.textContent.replace(/\s+/g, ' ').trim() : ''; };
+      const form = (srcs) => { formOfType('AHU-261', 'Air Handler', 'AHU - Steam'); sources = srcs; sources.forEach(ensureSourceId); renderSources(); };
+      form([DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2 })]);
+      const asked = [];
+      const q = { 'drive-save': ['record', 'later'], 'feeder-panel': ['MCC-2A'], 'feeder-breaker': ['14'], 'drive-isolates': ['yes'] };
+      await withDialogs({ confirm: true, choice: (o) => {
+        asked.push(o.id + (o.id === 'drive-save' ? ':' + unq(o.title) : ''));
+        if (o.id === 'drive-save') got.saveChoices = o.choices.map(c => c.label).join('/');
+        const l = q[o.id]; if (l && l.length) return l.shift();
+        if (o.id === 'feeder-drive') return (o.input && o.input.value) || 'cancel';
+        return 'cancel';
+      } }, async () => { await saveAndNew(); });
+      got.asked = asked.join(' > ');
+      got.warn = overlayText(); closeIncompleteWarning();
+      want(got.asked === 'drive-save:Drive VFD-1 has no feeder recorded > feeder-panel > feeder-breaker > feeder-drive > drive-isolates > drive-save:Drive VFD-2 has no feeder recorded'
+        && got.saveChoices === 'Record it now/Not now', 'the questions');
+      want(/Source #1 \(Electrical 480V\) — .*Feeder for VFD-2, Drive disconnect answer \(Unit 2\)/.test(got.warn) && !savedEquipment.length
+        && JSON.stringify(sources[0].driveIsolates) === '["yes"]' && /^Feeder: MCC-2A bkr 14 \(VFD-1\)$/.test((sources[1] || {}).location || ''), 'the list names what is left');
+      // closed: back to the form, nothing saved, no list
+      form([DRIVE({ deviceId: 'VFD-7' })]);
+      await withDialogs({ choice: () => 'cancel' }, async () => { await saveAndNew(); });
+      got.closed = [!!document.getElementById('incompleteWarningOverlay'), savedEquipment.length].join();
+      want(got.closed === 'false,0', 'closed');
+      // the answer only
+      form([DRIVE({ deviceId: 'VFD-8' }), FEEDER('Feeder: P2 bkr 1 (VFD-8)')]);
+      const asked2 = [];
+      await withDialogs({ choice: (o) => { asked2.push(unq(o.title)); return o.id === 'drive-save' ? 'record' : (o.id === 'drive-isolates' ? 'no' : 'cancel'); } }, async () => { await saveAndNew(); });
+      closeIncompleteWarning();
+      want(asked2[0] === 'Drive VFD-8 has no answer about its disconnect' && JSON.stringify(sources[0].driveIsolates) === '["no"]', 'the answer only: ' + JSON.stringify(asked2));
+      // complete drives: no question, and the list at once
+      form([DRIVE({ deviceId: 'VFD-5', driveIsolates: ['no'] }), FEEDER('Feeder: P1 bkr 3 (VFD-5)')]);
+      let sync = null;
+      await withDialogs({ choice: () => { sync = 'asked'; return 'cancel'; } }, async () => { const p = saveAndNew(); if (sync === null) sync = !!document.getElementById('incompleteWarningOverlay'); await p; });
+      closeIncompleteWarning();
+      want(sync === true && !collectIncompleteFields().some(m => /Feeder for|Drive disconnect/.test(m)), 'complete: no question, the list at once');
+      // copies carry no answer; Split moves the last unit's
+      form([DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2, driveIsolates: ['yes', 'no'] })]);
+      duplicateSource(0);
+      got.dup = sources.map(s => JSON.stringify(s.driveIsolates || null)).join('|');
+      want(got.dup === '["yes","no"]|null', 'Duplicate source');
+      want(countCopyOf(DRIVE({ driveIsolates: ['yes'] })).driveIsolates === undefined, 'count copy');
+      const U = Object.assign(mkEntry('AHU-261-U', { sources: [Object.assign(DRIVE({ driveIsolates: ['cant_tell'] }), { sourceId: genUuid() })] }), { equipType: 'Air Handler', template: 'AHU - Steam' });
+      savedEquipment = [U]; saveAll();
+      form([Object.assign(mkSrc(''), { collapsed: false })]);
+      showCopySourceDialog(0); applyCopySource(0, 0);
+      got.copy = [sources[0].deviceType, sources[0].driveIsolates === undefined].join('/');
+      want(got.copy === 'VFD/true', 'Copy Source');
+      await withDialogs({ confirm: true }, async () => { await executeDuplicate(0, false); });
+      want(sources.length === 1 && sources.every(s => s.driveIsolates === undefined), 'Duplicate unit');
+      form([DRIVE({ deviceId: 'VFD-1; VFD-2; VFD-3', quantity: 3, driveIsolates: ['yes', null, 'cant_tell'] })]);
+      await withDialogs({ confirm: true }, async () => { splitSource(0); });
+      got.split = sources.map(s => s.deviceId + '=' + JSON.stringify(s.driveIsolates || null)).join(' | ');
+      want(got.split === 'VFD-1; VFD-2=["yes"] | VFD-3=["cant_tell"]', 'Split');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T262 — the arc flash label's slot, its box and the Save & New question
+  async function t262_theArcFlashLabelSlot() {
+    const N = 'T262 the "Arc Flash Label" slot follows EE Number and shows only on ATS, Generator and Transformer units (and wherever it holds a photo), with "No arc flash label on this equipment"; a photo clears the box, which can\'t be ticked over a photo; the key token is "arcflash" ("Arc Flash Label"), an orphan reattaches to it and a shot that never attached is flagged at export; Save & New on those types asks "Arc flash label" when neither is there — Take the photo stays on the form, No label on it ticks the box and goes on, Save without it goes on — and not once the box is ticked';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const slot = () => document.getElementById('arcFlashSlot');
+    const shown = () => !!slot() && slot().style.display !== 'none';
+    got.types = {};
+    for (const t of ['ATS', 'Generator', 'Transformer', 'Air Handler', 'Switchgear', 'VFD']) { formOfType('AF-262', t); autoSaveCurrent(); got.types[t] = shown(); }
+    want(JSON.stringify(got.types) === '{"ATS":true,"Generator":true,"Transformer":true,"Air Handler":false,"Switchgear":false,"VFD":false}', 'which types');
+    got.order = [...document.querySelectorAll('.photo-row .photo-capture')].map(e => e.id).join();
+    want(got.order === 'photo_equip_main,photo_equip_dataplate,photo_equip_ee,photo_equip_arcflash', 'after EE Number');
+    formOfType('GEN-262', 'Generator', 'Emergency Generator'); autoSaveCurrent();
+    setArcFlashNone(true);
+    got.none = [unitAnswers.arcFlashNone === true, document.getElementById('arcFlashNone').checked].join();
+    await captureInto('equip_arcflash', await makePhotoFile('t262'));
+    got.afterPhoto = [unitAnswers.arcFlashNone === undefined, document.getElementById('arcFlashNoneLabel').style.display === 'none'].join();
+    setArcFlashNone(true);
+    got.refused = unitAnswers.arcFlashNone === undefined;
+    const pk = parsePhotoKey(photos.equip_arcflash.dbKey);
+    got.token = [pk && pk.slotToken, slotTokenFor('equip_arcflash'), photoSlotLabel('equip_arcflash')].join('|');
+    want(got.none === 'true,true' && got.afterPhoto === 'true,true' && got.refused && got.token === 'arcflash|arcflash|Arc Flash Label', 'the box and the photo');
+    document.getElementById('equipType').value = 'Air Handler'; autoSaveCurrent();
+    want(shown(), 'a held photo keeps the slot on another type');
+    // the Save & New question
+    const ask = async (answer, pre) => {
+      clearForm(false);
+      formOfType('GEN-262b', 'Generator', 'Emergency Generator');
+      sources = [Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Disconnect', sourceId: genUuid() })]; renderSources();
+      if (pre) pre();
+      let opts = null;
+      await withDialogs({ confirm: true, choice: (o) => { if (o.id === 'arc-flash-save') { opts = o; return answer; } return 'cancel'; } }, async () => { await saveAndNew(); });
+      const warn = !!document.getElementById('incompleteWarningOverlay'); closeIncompleteWarning();
+      return { asked: !!opts, title: opts && unq(opts.title), text: opts && unq(opts.html), choices: opts && opts.choices.map(c => c.label).join('/'), warn, none: unitAnswers.arcFlashNone === true };
+    };
+    got.photo = await ask('photo'); got.noLabel = await ask('none'); got.without = await ask('save');
+    got.ticked = await ask('save', () => setArcFlashNone(true));
+    want(got.photo.asked && got.photo.title === 'Arc flash label' && got.photo.text === 'Photograph the arc flash label on this generator.'
+      && got.photo.choices === 'Take the photo/No label on it/Save without it' && !got.photo.warn && !got.photo.none, 'Take the photo stays on the form');
+    want(got.noLabel.asked && got.noLabel.warn && got.noLabel.none, 'No label on it ticks the box and goes on');
+    want(got.without.asked && got.without.warn && !got.without.none, 'Save without it goes on');
+    want(!got.ticked.asked && got.ticked.warn, 'not asked once the box is ticked');
+    // an orphan reattaches to the slot; a shot that never attached is flagged at export
+    const E = Object.assign(mkEntry('ATS-262'), { equipType: 'ATS' });
+    E.photos = { equip_arcflash: { dbKey: photoStoreKey(E.id, 'arcflash'), timestamp: new Date().toISOString(), fileType: 'image/jpeg', thumbnail: TINY_THUMB } };
+    const orphan = photoStoreKey(E.id, 'arcflash');
+    const F = Object.assign(mkEntry('ATS-262b'), { equipType: 'ATS' });
+    const loose = photoStoreKey(F.id, 'arcflash');
+    clearForm(false);
+    savedEquipment = [E, F]; saveAll();
+    await storePhotoBytes(orphan, dataUrlFromBytesSeed('t262o'));
+    await storePhotoBytes(loose, dataUrlFromBytesSeed('t262l'));
+    const re = await findReattachCandidates();
+    got.reattach = (re.candidates || []).filter(c => c.slotKey === 'equip_arcflash').map(c => c.e.equipName + ':' + (c.key === orphan)).join();
+    got.unattached = (await emptySlotsWithUnattachedShots([F])).map(m => m.name + ':' + m.slot).join();
+    want(got.reattach === 'ATS-262:true' && got.unattached === 'ATS-262b:Arc Flash Label', 'reattach and the unattached shot');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T263 — the arc flash label in the export
+  async function t263_theArcFlashLabelInTheExport() {
+    const N = 'T263 the export numbers the arc flash label photo after EE Number and before the sources, ships it under manifest slot "arcflash", in entries.json photoFiles.arcflash / photoCaptured.arcflash and the CSV\'s last column "Arc Flash Photo Filename"; the name row\'s column 13 is headed "Arc Flash Label" on ATS, Generator and Transformer blocks only, with the file name, "No label" or blank; the unit is stamped exported with every photo';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('ATS-263', 'ATS', 'ATS - Generic');
+      sources = [Object.assign(mkSrc('Electrical 480V'), { location: 'Emergency Feed: EDP-1 bkr 3', verification: 'Meter', collapsed: false })];
+      renderSources();
+      await captureInto('equip_main', await makePhotoFile('t263m'));
+      await captureInto('equip_arcflash', await makePhotoFile('t263a'));
+      await captureInto('source_0', await makePhotoFile('t263s'));
+      const A = saveEntry();
+      const S = (es) => Object.assign(mkSrc(es), { sourceId: genUuid() });
+      const G = Object.assign(mkEntry('GEN-263', { sources: [S('Electrical 480V')] }), { equipType: 'Generator', template: 'Emergency Generator', unitAnswers: { arcFlashNone: true } });
+      const X = Object.assign(mkEntry('XF-263', { sources: [S('Electrical 480V')] }), { equipType: 'Transformer', template: 'Standard Electrical' });
+      const P = Object.assign(mkEntry('P-263', { sources: [S('Electrical 208V')] }), { equipType: 'CHW Pump', template: 'Chilled Water Pump', unitAnswers: { arcFlashNone: true } });
+      savedEquipment = [savedEquipment.find(e => e.id === A.id) || A, G, X, P]; saveAll();
+      const { zip, confirms } = await runExport({ confirmResponse: true });
+      if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); return; }
+      const u = await unzipExport(zip.blob);
+      const by = {};
+      for (const xpath of Object.keys(u.files).filter(p => /Information_Sheet_.*\.xlsx$/.test(p))) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        const ws = wb.worksheets[0];
+        ws.eachRow(row => {
+          if (String(row.getCell(1).value || '') !== 'Equipment ID/Name') return;
+          const d = ws.getRow(row.number + 1);
+          by[String(d.getCell(1).value || '')] = { h13: String(row.getCell(13).value || ''), v13: String(d.getCell(13).value || ''), main: String(d.getCell(5).value || '') };
+        });
+      }
+      got.sheet = by;
+      const ats = by['ATS-263'] || {};
+      want(ats.h13 === 'Arc Flash Label' && /\.jpg$/.test(ats.v13 || '') && !!u.files['photos/' + ats.v13], 'ATS: its file');
+      want((by['GEN-263'] || {}).h13 === 'Arc Flash Label' && by['GEN-263'].v13 === 'No label', 'Generator: No label');
+      want((by['XF-263'] || {}).h13 === 'Arc Flash Label' && by['XF-263'].v13 === '', 'Transformer: not checked');
+      want((by['P-263'] || {}).h13 === '' && by['P-263'].v13 === '', 'a pump has neither (a leftover No label too)');
+      const je = {}; ((u.entriesJson && u.entriesJson.entries) || []).forEach(e => { je[e.equipName] = e; });
+      const ja = je['ATS-263'] || { sources: [{}], photoFiles: {}, photoCaptured: {} };
+      const num = (f) => +((/_(\d+)\.jpg$/.exec(String(f || '')) || [])[1] || 0);
+      const srcFile = String(ja.sources[0].photoFile || '').replace('photos/', '');
+      got.seq = [num(ats.main), num(ats.v13), num(srcFile)].join();
+      want(num(ats.main) + 1 === num(ats.v13) && num(ats.v13) + 1 === num(srcFile), 'numbered after the equipment photos, before the sources');
+      want(ja.photoFiles.arcflash === 'photos/' + ats.v13 && ('arcflash' in ja.photoCaptured) && (je['GEN-263'] || {}).arcFlashNone === true
+        && (je['GEN-263'].photoFiles || {}).arcflash === '' && ((je['GEN-263'].unitAnswers || {}).arcFlashNone === true) && !('arcFlashNone' in (je['P-263'] || {})), 'entries.json');
+      const rec = ((u.manifest || {}).photos || []).find(r => r.filename === ats.v13);
+      want(!!rec && rec.entries.some(e => e.slot === 'arcflash'), 'manifest slot');
+      const cp = Object.keys(u.files).find(q => /\.csv$/.test(q));
+      const rows = parseCsvRows(new TextDecoder().decode(u.files[cp]));
+      const last = r => r[r.length - 1];
+      got.csv = { head: last(rows[0] || []), ats: rows.filter(r => r[2] === 'ATS-263').map(last).join(), gen: rows.filter(r => r[2] === 'GEN-263').map(last).join() };
+      want(got.csv.head === 'Arc Flash Photo Filename' && got.csv.ats === ats.v13 && got.csv.gen === '', 'the CSV\'s last column');
+      want((savedEquipment.find(e => e.equipName === 'ATS-263') || {}).exportedAllPhotos === true, 'stamped exported with every photo');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T264 — a transformer's secondary main and other sources, after the voltage
+  async function t264_aTransformerAsksItsSecondaryMainAndOtherSources() {
+    const N = 'T264 after a Transformer\'s template voltage the app asks for the secondary main (the panel or switch and breaker typed, then 208V / 240V / 480V / Other… / Skip) and the other sources that can energize the secondary (six tick boxes and an exclusive None found); each answer adds an Electrical breaker row, Meter-verified, not automatic, Located "Secondary Main: <text>" / "Alternate Source (<kind>): <text>"; Other… picks from the other voltages; None found records the date; a template change keeps the rows and asks neither again; the VFD type, which shares Electrical with Stored Energy, asks nothing';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const rowsOf = () => sources.map(s => [s.energySource, s.deviceType, s.location, s.verification, s.auto ? 'auto' : ''].join('|'));
+    const pickXfmr = async (name, template, answer) => {
+      fillFormNoSources(name);
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = 'Transformer';
+      const asked = [];
+      await withDialogs({ confirm: true, choice: (o) => { asked.push(o.id + (o.kind ? '(' + o.kind + ')' : '')); return answer(o); } }, async () => {
+        handleEquipTypeChange();
+        await sleep(0);
+        if (document.getElementById('templatePromptOverlay')) applyTemplatePromptChoice(template);
+        if (document.getElementById('templateConfirmOverlay')) confirmTemplateChange(template);
+        if (document.getElementById('templateVoltageOverlay')) applyTemplateVoltageChoice('480V');
+        await settle(12);
+      });
+      closeAllPrompts();
+      return asked;
+    };
+    got.asked = await pickXfmr('XF-264', 'Standard Electrical', (o) => {
+      if (o.id === 'xfmr-secondary-main') { got.mainQ = { title: unq(o.title), text: unq(o.html), buttons: o.choices.map(c => c.label).join('/'), withChoice: !!(o.input && o.input.withChoice) }; return { value: '208V', text: ' MDP-2  bkr 1 ' }; }
+      if (o.id === 'xfmr-other-sources') { got.otherQ = { title: unq(o.title), checks: (o.checks || []).map(c => c.label + (c.exclusive ? '*' : '')).join('/'), buttons: o.choices.map(c => c.label).join('/') }; return { value: 'ok', checked: ['Generator connection', 'UPS output'] }; }
+      if (o.id === 'xfmr-alternate') return o.kind === 'UPS output' ? { value: 'other', text: 'UPS-1 output bkr 3' } : { value: '480V', text: 'GEN-CONN-1' };
+      if (o.id === 'other-voltage') return '120V';
+      return 'cancel';
+    });
+    got.rows = rowsOf();
+    want(got.asked.join(' > ') === 'xfmr-secondary-main > xfmr-other-sources > xfmr-alternate(UPS output) > other-voltage > xfmr-alternate(Generator connection)', 'the questions, in order');
+    want(got.rows.join(' / ') === 'Electrical 480V|||Meter|auto / Electrical 208V|Breaker|Secondary Main: MDP-2 bkr 1|Meter| / Electrical 120V|Breaker|Alternate Source (UPS output): UPS-1 output bkr 3|Meter| / Electrical 480V|Breaker|Alternate Source (Generator connection): GEN-CONN-1|Meter|', 'the rows');
+    want(!!got.mainQ && got.mainQ.title === 'Secondary main' && /panel or switch and breaker the secondary feeds, as labelled/.test(got.mainQ.text)
+      && got.mainQ.buttons === '208V/240V/480V/Other…/Skip' && got.mainQ.withChoice, 'the secondary main question');
+    want(!!got.otherQ && got.otherQ.title === 'Other sources that can energize the secondary'
+      && got.otherQ.checks === 'ATS/UPS output/Generator connection/Tie breaker/Another transformer/PV or battery/None found*' && got.otherQ.buttons === 'OK/Skip', 'the other sources question');
+    // a template change keeps the rows and asks neither again
+    const asked2 = [];
+    await withDialogs({ confirm: true, choice: (o) => { asked2.push(o.id); return 'cancel'; } }, async () => {
+      pickTemplate('Electrical with Stored Energy');
+      if (document.getElementById('templateConfirmOverlay')) confirmTemplateChange('Electrical with Stored Energy');
+      if (document.getElementById('templateVoltageOverlay')) applyTemplateVoltageChoice('480V');
+      await settle(12);
+    });
+    closeAllPrompts();
+    got.kept = rowsOf().filter(r => /Secondary Main|Alternate Source/.test(r)).length;
+    want(getTemplate() === 'Electrical with Stored Energy' && got.kept === 3 && !asked2.some(id => /^xfmr-/.test(id)), 'a template change keeps them, asks neither again: ' + JSON.stringify(asked2));
+    // None found records the date; Skip records nothing
+    got.none = await pickXfmr('XF-264b', 'Standard Electrical', (o) => o.id === 'xfmr-secondary-main' ? 'skip' : (o.id === 'xfmr-other-sources' ? { value: 'ok', checked: ['none'] } : 'cancel'));
+    want(unitAnswers.xfmrAltNone === localDateStr(new Date()) && !sources.some(isSecondaryMainRow) && xfmrAltSheetText(formEntryLike()) === 'None found (' + localDateStr(new Date()) + ')', 'None found');
+    got.skip = await pickXfmr('XF-264c', 'Standard Electrical', () => 'skip');
+    want(got.skip.join(' > ') === 'xfmr-secondary-main > xfmr-other-sources' && sources.length === 1 && !unitAnswers.xfmrAltNone, 'Skip both');
+    // the VFD type shares Electrical with Stored Energy and asks none of it
+    fillFormNoSources('VFD-264'); document.getElementById('equipTemplate').value = ''; document.getElementById('equipType').value = 'VFD';
+    const asked4 = [];
+    await withDialogs({ confirm: true, choice: (o) => { asked4.push(o.id); return 'cancel'; } }, async () => {
+      handleEquipTypeChange(); await sleep(0);
+      if (document.getElementById('templateVoltageOverlay')) applyTemplateVoltageChoice('480V');
+      await settle(12);
+    });
+    closeAllPrompts();
+    want(getTemplate() === 'Electrical with Stored Energy' && !asked4.some(id => /^xfmr-/.test(id)) && !unitKinds('VFD', 'Electrical with Stored Energy', []).xfmr && unitKinds('Transformer', 'Electrical with Stored Energy', []).xfmr, 'the VFD type asks nothing');
+    // the question boxes themselves: a typed panel with a voltage button; tick boxes with an exclusive None found
+    formOfType('XF-264d', 'Transformer', 'Standard Electrical');
+    sources = []; renderSources(); loadUnitAnswers({});
+    const rp = window.__askChoiceAuto; window.__askChoiceAuto = undefined;
+    try {
+      const p1 = addSecondaryMain();
+      let ov = document.getElementById('choiceDialogOverlay');
+      const input = ov && ov.querySelector('input[type="text"]');
+      const b240 = ov && [...ov.querySelectorAll('button')].find(b => b.textContent === '240V');
+      got.dlgOff = !!(b240 && b240.disabled);
+      if (input) { input.value = 'SWBD-2 bkr 4'; input.dispatchEvent(new Event('input', { bubbles: true })); }
+      got.dlgOn = !!(b240 && !b240.disabled);
+      if (b240) b240.click();
+      await Promise.race([p1, sleep(2000)]);
+      const m = sources.find(isSecondaryMainRow) || {};
+      got.dlgRow = m.energySource + ' ' + m.location;
+      const p2 = askXfmrOtherSources();
+      ov = document.getElementById('choiceDialogOverlay');
+      const boxes = ov ? [...ov.querySelectorAll('input[type="checkbox"]')] : [];
+      if (boxes.length === 7) { boxes[0].click(); boxes[6].click(); }
+      got.exclusive = boxes.map(b => (b.checked ? 1 : 0)).join('');
+      const ok = ov && [...ov.querySelectorAll('button')].find(b => b.textContent === 'OK');
+      if (ok) ok.click();
+      await Promise.race([p2, sleep(2000)]);
+      got.dlgNone = unitAnswers.xfmrAltNone;
+    } finally { window.__askChoiceAuto = rp; const o = document.getElementById('choiceDialogOverlay'); if (o) o.remove(); }
+    want(got.dlgOff && got.dlgOn && got.dlgRow === 'Electrical 240V Secondary Main: SWBD-2 bkr 4' && got.exclusive === '0000001' && got.dlgNone === localDateStr(new Date()), 'the dialogs');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T265 — the transformer's "For loto-web" questions and its sheet slots
+  async function t265_theTransformerSectionAndItsSheetSlots() {
+    const N = 'T265 a Transformer\'s "For loto-web" section adds the secondary main and alternate sources (the Add button goes once its row exists; None found goes, and is cleared, once an alternate is added), asks terminal access, the nameplate (scan buttons, a data plate hint) and SPD / capacitors / grounding; the sheet writes U3 "Alternate Sources", U4 "Terminal Access", U7 "Transformer Nameplate", U8 "SPD / Capacitors / Grounding" in the spec\'s "key: value; key: value" form, blank parts left out, and a leftover "No damper actuators" never takes U7; Save & New lists the secondary main, the alternate sources (or None found) and the nameplate softly; entries.json carries the same';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('XF-265', 'Transformer', 'Standard Electrical');
+      sources = [Object.assign(mkSrc('Electrical 480V'), { location: 'MDP-1 bkr 12', verification: 'Meter', collapsed: true })];
+      renderSources(); renderUnitQuestions(true);
+      const ids = ['uq_xfmrAddMain', 'uq_xfmrAddAlt', 'uq_xfmrAltNone', 'uq_xfmrTermPrimary', 'uq_xfmrTermSecondary', 'uq_xfmrTermCovers', 'uq_xfmrKva', 'uq_xfmrPrimaryV',
+        'uq_xfmrSecondaryV', 'uq_xfmrConnection', 'uq_xfmrTaps', 'uq_xfmrImpedance', 'uq_xfmrTempRise', 'uq_xfmrKFactor', 'uq_xfmrSpd', 'uq_xfmrCaps', 'uq_xfmrGround'];
+      got.missing = ids.filter(id => !document.getElementById(id));
+      want(!got.missing.length, 'the questions');
+      got.scan = ['uq_xfmrKva', 'uq_xfmrPrimaryV', 'uq_xfmrSecondaryV', 'uq_xfmrTaps', 'uq_xfmrImpedance', 'uq_xfmrKFactor'].every(id => { const el = document.getElementById(id); return !!(el && el.parentElement.querySelector('.scan-btn')); });
+      got.hint = /photograph the data plate/i.test(document.getElementById('unitQuestions').textContent);
+      got.lists = [[...document.getElementById('uq_xfmrConnection').options].map(o => o.textContent.trim()).slice(1).join('/'),
+        [...document.getElementById('uq_xfmrTempRise').options].map(o => o.textContent.trim()).slice(1).join('/'),
+        [...document.getElementById('uq_xfmrGround').options].map(o => o.textContent.trim()).slice(1).join('/')];
+      want(got.scan && got.hint && got.lists.join(' | ') === 'Delta-Wye/Delta-Delta/Wye-Wye/Wye-Delta/Single-phase/Other… | 80 C/115 C/150 C/Other… | Ground bus/Ground studs/None/Can\'t tell', 'scan buttons, hint and lists');
+      const items = () => collectIncompleteFields().filter(m => /^Transformer —/.test(m));
+      got.itemsBefore = items();
+      want(got.itemsBefore.join(' | ') === 'Transformer — secondary main | Transformer — alternate sources (or None found) | Transformer — nameplate', 'the Save & New items');
+      setXfmrAltNone(true);
+      got.u3None = unitSheetCells(formEntryLike()).U3;
+      await withDialogs({ choice: (o) => o.id === 'xfmr-alternate-kind' ? 'Tie breaker' : (o.id === 'xfmr-alternate' ? { value: '480V', text: 'SWBD-1 tie' } : 'cancel') }, async () => { await addAlternateSource(); });
+      got.afterAlt = { none: unitAnswers.xfmrAltNone === undefined, box: !document.getElementById('uq_xfmrAltNone'), list: (document.getElementById('uq_xfmrAltKinds') || {}).textContent || '', u3: unitSheetCells(formEntryLike()).U3 };
+      want(JSON.stringify(got.u3None) === JSON.stringify(['Alternate Sources', 'None found (' + localDateStr(new Date()) + ')']) && got.afterAlt.none && got.afterAlt.box
+        && /Recorded: Tie breaker/.test(got.afterAlt.list) && JSON.stringify(got.afterAlt.u3) === '["Alternate Sources","Tie breaker"]'
+        && sources.some(s => s.location === 'Alternate Source (Tie breaker): SWBD-1 tie' && s.energySource === 'Electrical 480V'), 'None found, then an alternate');
+      sources.push(Object.assign(mkSrc('Electrical 208V'), { location: 'Secondary Main: MDP-2 bkr 1', verification: 'Meter', collapsed: true }));
+      renderSources();
+      want(!document.getElementById('uq_xfmrAddMain') && /Secondary Main: MDP-2 bkr 1/.test((document.getElementById('uq_xfmrMain') || {}).textContent || ''), 'the Add button goes once the row exists');
+      setUnitAnswer('xfmrTermPrimary', 'Yes'); setUnitAnswer('xfmrTermSecondary', 'No'); setUnitText('xfmrTermCovers', ' Bolted  front cover ');
+      setUnitText('xfmrKva', '75'); setUnitText('xfmrPrimaryV', '480'); setUnitText('xfmrSecondaryV', '208Y/120'); setUnitAnswer('xfmrConnection', 'Delta-Wye');
+      setUnitText('xfmrTaps', '2 x 2.5% FCAN; 2 x 2.5% FCBN'); setUnitText('xfmrImpedance', '5.1'); setUnitAnswer('xfmrTempRise', '150 C'); setUnitText('xfmrKFactor', '4');
+      setUnitAnswer('xfmrSpd', 'Yes'); setUnitText('xfmrSpdWhere', 'secondary bus'); setUnitAnswer('xfmrCaps', 'No'); setUnitText('xfmrCapsWhere', 'ignored');
+      setUnitAnswer('xfmrGround', 'Ground bus'); setUnitText('xfmrGroundWhere', 'bottom rear');
+      got.whereBoxes = [!!document.getElementById('uq_xfmrSpdWhere'), !!document.getElementById('uq_xfmrCapsWhere'), !!document.getElementById('uq_xfmrGroundWhere')].join();
+      const STR = { U4: 'Terminal Access=Primary: Yes; Secondary: No; Covers: Bolted front cover',
+        U7: 'Transformer Nameplate=kVA: 75; Primary V: 480; Secondary V: 208Y/120; Connection: Delta-Wye; Taps: 2 x 2.5% FCAN, 2 x 2.5% FCBN; Impedance: 5.1%; Temperature Rise: 150 C; K-Factor: 4',
+        U8: 'SPD / Capacitors / Grounding=SPD: Yes (secondary bus); Capacitors: No; Grounding: Ground bus (bottom rear)' };
+      const cells = unitSheetCells(formEntryLike());
+      got.cells = ['U4', 'U7', 'U8'].map(s => cells[s].join('='));
+      want(got.cells.join(' | ') === [STR.U4, STR.U7, STR.U8].join(' | ') && got.whereBoxes === 'true,false,true', 'the strings: ' + got.cells.join(' | '));
+      want(!items().length, 'the items clear');
+      got.sparse = [xfmrNameplateText({ xfmrKva: '75 kVA', xfmrConnection: 'Other', xfmrConnectionOther: 'Zig-zag', xfmrTempRise: 'Other', xfmrTempRiseOther: '220 C', xfmrImpedance: '4.5 %' }),
+        xfmrTerminalText({ xfmrTermSecondary: "Can't tell" }), xfmrStoredText({ xfmrCaps: "Can't tell", xfmrCapsWhere: 'filter bank', xfmrGround: 'None', xfmrGroundWhere: 'x' })];
+      want(got.sparse.join(' | ') === "kVA: 75; Connection: Other: Zig-zag; Impedance: 4.5%; Temperature Rise: Other: 220 C | Secondary: Can't tell | Capacitors: Can't tell (filter bank); Grounding: None", 'blank parts left out');
+      unitAnswers.dampersNone = true;
+      want(unitSheetCells(formEntryLike()).U7[0] === 'Transformer Nameplate'
+        && JSON.stringify(unitSheetCells({ equipType: 'Air Handler', template: 'AHU - Steam', sources: [], unitAnswers: { dampersNone: true } }).U7) === '["Damper Actuators","None"]', 'U7 is the nameplate');
+      delete unitAnswers.dampersNone;
+      document.getElementById('equipName').value = 'XF-265';
+      const X = saveEntry();
+      formOfType('AHU-265', 'Air Handler', 'AHU - Steam'); renderUnitQuestions(true);
+      want(!document.getElementById('uq_xfmrKva') && !document.getElementById('uq_xfmrAddMain'), 'only on transformers');
+      clearForm(false);
+      savedEquipment = [savedEquipment.find(e => e.id === X.id) || X]; saveAll();
+      const { zip, confirms } = await runExport({ confirmResponse: true });
+      if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); return; }
+      const u = await unzipExport(zip.blob);
+      const xpath = Object.keys(u.files).find(q => /Information_Sheet_.*\.xlsx$/.test(q));
+      const B = xpath ? await sheetBlocks(u.files[xpath]) : {};
+      const b = B['XF-265'] || { labels: {}, values: {} };
+      got.sheet = ['U3', 'U4', 'U7', 'U8'].map(s => b.labels[s] + '=' + b.values[s]);
+      want(got.sheet.join(' | ') === ['Alternate Sources=Tie breaker', STR.U4, STR.U7, STR.U8].join(' | '), 'the sheet');
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      const ws = wb.worksheets[0];
+      got.locs = [1, 2, 3].map(n => String(ws.getRow(b.base + 2 * n + 3).getCell(5).value || '') + '|' + String(ws.getRow(b.base + 2 * n + 3).getCell(1).value || '') + '|' + String(ws.getRow(b.base + 2 * n + 3).getCell(2).value || ''));
+      want(got.locs.join(' / ') === 'MDP-1 bkr 12|Electrical 480V|Breaker / Alternate Source (Tie breaker): SWBD-1 tie|Electrical 480V|Breaker / Secondary Main: MDP-2 bkr 1|Electrical 208V|Breaker', 'the rows\' Locations');
+      const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
+      got.json = [je.alternateSources, je.terminalAccess, je.transformerNameplate, je.spdCapacitorsGrounding, (je.unitAnswers || {}).xfmrKva, (je.unitAnswers || {}).xfmrConnection].join(' | ');
+      want(got.json === ['Tie breaker', STR.U4.split('=')[1], STR.U7.split('=')[1], STR.U8.split('=')[1], '75', 'Delta-Wye'].join(' | '), 'entries.json');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T266 — the release question on every medium (the form)
+  async function t266_theReleaseQuestionOnEveryMedium() {
+    const N = 'T266 the release question for every medium is on by default for the three Atlanta facilities (its own Settings box, per facility); there it asks on valve rows (or no device yet), not locked open, of fuel oil, chemical, geothermal, natural gas, propane, vacuum and refrigerant lines — "Drain…" / "Purge point…" / "Vent to atmosphere…" / "Recovery port for this isolation point" with each medium\'s choice labels, the stored values canonical; a found answer never changes their code (D5) while a water row keeps its rewrite; None found names the point in the change-later note; "Drains to" (Containment / Floor drain / Hose / Other…) on a found fuel oil or chemical drain only, kept through the answer\'s changes; off (Marion) nothing new shows but a row that holds an answer';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withReleaseSetting(async () => {
+      got.defaults = ['Atlanta', 'Atlanta - Fort McPherson', 'Atlanta - Trinka Davis', 'Marion', 'Kansas City', ''].map(c => releasePromptOn(c));
+      want(got.defaults.join() === 'true,true,true,false,false,false', 'defaults');
+      setHospitalCode('Atlanta');
+      showSettings();
+      const box = document.getElementById('settingsRelease');
+      got.settings = [!!box, !!(box && box.checked)].join();
+      if (box) { box.checked = false; savePhotoSettings(); }
+      got.afterSave = [releasePromptOn('Atlanta'), existingTagPromptOn('Atlanta'), damperPromptOn('Atlanta')].join();
+      document.getElementById('settingsOverlay').style.display = 'none';
+      try { localStorage.removeItem('loto_release_prefs'); } catch (e) {}
+      want(got.settings === 'true,true' && got.afterSave === 'false,true,true', 'the Settings box');
+      const V = (es, extra) => Object.assign(mkSrc(es), { deviceType: 'Ball Valve', verification: '', location: 'Above Equipment', collapsed: false }, extra || {});
+      const rows = () => [V('Fuel Oil In'), V('Chemical In'), V('Geothermal Water In/Out', { quantity: 2 }), V('Natural Gas', { deviceId: 'G-1', verification: 'Controls' }),
+        V('Propane', { deviceType: 'Gate Valve' }), V('Vacuum Air In', { verification: 'Gauge/Drain' }), V('Refrigerant'),
+        V('Natural Gas', { deviceType: 'Quick Disconnect' }), V('Fuel Oil Out', { lockOpen: true }), V('Fuel Oil Out', { deviceType: '' }),
+        Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Disconnect', collapsed: false }), V('HHW In', { deviceType: 'Gate Valve', verification: 'Temp Only - Hot' })];
+      setHospitalCode('Atlanta');
+      formOfType('P-266', 'Domestic Water Pump', 'Standard Pump');
+      sources = rows(); sources.forEach(noteDefaultDrain); renderSources();
+      const asks = () => sources.map((s, i) => (document.getElementById('src_drainwhere_' + i) ? 1 : 0)).join('');
+      got.atlanta = asks();
+      want(got.atlanta === '111111100101', 'which rows ask at Atlanta: ' + got.atlanta);
+      const label = (i) => { const g = document.getElementById('drainLocGroup_' + i); const l = g && g.querySelector('label'); return l ? l.textContent.trim() : ''; };
+      const opts = (i) => { const s = document.getElementById('src_drainwhere_' + i); return s ? [...s.options].slice(1).map(o => o.value + '=' + o.textContent.trim()) : []; };
+      got.labels = [0, 1, 2, 3, 4, 5, 6, 11].map(label);
+      want(got.labels.join(' | ') === 'Drain for this isolation point | Drain for this isolation point | Drain for this isolation point | Purge point for this isolation point | Purge point for this isolation point | Vent to atmosphere for this isolation point | Recovery port for this isolation point | Drain for this isolation point', 'the labels');
+      got.gas = opts(3).join(' | '); got.vac = opts(5).join(' | '); got.ref = opts(6).join(' | '); got.fuel = opts(0).join(' | ');
+      want(got.gas === 'On this valve=On this valve (purge port) | Between this valve and the equipment=Between this valve and the equipment | On the equipment=On the equipment | None found=None found', 'gas choices');
+      want(got.vac === 'On this valve=On this valve (vent port) | Between this valve and the equipment=Between this valve and the equipment | On the equipment=On the equipment | None found=None found', 'vacuum choices');
+      want(got.ref === 'On this valve=On this valve (service port) | Between this valve and the equipment=Between this valve and the equipment | On the equipment=On the equipment (access port) | None found=None found', 'refrigerant choices');
+      want(got.fuel === 'On this valve=On this valve (drain or bleed port) | Between this valve and the equipment=Between this valve and the equipment | On the equipment=On the equipment (casing, coil, strainer or tank) | None found=None found', 'fuel oil choices (as today)');
+      const codesBefore = [0, 2, 3, 5, 6].map(i => sources[i].verification).join(' / ');
+      updateDrainWhere(0, 'Between this valve and the equipment'); updateDrainText(0, 'casing plug');
+      updateDrainWhere(2, 'On the equipment'); updateDrainWhere(3, 'On this valve'); updateDrainWhere(5, 'None found'); updateDrainWhere(6, 'On this valve');
+      updateDrainWhere(11, 'On this valve');
+      got.codes = [0, 2, 3, 5, 6].map(i => sources[i].verification).join(' / ') + ' || ' + sources[11].verification;
+      want(got.codes === codesBefore + ' || Drain Only - Hot' && sources[5].verification === 'Gauge/Drain' && sources[5]._drainDefault === true,
+        'no code rewrite on the new media (D5) — not even None found on a pre-ticked vacuum drain; the water row keeps its rewrite: ' + got.codes + ' (before ' + codesBefore + ')');
+      want(drainLocationSheetText(sources[0]) === 'Between this valve and the equipment: casing plug' && sources[3].drainLocation.where === 'On this valve', 'stored canonical');
+      updateDrainWhere(3, 'None found'); updateDrainWhere(6, 'None found'); updateDrainWhere(1, 'None found');
+      got.notes = changeLaterAutoNotes(formEntryLike()).join(' | ');
+      want(got.notes === 'No drain found for source #2 (Chemical In) | No purge point found for source #4 (Natural Gas, G-1) | No vent found for source #6 (Vacuum Air In) | No recovery port found for source #7 (Refrigerant)', 'the notes name the point: ' + got.notes);
+      renderSources();
+      got.drainsTo = [!!document.getElementById('src_drainto_0'), !!document.getElementById('src_drainto_3'), !!document.getElementById('src_drainto_1')].join();
+      const toSel = document.getElementById('src_drainto_0');
+      got.toOpts = toSel ? [...toSel.options].slice(1).map(o => o.textContent.trim()).join('|') : '';
+      want(got.drainsTo === 'true,false,false' && got.toOpts === 'Containment (drip pan or bucket)|Floor drain|Hose|Other…', 'Drains to on a found fuel oil / chemical drain only');
+      updateDrainTo(0, 'Containment');
+      const a1 = drainsToSheetText(sources[0]);
+      updateDrainTo(0, 'Other'); updateDrainToText(0, 'sump pit');
+      const a2 = [sources[0].drainLocation.to, drainsToSheetText(sources[0]), !!document.getElementById('src_draintotext_0')].join('|');
+      updateDrainWhere(0, 'On the equipment'); const a3 = drainsToSheetText(sources[0]);
+      updateDrainWhere(0, 'None found'); const a4 = [sources[0].drainLocation.to, drainsToSheetText(sources[0])].join('|');
+      updateDrainWhere(0, 'On this valve'); const a5 = drainsToSheetText(sources[0]);
+      updateDrainTo(0, 'Other'); updateDrainToText(0, '');
+      const a6 = drainsToSheetText(sources[0]);
+      got.to = [a1, a2, a3, a4, a5, a6];
+      want(JSON.stringify(got.to) === JSON.stringify(['Containment', 'Other: sump pit|Other: sump pit|true', 'Other: sump pit', 'Other: sump pit|', 'Other: sump pit', '']), 'Drains to rides through the answer: ' + JSON.stringify(got.to));
+      setHospitalCode('Marion');
+      sources = rows(); sources[9].drainLocation = { where: 'On this valve', text: '' };
+      renderSources();
+      got.marion = asks();
+      want(got.marion === '000000000101', 'off: the water row and a row that holds an answer: ' + got.marion);
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T267 — columns 20 / 21 (and 14 on the new media), entries.json
+  async function t267_drainsToAndDriveIsolatesTravelInColumns20And21() {
+    const N = 'T267 column 20 "Drains To" is headed on the label rows of fuel oil and chemical rows that take the release question (where it drains, from a found drain only), column 21 "Drive Isolates" on the label rows of drive rows at every facility (Yes / No / Can\'t tell per unit in Device ID order, an empty position not checked) and nowhere else; column 14 carries the new media\'s answers by the unit\'s facility (none at Marion, but a held answer ships); widths 18 / 14; entries.json driveIsolates on drive rows only and drainLocation.to';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withReleaseSetting(async () => {
+      setHospitalCode('');
+      const S = (es, extra) => Object.assign(mkSrc(es), { sourceId: genUuid() }, extra || {});
+      const V = (es, extra) => S(es, Object.assign({ deviceType: 'Ball Valve', verification: '', location: 'Above Equipment' }, extra || {}));
+      const A = Object.assign(mkEntry('FOP-267', { sources: [S('Electrical 208V', { deviceType: 'Disconnect' }),
+        V('Fuel Oil In', { drainLocation: { where: 'Between this valve and the equipment', text: 'casing plug', to: 'Containment' } }),
+        V('Fuel Oil Out', { drainLocation: { where: 'None found', text: '', to: 'Hose' } }),
+        V('Chemical In', { drainLocation: { where: 'On this valve', text: '', to: 'Other: sump' } }),
+        V('Chemical Out'),
+        V('Natural Gas', { drainLocation: { where: 'On this valve', text: 'purge cock' } })] }),
+        { hospitalCode: 'Atlanta', equipType: 'Fuel Oil Pump', template: 'Standard Pump' });
+      const D = Object.assign(mkEntry('AHU-267', { sources: [S('Electrical 480V', { deviceType: 'VFD', deviceId: 'VFD-1; VFD-2', quantity: 2, driveIsolates: ['yes', 'no'] }),
+        S('Electrical 480V', { location: 'Feeder: MCC-2A bkr 14 (VFD-1)', verification: 'Meter' }), S('Electrical 480V', { location: 'Feeder: MCC-2A bkr 15 (VFD-2)', verification: 'Meter' }),
+        S('Electrical 480V', { deviceType: 'VFD', deviceId: 'VFD-3' }),
+        S('Electrical 480V', { deviceType: 'VFD', linkedTo: { equipName: 'X', sourceIndex: 0, sourceLabel: 'Electrical 480V' } }),
+        S('Electrical 208V', { deviceType: 'Disconnect' })] }), { hospitalCode: 'Atlanta', equipType: 'Air Handler', template: 'AHU - Steam' });
+      const M = Object.assign(mkEntry('FOP-267-MAR', { sources: [V('Fuel Oil In'), S('Electrical 480V', { deviceType: 'VFD', quantity: 2, driveIsolates: [null, 'cant_tell'] })] }),
+        { hospitalCode: 'Marion', equipType: 'Fuel Oil Pump', template: 'Standard Pump' });
+      const H = Object.assign(mkEntry('FOP-267-HELD', { sources: [V('Fuel Oil In', { drainLocation: { where: 'On this valve', text: '', to: 'Hose' } })] }),
+        { hospitalCode: 'Marion', equipType: 'Fuel Oil Pump', template: 'Standard Pump' });
+      savedEquipment = [A, D, M, H]; saveAll();
+      const { zip, confirms } = await runExport({ confirmResponse: true });
+      if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); return; }
+      const u = await unzipExport(zip.blob);
+      const by = {};
+      for (const xpath of Object.keys(u.files).filter(p => /Information_Sheet_.*\.xlsx$/.test(p))) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        const ws = wb.worksheets[0];
+        let cur = null;
+        ws.eachRow(row => {
+          const a = String(row.getCell(1).value || '');
+          if (a === 'Equipment ID/Name') { cur = String(ws.getRow(row.number + 1).getCell(1).value || ''); by[cur] = { h: [], v: [], w: [ws.getColumn(20).width, ws.getColumn(21).width] }; }
+          if (!cur || !/^Energy Source #\d+$/.test(a)) return;
+          const d = ws.getRow(row.number + 1);
+          if (!String(d.getCell(1).value || '')) return;
+          by[cur].h.push(String(row.getCell(20).value || '') + '|' + String(row.getCell(21).value || ''));
+          by[cur].v.push([14, 20, 21].map(c => String(d.getCell(c).value || '')).join('|'));
+        });
+      }
+      got.sheet = by;
+      const a = by['FOP-267'] || {}, d = by['AHU-267'] || {}, m = by['FOP-267-MAR'] || {}, h = by['FOP-267-HELD'] || {};
+      want(JSON.stringify(a.h) === JSON.stringify(['|', 'Drains To|', 'Drains To|', 'Drains To|', 'Drains To|', '|']), 'Drains To headers');
+      want(JSON.stringify(a.v) === JSON.stringify(['||', 'Between this valve and the equipment: casing plug|Containment|', 'None found||', 'On this valve|Other: sump|', '||', 'On this valve: purge cock||']), 'columns 14 / 20');
+      want(JSON.stringify(d.h) === JSON.stringify(['|Drive Isolates', '|', '|', '|Drive Isolates', '|', '|']) && JSON.stringify(d.v) === JSON.stringify(['||Yes; No', '||', '||', '||', '||', '||']), 'Drive Isolates on drive rows only');
+      want(JSON.stringify(m.h) === JSON.stringify(['|', '|Drive Isolates']) && JSON.stringify(m.v) === JSON.stringify(['||', "||; Can't tell"]), 'Marion: no release question; the drive answer at every facility');
+      want(JSON.stringify(h.h) === JSON.stringify(['Drains To|']) && JSON.stringify(h.v) === JSON.stringify(['On this valve|Hose|']), 'a held answer still ships');
+      want((a.w || []).join() === '18,14', 'widths');
+      const je = {}; ((u.entriesJson && u.entriesJson.entries) || []).forEach(e => { je[e.equipName] = e; });
+      got.json = { drives: ((je['AHU-267'] || {}).sources || []).map(s => ('driveIsolates' in s) ? JSON.stringify(s.driveIsolates) : 'NO KEY'),
+                   to: ((((je['FOP-267'] || {}).sources || [])[1] || {}).drainLocation || {}).to, mar: ((je['FOP-267-MAR'] || {}).sources || []).map(s => ('driveIsolates' in s) ? JSON.stringify(s.driveIsolates) : 'NO KEY') };
+      want(JSON.stringify(got.json.drives) === JSON.stringify(['["yes","no"]', 'NO KEY', 'NO KEY', '[null]', 'NO KEY', 'NO KEY']) && got.json.to === 'Containment'
+        && JSON.stringify(got.json.mar) === JSON.stringify(['NO KEY', '[null,"cant_tell"]']), 'entries.json');
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T268 — the build bump
+  async function t268_build122() {
+    const N = 'T268 build 122: APP_BUILD and the header label say 122, the service worker\'s cache is loto-collector-v7.118, Xcode\'s CURRENT_PROJECT_VERSION is 122 in both entries, app-lists.json carries the new lists, and the Finger Lakes copy is the same page';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
+    want(APP_BUILD === 122 && !!label && +label[1] === 122, 'the build');
+    const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
+    const sw = await fetchText('sw.js');
+    got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
+    want(sw === null || got.sw === 'loto-collector-v7.118', 'sw.js');
+    const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
+    got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 122;,CURRENT_PROJECT_VERSION = 122;', 'Xcode');
+    const lists = appListsSnapshot(APP_BUILD).answers;
+    want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
+      && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
+      && lists.groundingChoices.join() === "Ground bus,Ground studs,None,Can't tell", 'app-lists');
+    const page = await fetchText('index.html'), fl = await fetchText('FingerLakes_Information_Sheet.html');
+    got.copy = (page === null || fl === null) ? 'not served' : (page === fl ? 'same' : 'DIFFERENT');
+    want(got.copy !== 'DIFFERENT', 'the Finger Lakes copy');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -8619,7 +9243,11 @@
     t252_theDamperQuestionFollowsFacilityAndType, t253_theDamperActuatorRow, t254_cantTellNoteAndNoDampers,
     t255_springReturnTravelsInColumn17AndU7,
     t256_theLabelWaitIsAskedOnDrivesAndCapacitorBanks, t257_theLabelPhotoIsBoundToItsRow,
-    t258_labelWaitCopiesSplitAndWarning, t259_theLabelWaitTravelsInColumns10_18_19];
+    t258_labelWaitCopiesSplitAndWarning, t259_theLabelWaitTravelsInColumns10_18_19,
+    t260_aDriveIsAskedItsFeederAndItsDisconnect, t261_saveAndNewAsksAboutEachDrive, t262_theArcFlashLabelSlot,
+    t263_theArcFlashLabelInTheExport, t264_aTransformerAsksItsSecondaryMainAndOtherSources,
+    t265_theTransformerSectionAndItsSheetSlots, t266_theReleaseQuestionOnEveryMedium,
+    t267_drainsToAndDriveIsolatesTravelInColumns20And21, t268_build122];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

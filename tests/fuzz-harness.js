@@ -760,7 +760,7 @@
     ['splitSource', 2, () => sources.some(s => (parseInt(s.quantity, 10) || 1) >= 2), async () => { const idx = sources.map((s, i) => (parseInt(s.quantity, 10) || 1) >= 2 ? i : -1).filter(i => i >= 0); const i = pick(idx); splitSource(i); return 'split ' + i; }],
     ['togglePhoto', 1, () => sources.length > 0, async () => { const i = srcIdx(); togglePhotoSlot(i); return 'togglePhoto ' + i; }],
     ['capture', 14, () => true, async () => {
-      const slots = ['equip_main', 'equip_dataplate', 'equip_ee'].concat(sources.map((s, i) => 'source_' + i));
+      const slots = ['equip_main', 'equip_dataplate', 'equip_ee', 'equip_arcflash'].concat(sources.map((s, i) => 'source_' + i));   // build 122: the arc flash label
       const slot = pick(slots.concat(sources.map((s, i) => 'source_' + i)));
       const f = await makePhoto();
       handlePhoto({ files: [f] }, slot);
