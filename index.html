@@ -3038,12 +3038,17 @@ const DRAIN_CHOICE_LABEL = {
 const RELEASE_DEFAULT_ON = ['Atlanta', 'Atlanta - Fort McPherson', 'Atlanta - Trinka Davis'];
 function releasePromptOn(code) { return facilityPrefOn('loto_release_prefs', RELEASE_DEFAULT_ON, code); }
 function setReleasePrefForFacility(code, on) { setFacilityPref('loto_release_prefs', code, on); }
+// loto-web's drain_location.medium_kind, pattern for pattern (the contract test);
+// a vacuum pump's exhaust ("Vacuum Air Out") is at or above atmosphere, not
+// vacuum, and asks nothing (loto-web's xhigh review, 2026-10-24).
 const RELEASE_MEDIA = [
-  [/^Fuel Oil\b/i, 'fuel'], [/^Chemical\b/i, 'chemical'], [/^Geothermal\b/i, 'geothermal'],
-  [/^(Natural Gas|Propane)\b/i, 'gas'], [/^Vacuum Air\b/i, 'vacuum'], [/^Refrigerant\b/i, 'refrigerant']
+  [/\b(fuel\s*oil|diesel|fo)\b/i, 'fuel'], [/\bchem(ical)?\b/i, 'chemical'], [/\bgeothermal\b/i, 'geothermal'],
+  [/\b(natural\s*gas|propane|lp\s*gas)\b/i, 'gas'], [/\bvacuum\b/i, 'vacuum'], [/\brefrigerant\b/i, 'refrigerant']
 ];
+const VACUUM_EXHAUST_RE = /\bvacuum\s*(?:air\s*)?(?:out|exhaust|discharge)\b/i;
 function releaseMediumOf(energySource) {
-  const es = String(energySource || '').trim();
+  const es = String(energySource || '');
+  if (VACUUM_EXHAUST_RE.test(es)) return '';
   const m = RELEASE_MEDIA.find(([re]) => re.test(es));
   return m ? m[1] : '';
 }
@@ -3081,7 +3086,7 @@ function sourceTakesDrainLocation(src, facility) {
   if (!src || src.lockOpen) return false;
   if (src.deviceType && !isValveDevice(src.deviceType)) return false;
   if (drainCodeFollowsDrain(src)) return true;
-  if (!releaseMediumOf(src.energySource)) return false;
+  if (!releaseMediumOf(src.energySource)) return !!(src.drainLocation && src.drainLocation.where);   // a held answer is never hidden
   return releasePromptOn(facility === undefined ? formFacilityCode() : facility) || !!(src.drainLocation && src.drainLocation.where);
 }
 function drainLocationSheetText(src, facility) {
@@ -3484,12 +3489,24 @@ function orphanFeederRows(srcList, except) {
   return (srcList || []).filter(s => isFeederRow(s) && feederTagsOf(s.location).length
     && !tags.some(t => feederNamesTag(s.location, t)));
 }
+// loto-web's drive_isolation.feeders_cover_drives (its Tier 1 rule since its
+// xhigh review, live 2026-10-24 21:59Z): every drive tag — one per drive unit,
+// '' for an untagged one — present, no two alike and named in a feeder's
+// "( … )", or at least as many feeder rows as drive units.
+function feedersCoverDrives(feederLocations, driveTags) {
+  const locs = (feederLocations || []).map(l => String(l || ''));
+  const tags = (driveTags || []).map(t => String(t || '').trim());
+  if (!locs.length || !tags.length) return false;
+  const named = new Set(tags.map(t => t.toLowerCase())).size === tags.length
+    && tags.every(t => t && locs.some(l => feederNamesTag(l, t)));
+  return named || locs.length >= tags.length;
+}
 // The unit's drives, one per Quantity unit of each drive row: { src, k, n, tag,
-// fed, answer }. Fed follows loto-web (drive_isolation.feeders_for): a drive
-// is fed by a Feeder row that names its tag; when no Feeder row names any
-// drive of the unit, the Feeder rows count for every drive. The app is a
-// little stricter there: each such drive takes one of those rows, so a second
-// drive without its own breaker is still asked.
+// fed, answer }. Fed is loto-web's: a drive is fed by a Feeder row that names
+// its tag; Feeder rows that name no drive count, for every drive, only when no
+// Feeder row names any drive and they cover the drives (feedersCoverDrives) —
+// one unnamed feeder for two drives feeds neither, as loto-web reads it since
+// 2026-10-24 21:59Z (its generator's _drive_feeder_ids_for).
 function unitDrives(srcList) {
   const list = srcList || [];
   const drives = [];
@@ -3502,10 +3519,21 @@ function unitDrives(srcList) {
   const feeders = list.filter(isFeederRow).map(f => String(f.location || ''));
   const tagged = [...new Set(drives.map(d => d.tag).filter(Boolean))];
   const anyNamed = feeders.some(loc => tagged.some(t => feederNamesTag(loc, t)));
-  let spare = anyNamed ? 0 : feeders.length;
   drives.forEach(d => { d.fed = !!d.tag && feeders.some(loc => feederNamesTag(loc, d.tag)); });
-  drives.forEach(d => { if (!d.fed && spare > 0) { spare--; d.fed = true; } });
+  if (!anyNamed && feedersCoverDrives(feeders, drives.map(d => d.tag))) drives.forEach(d => { d.fed = true; });
   return drives;
+}
+// Every drive fed by its own named feeder, yet loto-web's Tier 1 rule unmet:
+// two drive units share one tag. loto-web then keeps the unit on Tier 2 (no work
+// inside the drives), so Save & New says so (build 122, loto-web's xhigh review).
+function drivesShareATag(srcList) {
+  const drives = unitDrives(srcList);
+  if (!drives.length || !drives.every(d => d.fed)) return '';
+  const feeders = (srcList || []).filter(isFeederRow).map(f => String(f.location || ''));
+  if (feedersCoverDrives(feeders, drives.map(d => d.tag))) return '';
+  const seen = new Map();
+  for (const d of drives) { const k = d.tag.toLowerCase(); if (k && seen.has(k)) return d.tag; seen.set(k, true); }
+  return '';
 }
 // How a drive is named to the tech: its tag, with its unit when the row's one
 // tag covers several drives ("VFD-1 (unit 2)"); '' when untagged.
@@ -11502,6 +11530,8 @@ function collectIncompleteFields(opts) {
     if (!xfmrNameplateText(unitAnswers)) missing.push('Transformer \u2014 nameplate');
   }
   const drives = unitDrives(sources);
+  const sharedTag = drivesShareATag(sources);
+  if (sharedTag) missing.push('Drives \u2014 two share the tag ' + sharedTag + ': give each its own tag (and feeder), or loto-web keeps work inside the drives off limits (Tier 2)');
   // Build 119: where the unit's facility asks for existing tags, each unit
   // with neither a tag nor "No tag" (wilkins: warn here, not only at pre-QC).
   const askTags = existingTagPromptOn(formFacilityCode());

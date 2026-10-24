@@ -8549,7 +8549,7 @@
 
   // T260 — Device = VFD: the feeder, then the question, per drive
   async function t260_aDriveIsAskedItsFeederAndItsDisconnect() {
-    const N = 'T260 picking Device = VFD on an Electrical row asks, per drive (Quantity 2 = two drives), for the feeder (panel, breaker, the drive tag offered) and then "Does drive <tag>\'s own disconnect isolate all incoming power?" (Yes / No / Can\'t tell / Cancel, with the lockable-handle hint); the answer lands in driveIsolates in Device ID order; a drive with a feeder is asked only the question, and Can\'t tell writes the change-later note; Cancel stops; an untagged drive takes the tag typed at the feeder; a tag not in the list takes the first unanswered unit (the card\'s feeder button asks the question after the feeder); nothing on a linked or non-Electrical row; the card shows one answer per drive; a spare feeder counts only for an untagged drive';
+    const N = 'T260 picking Device = VFD on an Electrical row asks, per drive (Quantity 2 = two drives), for the feeder (panel, breaker, the drive tag offered) and then "Does drive <tag>\'s own disconnect isolate all incoming power?" (Yes / No / Can\'t tell / Cancel, with the lockable-handle hint); the answer lands in driveIsolates in Device ID order; a drive with a feeder is asked only the question, and Can\'t tell writes the change-later note; Cancel stops; an untagged drive takes the tag typed at the feeder; a tag not in the list takes the first unanswered unit (the card\'s feeder button asks the question after the feeder); nothing on a linked or non-Electrical row; the card shows one answer per drive; a feeder naming no drive counts only when the feeders cover the drives (loto-web\'s rule)';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -8616,12 +8616,13 @@
     sources = [DRIVE({ linkedTo: { equipName: 'X', sourceIndex: 0, sourceLabel: 'E' } }), Object.assign(mkSrc('Electrical 208V'), { deviceType: 'Disconnect', collapsed: false })];
     renderSources();
     want(!document.getElementById('src_driveiso_0_0') && !document.getElementById('src_driveiso_1_0'), 'no answer box on a linked or non-drive row');
-    // which drives have a feeder: a tagged one by its tag; a spare feeder only for an untagged drive
+    // which drives have a feeder: a tagged one by its tag; a feeder naming no drive only when the feeders cover
+    // the drives (loto-web's feeders_cover_drives, since 2026-10-24 21:59Z: one for two untagged drives feeds neither)
     const fed = (list) => unitDrives(list).map(d => (d.tag || '-') + ':' + (d.fed ? 1 : 0)).join(',');
     got.fedRule = [fed([DRIVE({ quantity: 2 }), FEEDER('Feeder: X (VFD-A)')]),
       fed([DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2 }), FEEDER('Feeder: X (VFD-1)'), FEEDER('Feeder: Y (VFD-9)')]),
       fed([DRIVE({ deviceId: 'VFD-1', quantity: 2 }), FEEDER('Feeder: X bkr 1 (VFD-1)')])];
-    want(got.fedRule.join(' / ') === '-:1,-:0 / VFD-1:1,VFD-2:0 / VFD-1:1,VFD-1:1', 'the feeder rule');
+    want(got.fedRule.join(' / ') === '-:0,-:0 / VFD-1:1,VFD-2:0 / VFD-1:1,VFD-1:1', 'the feeder rule');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -9831,7 +9832,7 @@
 
   // T290 — the app's rules agree with loto-web's own functions
   async function t290_theAppsRulesAgreeWithLotoWeb() {
-    const N = 'T290 build 122 whole review: the app decides as loto-web\'s own functions do (tests/contract/lotoweb-rules.json, written by make_lotoweb_rules.py from _is_drive_feeder, _is_vfd_device, _is_vfd_dc_bus, names_tag, unit_ids, role_of_location, feeders_for, label_wait.asked and the col 18 / 19 parsers): every feeder, drive and DC-bus case, every tag match, every unit\'s Device ID, every transformer role, and for every drive of every unit the same drives — the app never calling a drive fed that loto-web leaves not identified (it may ask more: a second untagged drive on one feeder)';
+    const N = 'T290 build 122 whole review: the app decides as loto-web\'s own functions do (tests/contract/lotoweb-rules.json, written by make_lotoweb_rules.py from _is_drive_feeder, _is_vfd_device, _is_vfd_dc_bus, names_tag, unit_ids, role_of_location, feeders_for, label_wait.asked, the col 18 / 19 parsers, feeders_cover_drives and medium_kind): every feeder, drive and DC-bus case, every tag match, every unit\'s Device ID, every transformer role, and for every drive of every unit the same drives — the app never calling a drive fed that loto-web leaves not identified (it may ask more: a second untagged drive on one feeder)';
     const fails = [], got = { counts: {} };
     const want = (ok, what) => { if (!ok) fails.push(what); };
     let fx = null;
@@ -9881,6 +9882,10 @@
       return { ok: text === c.text && JSON.stringify(read) === JSON.stringify(c.parsed), what: 'app writes ' + JSON.stringify(text) + ', means ' + JSON.stringify(read) + ', loto-web reads ' + JSON.stringify(c.parsed) };
     });
     want((fx.labelAsked || []).length && (fx.waitCells || []).length && (fx.voltCells || []).length, 'the fixture carries the label-wait cases');
+    // Tier 1 (feeders_cover_drives) and which media the release question asks on (drain_location.medium_kind)
+    check('cover', fx.cover || [], c => ({ ok: feedersCoverDrives(c.feeders, c.driveTags) === c.covers, what: JSON.stringify([c.feeders, c.driveTags]) + ' loto-web ' + c.covers }));
+    check('mediumKind', fx.mediumKind || [], c => ({ ok: releaseMediumOf(c.energySource) === c.kind, what: JSON.stringify(c.energySource) + ' app ' + JSON.stringify(releaseMediumOf(c.energySource)) + ' loto-web ' + JSON.stringify(c.kind) }));
+    want((fx.cover || []).length && (fx.mediumKind || []).length, 'the fixture carries the cover and medium cases');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
   // T291 — a feeder is what loto-web calls one
@@ -10013,6 +10018,36 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+
+  // T296 — loto-web's Tier 1: an unnamed feeder counts only when the feeders cover the drives
+  async function t296_anUnnamedFeederCountsOnlyWhenTheFeedersCoverTheDrives() {
+    const N = 'T296 loto-web\'s xhigh review (live 2026-10-24 21:59Z): a feeder that names no drive counts for the drives only when the feeders cover them (as many feeder rows as drive units) — one unnamed feeder for two drives feeds neither, so both are asked; two drives sharing one tag, each "fed" by name, get the Save & New note that loto-web keeps the unit on Tier 2; a vacuum pump\'s exhaust row ("Vacuum Air Out") no longer asks the release question (a held answer still shows)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      const fed = (srcs) => unitDrives(srcs).map(d => d.fed).join();
+      got.one = fed([DRIVE({ deviceId: 'VFD-1' }), DRIVE({ deviceId: 'VFD-2' }), FEEDER('Feeder: MCC bkr 3')]);
+      got.two = fed([DRIVE({ deviceId: 'VFD-1' }), DRIVE({ deviceId: 'VFD-2' }), FEEDER('Feeder: MCC bkr 3'), FEEDER('Feeder: MCC bkr 4')]);
+      got.untagged = fed([DRIVE({ deviceId: '', quantity: 2 }), FEEDER('Feeder: MCC bkr 3')]);
+      want(got.one === 'false,false' && got.two === 'true,true' && got.untagged === 'false,false', 'the rule: ' + JSON.stringify(got));
+      formOfType('AHU-296', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-1', driveIsolates: ['yes'] }), DRIVE({ deviceId: 'VFD-1', driveIsolates: ['no'] }), FEEDER('Feeder: MCC bkr 3 (VFD-1)')];
+      sources.forEach(ensureSourceId); renderSources();
+      got.shared = collectIncompleteFields().filter(m => /share the tag/.test(m));
+      want(got.shared.length === 1 && /two share the tag VFD-1/.test(got.shared[0]), 'the shared-tag note: ' + JSON.stringify(got.shared));
+      sources[1].deviceId = 'VFD-2'; sources.push(FEEDER('Feeder: MCC bkr 4 (VFD-2)'));
+      want(!collectIncompleteFields().some(m => /share the tag/.test(m)), 'distinct tags: no note');
+      const ex = Object.assign(mkSrc('Vacuum Air Out'), { deviceType: 'Ball Valve', verification: '' });
+      const exHeld = Object.assign(mkSrc('Vacuum Air Out'), { deviceType: 'Ball Valve', verification: '', drainLocation: { where: 'On this valve', text: '' } });
+      const inlet = Object.assign(mkSrc('Vacuum Air In'), { deviceType: 'Ball Valve', verification: '' });
+      got.vac = [sourceTakesDrainLocation(ex, 'Atlanta'), sourceTakesDrainLocation(exHeld, 'Atlanta'), sourceTakesDrainLocation(inlet, 'Atlanta')].join();
+      want(got.vac === 'false,true,true', 'vacuum exhaust: ' + got.vac);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -10137,7 +10172,8 @@
     t284_aQty2UntaggedRowKeepsOneTagPerUnit, t285_theTypedFeederTagIsOneTag, t286_aDriveRowIsNeverAFeeder,
     t287_duplicatingARoleRowMakesAnOrdinaryRow, t288_aRepurposedRoleRowLosesItsRole, t289_closingTheTransformersFirstQuestionSaysSo,
     t290_theAppsRulesAgreeWithLotoWeb, t291_aFeederIsWhatLotoWebCallsOne, t292_aCustomDriveDeviceIsADrive,
-    t293_theFeederKeepsItsLinkToItsDrive, t294_aPanelNamedFeederKeysAsOneBreaker, t295_aTagThatCleansToNothingSaysSo];
+    t293_theFeederKeepsItsLinkToItsDrive, t294_aPanelNamedFeederKeysAsOneBreaker, t295_aTagThatCleansToNothingSaysSo,
+    t296_anUnnamedFeederCountsOnlyWhenTheFeedersCoverTheDrives];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

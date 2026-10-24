@@ -966,6 +966,396 @@
      "identified": false
     }
    ]
+  },
+  {
+   "name": "one unnamed feeder for two drives",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-2",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": false
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-2",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "two unnamed feeders for two drives",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-2",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 4"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-2",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "one untagged Qty-2 row, one unnamed feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "",
+     "identified": false
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "one untagged Qty-2 row, two unnamed feeders",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 4"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "",
+     "identified": true
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "duplicate tags, one named feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (VFD-1)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    }
+   ]
+  }
+ ],
+ "cover": [
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1)",
+    "Feeder: MCC bkr 4 (VFD-2)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2"
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2"
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2"
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3"
+   ],
+   "driveTags": [
+    "",
+    ""
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3",
+    "Feeder: MCC bkr 4"
+   ],
+   "driveTags": [
+    "",
+    ""
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-1"
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1)",
+    "Feeder: MCC bkr 4 (VFD-1)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-1"
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    ""
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1)"
+   ],
+   "driveTags": [
+    "vfd-1"
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [],
+   "driveTags": [
+    "VFD-1"
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3"
+   ],
+   "driveTags": [],
+   "covers": false
+  }
+ ],
+ "mediumKind": [
+  {
+   "energySource": "Fuel Oil In",
+   "kind": "fuel"
+  },
+  {
+   "energySource": "Fuel Oil Out",
+   "kind": "fuel"
+  },
+  {
+   "energySource": "Diesel Fuel",
+   "kind": "fuel"
+  },
+  {
+   "energySource": "FO Supply",
+   "kind": "fuel"
+  },
+  {
+   "energySource": "Chemical In",
+   "kind": "chemical"
+  },
+  {
+   "energySource": "Chem feed",
+   "kind": "chemical"
+  },
+  {
+   "energySource": "Geothermal Water In",
+   "kind": "geothermal"
+  },
+  {
+   "energySource": "Natural Gas",
+   "kind": "gas"
+  },
+  {
+   "energySource": "Propane",
+   "kind": "gas"
+  },
+  {
+   "energySource": "LP Gas",
+   "kind": "gas"
+  },
+  {
+   "energySource": "Vacuum Air In",
+   "kind": "vacuum"
+  },
+  {
+   "energySource": "Vacuum Air Out",
+   "kind": ""
+  },
+  {
+   "energySource": "Vacuum Exhaust",
+   "kind": ""
+  },
+  {
+   "energySource": "Vacuum Discharge",
+   "kind": ""
+  },
+  {
+   "energySource": "Vacuum Air In/Out",
+   "kind": "vacuum"
+  },
+  {
+   "energySource": "Refrigerant",
+   "kind": "refrigerant"
+  },
+  {
+   "energySource": "HHW In",
+   "kind": ""
+  },
+  {
+   "energySource": "Compressed Air In",
+   "kind": ""
+  },
+  {
+   "energySource": "Electrical 480V",
+   "kind": ""
+  },
+  {
+   "energySource": "",
+   "kind": ""
   }
  ],
  "labelAsked": [

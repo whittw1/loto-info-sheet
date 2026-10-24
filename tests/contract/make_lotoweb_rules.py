@@ -29,6 +29,7 @@ from app.services import drive_isolation as di  # noqa: E402
 from app.services import transformer_survey as ts  # noqa: E402
 from app.services.unit_ids import unit_ids  # noqa: E402
 from app.services import label_wait as lw  # noqa: E402
+from app.services import drain_location as dl  # noqa: E402
 
 
 def row(es="Electrical 480V", dev="Breaker", did="", qty=1, loc=""):
@@ -112,6 +113,26 @@ VOLT_CELLS = [  # (app's stored dcBusV, quantity, the text the app writes)
     ([680, None], 2, "680"), ([None, 650], 2, "; 650"), ([12], 1, "12"), ([1500], 1, "1500"), ([280, 550], 2, "280; 550"), ([], 1, ""),
 ]
 
+# Tier 1 (drive_isolation.feeders_cover_drives, loto-web's xhigh review 2026-10-24):
+# feeder Locations and one tag per drive unit ('' untagged).
+COVER = [
+    (["Feeder: MCC bkr 3 (VFD-1)", "Feeder: MCC bkr 4 (VFD-2)"], ["VFD-1", "VFD-2"]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)"], ["VFD-1", "VFD-2"]),
+    (["Feeder: MCC bkr 3"], ["VFD-1", "VFD-2"]),
+    (["Feeder: MCC bkr 3"], ["", ""]),
+    (["Feeder: MCC bkr 3", "Feeder: MCC bkr 4"], ["", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1)"], ["VFD-1", "VFD-1"]),
+    (["Feeder: MCC bkr 3 (VFD-1)", "Feeder: MCC bkr 4 (VFD-1)"], ["VFD-1", "VFD-1"]),
+    (["Feeder: MCC bkr 3 (VFD-1)"], ["VFD-1", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1)"], ["vfd-1"]),
+    ([], ["VFD-1"]),
+    (["Feeder: MCC bkr 3"], []),
+]
+# drain_location.medium_kind: which energy sources the release question asks on.
+MEDIA = ["Fuel Oil In", "Fuel Oil Out", "Diesel Fuel", "FO Supply", "Chemical In", "Chem feed", "Geothermal Water In",
+         "Natural Gas", "Propane", "LP Gas", "Vacuum Air In", "Vacuum Air Out", "Vacuum Exhaust", "Vacuum Discharge",
+         "Vacuum Air In/Out", "Refrigerant", "HHW In", "Compressed Air In", "Electrical 480V", ""]
+
 UNITS = {
     "two tagged drives, one feeder each": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-2"),
                                            row(loc="Feeder: MCC-2A bkr 14 (VFD-1)"), row(loc="Feeder: MCC-2A bkr 15 (VFD-2)")],
@@ -136,23 +157,35 @@ UNITS = {
     "a feeder naming a tag in its middle parentheses": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-2"),
                                                         row(loc="Feeder: MCC-2A (VFD-1) bkr 14"), row(loc="Feeder: MCC-2A bkr 15 (VFD-2)")],
     "no feeder at all": [row(dev="VFD", did="VFD-1")],
+    "one unnamed feeder for two drives": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-2"), row(loc="Feeder: MCC bkr 3")],
+    "two unnamed feeders for two drives": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-2"),
+                                           row(loc="Feeder: MCC bkr 3"), row(loc="Feeder: MCC bkr 4")],
+    "one untagged Qty-2 row, one unnamed feeder": [row(dev="VFD", qty=2), row(loc="Feeder: MCC bkr 3")],
+    "one untagged Qty-2 row, two unnamed feeders": [row(dev="VFD", qty=2), row(loc="Feeder: MCC bkr 3"), row(loc="Feeder: MCC bkr 4")],
+    "duplicate tags, one named feeder": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-1"), row(loc="Feeder: MCC bkr 3 (VFD-1)")],
 }
 
 
 def unit_answers(rows):
-    """For each drive unit, whether loto-web identifies its feeder."""
+    """For each drive unit, whether loto-web identifies its feeder, as its
+    generator does (_drive_feeder_ids_for): feeders_for, then a feeder naming no
+    drive kept only when the unit is Tier 1 (feeders_cover_drives)."""
     sds = [sd(r) for r in rows]
     feeders = [("E-%d" % (i + 1), r["location"]) for i, (r, s) in enumerate(zip(rows, sds)) if PG._is_drive_feeder(s)]
-    tags = []
+    unit_tags = []
     for r, s in zip(rows, sds):
         if PG._is_vfd_device(s):
-            tags += [t for t in unit_ids(r["deviceId"], r["quantity"]) if t]
+            unit_tags += [t or "" for t in unit_ids(r["deviceId"], r["quantity"])]
+    tier1 = di.feeders_cover_drives([loc for _fid, loc in feeders], unit_tags)
     out = []
     for i, (r, s) in enumerate(zip(rows, sds)):
         if not PG._is_vfd_device(s):
             continue
         for k, t in enumerate(unit_ids(r["deviceId"], r["quantity"])):
-            out.append({"row": i, "unit": k, "tag": t or "", "identified": bool(di.feeders_for(t or "", feeders, tags))})
+            ids = di.feeders_for(t or "", feeders, unit_tags)
+            if ids and not any(di.names_tag(t or "", loc) for _fid, loc in feeders) and not tier1:
+                ids = []
+            out.append({"row": i, "unit": k, "tag": t or "", "identified": bool(ids)})
     return out
 
 
@@ -167,6 +200,8 @@ def main():
         "unitIds": [{"deviceId": d, "quantity": q, "units": [u or "" for u in unit_ids(d, q)]} for d, q in UNIT_IDS],
         "role": [{"location": l, "role": ts.role_of_location(l)[0] or "", "kind": ts.role_of_location(l)[1] or ""} for l in ROLES],
         "units": [{"name": n, "rows": rows, "drives": unit_answers(rows)} for n, rows in UNITS.items()],
+        "cover": [{"feeders": f, "driveTags": t, "covers": bool(di.feeders_cover_drives(f, t))} for f, t in COVER],
+        "mediumKind": [{"energySource": e, "kind": dl.medium_kind(e) or ""} for e in MEDIA],
         "labelAsked": [{"energySource": e, "deviceType": d, "linked": k, "asked": bool(lw.asked(e, d, k))} for e, d, k in LABEL_ASKED],
         "waitCells": [{"labelWait": a, "quantity": q, "text": t, "parsed": lw.parse_wait_cell(t, q)} for a, q, t in WAIT_CELLS],
         "voltCells": [{"dcBusV": a, "quantity": q, "text": t, "parsed": lw.parse_volts_cell(t, q)} for a, q, t in VOLT_CELLS],
