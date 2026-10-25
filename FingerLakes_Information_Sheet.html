@@ -3045,10 +3045,19 @@ const RELEASE_MEDIA = [
   [/\b(fuel\s*oil|diesel|fo)\b/i, 'fuel'], [/\bchem(ical)?\b/i, 'chemical'], [/\bgeothermal\b/i, 'geothermal'],
   [/\b(natural\s*gas|propane|lp\s*gas)\b/i, 'gas'], [/\bvacuum\b/i, 'vacuum'], [/\brefrigerant\b/i, 'refrigerant']
 ];
-const VACUUM_EXHAUST_RE = /\bvacuum\s*(?:air\s*)?(?:out|exhaust|discharge)\b/i;
+// A vacuum pump's exhaust side: loto-web's drain_location.is_vacuum_exhaust, its
+// one rule since 2026-10-25 (live 13:40Z) — "vacuum" and an exhaust-side word
+// ("out", "outlet", "exhaust", "discharge") anywhere, never a combined "In/Out"
+// row (the pump's line to the receiver). Its (?<![a-z]) is (?:^|[^a-z]) here.
+const VACUUM_EXHAUST_SIDE_RE = /(?:^|[^a-z])(?:out(?:let)?|exhaust|discharge)(?![a-z])/i;
+const VACUUM_IN_OUT_RE = /(?:^|[^a-z])in\s*\/\s*out/i;
+function isVacuumExhaust(energySource) {
+  const t = String(energySource || '');
+  return /vacuum/i.test(t) && VACUUM_EXHAUST_SIDE_RE.test(t) && !VACUUM_IN_OUT_RE.test(t);
+}
 function releaseMediumOf(energySource) {
   const es = String(energySource || '');
-  if (VACUUM_EXHAUST_RE.test(es)) return '';
+  if (isVacuumExhaust(es)) return '';
   const m = RELEASE_MEDIA.find(([re]) => re.test(es));
   return m ? m[1] : '';
 }
@@ -3072,7 +3081,7 @@ const RELEASE_POINT = {
 // keeps the vent wording it was given under (build 122 review of the link).
 function releasePointOf(src) {
   const es = String((src && src.energySource) || '');
-  return RELEASE_POINT[releaseMediumOf(es) || (VACUUM_EXHAUST_RE.test(es) ? 'vacuum' : '')] || RELEASE_POINT.water;
+  return RELEASE_POINT[releaseMediumOf(es) || (isVacuumExhaust(es) ? 'vacuum' : '')] || RELEASE_POINT.water;
 }
 // The question shows only for an answer it already holds (its medium no longer asks).
 function releaseHeldOnly(src) { return !!src && !drainCodeFollowsDrain(src) && !releaseMediumOf(src.energySource); }
@@ -3082,7 +3091,7 @@ function releaseHeldOnly(src) { return !!src && !drainCodeFollowsDrain(src) && !
 // named only where its procedure already prints an "Open drain…" line.
 function releaseHeldNote(src) {
   const es = String((src && src.energySource) || '').trim();
-  const why = VACUUM_EXHAUST_RE.test(es) ? 'a vacuum pump\u2019s exhaust is at or above atmosphere'
+  const why = isVacuumExhaust(es) ? 'a vacuum pump\u2019s exhaust is at or above atmosphere'
     : es ? '\u201c' + es + '\u201d takes no drain question' : 'the row has no energy source yet';
   return 'No longer asked here: ' + why + '. loto-web names the held point only in an \u201cOpen drain\u2026\u201d line its procedure already prints. Set it to \u201c-- Not answered --\u201d to clear it.';
 }

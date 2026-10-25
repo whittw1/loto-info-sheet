@@ -131,7 +131,10 @@ COVER = [
 # drain_location.medium_kind: which energy sources the release question asks on.
 MEDIA = ["Fuel Oil In", "Fuel Oil Out", "Diesel Fuel", "FO Supply", "Chemical In", "Chem feed", "Geothermal Water In",
          "Natural Gas", "Propane", "LP Gas", "Vacuum Air In", "Vacuum Air Out", "Vacuum Exhaust", "Vacuum Discharge",
-         "Vacuum Air In/Out", "Refrigerant", "HHW In", "Compressed Air In", "Electrical 480V", ""]
+         "Vacuum Air In/Out", "Refrigerant", "HHW In", "Compressed Air In", "Electrical 480V", "",
+         # loto-web's is_vacuum_exhaust (2026-10-25): an exhaust word anywhere, never "In/Out"
+         "Vacuum Air Outlet", "Vacuum Outlet", "Vacuum Pump Exhaust", "Exhaust - Vacuum", "vacuum air out",
+         "Medical Vacuum Discharge Line", "Vacuum In / Out", "Vacuum Air Outdoor Unit", "Vacuum Air Inlet"]
 
 UNITS = {
     "two tagged drives, one feeder each": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-2"),

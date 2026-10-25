@@ -1356,6 +1356,42 @@
   {
    "energySource": "",
    "kind": ""
+  },
+  {
+   "energySource": "Vacuum Air Outlet",
+   "kind": ""
+  },
+  {
+   "energySource": "Vacuum Outlet",
+   "kind": ""
+  },
+  {
+   "energySource": "Vacuum Pump Exhaust",
+   "kind": ""
+  },
+  {
+   "energySource": "Exhaust - Vacuum",
+   "kind": ""
+  },
+  {
+   "energySource": "vacuum air out",
+   "kind": ""
+  },
+  {
+   "energySource": "Medical Vacuum Discharge Line",
+   "kind": ""
+  },
+  {
+   "energySource": "Vacuum In / Out",
+   "kind": "vacuum"
+  },
+  {
+   "energySource": "Vacuum Air Outdoor Unit",
+   "kind": "vacuum"
+  },
+  {
+   "energySource": "Vacuum Air Inlet",
+   "kind": "vacuum"
   }
  ],
  "labelAsked": [

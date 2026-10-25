@@ -10277,6 +10277,28 @@
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T306 — a pump's exhaust by any name asks nothing (loto-web's is_vacuum_exhaust)
+  async function t306_anExhaustByAnyNameAsksNothing() {
+    const N = 'T306 loto-web\'s is_vacuum_exhaust (live 2026-10-25 13:40Z): at Atlanta a valve row whose energy source is a vacuum pump\'s exhaust by any name ("Vacuum Air Outlet", "Vacuum Pump Exhaust") shows no release question, and its held answer adds no Change Later note; "Vacuum Air In" and a combined "Vacuum In / Out" still ask for the vent';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('VP-306', 'Medical Vacuum Pump', 'Medical Vacuum Pump');
+      const V = (es, x) => Object.assign(mkSrc(es), { deviceType: 'Ball Valve', verification: '', collapsed: false }, x || {});
+      sources = [V('Vacuum Air Outlet'), V('Vacuum Pump Exhaust'), V('Vacuum Air In'), V('Vacuum In / Out')];
+      sources.forEach(ensureSourceId); renderSources();
+      got.asked = sources.map((s, i) => !!document.querySelector('#drainLocGroup_' + i + ' select')).join();
+      want(got.asked === 'false,false,true,true', 'asked: ' + got.asked);
+      const e = Object.assign(mkEntry('VP-306', { sources: [V('Vacuum Air Outlet', { drainLocation: { where: 'None found', text: '' } })] }),
+        { equipType: 'Medical Vacuum Pump', template: 'Medical Vacuum Pump', hospitalCode: 'Atlanta' });
+      got.u2 = changeLaterSheetText(e);
+      want(!/No vent found/.test(got.u2), 'Change Later: ' + got.u2);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -10405,7 +10427,8 @@
     t296_anUnnamedFeederCountsOnlyWhenTheFeedersCoverTheDrives,
     t297_aCollidingRetagLosesNoTag, t298_theLinkSurvivesAnEditTypedKeyByKey, t299_aTagAFeederCantNameIsRenamedOnlyIfAsked,
     t300_aHeldExhaustAnswerKeepsItsWording, t301_aRenderMidEditKeepsTheLink, t302_aTagInAMiddleGroupIsRenamedInPlace,
-    t303_aHeldAnswerSaysWhyItIsNotAsked, t304_aHeldNoneFoundWritesNoChangeLaterNote, t305_aTagWithExtraSpacesIsNamedAsTagged];
+    t303_aHeldAnswerSaysWhyItIsNotAsked, t304_aHeldNoneFoundWritesNoChangeLaterNote, t305_aTagWithExtraSpacesIsNamedAsTagged,
+    t306_anExhaustByAnyNameAsksNothing];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
