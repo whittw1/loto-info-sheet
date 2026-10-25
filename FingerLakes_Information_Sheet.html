@@ -3264,7 +3264,7 @@ function offeredEnergySources() {
 async function addFeederForDrive(index, unit) {
   const drive = sources[index];
   if (!drive) return null;
-  const tags = splitUnitIds(drive.deviceId).map(t => t.trim()).filter(Boolean);
+  const tags = driveUnitTags(drive).filter(Boolean);   // loto-web's unit_ids: a Quantity-1 "VFD-1;2" is one tag (seventh review)
   const unfed = unitDrives(sources).find(d => d.src === drive && !d.fed);
   // an untagged drive is offered no tag (never another drive's); with every drive fed, the row's first
   const nextTag = unit != null ? (driveUnitTags(drive)[unit] || '') : (unfed ? unfed.tag : (tags[0] || ''));
@@ -3282,7 +3282,10 @@ async function addFeederForDrive(index, unit) {
   // untagged drive) recorded before the drive's Device ID was typed.
   const target = unit != null ? unitDrives(sources).find(d => d.src === drive && d.k === unit) : unfed;
   const orphan = target && !target.fed && orphanFeederRows(sources, target)[0];
-  const named = orphan ? feederGroupTags(orphan.location) : [];   // every "( … )" group (build 122 sixth review)
+  // The tag offered to an untagged drive comes from the closing "( … )", where the
+  // app writes it: a word in another bracket ("(north)") is never offered as a
+  // drive's tag (build 122 seventh review). Any group still marks an orphan.
+  const named = orphan ? feederTagsOf(orphan.location) : [];
   const asTag = !nextTag && named.length === 1 ? named[0] : '';
   if (orphan && (nextTag || asTag)) {
     const n = sources.indexOf(orphan) + 1;
@@ -3293,12 +3296,15 @@ async function addFeederForDrive(index, unit) {
     if (reuse === 'cancel' || !sources.includes(drive)) return null;
     if (reuse === 'reuse' && sources.includes(orphan)) {
       if (nextTag) {
-        orphan.location = feederLocationNaming(orphan.location, [nextTag]);
+        // the new tag takes the closing group's first tag's place, as a retag would;
+        // any other word there or in another group is the tech's to keep or take out
+        const closing = feederTagsOf(orphan.location);
+        orphan.location = feederLocationNaming(orphan.location, [nextTag].concat(closing.slice(1)));
         orphan.feeds = [];
         addFeederLink(orphan, target.src, target.k);
-        // A tag left in another "( … )" (the old drive's, or the tech's own words): the
-        // tech says whether it goes — left in, loto-web would read this breaker as
-        // feeding any drive later tagged so (wilkins 2026-10-25, sixth review)
+        // A tag left in a "( … )" (the old drive's, or the tech's own words): the tech
+        // says whether it goes — left in, loto-web would read this breaker as feeding
+        // any drive later tagged so (wilkins 2026-10-25, sixth / seventh reviews)
         const kept = [];
         for (const old of feederGroupTags(orphan.location).filter(t => tagKey(t) !== tagKey(nextTag))) {
           const drop = await askChoice({ id: 'feeder-orphan-old', defaultValue: 'keep', title: 'Feeder: the old tag',
@@ -3469,27 +3475,37 @@ function tagKey(t) { return pySpaces(t).toLowerCase(); }
 // and "," / "( )" the feeder's drive list, so they become spaces (build 122 third
 // review). Every tag comparison is tagKey, of this form where separators differ.
 function cleanTagText(t) { return pySpaces(String(t || '').replace(/[;,()]+/g, ' ')); }
+// The drive tags in one "( … )" group's text, split as loto-web's lists are.
+function groupTokens(inner) { return String(inner || '').split(/[,;]/).map(t => t.trim()).filter(Boolean); }
+// A feeder's Location with each "( … )" group rewritten by fn(tokens), which returns
+// the group's new tokens, or null to leave it exactly as typed. A group left with
+// no token goes with the one space before it; no other text is touched (build 122
+// seventh review: a tidy of every double space rewrote the tech's spacing).
+function rewriteFeederGroups(loc, fn) {
+  let removed = false;
+  const out = String(loc || '').replace(/( ?)\(([^()]*)\)/g, (whole, lead, inner) => {
+    const toks = fn(groupTokens(inner));
+    if (!toks) return whole;
+    const list = toks.map(t => String(t || '').trim()).filter(Boolean);
+    if (!list.length) { removed = true; return ''; }
+    return lead + '(' + list.join(', ') + ')';
+  });
+  return removed ? out.replace(/^\s+|\s+$/g, '') : out;
+}
 // A feeder's Location with one tag taken out of the group that holds it, and that
 // group gone if nothing is left in it ("Feeder: MCC-2A (VFD-1) bkr 14 (VFD-5)" less
 // "VFD-1" → "Feeder: MCC-2A bkr 14 (VFD-5)"). Only on the tech's say-so.
 function feederLocationWithout(loc, tag) {
-  let done = false, emptied = false;
-  const out = String(loc || '').replace(/\(([^()]*)\)/g, (group, inner) => {
-    if (done) return group;
-    const toks = inner.split(/[,;]/).map(t => t.trim()).filter(Boolean);
-    const j = toks.findIndex(t => tagKey(t) === tagKey(tag));
-    if (j < 0) return group;
+  let done = false;
+  return rewriteFeederGroups(loc, toks => {
+    const j = done ? -1 : toks.findIndex(t => tagKey(t) === tagKey(tag));
+    if (j < 0) return null;
     done = true;
-    toks.splice(j, 1);
-    if (!toks.length) { emptied = true; return ''; }
-    return '(' + toks.join(', ') + ')';
+    return toks.filter((t, x) => x !== j);
   });
-  return emptied ? out.replace(/ {2,}/g, ' ').trim() : out;
 }
 // Every drive tag in a feeder's "( … )" groups, as loto-web's names_tag reads them all.
-function feederGroupTags(loc) {
-  return [...String(loc || '').matchAll(/\(([^()]*)\)/g)].flatMap(m => m[1].split(/[,;]/)).map(t => t.trim()).filter(Boolean);
-}
+function feederGroupTags(loc) { return [...String(loc || '').matchAll(/\(([^()]*)\)/g)].flatMap(m => groupTokens(m[1])); }
 function feederParenText(loc) { const m = /\(([^()]*)\)\s*$/.exec(String(loc || '')); return m ? m[1] : ''; }
 function feederNamesTag(loc, tag) {
   const t = tagKey(tag);
@@ -3504,7 +3520,7 @@ function feederNamesTag(loc, tag) {
   return false;
 }
 // The drive tags in a feeder's closing "( … )", and its Location naming `tags` instead.
-function feederTagsOf(loc) { return feederParenText(loc).split(/[,;]/).map(t => t.trim()).filter(Boolean); }
+function feederTagsOf(loc) { return groupTokens(feederParenText(loc)); }
 function feederLocationNaming(loc, tags) {
   const list = (tags || []).map(t => String(t || '').trim()).filter(Boolean);   // as tagged: each drive's own text
   const base = String(loc || '').replace(/\s*\([^()]*\)\s*$/, '').trim();
@@ -3571,13 +3587,15 @@ function addFeederLink(feeder, drive, k) {
 // fifth review): a token that is a link's last tag becomes that link's tag now,
 // in place. Each link takes one token, so two units that share a tag for a
 // moment keep a token each, "(VFD-1, VFD-1)", and nothing is lost when one is
-// retagged again. A live drive's link takes a token before a deleted drive's,
-// and a deleted drive's token that only repeats one already named goes, with
-// its link (build 122 sixth review). A group with no renamed or dropped token,
-// and every other part of the text, is left exactly as typed. A link that no
-// token names is left alone (the text may be mid-edit); only `{ prune: true }`
-// (a committed edit) takes it out, and takes every link off a row that is no
-// longer a feeder. Returns the feeder rows whose Location changed.
+// retagged again. A link whose drive row is gone (or whose unit is past its
+// Quantity) is dead: a live link takes a token first, and a dead link's token
+// that only repeats one already named goes, with its link (sixth review). A
+// drive whose Device ID box is emptied for a moment is not dead — its link and
+// token stay while it is retyped (seventh review). A group with nothing renamed
+// or dropped, and every other part of the text, is left exactly as typed. A link
+// that no token names is left alone (the text may be mid-edit); only `{ prune:
+// true }` (a committed edit) takes it out, and takes every link off a row that is
+// no longer a feeder. Returns the feeder rows whose Location changed.
 function syncFeederTags(srcList, opts) {
   const prune = !!(opts && opts.prune), changed = [];
   (srcList || []).forEach(f => {
@@ -3586,45 +3604,41 @@ function syncFeederTags(srcList, opts) {
     if (prune) pruneFeederLinks(f, srcList);
     if (!Array.isArray(f.feeds) || !f.feeds.length) return;
     const lc = tagKey;
-    // each link's tag now (its drive gone or untagged: the tag it was last named by)
-    const now = f.feeds.map(l => linkCurrentTag(srcList, l));
-    const cur = f.feeds.map((l, x) => now[x] || String(l.tag || '').trim());
+    const alive = f.feeds.map(l => { const d = driveOfLink(srcList, l); return !!d && l.unit < valveMarkSlots(d); });
+    // each link's tag now (its drive gone or its box empty: the tag it was last named by)
+    const cur = f.feeds.map(l => linkCurrentTag(srcList, l) || String(l.tag || '').trim());
     const used = new Set(), seen = new Set(), dropped = new Set();
     const loc = String(f.location || '');
-    let emptied = false;
-    const next = loc.replace(/\(([^()]*)\)/g, (group, inner) => {
+    const next = rewriteFeederGroups(loc, toks => {
       let edited = false;
-      const toks = inner.split(/[,;]/).map(tok => {
+      const out = toks.map(tok => {
         const k = lc(tok);
         const fits = x => !used.has(x) && !!lc(f.feeds[x].tag) && lc(f.feeds[x].tag) === k;
-        let j = f.feeds.findIndex((l, x) => fits(x) && !!now[x]);
+        let j = f.feeds.findIndex((l, x) => fits(x) && alive[x]);
         if (j < 0) j = f.feeds.findIndex((l, x) => fits(x));
-        if (j < 0) { if (k) seen.add(k); return tok; }
+        if (j < 0) { seen.add(k); return tok; }
         used.add(j);
-        if (!now[j] && seen.has(k)) { dropped.add(j); edited = true; return ''; }
-        if (!cur[j] || cur[j] === tok.trim()) { seen.add(k); return tok; }
+        if (!alive[j] && seen.has(k)) { dropped.add(j); edited = true; return ''; }
+        if (!cur[j] || cur[j] === tok) { seen.add(k); return tok; }
         edited = true;
         seen.add(lc(cur[j]));
         return cur[j];
       });
-      if (!edited) return group;
-      const list = toks.map(t => t.trim()).filter(Boolean);
-      if (!list.length) { emptied = true; return ''; }
-      return '(' + list.join(', ') + ')';
+      return edited ? out : null;
     });
     if (dropped.size) f.feeds = f.feeds.filter((l, x) => !dropped.has(x));
-    const tidy = emptied ? next.replace(/ {2,}/g, ' ').trim() : next;
-    if (tidy !== loc) { f.location = tidy; changed.push(f); }
+    if (next !== loc) { f.location = next; changed.push(f); }
     // a link is named by its tag now once the text has it (renamed here, or typed)
     f.feeds.forEach(l => { const c = linkCurrentTag(srcList, l); if (c && feederNamesTag(f.location, c)) l.tag = c; });
   });
   return changed;
 }
-// A retag renames the drive in its feeders' Locations (syncFeederTags); their
-// cards show it at once, not at the next render — editing a box that still
-// showed the old text put the old tag back and dropped the link (build 122 sixth
-// review). A card being typed in is left for the render.
-function refreshRenamedFeeders(changed, driveIndex) {
+// After a Device ID edit: the renamed feeders' cards show their new text at once
+// — editing a box that still showed the old text put the old tag back and dropped
+// the link (build 122 sixth review) — and the retagged drive's own answer line,
+// which names it by its tag. (A drive card shows no fed state, so no other card
+// goes stale.) A card being typed in is left for the render.
+function refreshAfterRetag(changed, driveIndex) {
   if (!changed || !changed.length) return;
   const cards = document.querySelectorAll('#sourcesContainer > .source-card');
   changed.forEach(f => {
@@ -3632,7 +3646,7 @@ function refreshRenamedFeeders(changed, driveIndex) {
     if (i < 0 || !live || live.contains(document.activeElement)) return;
     live.replaceWith(buildSourceCard(f, i));
   });
-  if (driveIndex != null) refreshSourceDependents(driveIndex);   // the drive's own "fed" line
+  if (driveIndex != null) refreshSourceDependents(driveIndex);
 }
 // A link the feeder's Location no longer names — neither by the tag it was last
 // named by nor by its drive's tag now — was taken out by the tech: it goes.
@@ -7803,7 +7817,7 @@ function kineticDefaultLocation() {
 function updateSource(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
-  if (field === 'deviceId') refreshRenamedFeeders(syncFeederTags(sources), index);   // a retagged drive renames itself in its feeder (build 122)
+  if (field === 'deviceId') refreshAfterRetag(syncFeederTags(sources), index);   // a retagged drive renames itself in its feeder (build 122)
   if (field === 'verification') delete sources[index]._drainDefault;   // the tech picked the code
   if (field === 'energySource' && value && SOURCE_DEFAULTS[value]) {
     const defaults = SOURCE_DEFAULTS[value];
