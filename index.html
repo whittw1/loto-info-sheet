@@ -479,7 +479,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b121</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b122</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -617,6 +617,21 @@ if ('serviceWorker' in navigator) {
         </div>
         <input type="file" accept="image/*" capture="environment" id="file_equip_ee" onchange="handlePhoto(this, 'equip_ee')">
         <button type="button" class="btn btn-sm" onclick="browsePhoto('equip_ee')" title="Pick an existing photo from the library" style="width:100%;margin-top:6px;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#128194; Browse</button>
+      </div>
+      <!-- Build 122 (D2): ATS, Generator and Transformer units only — syncArcFlashSlot -->
+      <div class="photo-slot" id="arcFlashSlot" style="display:none;">
+        <label>Arc Flash Label</label>
+        <div class="photo-capture" onclick="takePhoto('equip_arcflash')" id="photo_equip_arcflash">
+          <span class="placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M9 2h6l1 3H8l1-3z"/></svg>
+            Tap to capture
+          </span>
+        </div>
+        <input type="file" accept="image/*" capture="environment" id="file_equip_arcflash" onchange="handlePhoto(this, 'equip_arcflash')">
+        <button type="button" class="btn btn-sm" onclick="browsePhoto('equip_arcflash')" title="Pick an existing photo from the library" style="width:100%;margin-top:6px;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#128194; Browse</button>
+        <label id="arcFlashNoneLabel" style="display:flex;align-items:center;justify-content:center;gap:6px;margin:8px 0 0;font-size:12px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--text);cursor:pointer;">
+          <input type="checkbox" id="arcFlashNone" style="width:18px;height:18px;flex:0 0 auto;" onchange="setArcFlashNone(this.checked)"> No arc flash label on this equipment
+        </label>
       </div>
     </div>
   </div>
@@ -815,6 +830,11 @@ if ('serviceWorker' in navigator) {
         Ask about damper actuators (spring return) at this facility
       </label>
       <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">Air Handlers, Exhaust Fans and Boilers. On by default for the three Atlanta facilities, off elsewhere.</div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="settingsRelease" style="width:18px;height:18px;">
+        Ask where fuel, chemical, geothermal, gas, vacuum and refrigerant lines drain or vent
+      </label>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">On by default for the three Atlanta facilities, off elsewhere. Rows that already hold an answer still show it.</div>
     </div>
     <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
     <div style="margin-bottom:16px;">
@@ -972,6 +992,8 @@ function onHospitalSelectChange() {
   if (tagChk && sel.value !== '__custom__') tagChk.checked = existingTagPromptOn(sel.value);
   const damperChk = document.getElementById('settingsDampers');
   if (damperChk && sel.value !== '__custom__') damperChk.checked = damperPromptOn(sel.value);
+  const relChk = document.getElementById('settingsRelease');
+  if (relChk && sel.value !== '__custom__') relChk.checked = releasePromptOn(sel.value);
 }
 
 // Small header chip showing the active facility (or a warning when unset, so a
@@ -1024,6 +1046,8 @@ function showSettings() {
   if (tagChk) tagChk.checked = existingTagPromptOn(hc);
   const damperChk = document.getElementById('settingsDampers');
   if (damperChk) damperChk.checked = damperPromptOn(hc);
+  const relChk = document.getElementById('settingsRelease');
+  if (relChk) relChk.checked = releasePromptOn(hc);
   document.getElementById('photoPreset').value = s.preset || PHOTO_DEFAULTS.preset;
   document.getElementById('photoMaxW').value = s.maxWidth;
   document.getElementById('photoMaxH').value = s.maxHeight;
@@ -1116,6 +1140,8 @@ function savePhotoSettings() {
   if (tagChk && tagChk.checked !== existingTagPromptOn(hc)) setExistingTagPrefForFacility(hc, tagChk.checked);
   const damperChk = document.getElementById('settingsDampers');
   if (damperChk && damperChk.checked !== damperPromptOn(hc)) setDamperPrefForFacility(hc, damperChk.checked);
+  const relChk = document.getElementById('settingsRelease');   // build 122
+  if (relChk && relChk.checked !== releasePromptOn(hc)) setReleasePrefForFacility(hc, relChk.checked);
   renderSources();
   renderUnitQuestions(true);
 
@@ -1136,7 +1162,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 121;
+const APP_BUILD = 122;
 
 // ============================================================================
 // DATA
@@ -1256,7 +1282,17 @@ const DATA = {
   // and what powers it (P3). A typed location goes through "Other…".
   damperLocations: ["Outside Air Damper","Return Air Damper","Exhaust / Relief Damper","Mixed Air Damper",
                     "Isolation Damper","Backdraft Damper","Combustion Air Damper","Flue Damper"],
-  damperDevices: ["Electric Actuator","Pneumatic Actuator"]
+  damperDevices: ["Electric Actuator","Pneumatic Actuator"],
+  // Build 122 (loto-web's 2026-10-24 spec): where a fuel oil or chemical drain
+  // discharges, as column 20 writes it ("Other…" is written "Other: <text>")
+  drainsTo: ["Containment","Floor drain","Hose"],
+  // A transformer's survey (spec §1.3–1.4): the kinds of alternate source, as the
+  // row's Location names them, and the nameplate / grounding choices (a typed
+  // Other is written "Other: <text>")
+  xfmrAltKinds: ["ATS","UPS output","Generator connection","Tie breaker","Another transformer","PV or battery"],
+  xfmrConnections: ["Delta-Wye","Delta-Delta","Wye-Wye","Wye-Delta","Single-phase"],
+  xfmrTempRises: ["80 C","115 C","150 C"],
+  groundingChoices: ["Ground bus","Ground studs","None","Can't tell"]
 };
 
 // Auto-fill defaults when energy source is selected
@@ -1349,7 +1385,13 @@ function appListsSnapshot(build) {
       drainLocations: DATA.drainLocations.slice(),
       yesNoCantTell: DATA.yesNoCantTell.slice(),
       yesNo: DATA.yesNo.slice(),
-      damperLocations: DATA.damperLocations.slice()
+      damperLocations: DATA.damperLocations.slice(),
+      // build 122: column 20, and a transformer's alternate sources and nameplate
+      drainsTo: DATA.drainsTo.slice(),
+      xfmrAltKinds: DATA.xfmrAltKinds.slice(),
+      xfmrConnections: DATA.xfmrConnections.slice(),
+      xfmrTempRises: DATA.xfmrTempRises.slice(),
+      groundingChoices: DATA.groundingChoices.slice()
     }
   };
 }
@@ -2093,7 +2135,10 @@ function jsArg(v) { return new RawHtml(escHtml(JSON.stringify(v === undefined ? 
 // native confirm() whose Cancel button does something destructive is a trap.
 // opts.input (build 110): a field above the buttons — { type, max, valid(v) };
 // a choice with needsInput stays off until valid(value) and answers with the
-// field's value. Tests answer through window.__askChoiceAuto.
+// field's value. opts.checks (build 122): tick boxes above the
+// buttons — [{ value, label, exclusive }]; every button then answers
+// { value, checked: [ticked values] } (an exclusive box clears the others).
+// Closed without a button: 'cancel'. Tests answer through window.__askChoiceAuto.
 function askChoice(opts) {
   if (typeof window.__askChoiceAuto === 'function') {
     try { return Promise.resolve(window.__askChoiceAuto(opts)); } catch (e) { return Promise.resolve('cancel'); }
@@ -2124,6 +2169,25 @@ function askChoice(opts) {
       input.style.cssText = 'width:100%;padding:10px;margin-bottom:12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:15px;';
       box.appendChild(input);
     }
+    const ticks = [];
+    if (opts.checks) {
+      const list = document.createElement('div');
+      list.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-bottom:12px;';
+      opts.checks.forEach(c => {
+        const row = document.createElement('label');
+        row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;font-size:14px;color:var(--text);cursor:pointer;';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.style.cssText = 'width:18px;height:18px;flex:0 0 auto;';
+        cb.onchange = () => { if (cb.checked) ticks.forEach(t => { if (t.cb !== cb && (c.exclusive || t.c.exclusive)) t.cb.checked = false; }); };
+        row.appendChild(cb);
+        row.appendChild(document.createTextNode(c.label));
+        list.appendChild(row);
+        ticks.push({ c, cb });
+      });
+      box.appendChild(list);
+    }
+    const answer = (v) => opts.checks ? { value: v, checked: ticks.filter(t => t.cb.checked).map(t => t.c.value) } : v;
     const col = document.createElement('div');
     col.style.cssText = 'display:flex;flex-direction:column;gap:8px;';
     const gated = [];
@@ -2132,8 +2196,11 @@ function askChoice(opts) {
       b.className = 'btn ' + (c.primary ? 'btn-primary' : (c.danger ? 'btn-danger' : 'btn-outline'));
       b.style.cssText = 'padding:11px;font-size:14px;';
       b.textContent = c.label;
-      if (c.needsInput && input) { b.disabled = !inputOk(); gated.push(b); b.onclick = () => { if (inputOk()) done(input.value); }; }
-      else b.onclick = () => done(c.value);
+      if (c.needsInput && input) {
+        b.disabled = !inputOk(); gated.push(b);
+        b.onclick = () => { if (inputOk()) done(input.value); };
+      }
+      else b.onclick = () => done(answer(c.value));
       col.appendChild(b);
     });
     if (input) input.oninput = input.onchange = () => { const ok = inputOk(); gated.forEach(b => { b.disabled = !ok; }); };
@@ -2915,20 +2982,27 @@ function defaultShopFor(template, srcs) {
 }
 
 // Which questions a unit gets. A unit is at most one of AHU / ATS / Chiller /
-// Medical Vacuum Pump; the refrigerant question goes with any of them.
+// Medical Vacuum Pump / Transformer; the refrigerant question goes with any of
+// them. A transformer is told by its TYPE (build 122): its templates are shared —
+// Electrical with Stored Energy is the VFD type's too — so the type wins over
+// any template.
 function unitKinds(type, template, srcs) {
   const t = String(template || '');
+  const xfmr = type === 'Transformer';
   return {
-    ahu: type === 'Air Handler' || /^AHU\b/.test(t),
-    ats: type === 'ATS' || t === 'ATS - Generic',
-    chiller: type === 'Chiller' || t === 'Chiller',
-    vacPump: t === 'Medical Vacuum Pump',
+    ahu: !xfmr && (type === 'Air Handler' || /^AHU\b/.test(t)),
+    ats: !xfmr && (type === 'ATS' || t === 'ATS - Generic'),
+    chiller: !xfmr && (type === 'Chiller' || t === 'Chiller'),
+    vacPump: !xfmr && t === 'Medical Vacuum Pump',
+    xfmr: xfmr,
     refrigerant: REFRIGERANT_TEMPLATES.includes(t)
       || (srcs || []).some(s => s && /refrigerant/i.test(String(s.energySource || '')))
   };
 }
+// The form as an entry (the unit's own facility since build 122: the release
+// question follows it).
 function formEntryLike() {
-  return { equipType: getEquipType(), template: getTemplate(), sources: sources, unitAnswers: unitAnswers };
+  return { equipType: getEquipType(), template: getTemplate(), sources: sources, unitAnswers: unitAnswers, hospitalCode: formFacilityCode() };
 }
 
 function shopSheetValue(a) { return a.shop === 'Other' ? String(a.shopOther || '').trim() : String(a.shop || ''); }
@@ -2954,19 +3028,111 @@ const DRAIN_CHOICE_LABEL = {
   'On the equipment': 'On the equipment (casing, coil, strainer or tank)',
   'None found': 'None found'
 };
-// Valve rows of a water, steam, condensate, glycol or compressed-air line. A
-// valve locked open carries live flow and is never a relief point.
-function sourceTakesDrainLocation(src) {
-  if (!src || src.lockOpen) return false;
-  const es = String(src.energySource || '');
-  if (!(isWaterFamilySource(es) || /^(Compressed Air|CA)\b/.test(es))) return false;
-  return !src.deviceType || isValveDevice(src.deviceType);
+// ---- The release question for every medium (build 122, loto-web 2026-10-24 §2.4)
+// A per-facility setting (on for the three Atlanta facilities) asks the same
+// question on the valve rows of fuel oil, chemical, geothermal, natural gas,
+// propane, vacuum and refrigerant lines; the point it asks for follows the medium
+// (a drain, a purge point, a vent, a recovery port). The stored `where` stays one
+// of DATA.drainLocations whatever the label says, and only the water family and
+// compressed air have their verification code follow the answer (D5).
+const RELEASE_DEFAULT_ON = ['Atlanta', 'Atlanta - Fort McPherson', 'Atlanta - Trinka Davis'];
+function releasePromptOn(code) { return facilityPrefOn('loto_release_prefs', RELEASE_DEFAULT_ON, code); }
+function setReleasePrefForFacility(code, on) { setFacilityPref('loto_release_prefs', code, on); }
+// loto-web's drain_location.medium_kind, pattern for pattern (the contract test);
+// a vacuum pump's exhaust ("Vacuum Air Out") is at or above atmosphere, not
+// vacuum, and asks nothing (loto-web's xhigh review, 2026-10-24).
+const RELEASE_MEDIA = [
+  [/\b(fuel\s*oil|diesel|fo)\b/i, 'fuel'], [/\bchem(ical)?\b/i, 'chemical'], [/\bgeothermal\b/i, 'geothermal'],
+  [/\b(natural\s*gas|propane|lp\s*gas)\b/i, 'gas'], [/\bvacuum\b/i, 'vacuum'], [/\brefrigerant\b/i, 'refrigerant']
+];
+// A vacuum pump's exhaust side: loto-web's drain_location.is_vacuum_exhaust, its
+// one rule since 2026-10-25 (live 13:40Z) — "vacuum" and an exhaust-side word
+// ("out", "outlet", "exhaust", "discharge") anywhere, never a combined "In/Out"
+// row (the pump's line to the receiver). Its (?<![a-z]) is (?:^|[^a-z]) here.
+const VACUUM_EXHAUST_SIDE_RE = /(?:^|[^a-z])(?:out(?:let)?|exhaust|discharge)(?![a-z])/i;
+const VACUUM_IN_OUT_RE = /(?:^|[^a-z])in\s*\/\s*out/i;
+function isVacuumExhaust(energySource) {
+  const t = String(energySource || '');
+  return /vacuum/i.test(t) && VACUUM_EXHAUST_SIDE_RE.test(t) && !VACUUM_IN_OUT_RE.test(t);
 }
-function drainLocationSheetText(src) {
+function releaseMediumOf(energySource) {
+  const es = String(energySource || '');
+  if (isVacuumExhaust(es)) return '';
+  const m = RELEASE_MEDIA.find(([re]) => re.test(es));
+  return m ? m[1] : '';
+}
+// What the question calls the point on each medium, and its choices' labels.
+// A drain (the water family, fuel oil, chemical, geothermal), else a point
+// named for the medium whose valve and equipment choices say what it is.
+const DRAIN_POINT = { label: 'Drain for this isolation point', noun: 'drain', choices: DRAIN_CHOICE_LABEL };
+const mediumPoint = (label, noun, eg, onValve, onEquipment) => ({ label, noun, eg, choices: {
+  'On this valve': onValve, 'Between this valve and the equipment': 'Between this valve and the equipment',
+  'On the equipment': onEquipment, 'None found': 'None found' } });
+const RELEASE_POINT = {
+  water: { ...DRAIN_POINT, eg: 'low point of coil return' },
+  fuel: { ...DRAIN_POINT, eg: 'casing plug', drainsTo: true },
+  chemical: { ...DRAIN_POINT, eg: 'casing plug', drainsTo: true },
+  geothermal: { ...DRAIN_POINT, eg: 'low point of coil return' },
+  gas: mediumPoint('Purge point for this isolation point', 'purge point', 'test port on the gas train', 'On this valve (purge port)', 'On the equipment'),
+  vacuum: mediumPoint('Vent to atmosphere for this isolation point', 'vent', 'vent valve on the inlet line', 'On this valve (vent port)', 'On the equipment'),
+  refrigerant: mediumPoint('Recovery port for this isolation point', 'recovery port', 'suction line service valve', 'On this valve (service port)', 'On the equipment (access port)')
+};
+// A vacuum pump's exhaust row no longer asks, but an answer it already holds
+// keeps the vent wording it was given under (build 122 review of the link).
+function releasePointOf(src) {
+  const es = String((src && src.energySource) || '');
+  return RELEASE_POINT[releaseMediumOf(es) || (isVacuumExhaust(es) ? 'vacuum' : '')] || RELEASE_POINT.water;
+}
+// The question shows only for an answer it already holds (its medium no longer asks).
+function releaseHeldOnly(src) { return !!src && !drainCodeFollowsDrain(src) && !releaseMediumOf(src.energySource); }
+// Why such a row isn't asked, for the card's note (build 122 fifth review): a
+// pump's exhaust, or an energy source changed since the answer was given. With
+// no medium, loto-web takes the row's old water path, so the held point is
+// named only where its procedure already prints an "Open drain…" line.
+function releaseHeldNote(src) {
+  const es = String((src && src.energySource) || '').trim();
+  const clear = ' Set it to \u201c-- Not answered --\u201d to clear it.';
+  // since 2026-10-25 13:40Z loto-web prints an exhaust row with its own check
+  // (closed, then no backflow from the exhaust header), never this answer
+  if (isVacuumExhaust(es)) return 'No longer asked here: a vacuum pump\u2019s exhaust is at or above atmosphere, and loto-web prints its own exhaust check for this row, not this answer.' + clear;
+  const why = es ? '\u201c' + es + '\u201d takes no drain question' : 'the row has no energy source yet';
+  return 'No longer asked here: ' + why + '. loto-web names the held point only in an \u201cOpen drain\u2026\u201d line its procedure already prints.' + clear;
+}
+const DRAINS_TO_LABEL = { 'Containment': 'Containment (drip pan or bucket)' };
+// The rows whose verification code follows the drain answer: the water family
+// and compressed air (as before build 122). D5: a drain, vent or port recorded on
+// the other media never changes the code.
+function drainCodeFollowsDrain(src) {
+  const es = String((src && src.energySource) || '');
+  return isWaterFamilySource(es) || /^(Compressed Air|CA)\b/.test(es);
+}
+// Valve rows (or no device yet) of a water, steam, condensate, glycol or
+// compressed-air line; since build 122 also of the release media where the
+// unit's facility asks (`facility` — the form's unit by default), and any such
+// row that already holds an answer (data is never hidden). A valve locked open
+// carries live flow and is never a relief point.
+function sourceTakesDrainLocation(src, facility) {
+  if (!src || src.lockOpen) return false;
+  if (src.deviceType && !isValveDevice(src.deviceType)) return false;
+  if (drainCodeFollowsDrain(src)) return true;
+  if (!releaseMediumOf(src.energySource)) return !!(src.drainLocation && src.drainLocation.where);   // a held answer is never hidden
+  return releasePromptOn(facility === undefined ? formFacilityCode() : facility) || !!(src.drainLocation && src.drainLocation.where);
+}
+function drainLocationSheetText(src, facility) {
   const d = src && src.drainLocation;
-  if (!d || !d.where || !sourceTakesDrainLocation(src)) return '';
+  if (!d || !d.where || !sourceTakesDrainLocation(src, facility)) return '';
   const t = String(d.text || '').replace(/\s+/g, ' ').trim();
   return d.where + (t ? ': ' + t : '');
+}
+// "Drains to" (column 20): fuel oil and chemical rows that take the question.
+function sourceTakesDrainsTo(src, facility) {
+  return sourceTakesDrainLocation(src, facility) && !!releasePointOf(src).drainsTo;
+}
+function drainsToSheetText(src, facility) {
+  const d = src && src.drainLocation;
+  if (!d || !DRAIN_FOUND.includes(d.where) || !sourceTakesDrainsTo(src, facility)) return '';
+  const to = String(d.to || '').replace(/\s+/g, ' ').trim();
+  return /^Other:?$/i.test(to) ? '' : to;   // "Other…" with nothing typed is no answer
 }
 function lockOpenSheetText(src) { return (src && src.lockOpen && sourceTakesValveState(src)) ? 'Yes' : ''; }
 
@@ -2993,7 +3159,10 @@ function updateDrainWhere(index, where) {
   if (!src) return;
   markSourceEdited(index);
   const prev = src.drainLocation || {};
-  const ours = !!prev._codeSet && drainCodeBase(src.verification) === drainCodeBase(prev._codeSet);
+  // Only a row whose code follows its drain puts a code back (D5): a drain
+  // answer kept from before the row's medium changed never rewrites the code of
+  // a build 122 medium (build 122 review).
+  const ours = drainCodeFollowsDrain(src) && !!prev._codeSet && drainCodeBase(src.verification) === drainCodeBase(prev._codeSet);
   const undo = () => {
     if (!ours) return;
     const sfx = /\s*-\s*(Hot|CHW)$/i.exec(src.verification || '');
@@ -3002,12 +3171,13 @@ function updateDrainWhere(index, where) {
   if (!where) { undo(); delete src.drainLocation; }
   else if (DRAIN_FOUND.includes(where)) {
     const d = { where: where, text: prev.text || '' };
+    if (prev.to) d.to = prev.to;   // where it drains to (build 122) rides along
     // From a "None found" that took back a default drain: the drain returns
     // first, and the found answer then keeps it.
     const fromNone = ours && prev.where === 'None found';
     if (fromNone) undo();
     if (ours && !fromNone) { d._codeBefore = prev._codeBefore; d._codeSet = prev._codeSet; }
-    else {
+    else if (drainCodeFollowsDrain(src)) {   // D5: never on the build 122 media
       const before = src.verification || '';
       const after = verificationWithDrain(src);
       if (after !== before) { src.verification = after; d._codeBefore = before; d._codeSet = after; }
@@ -3016,11 +3186,13 @@ function updateDrainWhere(index, where) {
   } else {   // None found
     undo();
     const d = { where: where, text: prev.text || '' };
+    if (prev.to) d.to = prev.to;
     // A Drain box the app ticked by default is taken back: the tech looked
     // and found none (loto-web review 2026-10-23). One the tech ticked stays,
     // and loto-web prints its "If no drain is present" stop either way.
+    // Not on the build 122 media (D5): their code never follows the answer.
     const p = parseWaterVerification(src.verification);
-    if (src._drainDefault && p.recognized && !p.blank && p.drain) {
+    if (src._drainDefault && drainCodeFollowsDrain(src) && p.recognized && !p.blank && p.drain) {
       const before = src.verification;
       const m = /\s*-\s*(Hot|CHW)$/i.exec(before);
       const after = synthesizeWaterVerification(false, p.gauge, m ? m[1].toLowerCase() : '');
@@ -3036,6 +3208,27 @@ function updateDrainText(index, text) {
   if (!src || !src.drainLocation) return;
   markSourceEdited(index);
   src.drainLocation.text = text;
+  autoSaveCurrent();
+}
+// "Drains to" on a fuel oil or chemical drain (build 122): Containment / Floor
+// drain / Hose, or "Other: <text>" — stored as the sheet writes it (drainLocation.to).
+function updateDrainTo(index, choice) {
+  const src = sources[index];
+  if (!src || !src.drainLocation) return;
+  markSourceEdited(index);
+  const d = src.drainLocation;
+  if (choice === 'Other') { if (!/^Other:/.test(d.to || '')) d.to = 'Other: '; }
+  else if (DATA.drainsTo.includes(choice)) d.to = choice;
+  else delete d.to;
+  renderSources();
+  autoSaveCurrent();
+  if (choice === 'Other') { const box = document.getElementById('src_draintotext_' + index); if (box) box.focus(); }
+}
+function updateDrainToText(index, text) {
+  const src = sources[index];
+  if (!src || !src.drainLocation) return;
+  markSourceEdited(index);
+  src.drainLocation.to = 'Other: ' + String(text || '');
   autoSaveCurrent();
 }
 function updateLockOpen(index, checked) {
@@ -3062,41 +3255,879 @@ function offeredEnergySources() {
 // extra Electrical row in loto-web's format (its _is_drive_feeder reads a
 // Location that STARTS with "Feeder"): "Feeder: MCC-2A bkr 14 (VFD-1)". A unit
 // with a feeder row for each drive gets loto-web's Tier 1 steps.
-async function addFeederForDrive(index) {
+// `unit` (build 122): the drive unit the feeder is for — its tag is offered; else
+// the next drive of this row without a feeder. Resolves the drive tag the feeder
+// names, or null when cancelled. A feeder row left naming no drive of the unit
+// (its drive retagged since) is offered first; a breaker already recorded as a
+// feeder takes the drive into its row ("(VFD-1, VFD-2)") — never a second row
+// for one isolation point.
+async function addFeederForDrive(index, unit) {
   const drive = sources[index];
-  if (!drive) return;
-  const tags = splitUnitIds(drive.deviceId).map(t => t.trim()).filter(Boolean);
-  const fed = t => sources.some(s => s && /^Feeder\b/i.test(String(s.location || '')) && String(s.location).includes('(' + t + ')'));
-  const nextTag = tags.find(t => !fed(t)) || tags[0] || '';
+  if (!drive) return null;
+  const tags = driveUnitTags(drive).filter(Boolean);   // loto-web's unit_ids: a Quantity-1 "VFD-1;2" is one tag (seventh review)
+  const unfed = unitDrives(sources).find(d => d.src === drive && !d.fed);
+  // an untagged drive is offered no tag (never another drive's); with every drive fed, the row's first
+  const nextTag = unit != null ? (driveUnitTags(drive)[unit] || '') : (unfed ? unfed.tag : (tags[0] || ''));
   const filled = v => !!String(v || '').trim();
+  const one = v => String(v || '').replace(/\s+/g, ' ').trim();
+  const done = (row, tag, msg) => {
+    markSourceEdited(sources.indexOf(row));
+    renderSources();
+    autoSaveCurrent();
+    showToast(msg);
+    return String(tag || '').trim();   // the drive's tag as written (its answer goes to that unit)
+  };
+  // The drive unit being recorded, when it has no feeder: a Feeder row naming no
+  // drive of the unit is offered first — its drive retagged since, or (an
+  // untagged drive) recorded before the drive's Device ID was typed.
+  const target = unit != null ? unitDrives(sources).find(d => d.src === drive && d.k === unit) : unfed;
+  // The orphans that can be offered, the app's own form first (its tags in the
+  // closing "( … )"); the tag offered to an untagged drive comes from the closing
+  // "( … )" only (seventh review). One is asked about as before. Several are put in
+  // one question — pick the breaker, or "No, another breaker" (the default) — so a
+  // word-only feeder ("(north)") never hides the real one and a unit with many
+  // hand-typed feeders isn't asked once per row (build 122 eighth / ninth reviews).
+  const offers = (target && !target.fed ? orphanFeederRows(sources, target) : [])
+    .map((row, x) => { const closing = feederTagsOf(row.location); return { row, x, closing, asTag: !nextTag && closing.length === 1 ? closing[0] : '' }; })
+    .filter(o => nextTag || o.asTag)
+    .sort((p, q) => (q.closing.length ? 1 : 0) - (p.closing.length ? 1 : 0) || p.x - q.x);
+  let pick = null;
+  if (offers.length === 1) {
+    const o = offers[0], n = sources.indexOf(o.row) + 1;
+    const reuse = await askChoice({ id: 'feeder-orphan', defaultValue: 'new', title: 'Feeder: the breaker',
+      html: nextTag ? html`Source #${n} (${o.row.location}) names no drive on this unit now. Is it the breaker that feeds ${nextTag}?`
+                    : html`Source #${n} (${o.row.location}) is the feeder for ${o.asTag}. Is this drive ${o.asTag}? Its Device ID is blank.`,
+      choices: [{ value: 'reuse', label: 'Yes, it is', primary: true }, { value: 'new', label: 'No, another breaker' }, { value: 'cancel', label: 'Cancel' }] });
+    if (reuse === 'cancel' || !sources.includes(drive)) return null;
+    if (reuse === 'reuse') pick = o;
+  } else if (offers.length > 1) {
+    const v = await askChoice({ id: 'feeder-orphan-pick', defaultValue: 'new', title: 'Feeder: the breaker',
+      html: nextTag ? html`These feeders name no drive on this unit now. Is one of them the breaker that feeds ${nextTag}?`
+                    : html`Is one of these feeders this drive&rsquo;s? Its Device ID is blank.`,
+      choices: offers.map((o, j) => ({ value: 'o' + j, label: 'Source #' + (sources.indexOf(o.row) + 1) + ': ' + o.row.location + (o.asTag ? ' \u2014 this drive is ' + o.asTag : '') }))
+        .concat([{ value: 'new', label: 'No, another breaker', primary: true }, { value: 'cancel', label: 'Cancel' }]) });
+    if (v === 'cancel' || !sources.includes(drive)) return null;
+    const m = /^o(\d+)$/.exec(String(v || ''));
+    if (m) pick = offers[Number(m[1])];
+  }
+  if (pick && sources.includes(pick.row)) {
+    const { row: orphan, closing, asTag } = pick;
+    const n = sources.indexOf(orphan) + 1;
+    if (nextTag) {
+      // One tag in the closing group is the old drive's: the new tag takes its
+      // place, as a retag would. Several: the new tag joins them, and each old
+      // word is asked about below — none is dropped unasked (eighth review).
+      orphan.location = feederLocationNaming(orphan.location, closing.length > 1 ? [nextTag].concat(closing) : [nextTag]);
+      orphan.feeds = [];
+      addFeederLink(orphan, target.src, target.k);
+      // A tag left in a "( … )" (the old drive's, or the tech's own words): the tech
+      // says whether it goes — left in, loto-web would read this breaker as feeding
+      // any drive later tagged so (wilkins 2026-10-25, sixth / seventh reviews)
+      const kept = [];
+      for (const old of feederGroupTags(orphan.location).filter(t => tagKey(t) !== tagKey(nextTag))) {
+        const drop = await askChoice({ id: 'feeder-orphan-old', defaultValue: 'keep', title: 'Feeder: the old tag',
+          html: html`Source #${n}&rsquo;s Location also names &ldquo;${old}&rdquo;. Take it out? If it was the old drive&rsquo;s tag, loto-web would read this breaker as feeding any drive tagged &ldquo;${old}&rdquo;.`,
+          choices: [{ value: 'remove', label: 'Take it out', primary: true }, { value: 'keep', label: 'Keep it' }] });
+        if (drop === 'remove' && sources.includes(orphan)) orphan.location = feederLocationWithout(orphan.location, old);
+        else kept.push(old);
+      }
+      return done(orphan, nextTag, 'Source #' + n + ' is now the feeder for ' + one(nextTag)
+        + (kept.length ? ' \u2014 its Location still reads \u201c' + kept.join(', ') + '\u201d' : ''));
+    }
+    setDriveUnitTag(drive, target.k, asTag);   // the unit's box was blank: nothing typed is replaced
+    addFeederLink(orphan, drive, target.k);
+    return done(drive, asTag, 'Drive tagged ' + one(asTag) + ' \u2014 source #' + n + ' is its feeder');
+  }
   const panel = await askChoice({ id: 'feeder-panel', defaultValue: 'cancel', title: 'Feeder: the panel',
     html: html`The panel or MCC that feeds this drive, as labelled.`,
     input: { type: 'text', placeholder: 'e.g. MCC-2A', valid: filled },
     choices: [{ label: 'Next', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] });
-  if (!filled(panel) || panel === 'cancel') return;
+  if (!filled(panel) || panel === 'cancel') return null;
   const bkr = await askChoice({ id: 'feeder-breaker', defaultValue: '', title: 'Feeder: the breaker',
     html: html`Its breaker or bucket number in ${panel.trim()}.`,
     input: { type: 'text', placeholder: 'e.g. 14', valid: filled },
     choices: [{ label: 'Next', needsInput: true, primary: true }, { value: '', label: 'No number' }, { value: 'cancel', label: 'Cancel' }] });
-  if (bkr === 'cancel') return;
-  const tag = await askChoice({ id: 'feeder-drive', defaultValue: nextTag || 'cancel', title: 'Feeder: the drive',
+  if (bkr === 'cancel') return null;
+  let tag = await askChoice({ id: 'feeder-drive', defaultValue: nextTag || 'cancel', title: 'Feeder: the drive',
     html: html`The drive this breaker feeds, as tagged.`,
     input: { type: 'text', placeholder: 'e.g. VFD-1', value: nextTag, valid: filled },
     choices: [{ label: 'Add the feeder', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] });
-  if (!filled(tag) || tag === 'cancel' || !sources.includes(drive)) return;
-  const one = v => String(v || '').replace(/\s+/g, ' ').trim();
+  if (!filled(tag) || tag === 'cancel' || !sources.includes(drive)) return null;
+  tag = cleanTagText(tag);
+  if (!tag) { showToast('Not added: the drive\u2019s tag was only ";", "," or brackets \u2014 type its tag', true); return null; }   // build 122 whole review
+  // Tags compare as loto-web's names_tag does: any case, a run of spaces as one.
+  const sameTag = (a, b) => !!tagKey(a) && tagKey(a) === tagKey(b);
+  // The tag a drive already carries with "," / ";" / "( )" in it can't be named in
+  // a feeder's list (build 122 review of the link): the drive takes the cleaned
+  // tag, once the tech says so — its Device ID is never changed without asking.
+  // It is found by its cleaned tag however the separators were typed: "VFD-1,2",
+  // "VFD-1 2" or "VFD-1;2" for a Device ID "VFD-1, 2" (build 122 sixth review).
+  const own = unitDrives(sources).find(d => d.src === drive && d.tag && cleanTagText(d.tag) !== pySpaces(d.tag)
+    && sameTag(cleanTagText(d.tag), tag));
+  if (own) {
+    const ok = await askChoice({ id: 'feeder-retag', defaultValue: 'cancel', title: 'Feeder: the drive\u2019s tag',
+      html: html`A feeder can\u2019t name &ldquo;${own.tag}&rdquo;: its &ldquo;,&rdquo;, &ldquo;;&rdquo; or brackets split the list loto-web reads. Rename the drive &ldquo;${tag}&rdquo;?`,
+      choices: [{ value: 'rename', label: 'Rename it and add the feeder', primary: true }, { value: 'cancel', label: 'Cancel' }] });
+    if (ok !== 'rename' || !sources.includes(drive)) return null;
+    renameDriveUnitTag(drive, own.k, tag);
+    syncFeederTags(sources);
+    markSourceEdited(sources.indexOf(drive));
+  }
+  // The drive recorded had no tag: the one typed is its tag, in its blank box
+  // (never one another drive of the unit carries) — else neither the app nor
+  // loto-web can tell its feeder from another drive's (build 122 second review).
+  let tagNote = '';
+  if (target && !target.tag && !unitDrives(sources).some(d => sameTag(d.tag, tag))) {
+    setDriveUnitTag(drive, target.k, tag);
+    syncFeederTags(sources);
+    markSourceEdited(sources.indexOf(drive));
+    tagNote = ' — and tagged the drive ' + one(tag);
+  }
+  const body = one(panel) + (one(bkr) ? ' bkr ' + one(bkr) : '');
+  // The drive unit the feeder is linked to: the one carrying the tag typed, else the one being recorded
+  const namedDrive = unitDrives(sources).find(d => sameTag(d.tag, tag));
+  const linkTo = namedDrive || target;
+  // The feeder names the drive as its Device ID has it, inner spaces too, so the
+  // printed text matches the Device ID (loto-web's names_tag reads either way
+  // since 2026-10-25 14:25Z; before, only this exact copy named "VFD  3").
+  const name = namedDrive ? String(namedDrive.tag).trim() : tag;
+  const same = one(bkr) && sources.find(s => isFeederRow(s) && feederBreakerKey(s.location) === feederBreakerKey(body));
+  if (same) {
+    if (!feederNamesTag(same.location, name)) same.location = feederLocationNaming(same.location, feederTagsOf(same.location).concat(name));
+    if (linkTo) addFeederLink(same, linkTo.src, linkTo.k);
+    return done(same, name, 'Source #' + (sources.indexOf(same) + 1) + ' (' + body + ') now feeds ' + one(tag) + ' too' + tagNote);
+  }
   const at = sources.length;
   delete photos['source_' + at];   // never inherit a stale ref
-  sources.push({ energySource: drive.energySource || 'Electrical', deviceType: 'Breaker', quantity: 1,
-    location: 'Feeder: ' + one(panel) + (one(bkr) ? ' bkr ' + one(bkr) : '') + ' (' + one(tag) + ')',
-    duplicate: 'No', verification: '', detail: '', collapsed: false });
+  const row = { energySource: drive.energySource || 'Electrical', deviceType: 'Breaker', quantity: 1,
+    location: 'Feeder: ' + body + ' (' + name + ')', role: 'feeder',
+    duplicate: 'No', verification: '', detail: '', collapsed: false };
+  if (linkTo) addFeederLink(row, linkTo.src, linkTo.k);
+  sources.push(row);
   renderSources();
   autoSaveCurrent();
-  showToast('Added the feeder for ' + one(tag) + ' — photograph the panel and the breaker');
+  showToast('Added the feeder for ' + one(tag) + tagNote + ' — photograph the panel and the breaker');
   setTimeout(() => {
     const cards = document.querySelectorAll('.source-card');
     if (cards[at]) cards[at].scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, 100);
+  return name;
+}
+
+// ---- Drives: the feeder and the drive's own disconnect (build 122, D1) -------
+// loto-web's 2026-10-24 spec §2.1: every drive — an Electrical row with Device
+// VFD, not linked; Quantity 2+ is several drives — gets its upstream feeder (the
+// Feeder row above) and the answer to "does the drive's own disconnect isolate
+// all incoming power?". With No or Can't tell, loto-web locks the feeder out for
+// any work that opens the drive. Stored per unit as src.driveIsolates — 'yes' /
+// 'no' / 'cant_tell' / null — in Device ID order; every facility. Asked when
+// Device = VFD is picked (promptDriveFeeder) and at Save & New (askBeforeSave).
+const DRIVE_ISOLATES_SHEET = { yes: 'Yes', no: 'No', cant_tell: "Can't tell" };
+// A drive is a Device that loto-web's _is_vfd_device takes for one — containing
+// "VFD" or "variable frequency", so a custom "VFD Bypass" too (build 122 whole
+// review) — on an Electrical row, not linked.
+function isDriveDevice(device) { return /vfd|variable frequency/i.test(String(device || '')); }
+function isDriveRow(s) { return !!s && !s.linkedTo && isDriveDevice(s.deviceType) && /^Electrical\b/.test(String(s.energySource || '')); }
+function driveIsolatesEntries(src) { return Array.isArray(src && src.driveIsolates) ? src.driveIsolates : []; }
+// Each unit's tag: its own in an "a; b" list, else the one tag (it covers every
+// unit) — loto-web's unit_ids, which also keeps a Quantity-1 row's Device ID
+// whole even with a ";" in it (build 122 whole review, the contract test).
+function driveUnitTags(src) {
+  const n = valveMarkSlots(src);
+  if (n < 2) return [String((src && src.deviceId) || '').trim()];
+  const isList = String((src && src.deviceId) || '').includes(';');
+  const parts = splitUnitIds(src && src.deviceId).map(t => t.trim());
+  return Array.from({ length: n }, (_, k) => (isList ? parts[k] : parts[0]) || '');
+}
+// Per Quantity unit, as entries.json gives it; column 21 joins them "; ".
+function driveIsolatesForJson(src) {
+  const list = driveIsolatesEntries(src);
+  return Array.from({ length: valveMarkSlots(src) }, (_, k) => DRIVE_ISOLATES_SHEET[list[k]] ? list[k] : null);
+}
+function driveIsolatesCellText(src) { return joinUnitPositions(driveIsolatesForJson(src).map(v => v ? DRIVE_ISOLATES_SHEET[v] : '')); }
+// A row the app added for a unit's own breaker carries its role (build 122
+// review): 'feeder', 'secondaryMain' or 'alternate' (+ altKind); a Feeder row
+// also its drives (`feeds`, below). The export writes the Location's role prefix
+// back if an edit took it away (sourceLocationForExport); rows recorded before
+// build 122 — or typed by hand — go by their Location alone.
+//
+// What counts as a feeder and as a drive mirrors loto-web exactly (build 122
+// whole review; held by the contract test against its own functions):
+// - a drive: Device containing "VFD" / "variable frequency" (_is_vfd_device);
+// - a DC bus: a Stored Electrical or capacitor row whose Location names a VFD (_is_vfd_dc_bus);
+// - a feeder (_is_drive_feeder), never a drive or a DC bus: a Location starting
+//   "feeder", a Device containing "feeder", or "upstream" in the Location on a
+//   breaker or disconnect — and, in the app, a row whose own role says so.
+function isDcBusRow(s) {
+  return /stored electric|capacitor/i.test(String((s && s.energySource) || ''))
+    && /vfd|variable frequency/i.test(String((s && s.location) || ''));
+}
+function isDriveDeviceRow(s) { return isDriveDevice(s && s.deviceType) || isDcBusRow(s); }
+// The role a row's own field gives it, where the app reads one: an Electrical row,
+// and a feeder never on a drive or a DC bus (build 122 third / whole reviews).
+function liveRoleOf(s) {
+  if (!s || !s.role || !/^Electrical\b/.test(String(s.energySource || ''))) return '';
+  if (!['feeder', 'secondaryMain', 'alternate'].includes(s.role)) return '';
+  return (s.role === 'feeder' && isDriveDeviceRow(s)) ? '' : s.role;
+}
+// loto-web's _is_drive_feeder, on the Location and Device alone.
+function feederByText(s) {
+  const loc = String((s && s.location) || '').trim().toLowerCase(), dev = String((s && s.deviceType) || '').toLowerCase();
+  if (loc.startsWith('feeder') || dev.includes('feeder')) return true;
+  return loc.includes('upstream') && (dev.includes('breaker') || dev.includes('disconnect'));
+}
+function isFeederRow(s) { return !!s && !isDriveDeviceRow(s) && (liveRoleOf(s) === 'feeder' || feederByText(s)); }
+// Does a feeder's Location name this drive tag? loto-web's names_tag: the whole
+// tag, any case, inside a "( … )" of the Location — "VFD-1" is not in
+// "(VFD-10)", a tag "26" is not "bkr 26" — so "(VFD-1, VFD-2)" feeds both. Runs
+// of spaces count as one on both sides, so "AHU 9" is in "(AHU  9)" (loto-web,
+// 2026-10-25: the double-space fix, live 14:20Z). `tagKey` is that comparison's
+// form of a tag: loto-web's _spaces, " ".join(text.split()) — Python's whitespace
+// set, which JS's \s differs from in a few characters.
+const PY_SPACE_RUN = /[\t\n\v\f\r \x1c-\x1f\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g;
+// (trimmed of that one space only: JS's trim() also strips U+FEFF, which Python keeps)
+function pySpaces(t) { return String(t || '').replace(PY_SPACE_RUN, ' ').replace(/^ | $/g, ''); }
+function tagKey(t) { return pySpaces(t).toLowerCase(); }
+// A drive tag as a feeder can name it: ";" would split the Device ID into units
+// and "," / "( )" the feeder's drive list, so they become spaces (build 122 third
+// review). Every tag comparison is tagKey, of this form where separators differ.
+function cleanTagText(t) { return pySpaces(String(t || '').replace(/[;,()]+/g, ' ')); }
+// The drive tags in one "( … )" group's text, split as loto-web's lists are.
+function groupTokens(inner) { return String(inner || '').split(/[,;]/).map(t => t.trim()).filter(Boolean); }
+// A feeder's Location with each "( … )" group rewritten by fn(tokens), which returns
+// the group's new tokens, or null to leave it exactly as typed. A group left with
+// no token goes with the one space before it; no other text is touched (build 122
+// seventh review: a tidy of every double space rewrote the tech's spacing).
+// The app's "( … )" groups (balanced; feederNamesTag keeps loto-web's own pattern).
+const FEEDER_GROUP = '\\(([^()]*)\\)';
+function rewriteFeederGroups(loc, fn) {
+  let removed = false;
+  // the one space before a removed group goes too, whatever space it is (a pasted NBSP, a tab)
+  const out = String(loc || '').replace(new RegExp('(\\s?)' + FEEDER_GROUP, 'g'), (whole, lead, inner) => {
+    const toks = fn(groupTokens(inner));
+    if (!toks) return whole;
+    const list = toks.map(t => String(t || '').trim()).filter(Boolean);
+    if (!list.length) { removed = true; return ''; }
+    return lead + '(' + list.join(', ') + ')';
+  });
+  return removed ? out.replace(/^\s+|\s+$/g, '') : out;
+}
+// A feeder's Location with one tag taken out of the group that holds it, and that
+// group gone if nothing is left in it ("Feeder: MCC-2A (VFD-1) bkr 14 (VFD-5)" less
+// "VFD-1" → "Feeder: MCC-2A bkr 14 (VFD-5)"). Only on the tech's say-so.
+function feederLocationWithout(loc, tag) {
+  let done = false;
+  return rewriteFeederGroups(loc, toks => {
+    const j = done ? -1 : toks.findIndex(t => tagKey(t) === tagKey(tag));
+    if (j < 0) return null;
+    done = true;
+    return toks.filter((t, x) => x !== j);
+  });
+}
+// Every drive tag in a feeder's "( … )" groups, as loto-web's names_tag reads them all.
+function feederGroupTags(loc) { return [...String(loc || '').matchAll(new RegExp(FEEDER_GROUP, 'g'))].flatMap(m => groupTokens(m[1])); }
+function feederParenText(loc) { const m = /\(([^()]*)\)\s*$/.exec(String(loc || '')); return m ? m[1] : ''; }
+function feederNamesTag(loc, tag) {
+  const t = tagKey(tag);
+  if (!t) return false;
+  const edge = c => !c || !/[\w-]/.test(c);
+  // loto-web's own group pattern, \(([^)]*)\) — the contract test holds it
+  for (const g of String(loc || '').matchAll(/\(([^)]*)\)/g)) {
+    const s = pySpaces(g[1]).toLowerCase();
+    for (let at = s.indexOf(t); at >= 0; at = s.indexOf(t, at + 1)) {
+      if (edge(s[at - 1]) && edge(s[at + t.length])) return true;
+    }
+  }
+  return false;
+}
+// The drive tags in a feeder's closing "( … )", and its Location naming `tags` instead.
+function feederTagsOf(loc) { return groupTokens(feederParenText(loc)); }
+function feederLocationNaming(loc, tags) {
+  const list = (tags || []).map(t => String(t || '').trim()).filter(Boolean);   // as tagged: each drive's own text
+  const base = String(loc || '').replace(/\s*\([^()]*\)\s*$/, '').trim();
+  return list.length ? base + ' (' + list.join(', ') + ')' : base;
+}
+// The panel and breaker part of a feeder's Location, to spot one breaker
+// recorded twice: "Feeder: MCC-2A bkr 14 (VFD-1)" → "MCC-2A BKR 14". Only the
+// "Feeder:" prefix the app writes goes (with its colon), so a panel whose name
+// starts with "Feeder" keys the same typed or recorded (build 122 whole review).
+function feederBreakerKey(loc) {
+  return String(loc || '').replace(/^\s*Feeder\s*:\s*/i, '').replace(/\([^()]*\)\s*$/, '').replace(/\s+/g, ' ').trim().toUpperCase();
+}
+// One unit's tag replaced, with the tech's say-so (addFeederForDrive): every
+// unit carrying the old tag on a one-tag row, else that unit's box.
+function renameDriveUnitTag(src, k, tag) {
+  const n = valveMarkSlots(src);
+  const id = String(src.deviceId || '');
+  if (n < 2 || !id.includes(';')) { src.deviceId = tag; return; }
+  const parts = splitUnitIds(id);
+  const next = Array.from({ length: Math.max(n, parts.length) }, (_, j) => parts[j] || '');
+  next[k] = tag;
+  src.deviceId = joinUnitIds(next) + (next.slice(k + 1).every(x => !String(x).trim()) && k < n - 1 ? ';' : '');
+}
+// A blank unit's Device ID box takes `tag` (one unit: the whole Device ID). On
+// a Quantity 2+ row it stays a list even when only unit 1 is named ("VFD-1;"):
+// a tag without ";" covers every unit, here and in loto-web's unit_ids, which
+// reads "VFD-1;" as unit 1 VFD-1, unit 2 no tag (build 122 third review).
+function setDriveUnitTag(src, k, tag) {
+  const n = valveMarkSlots(src);
+  if (n < 2) { src.deviceId = tag; return; }
+  const parts = splitUnitIds(src.deviceId);
+  const next = Array.from({ length: Math.max(n, parts.length) }, (_, j) => parts[j] || '');
+  if (!String(next[k] || '').trim()) next[k] = tag;
+  const joined = joinUnitIds(next);
+  src.deviceId = joined.includes(';') ? joined : joined + ';';
+}
+// ---- The feeder → drive link (build 122 whole review) ------------------------
+// A Feeder row the app records keeps the drive units it feeds:
+// feeds = [{ sourceId, unit, tag }] — the drive row's sourceId (or one in its
+// priorSourceIds), the unit, and the tag the Location last named it by. The
+// Location's "( … )", which loto-web reads, follows the link: a retagged unit is
+// renamed in place, token by token (syncFeederTags) — never find-and-replace on
+// the text, which lost a tag after a retag that collided with another unit's. A
+// link goes only when a committed edit of the Location (its box's change, a
+// pick, a scan) no longer names it — never on a keystroke or a render, which
+// can land mid-edit (pruneFeederLinks; build 122 fifth review). The fed rule
+// stays loto-web's, read off that text.
+function driveOfLink(srcList, l) {
+  return (srcList || []).find(s => isDriveRow(s) && s.sourceId && l && (s.sourceId === l.sourceId || (s.priorSourceIds || []).includes(l.sourceId)));
+}
+// A link's drive-unit tag now: '' once its drive is gone or that unit has no tag.
+function linkCurrentTag(srcList, l) {
+  const d = driveOfLink(srcList, l);
+  return (d && l.unit < valveMarkSlots(d)) ? String(driveUnitTags(d)[l.unit] || '').trim() : '';
+}
+function addFeederLink(feeder, drive, k) {
+  if (!feeder || !drive || k == null) return;
+  ensureSourceId(drive);
+  const l = { sourceId: drive.sourceId, unit: k, tag: driveUnitTags(drive)[k] || '' };
+  feeder.feeds = (feeder.feeds || []).filter(x => !(x.sourceId === l.sourceId && x.unit === l.unit)).concat(l);
+}
+// Every feeder names its linked drive units as they are tagged now. Each
+// "( … )" group is read, as loto-web's names_tag reads them all (build 122
+// fifth review): a token that is a link's last tag becomes that link's tag now,
+// in place. Each link takes one token, so two units that share a tag for a
+// moment keep a token each, "(VFD-1, VFD-1)", and nothing is lost when one is
+// retagged again. A link whose drive row is gone (or whose unit is past its
+// Quantity) is dead: a live link takes a token first, and a dead link's token
+// that only repeats one already named goes, with its link (sixth review). A
+// drive whose Device ID box is emptied for a moment is not dead — its link and
+// token stay while it is retyped (seventh review). A group with nothing renamed
+// or dropped, and every other part of the text, is left exactly as typed. A link
+// that no token names is left alone (the text may be mid-edit); only `{ prune:
+// true }` (a committed edit) takes it out, and takes every link off a row that is
+// no longer a feeder. Returns the feeder rows whose Location changed.
+function syncFeederTags(srcList, opts) {
+  const prune = !!(opts && opts.prune), changed = [];
+  (srcList || []).forEach(f => {
+    if (!f || !Array.isArray(f.feeds) || !f.feeds.length) return;
+    if (!isFeederRow(f)) { if (prune) delete f.feeds; return; }
+    if (prune) pruneFeederLinks(f, srcList);
+    if (!Array.isArray(f.feeds) || !f.feeds.length) return;
+    const lc = tagKey;
+    const alive = f.feeds.map(l => { const d = driveOfLink(srcList, l); return !!d && l.unit < valveMarkSlots(d); });
+    // each link's tag now (its drive gone or its box empty: the tag it was last named by)
+    const cur = f.feeds.map(l => linkCurrentTag(srcList, l) || String(l.tag || '').trim());
+    const used = new Set(), seen = new Set(), dropped = new Set();
+    const loc = String(f.location || '');
+    const next = rewriteFeederGroups(loc, toks => {
+      let edited = false;
+      const out = toks.map(tok => {
+        const k = lc(tok);
+        const fits = x => !used.has(x) && !!lc(f.feeds[x].tag) && lc(f.feeds[x].tag) === k;
+        let j = f.feeds.findIndex((l, x) => fits(x) && alive[x]);
+        if (j < 0) j = f.feeds.findIndex((l, x) => fits(x));
+        if (j < 0) { seen.add(k); return tok; }
+        used.add(j);
+        if (!alive[j] && seen.has(k)) { dropped.add(j); edited = true; return ''; }
+        if (!cur[j] || cur[j] === tok) { seen.add(k); return tok; }
+        edited = true;
+        seen.add(lc(cur[j]));
+        return cur[j];
+      });
+      return edited ? out : null;
+    });
+    if (dropped.size) f.feeds = f.feeds.filter((l, x) => !dropped.has(x));
+    if (next !== loc) { f.location = next; changed.push(f); }
+    // a link is named by its tag now once the text has it (renamed here, or typed)
+    f.feeds.forEach(l => { const c = linkCurrentTag(srcList, l); if (c && feederNamesTag(f.location, c)) l.tag = c; });
+  });
+  return changed;
+}
+// After a Device ID edit: the renamed feeders' cards show their new text at once
+// — editing a box that still showed the old text put the old tag back and dropped
+// the link (build 122 sixth review) — and the retagged drive's own answer block,
+// which names its units by their tags. (A drive card shows no fed state, so no
+// other card goes stale.) A card being typed in is left for the render.
+function refreshAfterRetag(changed, driveIndex) {
+  const cards = document.querySelectorAll('#sourcesContainer > .source-card');
+  (changed || []).forEach(f => {
+    const i = sources.indexOf(f), live = cards[i];
+    if (i < 0 || !live || live.contains(document.activeElement)) return;
+    live.replaceWith(buildSourceCard(f, i));
+  });
+  // The drive's answer block names its units only on a Quantity 2+ row: just that
+  // block is redrawn, not the whole card on every keystroke (ninth review)
+  const d = driveIndex != null ? sources[driveIndex] : null;
+  const old = d && isDriveRow(d) && valveMarkSlots(d) > 1 ? document.getElementById('driveIsoGroup_' + driveIndex) : null;
+  if (old && !old.contains(document.activeElement)) {   // never under the tech's hand (tenth review)
+    const t = document.createElement('template');
+    t.innerHTML = htmlValue(driveIsolatesBlock(d, driveIndex)).trim();
+    const fresh = t.content.firstElementChild;
+    if (fresh && fresh.outerHTML !== old.outerHTML) old.replaceWith(fresh);
+  }
+}
+// A link the feeder's Location no longer names — neither by the tag it was last
+// named by nor by its drive's tag now — was taken out by the tech: it goes.
+// Committed edits only (syncFeederTags with prune, a pick from the Location list).
+function pruneFeederLinks(f, srcList) {
+  if (!f || !Array.isArray(f.feeds)) return;
+  const list = srcList || sources;
+  f.feeds = f.feeds.filter(l => {
+    if (!l.tag || feederNamesTag(f.location, l.tag)) return true;
+    const cur = linkCurrentTag(list, l);
+    return !!cur && feederNamesTag(f.location, cur);
+  });
+  if (!f.feeds.length) delete f.feeds;
+}
+// Feeder rows that name drive tags, none of them a drive of the unit any more.
+// None while another drive of the unit (not `except`, the one being recorded)
+// has no tag: such a feeder may be that drive's own, recorded before its
+// Device ID was typed (build 122 second review).
+function orphanFeederRows(srcList, except) {
+  const drives = unitDrives(srcList);
+  if (drives.some(d => !d.tag && !(except && d.src === except.src && d.k === except.k))) return [];
+  const tags = drives.map(d => d.tag).filter(Boolean);
+  return (srcList || []).filter(s => isFeederRow(s) && feederGroupTags(s.location).length   // any "( … )" (sixth review)
+    && !tags.some(t => feederNamesTag(s.location, t)));
+}
+// loto-web's drive_isolation.feeders_cover_drives (its Tier 1 rule since its
+// xhigh review, live 2026-10-24 21:59Z): every drive tag — one per drive unit,
+// '' for an untagged one — present, no two alike and named in a feeder's
+// "( … )", or at least as many feeder rows as drive units.
+function feedersCoverDrives(feederLocations, driveTags) {
+  const locs = (feederLocations || []).map(l => String(l || ''));
+  const tags = (driveTags || []).map(t => String(t || '').trim());
+  if (!locs.length || !tags.length) return false;
+  const named = new Set(tags.map(tagKey)).size === tags.length
+    && tags.every(t => t && locs.some(l => feederNamesTag(l, t)));
+  return named || locs.length >= tags.length;
+}
+// The unit's drives, one per Quantity unit of each drive row: { src, k, n, tag,
+// fed, answer }. Fed is loto-web's: a drive is fed by a Feeder row that names
+// its tag; Feeder rows that name no drive count, for every drive, only when no
+// Feeder row names any drive and they cover the drives (feedersCoverDrives) —
+// one unnamed feeder for two drives feeds neither, as loto-web reads it since
+// 2026-10-24 21:59Z (its generator's _drive_feeder_ids_for).
+function unitDrives(srcList) {
+  const list = srcList || [];
+  const drives = [];
+  list.forEach(s => {
+    if (!isDriveRow(s)) return;
+    const tags = driveUnitTags(s), ans = driveIsolatesForJson(s);
+    tags.forEach((tag, k) => drives.push({ src: s, k, n: tags.length, tag, answer: ans[k],
+      shared: !!tag && tags.filter(x => tagKey(x) === tagKey(tag)).length > 1 }));
+  });
+  const feeders = list.filter(isFeederRow).map(f => String(f.location || ''));
+  const tagged = [...new Set(drives.map(d => d.tag).filter(Boolean))];
+  const anyNamed = feeders.some(loc => tagged.some(t => feederNamesTag(loc, t)));
+  drives.forEach(d => { d.fed = !!d.tag && feeders.some(loc => feederNamesTag(loc, d.tag)); });
+  if (!anyNamed && feedersCoverDrives(feeders, drives.map(d => d.tag))) drives.forEach(d => { d.fed = true; });
+  return drives;
+}
+// Every drive fed by its own named feeder, yet loto-web's Tier 1 rule unmet:
+// two drive units share one tag. loto-web then keeps the unit on Tier 2 (no work
+// inside the drives), so Save & New says so (build 122, loto-web's xhigh review).
+function drivesShareATag(srcList) {
+  const drives = unitDrives(srcList);
+  if (!drives.length || !drives.every(d => d.fed)) return '';
+  const feeders = (srcList || []).filter(isFeederRow).map(f => String(f.location || ''));
+  if (feedersCoverDrives(feeders, drives.map(d => d.tag))) return '';
+  const seen = new Map();
+  for (const d of drives) { const k = tagKey(d.tag); if (k && seen.has(k)) return d.tag; seen.set(k, true); }
+  return '';
+}
+// How a drive is named to the tech: its tag, with its unit when the row's one
+// tag covers several drives ("VFD-1 (unit 2)"); '' when untagged.
+function driveName(d) { return d.tag ? d.tag + (d.shared ? ' (unit ' + (d.k + 1) + ')' : '') : ''; }
+// "drive VFD-1" / "the Unit 2 drive" / "this drive" (capitalised for a title)
+function driveRef(d, capital) {
+  const s = d.tag ? 'drive ' + driveName(d) : (d.n > 1 ? 'the Unit ' + (d.k + 1) + ' drive' : 'this drive');
+  return capital ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+// Where an answer for `tag` goes: the unit with that tag (`prefer` first, then
+// one still unanswered); a tag not in the list takes the unit the question was
+// asked for when that one is unanswered, else the first unanswered unit.
+function driveAnswerPosition(src, tag, prefer) {
+  const tags = driveUnitTags(src), ans = driveIsolatesForJson(src);
+  const t = tagKey(tag);
+  const hits = t ? tags.map((x, k) => (tagKey(x) === t ? k : -1)).filter(k => k >= 0) : [];
+  if (prefer != null && hits.includes(prefer)) return prefer;
+  if (hits.length) { const open = hits.find(k => !ans[k]); return open != null ? open : hits[0]; }
+  if (prefer != null && prefer < tags.length && !ans[prefer]) return prefer;
+  const free = ans.findIndex(v => !v);
+  return free >= 0 ? free : (prefer != null ? prefer : 0);
+}
+// The question. Resolves 'yes' / 'no' / 'cant_tell', or null (Cancel / closed).
+async function askDriveIsolates(src, prefer, tag) {
+  // the drive as unitDrives names it (a shared tag says its unit); a tag typed at the feeder that isn't its own, as typed
+  const k = prefer || 0, t = String(tag || '').trim();
+  const own = unitDrives(sources).find(x => x.src === src && x.k === k);
+  const d = (own && tagKey(own.tag) === tagKey(t)) ? own : { tag: t, k, n: valveMarkSlots(src) };
+  const v = await askChoice({ id: 'drive-isolates', defaultValue: 'cancel', drive: d.tag,
+    title: html`Does ${driveRef(d)}&rsquo;s own disconnect isolate all incoming power?`,
+    html: html`Look for a lockable handle on the drive that switches the incoming line.`,
+    choices: [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }, { value: 'cant_tell', label: 'Can’t tell' }, { value: 'cancel', label: 'Cancel' }] });
+  if (!DRIVE_ISOLATES_SHEET[v] || !sources.includes(src) || !isDriveRow(src)) return null;
+  setUnitEntry(src, 'driveIsolates', driveAnswerPosition(src, d.tag, prefer), v);
+  markSourceEdited(sources.indexOf(src));
+  renderSources();
+  autoSaveCurrent();
+  return v;
+}
+// One drive: its feeder when none is recorded, then the question when it is
+// unanswered. false = cancelled.
+async function recordDrive(d) {
+  let tag = d.tag;
+  if (!d.fed) {
+    const i = sources.indexOf(d.src);
+    if (i < 0) return false;
+    const added = await addFeederForDrive(i, d.k);
+    if (added == null) return false;
+    tag = added;
+  }
+  if (!d.answer && (await askDriveIsolates(d.src, d.k, tag)) == null) return false;
+  return true;
+}
+// Trigger 1: Device = VFD picked on a drive row — each of its drives in turn;
+// Cancel stops.
+async function promptDriveFeeder(index) {
+  const src = sources[index];
+  if (!isDriveRow(src)) return;
+  for (let k = 0; k < valveMarkSlots(src); k++) {
+    if (!sources.includes(src) || !isDriveRow(src)) return;
+    const d = unitDrives(sources).find(x => x.src === src && x.k === k);
+    if (!d || (d.fed && d.answer)) continue;
+    if (!(await recordDrive(d))) return;
+  }
+}
+// The card's "+ Add the breaker that feeds this drive": the feeder, then the
+// question for the drive it names when that one is unanswered.
+async function addFeederFromCard(index) {
+  const src = sources[index];
+  const tag = await addFeederForDrive(index);
+  if (tag == null || !sources.includes(src) || !isDriveRow(src)) return;
+  const k = driveAnswerPosition(src, tag);
+  if (!driveIsolatesForJson(src)[k]) await askDriveIsolates(src, k, tag);
+}
+function updateDriveIsolates(index, unit, value) {
+  const src = sources[index];
+  if (!src) return;
+  markSourceEdited(index);
+  setUnitEntry(src, 'driveIsolates', unit, DRIVE_ISOLATES_SHEET[value] ? value : null);
+  autoSaveCurrent();
+}
+// The card's answer, per drive, beside the feeder button.
+function driveIsolatesBlock(src, i) {
+  if (!isDriveRow(src)) return html`<div id="driveIsoGroup_${i}" style="display:none;"></div>`;
+  const n = valveMarkSlots(src), list = driveIsolatesForJson(src);
+  const drives = unitDrives([src]);   // a row's own drives: their names (a shared tag says its unit)
+  return html`<div class="form-group" id="driveIsoGroup_${i}">
+    <label>Drive disconnect isolates all incoming power?${n > 1 ? raw(' <span style="font-weight:400;color:var(--text-dim);">&mdash; one per drive</span>') : ''}</label>
+    ${Array.from({ length: n }, (_, k) => html`<div class="scan-input-row" style="margin-bottom:6px;align-items:center;">
+      ${n > 1 ? html`<span style="min-width:64px;font-size:12px;color:var(--text-dim);">${(drives[k] && driveName(drives[k])) || 'Unit ' + (k + 1)}</span>` : ''}
+      <select id="src_driveiso_${i}_${k}" onchange="updateDriveIsolates(${i},${k},this.value)">
+        <option value="">-- Not answered --</option>
+        ${Object.keys(DRIVE_ISOLATES_SHEET).map(v => html`<option value="${v}" ${list[k] === v ? 'selected' : ''}>${DRIVE_ISOLATES_SHEET[v]}</option>`)}
+      </select>
+    </div>`)}
+    <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">A lockable handle on the drive that switches the incoming line. No or Can&rsquo;t tell: the feeder is locked out before the drive is opened.</div>
+  </div>`;
+}
+
+// ---- The arc flash label (build 122, D2) --------------------------------------
+// Its own photo slot (equip_arcflash, key token 'arcflash'), after EE Number, on
+// ATS, Generator and Transformer units — and on any unit whose slot holds a
+// photo (a photo is never hidden). Or "No arc flash label on this equipment"
+// (unitAnswers.arcFlashNone), which a photo clears. Save & New asks when neither
+// is there. The sheet: the name row's column 13 (Information Sheet §1.1).
+const ARC_FLASH_TYPES = ['ATS', 'Generator', 'Transformer'];
+function arcFlashAskedFor(type) { return ARC_FLASH_TYPES.includes(String(type || '')); }
+// A ref whose bytes never saved (unsaved: a failed write or copy) holds the slot
+// open but is no photo: "No label" can still be said (build 122 review).
+function syncArcFlashSlot() {
+  const slot = document.getElementById('arcFlashSlot');
+  if (!slot) return;
+  const held = !!(photos.equip_arcflash && photos.equip_arcflash.dbKey);
+  const taken = photoSlotTaken('equip_arcflash');
+  slot.style.display = (held || arcFlashAskedFor(getEquipType())) ? '' : 'none';
+  const box = document.getElementById('arcFlashNone'), lbl = document.getElementById('arcFlashNoneLabel');
+  if (box) box.checked = !taken && !!unitAnswers.arcFlashNone;
+  if (lbl) lbl.style.display = taken ? 'none' : 'flex';
+}
+function setArcFlashNone(checked) {
+  if (checked && photoSlotTaken('equip_arcflash')) { syncArcFlashSlot(); return; }
+  if (checked) unitAnswers.arcFlashNone = true; else delete unitAnswers.arcFlashNone;
+  syncArcFlashSlot();
+  autoSaveCurrent();
+}
+// Column 13 of the name row: the photo's file name, or "No label", or blank. A
+// photo the unit holds is named whatever its type now (build 122 review: a
+// photo is never hidden — it shipped in photos/ with nothing on the sheet
+// naming it); "No label" only on the types that ask.
+function arcFlashSheetValue(entry, fileName) {
+  if (fileName) return fileName;
+  if (!arcFlashAskedFor(entry && entry.equipType)) return '';
+  return ((entry && entry.unitAnswers) || {}).arcFlashNone ? 'No label' : '';
+}
+function scrollToArcFlashSlot() {
+  syncArcFlashSlot();
+  const el = document.getElementById('arcFlashSlot');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// ---- Transformers (build 122, C-29) -------------------------------------------
+// loto-web's 2026-10-24 spec §2.3 / §1.3–1.4 (D4). After the template's voltage,
+// a Transformer asks for its secondary main and for other sources that can
+// energize the secondary; each becomes an ordinary Electrical breaker row whose
+// Location carries the role ("Secondary Main: …", "Alternate Source (UPS output):
+// …"). The "For loto-web" section records terminal access, the nameplate and the
+// SPD / capacitors / grounding; the sheet carries them in U3, U4, U7 and U8.
+// The role rides in the Location for loto-web, read as its transformer_survey
+// reads it (the colon included); the row's own role (build 122 review, see
+// isFeederRow) wins when the Location was edited.
+const SECONDARY_MAIN_RE = /^\s*Secondary\s+Main\s*:/i;
+const ALTERNATE_SOURCE_RE = /^\s*Alternate\s+Source\s*\(([^)]*)\)\s*:/i;
+function isSecondaryMainRow(s) { return !!s && (liveRoleOf(s) === 'secondaryMain' || SECONDARY_MAIN_RE.test(String(s.location || ''))); }
+function alternateSourceKindOf(s) {
+  const m = ALTERNATE_SOURCE_RE.exec(String((s && s.location) || ''));
+  if (m) return m[1].trim();
+  return liveRoleOf(s) === 'alternate' ? String(s.altKind || '').trim() : '';
+}
+// The Location as the sheet, the CSV and entries.json carry it: a row with a
+// role keeps its role's prefix even when an edit took the prefix away, so
+// loto-web reads the same row the app does (build 122 review).
+function sourceLocationForExport(src) {
+  const loc = String((src && src.location) || '');
+  const role = liveRoleOf(src);   // a role counts only where the app reads it
+  // what is left of a prefix the edit only broke ("Secondary Main MDP-2") goes
+  if (role === 'feeder' && !/^\s*Feeder/i.test(loc)) return 'Feeder: ' + loc.trim();
+  if (role === 'secondaryMain' && !SECONDARY_MAIN_RE.test(loc)) return 'Secondary Main: ' + loc.replace(/^\s*Secondary\s+Main\b\s*/i, '').trim();
+  if (role === 'alternate' && !ALTERNATE_SOURCE_RE.test(loc) && String(src.altKind || '').trim()) {
+    return 'Alternate Source (' + String(src.altKind).trim() + '): ' + loc.replace(/^\s*Alternate\s+Source\b\s*(\([^)]*\))?\s*/i, '').trim();
+  }
+  return loc;
+}
+function isAlternateSourceRow(s) { return !!alternateSourceKindOf(s); }
+// The role a row is read with — its own, or its Location's — shown on its card
+// with a way out (build 122 second review): a row the tech makes ordinary must
+// not keep exporting as a feeder or a transformer's breaker.
+function sourceRoleOf(s) {
+  if (isFeederRow(s)) return 'feeder';
+  if (isSecondaryMainRow(s)) return 'secondaryMain';
+  return isAlternateSourceRow(s) ? 'alternate' : '';
+}
+// The row becomes an ordinary isolation point: its role goes, and so does the
+// Location prefix that says it, so neither the app nor loto-web reads it as one.
+function clearSourceRole(src) {
+  if (!src) return;
+  const role = sourceRoleOf(src);
+  const loc = String(src.location || '');
+  if (role === 'feeder') src.location = loc.replace(/^\s*Feeder\b\s*:?\s*/i, '');
+  else if (role === 'secondaryMain') src.location = loc.replace(/^\s*Secondary\s+Main\b\s*:?\s*/i, '');
+  else if (role === 'alternate') src.location = loc.replace(/^\s*Alternate\s+Source\b\s*(\([^)]*\))?\s*:?\s*/i, '');
+  delete src.role; delete src.altKind; delete src.feeds;
+}
+// Can the card's button make the row ordinary? Not when only its wording says
+// feeder ("upstream" on a breaker, a Device containing "feeder"): the tech
+// changes that wording (build 122 whole review).
+function roleClearable(src) {
+  if (!src) return false;
+  if (src.role) return true;
+  const loc = String(src.location || '');
+  return /^\s*Feeder\b/i.test(loc) || SECONDARY_MAIN_RE.test(loc) || ALTERNATE_SOURCE_RE.test(loc);
+}
+function clearSourceRoleAt(index) {
+  const src = sources[index];
+  if (!src || !sourceRoleOf(src) || !roleClearable(src)) return;
+  markSourceEdited(index);
+  clearSourceRole(src);
+  renderSources();
+  renderUnitQuestions(true);
+  autoSaveCurrent();
+  showToast('Source #' + (index + 1) + ' is an ordinary isolation point now');
+}
+// Each role's words: the card's line and button, and its noun in messages.
+const SOURCE_ROLES = {
+  feeder: { line: 'loto-web reads this row as the breaker that feeds a drive', button: 'Not a feeder', noun: 'feeder' },
+  secondaryMain: { line: 'loto-web reads this row as the transformer\u2019s secondary main', button: 'Not the secondary main', noun: 'secondary main' },
+  alternate: { line: 'loto-web reads this row as an alternate source', button: 'Not an alternate source', noun: 'alternate source' }
+};
+function sourceRoleBlock(src, i) {
+  const role = sourceRoleOf(src);
+  if (!role) return html`<div id="roleGroup_${i}" style="display:none;"></div>`;
+  const { line: what, button: out } = SOURCE_ROLES[role];
+  const kind = role === 'alternate' ? ' (' + alternateSourceKindOf(src) + ')' : '';
+  const clearable = roleClearable(src);
+  return html`<div class="form-group" id="roleGroup_${i}">
+    <div style="font-size:12px;color:var(--text-dim);line-height:1.4;">${what}${kind}.${clearable ? ''
+      : ' Its Location or Device says so \u2014 change that wording to make it an ordinary row.'}</div>
+    ${clearable ? html`<button type="button" class="btn btn-sm" id="src_clearrole_${i}" onclick="clearSourceRoleAt(${i})" style="margin-top:6px;padding:8px 10px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">${out}</button>` : ''}
+  </div>`;
+}
+// A row naming one of the unit's OWN breakers in its Location: never copied to a duplicate.
+function isUnitBreakerRow(s) { return isFeederRow(s) || isSecondaryMainRow(s) || isAlternateSourceRow(s); }
+// The kinds the unit's rows record, in the list's order (a kind typed by hand after them).
+function xfmrAltKindsRecorded(srcs) {
+  const got = [...new Set((srcs || []).map(alternateSourceKindOf).filter(Boolean))];
+  const known = DATA.xfmrAltKinds.filter(k => got.some(g => g.toLowerCase() === k.toLowerCase()));
+  return known.concat(got.filter(g => !DATA.xfmrAltKinds.some(k => k.toLowerCase() === g.toLowerCase())));
+}
+// The sheet's "key: value" parts: a ";" would split the cell, so it becomes ","
+function xfmrClean(v) { return String(v == null ? '' : v).replace(/;/g, ',').replace(/\s+/g, ' ').trim(); }
+function xfmrChoice(a, key, list) {
+  const v = a[key];
+  if (v === 'Other') { const t = xfmrClean(a[key + 'Other']); return t ? 'Other: ' + t : ''; }
+  return list.includes(v) ? v : '';
+}
+const xfmrJoin = (parts) => parts.filter(p => p[1]).map(p => p[0] + ': ' + p[1]).join('; ');
+// U3 "Alternate Sources": the recorded kinds, else "None found (YYYY-MM-DD)".
+function xfmrAltSheetText(entryLike) {
+  const kinds = xfmrAltKindsRecorded(entryLike.sources);
+  if (kinds.length) return kinds.join('; ');
+  const none = (entryLike.unitAnswers || {}).xfmrAltNone;
+  return none ? 'None found' + (isIsoDay(none) ? ' (' + none + ')' : '') : '';
+}
+// U4 "Terminal Access": Primary: Yes; Secondary: No; Covers: <text>
+function xfmrTerminalText(a) {
+  const yn = v => DATA.yesNoCantTell.includes(v) ? v : '';
+  return xfmrJoin([['Primary', yn(a.xfmrTermPrimary)], ['Secondary', yn(a.xfmrTermSecondary)], ['Covers', xfmrClean(a.xfmrTermCovers)]]);
+}
+// U7 "Transformer Nameplate": kVA: 75; Primary V: 480; … K-Factor: 4
+function xfmrNameplateText(a) {
+  const imp = xfmrClean(a.xfmrImpedance).replace(/\s*%$/, '');
+  return xfmrJoin([['kVA', xfmrClean(a.xfmrKva).replace(/\s*kva$/i, '')], ['Primary V', xfmrClean(a.xfmrPrimaryV).replace(/\s*V(AC)?$/i, '')],
+    ['Secondary V', xfmrClean(a.xfmrSecondaryV).replace(/\s*V(AC)?$/i, '')], ['Connection', xfmrChoice(a, 'xfmrConnection', DATA.xfmrConnections)],
+    ['Taps', xfmrClean(a.xfmrTaps)], ['Impedance', imp ? imp + '%' : ''],
+    ['Temperature Rise', xfmrChoice(a, 'xfmrTempRise', DATA.xfmrTempRises)], ['K-Factor', xfmrClean(a.xfmrKFactor).replace(/^K-?\s*/i, '')]]);
+}
+// U8 "SPD / Capacitors / Grounding": SPD: Yes (<where>); Capacitors: No; Grounding: <choice> (<where>)
+const XFMR_STORED = [['SPD', 'xfmrSpd', 'yesNoCantTell', 'No'], ['Capacitors', 'xfmrCaps', 'yesNoCantTell', 'No'], ['Grounding', 'xfmrGround', 'groundingChoices', 'None']];
+function xfmrStoredText(a) {
+  return XFMR_STORED.map(([label, key, list, noWhere]) => {
+    const v = DATA[list].includes(a[key]) ? a[key] : '';
+    const w = v && v !== noWhere ? xfmrClean(a[key + 'Where']) : '';
+    return v ? label + ': ' + v + (w ? ' (' + w + ')' : '') : '';
+  }).filter(Boolean).join('; ');
+}
+// "None found" records the survey date: the form's, else today (the day it saves).
+function setXfmrAltNone(checked) {
+  if (checked && !sources.some(isAlternateSourceRow)) unitAnswers.xfmrAltNone = surveyDateFieldValue() || localDateStr(new Date());
+  else delete unitAnswers.xfmrAltNone;
+  renderUnitQuestions(true);
+  autoSaveCurrent();
+}
+// The panel (or switch), its breaker and the voltage, asked one at a time as a
+// feeder's are (build 122 review): the row's Location reads "<panel> bkr <n>",
+// " bkr <n>" left out with No number (spec §1.4). Other… lists the other
+// voltages, and Back there returns to the voltage with the panel and breaker
+// kept. Resolves { text, voltage }, or null (Skip / closed). Closed once a
+// panel was typed, it says what wasn't added (build 122 second review).
+async function askXfmrFeed(opts) {
+  const filled = v => !!String(v || '').trim();
+  const one = v => String(v || '').replace(/\s+/g, ' ').trim();
+  const kind = opts.kind || '';
+  const closed = (typed) => { showToast('Not added: ' + opts.title + ' (' + typed + ') — the question was closed', true); return null; };
+  const panel = await askChoice({ id: opts.id, defaultValue: 'skip', kind, title: opts.title, html: opts.html,
+    input: { type: 'text', placeholder: opts.placeholder, valid: filled },
+    choices: [{ label: 'Next', needsInput: true, primary: true }, { value: 'skip', label: 'Skip' }] });
+  // closed at the first step: what was typed there isn't known, but not that nothing was added (build 122 third review)
+  if (panel === 'cancel') { showToast('Not added: ' + opts.title + ' — the question was closed', true); return null; }
+  if (!filled(panel) || panel === 'skip') return null;
+  const bkr = await askChoice({ id: opts.id + '-breaker', defaultValue: '', kind, title: opts.title + ': the breaker',
+    html: html`Its breaker number in ${one(panel)}.`,
+    input: { type: 'text', placeholder: 'e.g. 1', valid: filled },
+    choices: [{ label: 'Next', needsInput: true, primary: true }, { value: '', label: 'No number' }, { value: 'skip', label: 'Skip' }] });
+  if (bkr === 'cancel') return closed(one(panel));
+  if (bkr === 'skip') return null;
+  const text = one(panel) + (one(bkr) ? ' bkr ' + one(bkr) : '');
+  const MAIN = ['208V', '240V', '480V'];
+  for (let round = 0; round < 50; round++) {
+    const v = await askChoice({ id: opts.id + '-voltage', defaultValue: 'skip', kind, title: opts.title + ': the voltage',
+      html: html`The voltage at ${text}.`,
+      choices: MAIN.map(x => ({ value: x, label: x })).concat([{ value: 'other', label: 'Other…' }, { value: 'skip', label: 'Skip' }]) });
+    if (MAIN.includes(v)) return { text, voltage: v };
+    if (v === 'cancel') return closed(text);
+    if (v !== 'other') return null;
+    const ov = await askChoice({ id: 'other-voltage', defaultValue: 'back', title: 'Other voltage', html: 'Pick the voltage on the data plate.',
+      choices: otherVoltageChoices().map(x => ({ value: x, label: x })).concat([{ value: 'back', label: 'Back' }]) });
+    if (otherVoltageChoices().includes(ov)) return { text, voltage: ov };
+  }
+  showToast('Not added: no voltage was picked for ' + text, true);   // never dropped without a word
+  return null;
+}
+// An ordinary Electrical breaker row, Meter-verified, not automatic (a template
+// change keeps it); its Location carries the role, and so does the row itself.
+function addXfmrRow(location, voltage, role, altKind) {
+  const at = sources.length;
+  delete photos['source_' + at];   // never inherit a stale ref
+  const row = { energySource: 'Electrical ' + voltage, deviceType: 'Breaker', quantity: 1, location: location, role: role,
+    duplicate: 'No', verification: 'Meter', detail: '', collapsed: true };
+  if (altKind) row.altKind = altKind;
+  sources.push(row);
+  return at;
+}
+async function addSecondaryMain() {
+  if (getEquipType() !== 'Transformer' || sources.some(isSecondaryMainRow)) return null;
+  const r = await askXfmrFeed({ id: 'xfmr-secondary-main', title: 'Secondary main',
+    html: html`The panel or switch the secondary feeds, as labelled. Its breaker and voltage come next.`, placeholder: 'e.g. MDP-2' });
+  if (!r || getEquipType() !== 'Transformer') return null;
+  addXfmrRow('Secondary Main: ' + r.text, r.voltage, 'secondaryMain');
+  renderSources();
+  renderUnitQuestions(true);
+  autoSaveCurrent();
+  showToast('Added the secondary main — photograph its breaker');
+  return r;
+}
+async function addAlternateSourceRow(kind) {
+  const r = await askXfmrFeed({ id: 'xfmr-alternate', kind: kind, title: 'Alternate source: ' + kind,
+    html: html`The panel where the <strong>${kind}</strong> connects, as labelled. Its breaker and voltage come next.`, placeholder: 'e.g. UPS-1 output' });
+  if (!r || getEquipType() !== 'Transformer') return null;
+  addXfmrRow('Alternate Source (' + kind + '): ' + r.text, r.voltage, 'alternate', kind);
+  delete unitAnswers.xfmrAltNone;   // a recorded source ends "None found"
+  renderSources();
+  renderUnitQuestions(true);
+  autoSaveCurrent();
+  showToast('Added the ' + kind + ' row — photograph its breaker');
+  return r;
+}
+// The section's "+ Add an alternate source": the kind, then the panel and breaker.
+async function addAlternateSource() {
+  const kind = await askChoice({ id: 'xfmr-alternate-kind', defaultValue: 'cancel', title: 'Alternate source',
+    html: html`What else can energize this transformer&rsquo;s secondary?`,
+    choices: DATA.xfmrAltKinds.map(k => ({ value: k, label: k })).concat([{ value: 'cancel', label: 'Cancel' }]) });
+  if (!DATA.xfmrAltKinds.includes(kind)) return null;
+  return addAlternateSourceRow(kind);
+}
+// After the voltage: the other sources, ticked; each ticked kind asks its row.
+async function askXfmrOtherSources() {
+  const r = await askChoice({ id: 'xfmr-other-sources', defaultValue: 'skip', title: 'Other sources that can energize the secondary',
+    html: html`Tick each one you find. Each gets a row of its own (its panel, breaker and voltage) &mdash; photograph each breaker.`,
+    checks: DATA.xfmrAltKinds.map(k => ({ value: k, label: k })).concat([{ value: 'none', label: 'None found', exclusive: true }]),
+    choices: [{ value: 'ok', label: 'OK', primary: true }, { value: 'skip', label: 'Skip' }] });
+  const v = (r && typeof r === 'object') ? r.value : r;
+  const ticked = (r && typeof r === 'object' && Array.isArray(r.checked)) ? r.checked : [];
+  if (v !== 'ok' || getEquipType() !== 'Transformer') return;
+  if (ticked.includes('none')) { setXfmrAltNone(true); return; }
+  for (const kind of DATA.xfmrAltKinds.filter(k => ticked.includes(k))) await addAlternateSourceRow(kind);
+}
+// Asked once the template's voltage is settled (afterTemplateVoltage), on the
+// Transformer type only; a unit that already answered is not asked again.
+async function maybeAskTransformer() {
+  if (getEquipType() !== 'Transformer') return;
+  if (!sources.some(isSecondaryMainRow)) await addSecondaryMain();
+  if (getEquipType() !== 'Transformer') return;
+  if (!sources.some(isAlternateSourceRow) && !unitAnswers.xfmrAltNone) await askXfmrOtherSources();
 }
 
 // ---- Change later / not located ---------------------------------------------
@@ -3108,11 +4139,21 @@ function changeLaterAutoNotes(entryLike) {
   const k = unitKinds(entryLike.equipType, entryLike.template, entryLike.sources);
   const notes = [];
   if (k.vacPump && a.reliefJoint === 'No') notes.push(RELIEF_JOINT_NOTE);
+  // The point is named for the medium since build 122 ("No purge point found…");
+  // never for a held answer the row is no longer asked (build 122 fifth review)
+  const fac = entryHospitalCode(entryLike);
   (entryLike.sources || []).forEach((s, i) => {
-    if (s && s.drainLocation && s.drainLocation.where === 'None found' && sourceTakesDrainLocation(s)) {
-      notes.push('No drain found for source #' + (i + 1) + ' (' + (s.energySource || 'no energy source')
+    if (s && s.drainLocation && s.drainLocation.where === 'None found' && sourceTakesDrainLocation(s, fac) && !releaseHeldOnly(s)) {
+      notes.push('No ' + releasePointOf(s).noun + ' found for source #' + (i + 1) + ' (' + (s.energySource || 'no energy source')
         + (s.deviceId ? ', ' + s.deviceId : '') + ')');
     }
+  });
+  // Build 122 (D1): a drive whose disconnect nobody could judge
+  unitDrives(entryLike.sources).forEach(d => {
+    if (d.answer !== 'cant_tell') return;
+    const i = (entryLike.sources || []).indexOf(d.src);
+    const who = d.tag ? 'Drive ' + driveName(d) : 'Drive on source #' + (i + 1) + (d.n > 1 ? ' (unit ' + (d.k + 1) + ')' : '');
+    notes.push(who + ": can't tell whether its disconnect isolates all incoming power");
   });
   // Build 120: a damper actuator nobody could read ("Can't tell"; loto-web's
   // pre-QC blocks it, D4), numbered among the unit's damper actuator rows.
@@ -3139,12 +4180,21 @@ function unitSheetCells(entryLike) {
   else if (k.ats) { cells.U3 = ['ATS Make', a.atsMake || '']; cells.U4 = ['Backfeed', atsBackfeedList(a).join('; ')]; }
   else if (k.chiller) cells.U3 = ['Capacitors', a.capacitors || ''];
   else if (k.vacPump) { cells.U3 = ['Exhaust', a.vacuumExhaust || '']; cells.U4 = ['Union/Flange', a.reliefJoint || '']; }
+  else if (k.xfmr) {   // build 122 (spec §1.3)
+    cells.U3 = ['Alternate Sources', xfmrAltSheetText(entryLike)];
+    cells.U4 = ['Terminal Access', xfmrTerminalText(a)];
+  }
   if (k.refrigerant) {
     cells.U5 = ['Refrigerant', refrigerantSheetValue(a)];
     cells.U6 = ['Refrigerant PSI', refrigerantPsiValue(a)];
   }
+  if (k.xfmr) {
+    // a transformer never asks dampers: U7 is its nameplate, never a leftover "No damper actuators"
+    cells.U7 = ['Transformer Nameplate', xfmrNameplateText(a)];
+    cells.U8 = ['SPD / Capacitors / Grounding', xfmrStoredText(a)];
+  }
   // Build 120: "No damper actuators on this unit" (P1), only while it has none
-  if (a.dampersNone && !(entryLike.sources || []).some(isDamperRow)) cells.U7 = ['Damper Actuators', 'None'];
+  else if (a.dampersNone && !(entryLike.sources || []).some(isDamperRow)) cells.U7 = ['Damper Actuators', 'None'];
   return cells;
 }
 // The same answers as entries.json keys (backup only: loto-web imports the sheet).
@@ -3155,11 +4205,16 @@ function unitAnswersForJson(entryLike) {
   const out = { shop: byLabel['Shop'],
                 changeLater: { text: byLabel['Change Later'], auto: changeLaterAutoNotes(entryLike).length > 0 } };
   [['UV Lights', 'uvLights'], ['Confined Space', 'confinedSpace'], ['ATS Make', 'atsMake'],
-   ['Capacitors', 'capacitors'], ['Exhaust', 'vacuumExhaust'], ['Union/Flange', 'reliefJoint']]
+   ['Capacitors', 'capacitors'], ['Exhaust', 'vacuumExhaust'], ['Union/Flange', 'reliefJoint'],
+   // build 122: a transformer's survey, as the sheet carries it
+   ['Alternate Sources', 'alternateSources'], ['Terminal Access', 'terminalAccess'],
+   ['Transformer Nameplate', 'transformerNameplate'], ['SPD / Capacitors / Grounding', 'spdCapacitorsGrounding']]
     .forEach(([label, key]) => { if (label in byLabel) out[key] = byLabel[label]; });
   if ('Backfeed' in byLabel) out.atsBackfeed = atsBackfeedList(entryLike.unitAnswers || {});
   if ('Refrigerant' in byLabel) out.refrigerant = { type: byLabel['Refrigerant'], psi: byLabel['Refrigerant PSI'] };
   if ('Damper Actuators' in byLabel) out.dampersNone = true;   // build 120
+  // build 122: "No arc flash label on this equipment" on the types that ask
+  if (arcFlashAskedFor(entryLike.equipType) && (entryLike.unitAnswers || {}).arcFlashNone) out.arcFlashNone = true;
   return out;
 }
 // A facility code as it goes into a file name — the ZIP name's rule:
@@ -3178,7 +4233,9 @@ function renderUnitQuestions(force) {
   const el = formEntryLike();
   const k = unitKinds(el.equipType, el.template, el.sources);
   const auto = changeLaterAutoNotes(el);
-  const key = JSON.stringify([k, defaultShopFor(el.template, el.sources), auto, damperAskedOnForm(), (el.sources || []).some(isDamperRow)]);
+  // build 122: a transformer's section also follows its Secondary Main and Alternate Source rows
+  const xfmrRows = k.xfmr ? [(el.sources || []).filter(isSecondaryMainRow).map(s => s.location), xfmrAltKindsRecorded(el.sources)] : null;
+  const key = JSON.stringify([k, defaultShopFor(el.template, el.sources), auto, damperAskedOnForm(), (el.sources || []).some(isDamperRow), xfmrRows]);
   if (!force && key === _unitQKey) return;
   _unitQKey = key;
   const active = document.activeElement;
@@ -3237,6 +4294,7 @@ function buildUnitQuestionsHtml(k, template, auto) {
         value="${a.refrigerantPsi || ''}" placeholder="e.g. 550" oninput="setUnitText('refrigerantPsi',this.value)">`,
       'from the data plate; optional'));
   }
+  if (k.xfmr) xfmrQuestionsHtml(a, group, pick, text, dim).forEach(p => parts.push(p));
   // Build 120 (P1): a unit asked about dampers that has no Damper Actuator row
   // says so, so "none" and "not surveyed" don't look the same.
   if (damperAskedOnForm() && !sources.some(isDamperRow)) {
@@ -3254,6 +4312,51 @@ function buildUnitQuestionsHtml(k, template, auto) {
       html`${i ? raw('<br>') : ''}&#9888; ${n}`)}</div>` : ''}</div>`);
   return html`<div class="form-grid">${parts}</div>`;
 }
+// A transformer's questions (build 122, spec §2.3): its secondary main and other
+// sources (rows), terminal access, the nameplate and SPD / capacitors / grounding.
+function xfmrQuestionsHtml(a, group, pick, text, dim) {
+  const out = [];
+  const btn = (id, label, fn) => html`<button type="button" class="btn btn-sm" id="${id}" onclick="${raw(fn)}"
+      style="padding:10px 12px;font-size:13px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">${label}</button>`;
+  const box = (key, placeholder, scan) => html`<div class="scan-input-row"><input type="text" id="uq_${key}" value="${a[key] || ''}"
+      placeholder="${placeholder}" oninput="setUnitText(${jsArg(key)},this.value)">${scan
+      ? html`<button type="button" class="scan-btn" onclick="scanTextToField('uq_${key}')" title="Scan the data plate">&#128247;</button>` : ''}</div>`;
+  const pickOther = (key, list, ph) => html`<select id="uq_${key}" onchange="setUnitAnswer(${jsArg(key)},this.value)">
+      <option value="">-- Not answered --</option>
+      ${list.map(v => html`<option value="${v}" ${a[key] === v ? 'selected' : ''}>${v}</option>`)}
+      <option value="Other" ${a[key] === 'Other' ? 'selected' : ''}>Other&hellip;</option>
+    </select>${a[key] === 'Other' ? text(key + 'Other', ph) : ''}`;
+  const withWhere = (key, label, list, noWhere, ph, hint) =>
+    group(label, html`${pick(key, list)}${a[key] && a[key] !== noWhere ? text(key + 'Where', ph) : ''}`, hint);
+  const mains = sources.filter(isSecondaryMainRow);
+  out.push(group('Secondary main', mains.length
+    ? html`<div id="uq_xfmrMain" style="font-size:13px;color:var(--text);padding:6px 0;">${mains.map(s => s.location).join(' | ')}</div>`
+    : btn('uq_xfmrAddMain', '+ Add the secondary main', 'addSecondaryMain()'), 'the panel or switch the secondary feeds'));
+  const kinds = xfmrAltKindsRecorded(sources);
+  out.push(group('Other sources that can energize the secondary', html`${kinds.length
+      ? html`<div id="uq_xfmrAltKinds" style="font-size:13px;color:var(--text);margin-bottom:6px;">Recorded: ${kinds.join('; ')}</div>` : ''}
+    ${btn('uq_xfmrAddAlt', '+ Add an alternate source', 'addAlternateSource()')}
+    ${kinds.length ? '' : html`<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;margin-top:8px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;font-size:14px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500;">
+      <input type="checkbox" class="painted-check" id="uq_xfmrAltNone" ${a.xfmrAltNone ? 'checked' : ''}
+        onchange="setXfmrAltNone(this.checked)"> None found${a.xfmrAltNone && isIsoDay(a.xfmrAltNone) ? ' (' + a.xfmrAltNone + ')' : ''}</label>`}`,
+    'a transfer switch, UPS, generator connection, tie breaker'));
+  out.push(group('Terminal access: primary', pick('xfmrTermPrimary', DATA.yesNoCantTell), 'can the H terminals be reached to test?'));
+  out.push(group('Terminal access: secondary', pick('xfmrTermSecondary', DATA.yesNoCantTell), 'the X terminals'));
+  out.push(group('Terminal access: covers', box('xfmrTermCovers', 'e.g. bolted front cover'), 'what comes off to reach them'));
+  out.push(html`<div class="form-group" style="grid-column:1 / -1;margin-bottom:0;"><label>Nameplate <span style="${dim}">&mdash; copy it from the data plate, and photograph the data plate</span></label></div>`);
+  out.push(group('kVA', box('xfmrKva', 'e.g. 75', true)));
+  out.push(group('Primary V', box('xfmrPrimaryV', 'e.g. 480', true)));
+  out.push(group('Secondary V', box('xfmrSecondaryV', 'e.g. 208Y/120', true)));
+  out.push(group('Connection', pickOther('xfmrConnection', DATA.xfmrConnections, 'e.g. Zig-zag')));
+  out.push(group('Taps', box('xfmrTaps', 'e.g. 2 x 2.5% FCAN, 2 x 2.5% FCBN, or None', true)));
+  out.push(group('Impedance %', box('xfmrImpedance', 'e.g. 5.1', true)));
+  out.push(group('Temperature rise', pickOther('xfmrTempRise', DATA.xfmrTempRises, 'e.g. 220 C')));
+  out.push(group('K-Factor', box('xfmrKFactor', 'e.g. 4', true)));
+  out.push(withWhere('xfmrSpd', 'Surge protective device (SPD)?', DATA.yesNoCantTell, 'No', 'Where, e.g. on the secondary bus'));
+  out.push(withWhere('xfmrCaps', 'Capacitors?', DATA.yesNoCantTell, 'No', 'Where, e.g. in the secondary section', 'Yes: loto-web adds the capacitor discharge steps'));
+  out.push(withWhere('xfmrGround', 'Grounding', DATA.groundingChoices, 'None', 'Where, e.g. bottom rear of the enclosure'));
+  return out;
+}
 function setUnitAnswer(key, value) {
   if (value) unitAnswers[key] = value; else delete unitAnswers[key];
   // The row an answer stands for follows it, as the prompts do: "Own valve"
@@ -3262,7 +4365,7 @@ function setUnitAnswer(key, value) {
   // Electrical Energy row and No takes an untouched one away. A row with a
   // photo or anything typed stays (Save & New then notes the mismatch).
   if (key === 'vacuumExhaust' && value) {
-    const isOut = s => /^Vacuum Air Out/.test(String(s.energySource || ''));
+    const isOut = s => isVacuumExhaust(s.energySource);
     if (value === 'Own valve') addVacuumExhaustRow();
     else removeUntouchedAutoRow(isOut);
   }
@@ -3317,6 +4420,7 @@ function savedUnitAnswers() {
 function loadUnitAnswers(a) {
   unitAnswers = (a && typeof a === 'object') ? JSON.parse(JSON.stringify(a)) : {};
   renderUnitQuestions(true);
+  syncArcFlashSlot();   // "No arc flash label" is a unit answer (build 122)
 }
 
 // "+ NOTE" / "+ CAUTION" under Notes (build 118): a new line that loto-web
@@ -3344,7 +4448,9 @@ const VACUUM_EXHAUST_CHOICES = [
   { value: 'shared', answer: 'Shared line, no valve', label: 'A shared line, no valve' },
   { value: 'unknown', answer: 'Can\'t see', label: 'I can\u2019t see' }
 ];
-function hasVacuumExhaustRow() { return sources.some(s => /^Vacuum Air Out/.test((s && s.energySource) || '')); }
+// An exhaust row by loto-web's rule (is_vacuum_exhaust), the app's own "Vacuum Air
+// Out" or one typed ("Vacuum Pump Exhaust"; build 122 sixth review).
+function hasVacuumExhaustRow() { return sources.some(s => !!s && isVacuumExhaust(s.energySource)); }
 function addVacuumExhaustRow() {
   if (hasVacuumExhaustRow()) return;
   sources.push({ energySource: 'Vacuum Air Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '',
@@ -4460,6 +5566,11 @@ let sketchColor = '#d94a4a';
 let sketchLineWidth = 3;
 let sketchStrokes = [];    // Array of stroke arrays (each stroke = array of {x,y} points + color + width)
 let sketchLabels = [];     // Array of {x, y, text, color} (positions as fraction 0-1 of container)
+// Which letter rule the diagram's labels follow (build 122 ninth review): 2 = a
+// pump's exhaust by any name is P (since 2026-10-25), 1 = by the name alone (every
+// diagram labelled before). Each diagram keeps its own, so a diagram is never
+// read half one way and half the other; an empty diagram starts on 2.
+let sketchLabelRule = 2;
 let sketchDiagramKey = null;
 let sketchCanvas = null;
 let sketchCtx = null;
@@ -4649,6 +5760,7 @@ function clearSketch() {
   if (!confirm('Clear all sketch annotations?')) return;
   sketchStrokes = [];
   sketchLabels = [];
+  sketchLabelRule = 2;
   redrawSketchStrokes();
   renderSketchLabels();
   autoSaveSketch();
@@ -4698,6 +5810,23 @@ function getNextForPrefix(prefix) {
 // Determine the prefix letter for a given energy source name (same logic as picker)
 function getPrefixForEnergySource(energySource) {
   if (!energySource) return 'E';
+  // A pump's exhaust by any name is P, as loto-web numbers it since 2026-10-25
+  // ("Exhaust - Vacuum", "Medical Vacuum Discharge Line"; its is_vacuum_exhaust)
+  if (isVacuumExhaust(energySource)) return 'P';
+  return prefixByEnergyName(energySource);
+}
+// A saved diagram's label rule (see sketchLabelRule): its own, else 1 when it
+// already holds labels (placed before the rule was recorded), else 2.
+function sketchRuleOf(sketch) {
+  if (sketch && sketch.labelRule) return sketch.labelRule;
+  return (sketch && (sketch.labels || []).length) ? 1 : 2;
+}
+// The label letter for an energy source under a diagram's rule.
+function labelPrefixFor(energySource, rule) { return rule === 1 ? prefixByEnergyName(energySource) : getPrefixForEnergySource(energySource); }
+// The letter by the energy source's name alone — the rule every diagram drawn
+// before 2026-10-25 was labelled by (an exhaust named otherwise was E then).
+function prefixByEnergyName(energySource) {
+  if (!energySource) return 'E';
   let prefix = 'E';
   let bestLen = 0;
   for (const [key, val] of Object.entries(ENERGY_LABEL_PREFIX)) {
@@ -4729,13 +5858,15 @@ function getLabelForLinkedSource(linkedTo) {
   const srcIdx = linkedTo.sourceIndex;
   const targetSrc = entry.sources[srcIdx];
   if (!targetSrc) return null;
-  const prefix = getPrefixForEnergySource(targetSrc.energySource);
+  // the letters as the linked diagram was labelled (its own rule, build 122 ninth review)
+  const rule = sketchRuleOf(entry.sketch);
+  const prefix = labelPrefixFor(targetSrc.energySource, rule);
 
   // 0-based ordinal: how many same-prefix sources come BEFORE this one in linked equipment
   let ordinal = 0;
   for (let i = 0; i < srcIdx; i++) {
     const s = entry.sources[i];
-    if (s && getPrefixForEnergySource(s.energySource) === prefix) ordinal++;
+    if (s && labelPrefixFor(s.energySource, rule) === prefix) ordinal++;
   }
 
   // Primary path: use the Nth actually-placed label of this prefix on the linked equipment's sketch
@@ -4779,6 +5910,9 @@ function getLabelForLinkedSource(linkedTo) {
 
 // Build the list of labels to show in the picker
 function getLabelPickerOptions() {
+  // An emptied diagram (labels undone or deleted one by one) starts on the new rule, as a
+  // cleared or reopened empty one does (build 122 tenth review)
+  if (!sketchLabels.length) sketchLabelRule = 2;
   const seenText = new Set();
   const options = [];
   // Track which prefixes we've already allocated fresh numbers for
@@ -4794,7 +5928,7 @@ function getLabelPickerOptions() {
       }
       continue;
     }
-    const prefix = getPrefixForEnergySource(src.energySource);
+    const prefix = labelPrefixFor(src.energySource, sketchLabelRule);   // this diagram's own rule
     if (!freshPrefixUsed.has(prefix)) {
       freshPrefixUsed.add(prefix);
       const opt = getNextForPrefix(prefix);
@@ -5013,7 +6147,8 @@ function getSketchData() {
   return {
     diagramKey: sketchDiagramKey,
     strokes: sketchStrokes,
-    labels: sketchLabels
+    labels: sketchLabels,
+    labelRule: sketchLabels.length ? sketchLabelRule : 2
   };
 }
 
@@ -5066,6 +6201,7 @@ function restoreSketch(data) {
   sketchStrokes = [];
   sketchLabels = [];
   sketchDiagramKey = null;
+  sketchLabelRule = sketchRuleOf(data);
 
   if (!data) {
     document.getElementById('sketchToolbar').style.display = 'none';
@@ -5108,6 +6244,7 @@ function clearSketchState() {
   sketchStrokes = [];
   sketchLabels = [];
   sketchDiagramKey = null;
+  sketchLabelRule = 2;
   if (sketchCtx) {
     const w = sketchCanvas.width / (window.devicePixelRatio || 2);
     const h = sketchCanvas.height / (window.devicePixelRatio || 2);
@@ -5596,11 +6733,13 @@ function keepDefaultVoltage() {
 
 // What a template asks once its voltage is settled (build 113: one place, it was
 // wired by hand into each voltage path): the count of its drives / fans / pumps,
-// then a medical vacuum pump's exhaust. applyTemplate calls it directly when it
+// then a medical vacuum pump's exhaust, then (build 122) a transformer's
+// secondary main and other sources. applyTemplate calls it directly when it
 // shows no voltage prompt.
 function afterTemplateVoltage() {
   maybePromptElectricalCount();
   maybeAskVacuumExhaust();
+  maybeAskTransformer();
 }
 
 function closeTemplateVoltagePrompt() {
@@ -5699,6 +6838,7 @@ function countCopyOf(base) {
   delete c.existingTag;   // another device: not checked yet (build 119)
   delete c.springReturn;  // …nor read from its nameplate (build 120)
   delete c.labelWait; delete c.dcBusV;   // …nor its label (build 121)
+  delete c.driveIsolates;   // …nor its drive's disconnect (build 122)
   return c;
 }
 // A lower count removes only rows that hold nothing of the user's (build 113):
@@ -6348,11 +7488,12 @@ function paintPhotoSlot(slot) {
   const markBtn = document.getElementById('markbtn_' + slot);   // source cards: 📍 Mark needs a photo
   if (markBtn) markBtn.style.display = (ref && ref.dbKey) ? '' : 'none';
 }
-function paintEquipPhotoSlots() { ['equip_main', 'equip_dataplate', 'equip_ee'].forEach(paintPhotoSlot); }
+function paintEquipPhotoSlots() { ['equip_main', 'equip_dataplate', 'equip_ee', 'equip_arcflash'].forEach(paintPhotoSlot); syncArcFlashSlot(); }
 
 function renderSources() {
   applySimpleVerifDefaults();
   settleAutoDuplicates();   // an automatic Duplicate = Yes follows its photo (build 110)
+  try { syncFeederTags(sources); } catch (e) {}   // each feeder names its linked drives as tagged now (build 122)
   const container = document.getElementById('sourcesContainer');
   container.innerHTML = '';
 
@@ -6540,14 +7681,14 @@ function buildSourceCard(src, i) {
               <label>${li.prefix} ID</label>
               <div class="scan-input-row">
                 <input type="text" id="src_locid_${i}" value="${li.id}" placeholder="${li.prefix==='MCC'?'e.g. 3, 3B':'e.g. A, LP-1'}"
-                  oninput="updateLocationId(${i},this.value)">
+                  oninput="updateLocationId(${i},this.value)" onchange="commitSourceLocation(${i})">
                 <button type="button" class="scan-btn" onclick="scanTextToField('src_locid_${i}','locationId')" title="Scan the ${li.prefix} label">&#128247;</button>
               </div>
             </div>` : ''; })()}
             ${src._customLoc ? html`<div class="form-group" id="customLocGroup_${i}">
               <label>Custom Location</label>
               <input type="text" id="src_loc_custom_${i}" value="${src.location||''}" placeholder="Enter custom location"
-                oninput="updateSourceCustomLoc(${i},this.value)">
+                oninput="updateSourceCustomLoc(${i},this.value)" onchange="commitSourceLocation(${i})">
             </div>` : html`<div id="customLocGroup_${i}" style="display:none;"></div>`}
             ${(() => {
               const ov = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource);
@@ -6599,20 +7740,36 @@ function buildSourceCard(src, i) {
                 Opened and locked open during lockout (rare)
               </label>
             </div>` : html`<div id="lockOpenGroup_${i}" style="display:none;"></div>`}
-            ${sourceTakesDrainLocation(src) ? html`<div class="form-group" id="drainLocGroup_${i}">
-              <label>Drain for this isolation point</label>
+            ${sourceTakesDrainLocation(src) ? (() => {
+              // Build 122: the point and its choices follow the medium; a fuel oil or
+              // chemical drain also asks where it drains to
+              const pt = releasePointOf(src), d = src.drainLocation || {};
+              const toOther = /^Other:/.test(d.to || '');
+              return html`<div class="form-group" id="drainLocGroup_${i}">
+              <label>${pt.label}</label>
+              ${releaseHeldOnly(src) ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${releaseHeldNote(src)}</div>` : ''}
               <select id="src_drainwhere_${i}" onchange="updateDrainWhere(${i},this.value)">
                 <option value="">-- Not answered --</option>
-                ${DATA.drainLocations.map(w => html`<option value="${w}" ${(src.drainLocation || {}).where === w ? 'selected' : ''}>${DRAIN_CHOICE_LABEL[w] || w}</option>`)}
+                ${DATA.drainLocations.map(w => html`<option value="${w}" ${d.where === w ? 'selected' : ''}>${pt.choices[w] || w}</option>`)}
               </select>
-              ${src.drainLocation && src.drainLocation.where ? html`<input type="text" id="src_draintext_${i}" value="${src.drainLocation.text || ''}"
-                placeholder="${src.drainLocation.where === 'None found' ? 'Where you looked (optional)' : 'Where exactly, e.g. low point of coil return'}"
+              ${d.where ? html`<input type="text" id="src_draintext_${i}" value="${d.text || ''}"
+                placeholder="${d.where === 'None found' ? 'Where you looked (optional)' : 'Where exactly, e.g. ' + pt.eg}"
                 oninput="updateDrainText(${i},this.value)" style="margin-top:6px;">` : ''}
-            </div>` : html`<div id="drainLocGroup_${i}" style="display:none;"></div>`}
-            ${src.deviceType === 'VFD' ? html`<div class="form-group" id="feederGroup_${i}">
+              ${pt.drainsTo && DRAIN_FOUND.includes(d.where) ? html`<label style="margin-top:10px;">Drains to</label>
+              <select id="src_drainto_${i}" onchange="updateDrainTo(${i},this.value)">
+                <option value="">-- Not answered --</option>
+                ${DATA.drainsTo.map(t => html`<option value="${t}" ${d.to === t ? 'selected' : ''}>${DRAINS_TO_LABEL[t] || t}</option>`)}
+                <option value="Other" ${toOther ? 'selected' : ''}>Other&hellip;</option>
+              </select>
+              ${toOther ? html`<input type="text" id="src_draintotext_${i}" value="${String(d.to).replace(/^Other:\s*/, '')}"
+                placeholder="Where it drains to" oninput="updateDrainToText(${i},this.value)" style="margin-top:6px;">` : ''}` : ''}
+            </div>`; })() : html`<div id="drainLocGroup_${i}" style="display:none;"></div>`}
+            ${isDriveDevice(src.deviceType) ? html`<div class="form-group" id="feederGroup_${i}">
               <label>Feeder</label>
-              <button type="button" class="btn btn-sm" id="src_addfeeder_${i}" onclick="addFeederForDrive(${i})" style="padding:10px 12px;font-size:13px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">+ Add the breaker that feeds this drive</button>
+              <button type="button" class="btn btn-sm" id="src_addfeeder_${i}" onclick="addFeederFromCard(${i})" style="padding:10px 12px;font-size:13px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">+ Add the breaker that feeds this drive</button>
             </div>` : html`<div id="feederGroup_${i}" style="display:none;"></div>`}
+            ${driveIsolatesBlock(src, i)}
+            ${sourceRoleBlock(src, i)}
             <div class="form-group">
               <label>Quantity</label>
               <select onchange="updateSource(${i},'quantity',parseInt(this.value))">
@@ -6696,8 +7853,8 @@ function refreshSourceDependents(index) {
   if (va && vb && live.querySelector('#src_ver_' + index) && fresh.querySelector('#src_ver_' + index)) swapInner('src_ver_' + index);
   else swapNode(va, vb);
   swapNode(live.querySelector('#valveStateGroup_' + index), fresh.querySelector('#valveStateGroup_' + index));
-  // build 118: they follow the source and device too
-  ['lockOpenGroup_', 'drainLocGroup_', 'feederGroup_'].forEach(p =>
+  // build 118: they follow the source and device too (build 122: the drive's answer)
+  ['lockOpenGroup_', 'drainLocGroup_', 'feederGroup_', 'driveIsoGroup_', 'roleGroup_'].forEach(p =>
     swapNode(live.querySelector('#' + p + index), fresh.querySelector('#' + p + index)));
 }
 
@@ -6720,6 +7877,7 @@ function kineticDefaultLocation() {
 function updateSource(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
+  if (field === 'deviceId') refreshAfterRetag(syncFeederTags(sources), index);   // a retagged drive renames itself in its feeder (build 122)
   if (field === 'verification') delete sources[index]._drainDefault;   // the tech picked the code
   if (field === 'energySource' && value && SOURCE_DEFAULTS[value]) {
     const defaults = SOURCE_DEFAULTS[value];
@@ -6814,8 +7972,19 @@ function updateUnitDeviceId(index, unit, value) {
 const EXISTING_TAG_DEFAULT_ON = ['Atlanta', 'Atlanta - Fort McPherson', 'Atlanta - Trinka Davis'];
 // A per-facility on/off question setting (build 119's existing tags, build
 // 120's damper actuators): a stored 'on' / 'off' wins, else the default list.
+// Parsed once per change of the stored text (build 122 review: the release
+// question asks it per row, per render and per exported row). Read-only:
+// setFacilityPref writes a copy.
+const _facilityPrefsCache = {};
 function getFacilityPrefs(store) {
-  try { return JSON.parse(localStorage.getItem(store) || '{}') || {}; } catch (e) { return {}; }
+  let raw = null;
+  try { raw = localStorage.getItem(store); } catch (e) {}
+  const hit = _facilityPrefsCache[store];
+  if (hit && hit.raw === raw) return hit.prefs;
+  let prefs = {};
+  try { prefs = JSON.parse(raw || '{}') || {}; } catch (e) {}
+  _facilityPrefsCache[store] = { raw, prefs };
+  return prefs;
 }
 function facilityPrefOn(store, defaultsOn, code) {
   const key = (code !== undefined ? code : getHospitalCode()) || '';
@@ -6825,7 +7994,7 @@ function facilityPrefOn(store, defaultsOn, code) {
   return defaultsOn.includes(key);
 }
 function setFacilityPref(store, code, on) {
-  const prefs = getFacilityPrefs(store);
+  const prefs = Object.assign({}, getFacilityPrefs(store));
   prefs[code || ''] = on ? 'on' : 'off';
   try { localStorage.setItem(store, JSON.stringify(prefs)); } catch (e) {}
 }
@@ -6887,8 +8056,13 @@ const LABEL_WAIT_SKIP = ['Chiller', 'Mini Split'];
 function sourceTakesLabelWait(src, type, template) {
   if (!src || src.linkedTo) return false;
   if (LABEL_WAIT_SKIP.includes(type) || LABEL_WAIT_SKIP.includes(template)) return false;
-  const es = String(src.energySource || '');
-  return (/^Electrical\b/.test(es) && src.deviceType === 'VFD') || /^Stored Electrical Energy/.test(es);
+  // loto-web's label_wait.asked, word for word (build 122 whole review, the
+  // contract test): a stored-electric or capacitor source; or an electric one —
+  // its name says "electric" or a voltage — whose Device is "VFD", any case
+  const es = String(src.energySource || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const dev = String(src.deviceType || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (es.includes('stored electric') || es.includes('capacitor')) return true;
+  return (es.includes('electric') || /\d\s*v\b/.test(es)) && dev === 'vfd';
 }
 function formTakesLabelWait(src) { return sourceTakesLabelWait(src, getEquipType(), getTemplate()); }
 function labelWaitEntries(src) { return Array.isArray(src && src.labelWait) ? src.labelWait : []; }
@@ -7173,6 +8347,14 @@ function splitSource(index) {
   delete newSrc.linkedTo;      // links belong to the original source only
   delete newSrc.sourceId;      // a distinct valve: fresh UUID minted at capture/save
   delete newSrc.priorSourceIds;
+  delete newSrc.feeds;         // a feeder's drives stay with the original row (build 122)
+  // The split-off drive takes its feeder's link with it (build 122 whole review)
+  if (isDriveRow(src) && src.sourceId) {
+    ensureSourceId(newSrc);
+    sources.forEach(f => (f && Array.isArray(f.feeds) ? f.feeds : []).forEach(l => {
+      if (l.sourceId === src.sourceId && l.unit === qty - 1) { l.sourceId = newSrc.sourceId; l.unit = 0; }
+    }));
+  }
   newSrc.deviceId = '';        // a distinct valve → its own tag (build 93)
   if (unitIds) {
     newSrc.deviceId = (unitIds[qty - 1] || '').trim();
@@ -7193,8 +8375,9 @@ function splitSource(index) {
     if (rest.length) src.existingTag = rest; else delete src.existingTag;
   }
   // The label wait and DC bus voltage (build 121) move the same way; the row's
-  // label photo stays with the original row (it is bound to its sourceId).
-  ['labelWait', 'dcBusV'].forEach(key => {
+  // label photo stays with the original row (it is bound to its sourceId). So
+  // does the drive's disconnect answer (build 122).
+  ['labelWait', 'dcBusV', 'driveIsolates'].forEach(key => {
     delete newSrc[key];
     if (!Array.isArray(src[key]) || !src[key].length) return;
     const list = src[key].slice();
@@ -7257,6 +8440,10 @@ function handleEnergySourceChange(index, value) {
   } else {
     sources[index]._customEnergy = false;
     sources[index].energySource = value;
+    // A row that is no longer Electrical is no feeder or transformer breaker
+    // (build 122 second review): its role and the prefix that says it go. (A
+    // custom energy source being typed keeps them; the card's button clears them.)
+    if ((sources[index].role || sourceRoleOf(sources[index])) && !/^Electrical\b/.test(String(value || ''))) clearSourceRole(sources[index]);
     // A check that belongs to the previous source's family is never valid on
     // the new one (build 93): a water check auto-filled for "HHW In" stayed on
     // the source after it became "Electrical 208V", and a temperature check
@@ -7318,10 +8505,14 @@ function handleDeviceTypeChange(index, value) {
     if (el) el.focus();
   } else {
     sources[index]._customDevice = false;
+    // A row made a drive is no feeder or transformer breaker (build 122 third review)
+    if ((sources[index].role || sourceRoleOf(sources[index])) && isDriveDevice(value)) clearSourceRole(sources[index]);
     sources[index].deviceType = value;
     // Re-render to update verification dropdown based on new device type
     renderSources();
     autoSaveCurrent();
+    // Build 122 (D1): a drive gets its feeder and its disconnect answer, asked now
+    if (isDriveDevice(value) && isDriveRow(sources[index])) promptDriveFeeder(index);
   }
 }
 
@@ -7353,9 +8544,10 @@ function locationIdInfo(location) {
 
 function handleLocationChange(index, value) {
   markSourceEdited(index);
+  const prune = () => { if (Array.isArray(sources[index].feeds)) syncFeederTags(sources, { prune: true }); };   // a whole Location picked is a committed edit
   if (value === '** Custom Location **') {
     sources[index]._customLoc = true;
-    sources[index].location = '';
+    sources[index].location = '';   // its link waits for what is typed (the box's change)
     renderSources();
     const el = document.getElementById('src_loc_custom_' + index);
     if (el) el.focus();
@@ -7363,14 +8555,15 @@ function handleLocationChange(index, value) {
     // Re-selecting the same prefix keeps any ID typed ("MCC 3"); switching prefix resets it
     sources[index]._customLoc = false;
     const li = locationIdInfo(sources[index].location);
-    if (!li || li.prefix !== value) sources[index].location = value;
+    if (!li || li.prefix !== value) sources[index].location = value;   // its link waits for the ID typed (the box's change)
     renderSources();
     const el = document.getElementById('src_locid_' + index);
     if (el) el.focus();
   } else {
     sources[index]._customLoc = false;
     sources[index].location = value;
-    renderSources();   // also drops the MCC ID field when leaving MCC
+    prune();
+    renderSources();   // also drops the MCC ID field when leaving MCC (and syncs a feeder's link)
     autoSaveCurrent();
   }
 }
@@ -7387,6 +8580,15 @@ function updateLocationId(index, value) {
 function updateSourceCustomLoc(index, value) {
   markSourceEdited(index);
   sources[index].location = value;
+  autoSaveCurrent();
+}
+// The Location box's change (left, Done): a feeder's link follows the committed
+// text — a tag taken out takes its link (build 122 review of the link; a
+// keystroke never does, so retyping a ")" can't lose it).
+function commitSourceLocation(index) {
+  const src = sources[index];
+  if (!src || !Array.isArray(src.feeds)) return;
+  syncFeederTags(sources, { prune: true });
   autoSaveCurrent();
 }
 
@@ -7496,6 +8698,9 @@ function applyCopySource(entryIndex, sourceIndex) {
   for (const k of carry) {
     if (src[k] !== undefined) dest[k] = src[k];
   }
+  // …and is that source, not the role this row had (build 122 second review): a
+  // copied Location that says a role still reads as one, as typed
+  delete dest.role; delete dest.altKind; delete dest.feeds;
   // Duplicate follows THIS source's own photo (build 109): a copy never brings
   // the other source's photo. A reused photo here makes it an automatic Yes;
   // the other source's automatic Yes stays automatic, and renderSources then
@@ -7545,6 +8750,13 @@ function duplicateSource(index) {
   delete newSrc.existingTag;     // …and its own existing tag, not checked yet (build 119)
   delete newSrc.springReturn;    // …and its own nameplate's spring return (build 120)
   delete newSrc.labelWait; delete newSrc.dcBusV;   // …and its own label's wait (build 121)
+  delete newSrc.driveIsolates;   // …and its own drive's disconnect, not checked yet (build 122)
+  // A copy of a feeder / secondary main / alternate source row is an ordinary
+  // row (build 122 third review): one breaker, one role — another feeder comes
+  // from "+ Add the breaker that feeds this drive", another source from the
+  // transformer's section
+  const roleCopied = sourceRoleOf(newSrc);
+  if (roleCopied) clearSourceRole(newSrc);
   const prev = sources.slice();
   sources.splice(index + 1, 0, newSrc);
   rebindSourcePhotos(prev);
@@ -7570,7 +8782,7 @@ function duplicateSource(index) {
   }
   renderSources();
   autoSaveCurrent();
-  showSourceToast(`Duplicated source #${index + 1}`, false);
+  showSourceToast(`Duplicated source #${index + 1}` + (roleCopied ? ' — as an ordinary row: one breaker keeps one ' + SOURCE_ROLES[roleCopied].noun + ' row' : ''), false);
 }
 
 function moveSource(index, direction) {
@@ -7851,6 +9063,7 @@ function photoSlotLabel(key) {
   if (key === 'equip_main') return 'Main';
   if (key === 'equip_dataplate') return 'Data Plate';
   if (key === 'equip_ee') return 'EE';
+  if (key === 'equip_arcflash') return 'Arc Flash Label';   // build 122
   let m = /^source_(\d+)$/.exec(key); if (m) return 'Source ' + (parseInt(m[1], 10) + 1);
   m = /^misc_(\d+)$/.exec(key);      if (m) return 'Misc ' + (parseInt(m[1], 10) + 1);
   return key;
@@ -8755,7 +9968,7 @@ function getAllPhotoKeys() {
 // Key format:  photo::<entry-id>::<slot-token>::<capture-rev>
 //   entry-id:   the owning entry's UUID (or, for pre-UUID entries, its numeric
 //               Date.now() id — see isValidEntryId).
-//   slot-token: 'main' | 'dataplate' | 'ee' | <sourceId uuid> | 'misc-<8hex>'
+//   slot-token: 'main' | 'dataplate' | 'ee' | 'arcflash' (build 122) | <sourceId uuid> | 'misc-<8hex>'
 //   capture-rev: 8 random hex, minted per capture. A retake therefore writes a
 //   brand-new record (photos are immutable once saved) and then updates the
 //   single owning reference. The superseded record is NEVER deleted by a
@@ -8800,6 +10013,7 @@ function slotTokenFor(slotId, srcList) {
   if (slotId === 'equip_main') return 'main';
   if (slotId === 'equip_dataplate') return 'dataplate';
   if (slotId === 'equip_ee') return 'ee';
+  if (slotId === 'equip_arcflash') return 'arcflash';   // build 122
   const m = /^source_(\d+)$/.exec(slotId);
   if (m) {
     const list = srcList || sources;
@@ -9620,6 +10834,7 @@ async function findReattachCandidates() {
     if (tok === 'main') slotKey = 'equip_main';
     else if (tok === 'dataplate') slotKey = 'equip_dataplate';
     else if (tok === 'ee') slotKey = 'equip_ee';
+    else if (tok === 'arcflash') slotKey = 'equip_arcflash';   // build 122
     else if (tok.indexOf('misc-') === 0) continue;   // misc has no stable slot to restore into
     else {
       const idxs = [];
@@ -10127,6 +11342,8 @@ function handlePhoto(input, slotId) {
             // the rule itself is effectiveDuplicate, build 110)
             const cs = sm ? sources[parseInt(slot.split('_')[1], 10)] : null;
             if (cs && cs.dupAuto) renderSources();
+            // The arc flash label photographed: "No arc flash label" no longer holds (build 122)
+            if (slot === 'equip_arcflash') { delete unitAnswers.arcFlashNone; syncArcFlashSlot(); }
             paintPhotoSlot(slot);
             autoSaveCurrent();
             showToast('Photo saved (' + out.w + 'x' + out.h + ', ~' + out.kb + 'KB)');
@@ -10276,6 +11493,7 @@ async function emptySlotsWithUnattachedShots(entries) {
     check('equip_main', 'main', 'Main Photo');
     check('equip_dataplate', 'dataplate', 'Data Plate');
     check('equip_ee', 'ee', 'EE Number');
+    check('equip_arcflash', 'arcflash', 'Arc Flash Label');   // build 122
     (e.sources || []).forEach((src, i) => { if (src && src.sourceId && !src.linkedTo) check('source_' + i, src.sourceId, 'Source #' + (i + 1) + (src.energySource ? ' (' + src.energySource + ')' : '')); });
     const misc = looseMisc.get(String(e.id));
     if (misc) out.push({ name, slot: misc.length > 1 ? misc.length + ' Misc photos' : 'Misc photo', count: misc.length, keys: misc });
@@ -10532,7 +11750,10 @@ function isElectricalSource(s) {
   return /electric/i.test(name) && !/^stored/i.test(name);
 }
 
-function collectIncompleteFields() {
+// opts.drivesAsked (build 122 review): Save & New has just asked about each
+// drive (askBeforeSave), so the drives aren't listed a second time.
+function collectIncompleteFields(opts) {
+  opts = opts || {};
   const missing = [];
   const val = id => (document.getElementById(id) || {}).value || '';
 
@@ -10556,6 +11777,15 @@ function collectIncompleteFields() {
   if (damperAskedOnForm() && !sources.some(isDamperRow) && !unitAnswers.dampersNone) {
     missing.push('Damper actuators \u2014 add a Damper Actuator row for each one, or tick "No damper actuators on this unit"');
   }
+  // Build 122 (soft, like the rest): a transformer's survey
+  if (unitKinds(equipType, getTemplate(), sources).xfmr) {
+    if (!sources.some(isSecondaryMainRow)) missing.push('Transformer \u2014 secondary main');
+    if (!sources.some(isAlternateSourceRow) && !unitAnswers.xfmrAltNone) missing.push('Transformer \u2014 alternate sources (or None found)');
+    if (!xfmrNameplateText(unitAnswers)) missing.push('Transformer \u2014 nameplate');
+  }
+  const drives = unitDrives(sources);
+  const sharedTag = drivesShareATag(sources);
+  if (sharedTag) missing.push('Drives \u2014 two share the tag ' + sharedTag + ': give each its own tag (and feeder), or loto-web keeps work inside the drives off limits (Tier 2)');
   // Build 119: where the unit's facility asks for existing tags, each unit
   // with neither a tag nor "No tag" (wilkins: warn here, not only at pre-QC).
   const askTags = existingTagPromptOn(formFacilityCode());
@@ -10594,6 +11824,14 @@ function collectIncompleteFields() {
       for (let k = 0; k < n; k++) if (labelWaitState(lw[k]) === 'unchecked') miss.push(n < 2 ? '' : (inOut ? (k ? 'Out' : 'In') : 'Unit ' + (k + 1)));
       if (miss.length) gaps.push('Label discharge wait' + (miss[0] ? ' (' + miss.join(', ') + ')' : ''));
     }
+    // Build 122 (D1): a drive's feeder and its disconnect answer
+    if (isDriveRow(s) && !opts.drivesAsked) {
+      const mine = drives.filter(d => d.src === s);
+      const unfed = mine.filter(d => !d.fed).map(d => driveName(d) || (d.n > 1 ? 'Unit ' + (d.k + 1) : 'the drive'));
+      if (unfed.length) gaps.push('Feeder for ' + unfed.join(', '));
+      const open = mine.filter(d => !d.answer).map(d => d.n < 2 ? '' : 'Unit ' + (d.k + 1));
+      if (open.length) gaps.push('Drive disconnect answer' + (open[0] ? ' (' + open.join(', ') + ')' : ''));
+    }
     // build 102: its photo slot is shown but empty (a duplicate, a linked source
     // and a kind that needs no photo are never flagged — sourceExpectsPhoto)
     if (sourceExpectsPhoto(s) && !sourcePhotoTaken(i)) gaps.push('Photo');
@@ -10629,8 +11867,8 @@ function collectSaveNotices() {
   {
     const k = unitKinds(getEquipType(), getTemplate(), sources), a = unitAnswers;
     const hasOut = hasVacuumExhaustRow(), hasCap = sources.some(s => s && s.energySource === 'Stored Electrical Energy');
-    if (k.vacPump && a.vacuumExhaust === 'Own valve' && !hasOut) notices.push('The exhaust has its own valve, but there’s no Vacuum Air Out row for it.');
-    if (k.vacPump && a.vacuumExhaust && a.vacuumExhaust !== 'Own valve' && hasOut) notices.push('The exhaust is “' + a.vacuumExhaust + '”, but the unit has a Vacuum Air Out row.');
+    if (k.vacPump && a.vacuumExhaust === 'Own valve' && !hasOut) notices.push('The exhaust has its own valve, but there’s no exhaust row (Vacuum Air Out) for it.');
+    if (k.vacPump && a.vacuumExhaust && a.vacuumExhaust !== 'Own valve' && hasOut) notices.push('The exhaust is “' + a.vacuumExhaust + '”, but the unit has an exhaust row (Vacuum Air Out).');
     if (k.chiller && a.capacitors === 'No' && hasCap) notices.push('Capacitor bank is No, but the unit has a Stored Electrical Energy row.');
   }
   const other = VACUUM_RECORD_OTHER[getTemplate()];
@@ -10690,7 +11928,39 @@ function formHasData() {
     Object.keys(unitAnswers).length > 0);
 }
 
-function saveAndNew() {
+// What Save & New asks before its list (build 122): each drive without its
+// feeder or its disconnect answer ("Record it now" / "Not now"), then an arc
+// flash label neither photographed nor marked "No label". Resolves false to stay
+// on the form (closed, or "Take the photo").
+function drivesToAskAtSave() { return unitDrives(sources).filter(d => !d.fed || !d.answer); }
+function arcFlashToAskAtSave() {
+  return arcFlashAskedFor(getEquipType()) && !photoSlotTaken('equip_arcflash') && !unitAnswers.arcFlashNone;
+}
+async function askBeforeSave() {
+  for (const t of drivesToAskAtSave().map(d => ({ src: d.src, k: d.k }))) {
+    const d = unitDrives(sources).find(x => x.src === t.src && x.k === t.k);
+    if (!d || (d.fed && d.answer)) continue;
+    const v = await askChoice({ id: 'drive-save', defaultValue: 'later', drive: d.tag,
+      title: html`${driveRef(d, true)} ${!d.fed ? 'has no feeder recorded' : 'has no answer about its disconnect'}`,
+      html: !d.fed ? html`Record the breaker that feeds it, then whether its own disconnect isolates all incoming power.`
+                   : html`Does its own disconnect isolate all incoming power? Look for a lockable handle on the drive that switches the incoming line.`,
+      choices: [{ value: 'record', label: 'Record it now', primary: true }, { value: 'later', label: 'Not now' }] });
+    if (v === 'record') await recordDrive(d);   // a Cancel inside goes on with the save
+    else if (v !== 'later') return false;
+  }
+  if (arcFlashToAskAtSave()) {
+    const type = getEquipType();
+    const v = await askChoice({ id: 'arc-flash-save', defaultValue: 'save', title: 'Arc flash label',
+      html: html`Photograph the arc flash label on this ${type === 'ATS' ? type : type.toLowerCase()}.`,
+      choices: [{ value: 'photo', label: 'Take the photo', primary: true }, { value: 'none', label: 'No label on it' }, { value: 'save', label: 'Save without it' }] });
+    if (v === 'photo') { scrollToArcFlashSlot(); return false; }
+    if (v === 'none') setArcFlashNone(true);
+    else if (v !== 'save') return false;
+  }
+  return true;
+}
+
+async function saveAndNew() {
   if (refuseIfPhotoWritesBusy('Save & New')) return;
   const equipName = document.getElementById('equipName').value.trim();
   if (!equipName) {
@@ -10703,8 +11973,18 @@ function saveAndNew() {
   }
   // What the cards show is what is saved (build 110 — see refreshSourceDependents)
   applySimpleVerifDefaults();
-  // Warn (don't block) if anything expected is still blank
-  const missing = collectIncompleteFields();
+  // Build 122: the drives' feeders and disconnects and the arc flash label are
+  // asked first — only when one is due; otherwise this runs straight through, as before
+  const drivesAsked = drivesToAskAtSave().length > 0;
+  if (drivesAsked || arcFlashToAskAtSave()) {
+    const session = formSession;
+    if (!(await askBeforeSave())) return;
+    if (session !== formSession || refuseIfPhotoWritesBusy('Save & New')) return;
+    applySimpleVerifDefaults();
+  }
+  // Warn (don't block) if anything expected is still blank — the drives just
+  // asked about aren't listed again (build 122 review)
+  const missing = collectIncompleteFields({ drivesAsked });
   const notices = collectSaveNotices();
   if (missing.length || notices.length) { showIncompleteWarning(missing, notices); return; }
   performSaveAndNew();
@@ -11536,8 +12816,10 @@ async function executeDuplicate(index, withPhotos) {
   // A duplicate is another unit, surveyed now: its date is the day it's saved (build 109)
   setSurveyDateField('');
   // Its answers for loto-web come along (build 118), but not a change-later
-  // mark: that note is about the unit it was written on.
-  { const a = Object.assign({}, entry.unitAnswers || {}); delete a.changeLater; loadUnitAnswers(a); }
+  // mark: that note is about the unit it was written on. Nor (build 122) what
+  // was looked for on that unit and not found: its arc flash label and a
+  // transformer's other sources.
+  { const a = Object.assign({}, entry.unitAnswers || {}); delete a.changeLater; delete a.arcFlashNone; delete a.xfmrAltNone; loadUnitAnswers(a); }
 
   // Restore template — check if it's a custom value
   const templateSel = document.getElementById('equipTemplate');
@@ -11562,8 +12844,19 @@ async function executeDuplicate(index, withPhotos) {
   // the other unit's breaker. The tech enters this unit's own.
   // Build 119: the existing tags too — the copy starts "not checked" (loto-web Q6).
   // Build 120: and the spring return, read from each copy's own nameplate.
-  sources.forEach(s => { if (s) { delete s.sourceId; delete s.priorSourceIds; s.deviceId = ''; delete s.existingTag; delete s.springReturn; delete s.labelWait; delete s.dcBusV; ensureSourceId(s); } });
-  const dupSources = sources.slice();   // the source OBJECTS the copies belong to
+  // Build 122: and each drive's disconnect answer, judged on the copy's own drive.
+  sources.forEach(s => { if (s) { delete s.sourceId; delete s.priorSourceIds; s.deviceId = ''; delete s.existingTag; delete s.springReturn; delete s.labelWait; delete s.dcBusV; delete s.driveIsolates; ensureSourceId(s); } });
+  const dupSources = sources.slice();   // the source OBJECTS the copies belong to (by the original's index)
+  // Build 122 review: the rows that name the ORIGINAL unit's own breakers in
+  // their Location — a drive's Feeder, a transformer's Secondary Main and
+  // Alternate Source rows — are not copied (the Device ID rule above, for rows
+  // whose breaker rides in the Location): the copy records its own, which the
+  // feeder and transformer prompts and Save & New then ask for. Their photos
+  // are not copied either.
+  sources = sources.filter(s => !isUnitBreakerRow(s));
+  const droppedBreakerRows = dupSources.length - sources.length;
+  // the kinds left behind, for the message (build 122 second review)
+  const droppedKinds = [...new Set(dupSources.filter(isUnitBreakerRow).map(s => SOURCE_ROLES[sourceRoleOf(s)].noun))];
 
   // With photos, the copy counts as running from here (build 110): a source's
   // automatic Duplicate = Yes waits for its copied photo before it is settled
@@ -11615,6 +12908,7 @@ async function executeDuplicate(index, withPhotos) {
         if (!photo || !photo.dbKey) continue;
         const sm = /^source_(\d+)$/.exec(slot);
         if (sm && !dupSources[parseInt(sm[1], 10)]) continue;       // stale ref past the last source
+        if (sm && !sources.includes(dupSources[parseInt(sm[1], 10)])) continue;   // a row not copied (above), or removed meanwhile
         const copy = await copyPhoto(photo, slotTokenFor(slot, dupSources));
         if (session !== formSession) { abandoned = true; break; }
         // Place it where its SOURCE is now (the user may have reordered).
@@ -11657,10 +12951,11 @@ async function executeDuplicate(index, withPhotos) {
   const photoCount = Object.keys(photos).filter(k => photos[k] && photos[k].dbKey).length + miscPhotos.length;
   if (withPhotos && dupFailed > 0) {
     showToast(`⚠ Duplicated "${entry.equipName}" but ${dupFailed} of ${dupFailed + dupCopied} photo cop${dupFailed === 1 ? 'y' : 'ies'} FAILED — retake those slots`, true);
-  } else if (withPhotos) {
-    showToast(`Duplicated "${entry.equipName}" with ${photoCount} photo${photoCount !== 1 ? 's' : ''} (copies) — update name`);
   } else {
-    showToast(`Duplicated "${entry.equipName}" (info only) — update name`);
+    // Build 122 review: say so when the original's own breaker rows stayed behind
+    const own = droppedBreakerRows ? ` — record its own ${droppedKinds.join(' / ')} breaker${droppedBreakerRows !== 1 ? 's' : ''}` : '';
+    if (withPhotos) showToast(`Duplicated "${entry.equipName}" with ${photoCount} photo${photoCount !== 1 ? 's' : ''} (copies) — update name` + own);
+    else showToast(`Duplicated "${entry.equipName}" (info only) — update name` + own);
   }
 }
 
@@ -12251,7 +13546,10 @@ async function runCombinedExport(opts) {
   };
 
   // ---- PASS 1: assign H-numbers and collect photo bytes ----
-  // For each entry, assign H-numbers in slot order: main → dataplate → EE → source1..N
+  // For each entry, assign H-numbers in slot order: main → dataplate → EE →
+  // arc flash label (build 122) → source1..N. EVERY equipment slot must be read
+  // here: a slot left out would be dropped silently while the unit is stamped
+  // exportedAllPhotos.
   // Only slots that actually have a photo get a number.
   // We store the mapping so the Info Sheet can reference it.
   //
@@ -12261,7 +13559,7 @@ async function runCombinedExport(opts) {
   // exported: it's excluded and reported, because shipping whatever bytes sit
   // at a colliding key is exactly how five facilities' photos were corrupted.
 
-  const entryMaps = []; // one per entry: { mainH, dpH, eeH, sourceHs: [] }
+  const entryMaps = []; // one per entry: { mainH, dpH, eeH, afH, sourceHs: [] }
 
   const unsafeRefs = [];     // { entryId, entryName, slot, dbKey, reason }
   const exportRecords = [];  // manifest: { filename, sha256, entries: [{entryId, slot, sourceId?, dupOf?}] }
@@ -12314,12 +13612,15 @@ async function runCombinedExport(opts) {
   }
 
   for (const entry of allEntries) {
-    const map = { mainH: null, dpH: null, eeH: null, sourceHs: [] };
+    const map = { mainH: null, dpH: null, eeH: null, afH: null, sourceHs: [] };
     const ep = entry.photos || {};
 
     map.mainH = await resolveExportPhoto(entry, 'main', ep.equip_main);
     map.dpH   = await resolveExportPhoto(entry, 'dataplate', ep.equip_dataplate);
     map.eeH   = await resolveExportPhoto(entry, 'ee', ep.equip_ee);
+    // The arc flash label (build 122): after EE, before the sources — whatever the
+    // unit's type now, a photo it holds ships
+    map.afH   = await resolveExportPhoto(entry, 'arcflash', ep.equip_arcflash);
 
     for (let i = 0; i < entry.sources.length; i++) {
       const src = entry.sources[i];
@@ -12422,7 +13723,7 @@ async function runCombinedExport(opts) {
   }
 
   // ---- PASS 2: build CSV ----
-  let csv = 'Hospital Code,Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Valve State,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames,Valve Marks\n';
+  let csv = 'Hospital Code,Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Valve State,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames,Valve Marks,Arc Flash Photo Filename\n';
 
   allEntries.forEach((entry, ei) => {
     const map = entryMaps[ei];
@@ -12438,7 +13739,7 @@ async function runCombinedExport(opts) {
         quote(entry.template || ''), quote(entry.tiedTo || ''),
         quote(entry.tiedToName || ''), quote(entry.notes || ''),
         i + 1, quote(src.energySource), quote(src.deviceType), quote(src.deviceId || ''), src.quantity,
-        quote(src.location), effectiveDuplicate(src, (entry.photos || {})['source_' + i]), quote(src.verification),
+        quote(sourceLocationForExport(src)), effectiveDuplicate(src, (entry.photos || {})['source_' + i]), quote(src.verification),
         quote(src.valveState || 'normal'),
         quote(map.sourceHs[i] || ''), quote(src.detail || ''),
         quote(linkedStr),
@@ -12447,7 +13748,9 @@ async function runCombinedExport(opts) {
         quote(diagramFiles[ei] || ''),
         quote(miscFileNames[ei] || ''),
         // Where the tech tapped the valve(s) in this source's photo (build 92)
-        quote(map.sourceHs[i] ? valveMarksText(sourceMarksForExport(entry, i)) : '')
+        quote(map.sourceHs[i] ? valveMarksText(sourceMarksForExport(entry, i)) : ''),
+        // The arc flash label's photo (build 122): the last column
+        quote(map.afH || '')
       ].join(',') + '\n';
     });
   });
@@ -12468,6 +13771,7 @@ async function runCombinedExport(opts) {
       const cap = captureInfoOf(ref, map.sourceHs[i]) || {};
       const out = {
         ...src,
+        location: sourceLocationForExport(src),   // a role row keeps its prefix (build 122)
         // an automatic Yes holds only with its borrowed photo (build 110)
         duplicate: effectiveDuplicate(src, ref),
         valveState: src.valveState || 'normal',   // always present for downstream (loto-web)
@@ -12490,6 +13794,8 @@ async function runCombinedExport(opts) {
         out.dcBusV = dcBusForJson(src);
         out.labelPhotoFile = map.labelHs[i] ? 'photos/' + map.labelHs[i] : '';
       } else { delete out.labelWait; delete out.dcBusV; delete out.labelPhotoFile; }
+      // The drive's own disconnect (build 122, backup only): per unit on a drive row, else no key.
+      if (isDriveRow(src)) out.driveIsolates = driveIsolatesForJson(src); else delete out.driveIsolates;
       return out;
     });
     const miscOut = miscFileNames[ei]
@@ -12509,6 +13815,7 @@ async function runCombinedExport(opts) {
         main:      map.mainH ? 'photos/' + map.mainH : '',
         dataplate: map.dpH   ? 'photos/' + map.dpH   : '',
         ee:        map.eeH   ? 'photos/' + map.eeH   : '',
+        arcflash:  map.afH   ? 'photos/' + map.afH   : '',   // build 122
         diagram:   diagramFiles[ei] ? 'diagrams/' + diagramFiles[ei] : '',
         misc:      miscOut
       },
@@ -12517,6 +13824,7 @@ async function runCombinedExport(opts) {
         main:      captureInfoOf((photos || {}).equip_main, map.mainH),
         dataplate: captureInfoOf((photos || {}).equip_dataplate, map.dpH),
         ee:        captureInfoOf((photos || {}).equip_ee, map.eeH),
+        arcflash:  captureInfoOf((photos || {}).equip_arcflash, map.afH),
         misc:      miscCaptured[ei] || []   // one per file in photoFiles.misc, same order (build 110)
       }
     };
@@ -12581,7 +13889,9 @@ async function runCombinedExport(opts) {
         { width: 22 },  // 16: Existing Tag (build 119)
         { width: 14 },  // 17: Spring Return (build 120)
         { width: 12 },  // 18: Label Wait (build 121)
-        { width: 10 }   // 19: DC Bus V (build 121)
+        { width: 10 },  // 19: DC Bus V (build 121)
+        { width: 18 },  // 20: Drains To (build 122)
+        { width: 14 }   // 21: Drive Isolates (build 122)
       ];
 
       // Style definitions matching original info sheet
@@ -12597,7 +13907,7 @@ async function runCombinedExport(opts) {
       const VALVE_STATE_SHEET_TEXT = { normally_closed: 'Normally Closed', normally_open: 'Normally Open' };
       function applyRow(row, font, fill, borders) {
         row.eachCell({ includeEmpty: true }, (cell, colNum) => {
-          if (colNum <= 19) {
+          if (colNum <= 21) {
             cell.font = font;
             if (fill) cell.fill = fill;
             if (borders) cell.border = borders;
@@ -12636,13 +13946,19 @@ async function runCombinedExport(opts) {
         // the surveyed equipment type, so it says so (build 109; it read
         // "Details", and loto-web stored the type as the main photo's position).
         // loto-web reads every cell by position: only the label changed.
-        const eqHeaderRow = ws.addRow(['Equipment ID/Name','','','Location','Main Photo','Equipment Type','','Data Plate Photo','EE Number Photo','Page #','Diagram File','Misc Photo Files']);
+        // Column 13 (build 122): "Arc Flash Label" on ATS, Generator and Transformer
+        // blocks — the photo's file name, "No label", or blank (not checked) — and
+        // on any block whose unit holds an arc flash photo (build 122 review).
+        const arcHere = arcFlashAskedFor(entry.equipType) || !!map.afH;
+        const eqHeaderRow = ws.addRow(['Equipment ID/Name','','','Location','Main Photo','Equipment Type','','Data Plate Photo','EE Number Photo','Page #','Diagram File','Misc Photo Files',
+          arcHere ? 'Arc Flash Label' : '']);
         applyRow(eqHeaderRow, headerFont, labelFill, allBorders);
         const eqHdrNum = eqHeaderRow.number;
         ws.mergeCells(eqHdrNum, 1, eqHdrNum, 2); // A:B merge
 
         // Equipment data row
-        const eqDataRow = ws.addRow([entry.equipName || '', '', '', location, map.mainH || '', entry.equipType || '', '', map.dpH || '', map.eeH || '', pageNum, diagramFiles[ei] || '', miscFileNames[ei] || '']);
+        const eqDataRow = ws.addRow([entry.equipName || '', '', '', location, map.mainH || '', entry.equipType || '', '', map.dpH || '', map.eeH || '', pageNum, diagramFiles[ei] || '', miscFileNames[ei] || '',
+          arcHere ? arcFlashSheetValue(entry, map.afH) : '']);
         applyRow(eqDataRow, dataFont, null, allBorders);
         eqDataRow.getCell(10).font = boldData;
         const eqDataNum = eqDataRow.number;
@@ -12659,6 +13975,8 @@ async function runCombinedExport(opts) {
         // The label wait (build 121): columns 18 / 19 headed, and column 10 used,
         // only on a unit with a row that takes the question.
         const lwHere = (entry.sources || []).some(x => sourceTakesLabelWait(x, entry.equipType, entry.template));
+        // The unit's facility (build 122): the release question on the new media follows it
+        const fac = entryHospitalCode(entry);
         // 10 energy source rows — FIXED: loto-web's office importer reads this
         // sheet as 27-row blocks, so a taller block would shift every unit after
         // it. Sources 11+ are in the CSV and entries.json (the export warns).
@@ -12676,7 +13994,11 @@ async function runCombinedExport(opts) {
             'Drain Location', 'Lock Open',
             tagsApply ? 'Existing Tag' : '',   // build 119
             dampersHere ? 'Spring Return' : '',   // build 120
-            lwHere ? 'Label Wait' : '', lwHere ? 'DC Bus V' : ''   // build 121
+            lwHere ? 'Label Wait' : '', lwHere ? 'DC Bus V' : '',   // build 121
+            // build 122, on the row's own label row only: where a fuel oil or
+            // chemical drain discharges, and a drive's own disconnect
+            (src && sourceTakesDrainsTo(src, fac)) ? 'Drains To' : '',
+            (src && isDriveRow(src)) ? 'Drive Isolates' : ''
           ]);
           applyRow(srcLabelRow, labelFont, labelFill, allBorders);
 
@@ -12697,7 +14019,7 @@ async function runCombinedExport(opts) {
             src ? (src.deviceType   || '') : '',
             src ? (src.deviceId     || '') : '',
             src ? (src.quantity     || '') : '',
-            src ? (src.location     || '') : '',
+            src ? sourceLocationForExport(src) : '',   // a role row keeps its prefix (build 122)
             srcH || '',
             detailCell,
             src ? effectiveDuplicate(src, (entry.photos || {})['source_' + s]) : '',   // an automatic Yes needs its photo (build 110)
@@ -12713,8 +14035,8 @@ async function runCombinedExport(opts) {
             // starts the box + arrow there. Blank without a photo.
             srcH ? valveMarksText(sourceMarksForExport(entry, s)) : '',
             linkCell,
-            // Drain location and lock-open (build 118)
-            src ? drainLocationSheetText(src) : '',
+            // Drain location and lock-open (build 118; the build 122 media by the unit's facility)
+            src ? drainLocationSheetText(src, fac) : '',
             src ? lockOpenSheetText(src) : '',
             // Existing tag (build 119): one position per unit, "; "-joined
             (src && tagsApply) ? existingTagCellText(src) : '',
@@ -12722,7 +14044,10 @@ async function runCombinedExport(opts) {
             (src && dampersHere) ? springReturnSheetText(src) : '',
             // The label wait and DC bus voltage (build 121), per unit
             (src && lwHere && sourceTakesLabelWait(src, entry.equipType, entry.template)) ? labelWaitCellText(src) : '',
-            (src && lwHere && sourceTakesLabelWait(src, entry.equipType, entry.template)) ? dcBusCellText(src) : ''
+            (src && lwHere && sourceTakesLabelWait(src, entry.equipType, entry.template)) ? dcBusCellText(src) : '',
+            // Drains To and Drive Isolates (build 122), under their row's headers
+            (src && sourceTakesDrainsTo(src, fac)) ? drainsToSheetText(src, fac) : '',
+            (src && isDriveRow(src)) ? driveIsolatesCellText(src) : ''
           ]);
           applyRow(srcDataRow, dataFont, null, allBorders);
         }
@@ -13451,6 +14776,7 @@ function releaseWipHold(hold) {
 function autoSaveCurrent() {
   try { updateDiscardButton(); } catch (e) {}   // the form's Discard / Cancel edit follows what it holds (build 109)
   try { renderUnitQuestions(false); } catch (e) {}   // the "For loto-web" questions follow the type, template and rows (build 118)
+  try { syncArcFlashSlot(); } catch (e) {}   // the arc flash slot follows the type (build 122)
   if (!_bootWipSettled || !tabMayWrite()) return;
   setAutosaveStatus('saving');
   if (_wipHold) {
@@ -15563,6 +16889,7 @@ async function scanTextToField(inputId, pick) {
   if (before && before !== text && !confirm('Replace \u201c' + before + '\u201d with the scanned \u201c' + text + '\u201d?')) return;
   input.value = text;
   input.dispatchEvent(new Event('input', { bubbles: true }));
+  if (pick === 'locationId') input.dispatchEvent(new Event('change', { bubbles: true }));   // committed, as typing then leaving the box
   const preview = text.length > 40 ? text.slice(0, 40) + '…' : text;
   showToast(`Scanned: "${preview}"`);
 }
