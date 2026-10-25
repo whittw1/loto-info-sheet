@@ -5775,6 +5775,9 @@ function getNextForPrefix(prefix) {
 // Determine the prefix letter for a given energy source name (same logic as picker)
 function getPrefixForEnergySource(energySource) {
   if (!energySource) return 'E';
+  // A pump's exhaust by any name is P, as loto-web numbers it since 2026-10-25
+  // ("Exhaust - Vacuum", "Medical Vacuum Discharge Line"; its is_vacuum_exhaust)
+  if (isVacuumExhaust(energySource)) return 'P';
   let prefix = 'E';
   let bestLen = 0;
   for (const [key, val] of Object.entries(ENERGY_LABEL_PREFIX)) {

@@ -10648,6 +10648,16 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T322 — a pump's exhaust by any name is labelled P on the diagram
+  async function t322_anExhaustByAnyNameIsLabelledP() {
+    const N = 'T322 loto-web\'s IDs (2026-10-25): a vacuum pump\'s exhaust by any name — "Exhaust - Vacuum", "Medical Vacuum Discharge Line", "Vacuum Pump Exhaust", "Vacuum Air Out" — takes the diagram label letter P, as loto-web numbers it (P-n); the other letters are unchanged';
+    await resetAppState();
+    const got = {};
+    got.p = ['Exhaust - Vacuum', 'Medical Vacuum Discharge Line', 'Vacuum Pump Exhaust', 'Vacuum Air Out', 'Vacuum Air In'].map(getPrefixForEnergySource).join();
+    got.rest = ['Electrical 480V', 'HPS', 'CHW In', 'Natural Gas', 'Stored Electrical Energy'].map(getPrefixForEnergySource).join();
+    const ok = got.p === 'P,P,P,P,P' && got.rest === 'E,S,W,G,ES';
+    record(N, ok, (ok ? '' : 'FAILED — ') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -10782,7 +10792,8 @@
     t311_aTagSharedButForSpacesIsShared, t312_aMiddleGroupOrphanIsOfferedForReuse, t313_aPrefixPickKeepsTheLinkUntilTheIdIsCommitted,
     t314_aRowNoLongerAFeederKeepsNoLink, t315_aDeletedDrivesRepeatedTokenGoes, t316_aReusedFeedersOldTagGoesOnlyIfAsked,
     t317_anEmptiedBoxKeepsItsLink, t318_aBracketedWordIsNeverOfferedAsATag, t319_reuseAsksAboutTheClosingBracketsOtherWords,
-    t320_removingABracketKeepsTheTechsSpacing, t321_theFeederPromptOffersTheDrivesOwnTag];
+    t320_removingABracketKeepsTheTechsSpacing, t321_theFeederPromptOffersTheDrivesOwnTag,
+    t322_anExhaustByAnyNameIsLabelledP];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
