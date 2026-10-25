@@ -10502,6 +10502,34 @@
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T316 — a reused feeder's old tag goes only when the tech says so
+  async function t316_aReusedFeedersOldTagGoesOnlyIfAsked() {
+    const N = 'T316 build 122 sixth review (wilkins: ask the tech): reusing a hand-typed feeder "Feeder: MCC-2A (VFD-1) bkr 14" for the retagged drive VFD-5 asks whether its old "VFD-1" goes — Take it out gives "Feeder: MCC-2A bkr 14 (VFD-5)", so a later drive tagged VFD-1 is not read as fed by it; Keep it (or closing) leaves "(VFD-1)" as typed';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      const run = async (answer) => {
+        formOfType('AHU-316', 'Air Handler', 'AHU - Steam');
+        sources = [DRIVE({ deviceId: 'VFD-5' }), FEEDER('Feeder: MCC-2A (VFD-1) bkr 14'), DRIVE({ deviceId: 'VFD-2' }), FEEDER('Feeder: MCC-2A bkr 15 (VFD-2)')];
+        sources.forEach(ensureSourceId); renderSources();
+        const asked = [];
+        await withDialogs({ choice: (o) => { asked.push(o.id); return ({ 'feeder-orphan': 'reuse', 'feeder-orphan-old': answer, 'drive-isolates': 'yes' })[o.id] || 'cancel'; } },
+          async () => { await recordDrive(unitDrives(sources).find(d => d.src === sources[0])); });
+        return [asked.includes('feeder-orphan-old'), sources[1].location].join(' | ');
+      };
+      got.remove = await run('remove');
+      sources.push(DRIVE({ deviceId: 'VFD-1' })); ensureSourceId(sources[4]);
+      got.later = feederNamesTag(sources[1].location, 'VFD-1');
+      got.keep = await run('keep');
+      got.closed = await run(null);
+      want(got.remove === 'true | Feeder: MCC-2A bkr 14 (VFD-5)' && got.later === false
+        && got.keep === 'true | Feeder: MCC-2A (VFD-1) bkr 14 (VFD-5)' && got.closed === got.keep, JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -10634,7 +10662,7 @@
     t306_anExhaustByAnyNameAsksNothing, t307_aRunOfSpacesInATagCountsAsOne,
     t308_aRetagShowsInTheFeedersBoxAtOnce, t309_anExhaustRowByAnyNameIsThePumpsExhaust, t310_theRenameQuestionFindsTheDriveByItsCleanedTag,
     t311_aTagSharedButForSpacesIsShared, t312_aMiddleGroupOrphanIsOfferedForReuse, t313_aPrefixPickKeepsTheLinkUntilTheIdIsCommitted,
-    t314_aRowNoLongerAFeederKeepsNoLink, t315_aDeletedDrivesRepeatedTokenGoes];
+    t314_aRowNoLongerAFeederKeepsNoLink, t315_aDeletedDrivesRepeatedTokenGoes, t316_aReusedFeedersOldTagGoesOnlyIfAsked];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

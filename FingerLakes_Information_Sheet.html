@@ -3296,10 +3296,19 @@ async function addFeederForDrive(index, unit) {
         orphan.location = feederLocationNaming(orphan.location, [nextTag]);
         orphan.feeds = [];
         addFeederLink(orphan, target.src, target.k);
-        // a tag in another "( … )" is the tech's text: it stays, and the toast says so
-        const left = feederGroupTags(orphan.location).filter(t => tagKey(t) !== tagKey(nextTag));
+        // A tag left in another "( … )" (the old drive's, or the tech's own words): the
+        // tech says whether it goes — left in, loto-web would read this breaker as
+        // feeding any drive later tagged so (wilkins 2026-10-25, sixth review)
+        const kept = [];
+        for (const old of feederGroupTags(orphan.location).filter(t => tagKey(t) !== tagKey(nextTag))) {
+          const drop = await askChoice({ id: 'feeder-orphan-old', defaultValue: 'keep', title: 'Feeder: the old tag',
+            html: html`Source #${n}&rsquo;s Location also names &ldquo;${old}&rdquo;. Take it out? If it was the old drive&rsquo;s tag, loto-web would read this breaker as feeding any drive tagged &ldquo;${old}&rdquo;.`,
+            choices: [{ value: 'remove', label: 'Take it out', primary: true }, { value: 'keep', label: 'Keep it' }] });
+          if (drop === 'remove' && sources.includes(orphan)) orphan.location = feederLocationWithout(orphan.location, old);
+          else kept.push(old);
+        }
         return done(orphan, nextTag, 'Source #' + n + ' is now the feeder for ' + one(nextTag)
-          + (left.length ? ' \u2014 its Location still reads \u201c' + left.join(', ') + '\u201d: edit it if that\u2019s gone' : ''));
+          + (kept.length ? ' \u2014 its Location still reads \u201c' + kept.join(', ') + '\u201d' : ''));
       }
       setDriveUnitTag(drive, target.k, asTag);   // the unit's box was blank: nothing typed is replaced
       addFeederLink(orphan, drive, target.k);
@@ -3460,6 +3469,23 @@ function tagKey(t) { return pySpaces(t).toLowerCase(); }
 // and "," / "( )" the feeder's drive list, so they become spaces (build 122 third
 // review). Every tag comparison is tagKey, of this form where separators differ.
 function cleanTagText(t) { return pySpaces(String(t || '').replace(/[;,()]+/g, ' ')); }
+// A feeder's Location with one tag taken out of the group that holds it, and that
+// group gone if nothing is left in it ("Feeder: MCC-2A (VFD-1) bkr 14 (VFD-5)" less
+// "VFD-1" → "Feeder: MCC-2A bkr 14 (VFD-5)"). Only on the tech's say-so.
+function feederLocationWithout(loc, tag) {
+  let done = false, emptied = false;
+  const out = String(loc || '').replace(/\(([^()]*)\)/g, (group, inner) => {
+    if (done) return group;
+    const toks = inner.split(/[,;]/).map(t => t.trim()).filter(Boolean);
+    const j = toks.findIndex(t => tagKey(t) === tagKey(tag));
+    if (j < 0) return group;
+    done = true;
+    toks.splice(j, 1);
+    if (!toks.length) { emptied = true; return ''; }
+    return '(' + toks.join(', ') + ')';
+  });
+  return emptied ? out.replace(/ {2,}/g, ' ').trim() : out;
+}
 // Every drive tag in a feeder's "( … )" groups, as loto-web's names_tag reads them all.
 function feederGroupTags(loc) {
   return [...String(loc || '').matchAll(/\(([^()]*)\)/g)].flatMap(m => m[1].split(/[,;]/)).map(t => t.trim()).filter(Boolean);
