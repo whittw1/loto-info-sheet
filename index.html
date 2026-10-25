@@ -3281,45 +3281,49 @@ async function addFeederForDrive(index, unit) {
   // drive of the unit is offered first — its drive retagged since, or (an
   // untagged drive) recorded before the drive's Device ID was typed.
   const target = unit != null ? unitDrives(sources).find(d => d.src === drive && d.k === unit) : unfed;
-  const orphan = target && !target.fed && orphanFeederRows(sources, target)[0];
-  // The tag offered to an untagged drive comes from the closing "( … )", where the
-  // app writes it: a word in another bracket ("(north)") is never offered as a
-  // drive's tag (build 122 seventh review). Any group still marks an orphan.
-  const named = orphan ? feederTagsOf(orphan.location) : [];
-  const asTag = !nextTag && named.length === 1 ? named[0] : '';
-  if (orphan && (nextTag || asTag)) {
+  // Every orphan is offered in turn, the app's own form first (its tags in the
+  // closing "( … )"): "No, another breaker" moves to the next — a feeder whose
+  // only bracket is a word ("(north)") no longer hides the one naming the old
+  // drive (build 122 eighth review). The tag offered to an untagged drive comes
+  // from the closing "( … )" only (seventh review).
+  const orphans = (target && !target.fed ? orphanFeederRows(sources, target) : [])
+    .map((row, x) => ({ row, x, closing: feederTagsOf(row.location) }))
+    .sort((p, q) => (q.closing.length ? 1 : 0) - (p.closing.length ? 1 : 0) || p.x - q.x);
+  for (const { row: orphan, closing } of orphans) {
+    const asTag = !nextTag && closing.length === 1 ? closing[0] : '';
+    if (!nextTag && !asTag) continue;
+    if (!sources.includes(orphan)) continue;
     const n = sources.indexOf(orphan) + 1;
     const reuse = await askChoice({ id: 'feeder-orphan', defaultValue: 'new', title: 'Feeder: the breaker',
       html: nextTag ? html`Source #${n} (${orphan.location}) names no drive on this unit now. Is it the breaker that feeds ${nextTag}?`
                     : html`Source #${n} (${orphan.location}) is the feeder for ${asTag}. Is this drive ${asTag}? Its Device ID is blank.`,
       choices: [{ value: 'reuse', label: 'Yes, it is', primary: true }, { value: 'new', label: 'No, another breaker' }, { value: 'cancel', label: 'Cancel' }] });
     if (reuse === 'cancel' || !sources.includes(drive)) return null;
-    if (reuse === 'reuse' && sources.includes(orphan)) {
-      if (nextTag) {
-        // the new tag takes the closing group's first tag's place, as a retag would;
-        // any other word there or in another group is the tech's to keep or take out
-        const closing = feederTagsOf(orphan.location);
-        orphan.location = feederLocationNaming(orphan.location, [nextTag].concat(closing.slice(1)));
-        orphan.feeds = [];
-        addFeederLink(orphan, target.src, target.k);
-        // A tag left in a "( … )" (the old drive's, or the tech's own words): the tech
-        // says whether it goes — left in, loto-web would read this breaker as feeding
-        // any drive later tagged so (wilkins 2026-10-25, sixth / seventh reviews)
-        const kept = [];
-        for (const old of feederGroupTags(orphan.location).filter(t => tagKey(t) !== tagKey(nextTag))) {
-          const drop = await askChoice({ id: 'feeder-orphan-old', defaultValue: 'keep', title: 'Feeder: the old tag',
-            html: html`Source #${n}&rsquo;s Location also names &ldquo;${old}&rdquo;. Take it out? If it was the old drive&rsquo;s tag, loto-web would read this breaker as feeding any drive tagged &ldquo;${old}&rdquo;.`,
-            choices: [{ value: 'remove', label: 'Take it out', primary: true }, { value: 'keep', label: 'Keep it' }] });
-          if (drop === 'remove' && sources.includes(orphan)) orphan.location = feederLocationWithout(orphan.location, old);
-          else kept.push(old);
-        }
-        return done(orphan, nextTag, 'Source #' + n + ' is now the feeder for ' + one(nextTag)
-          + (kept.length ? ' \u2014 its Location still reads \u201c' + kept.join(', ') + '\u201d' : ''));
+    if (reuse !== 'reuse' || !sources.includes(orphan)) continue;
+    if (nextTag) {
+      // One tag in the closing group is the old drive's: the new tag takes its
+      // place, as a retag would. Several: the new tag joins them, and each old
+      // word is asked about below — none is dropped unasked (eighth review).
+      orphan.location = feederLocationNaming(orphan.location, closing.length > 1 ? [nextTag].concat(closing) : [nextTag]);
+      orphan.feeds = [];
+      addFeederLink(orphan, target.src, target.k);
+      // A tag left in a "( … )" (the old drive's, or the tech's own words): the tech
+      // says whether it goes — left in, loto-web would read this breaker as feeding
+      // any drive later tagged so (wilkins 2026-10-25, sixth / seventh reviews)
+      const kept = [];
+      for (const old of feederGroupTags(orphan.location).filter(t => tagKey(t) !== tagKey(nextTag))) {
+        const drop = await askChoice({ id: 'feeder-orphan-old', defaultValue: 'keep', title: 'Feeder: the old tag',
+          html: html`Source #${n}&rsquo;s Location also names &ldquo;${old}&rdquo;. Take it out? If it was the old drive&rsquo;s tag, loto-web would read this breaker as feeding any drive tagged &ldquo;${old}&rdquo;.`,
+          choices: [{ value: 'remove', label: 'Take it out', primary: true }, { value: 'keep', label: 'Keep it' }] });
+        if (drop === 'remove' && sources.includes(orphan)) orphan.location = feederLocationWithout(orphan.location, old);
+        else kept.push(old);
       }
-      setDriveUnitTag(drive, target.k, asTag);   // the unit's box was blank: nothing typed is replaced
-      addFeederLink(orphan, drive, target.k);
-      return done(drive, asTag, 'Drive tagged ' + one(asTag) + ' — source #' + n + ' is its feeder');
+      return done(orphan, nextTag, 'Source #' + n + ' is now the feeder for ' + one(nextTag)
+        + (kept.length ? ' \u2014 its Location still reads \u201c' + kept.join(', ') + '\u201d' : ''));
     }
+    setDriveUnitTag(drive, target.k, asTag);   // the unit's box was blank: nothing typed is replaced
+    addFeederLink(orphan, drive, target.k);
+    return done(drive, asTag, 'Drive tagged ' + one(asTag) + ' \u2014 source #' + n + ' is its feeder');
   }
   const panel = await askChoice({ id: 'feeder-panel', defaultValue: 'cancel', title: 'Feeder: the panel',
     html: html`The panel or MCC that feeds this drive, as labelled.`,
@@ -3481,9 +3485,12 @@ function groupTokens(inner) { return String(inner || '').split(/[,;]/).map(t => 
 // the group's new tokens, or null to leave it exactly as typed. A group left with
 // no token goes with the one space before it; no other text is touched (build 122
 // seventh review: a tidy of every double space rewrote the tech's spacing).
+// The app's "( … )" groups (balanced; feederNamesTag keeps loto-web's own pattern).
+const FEEDER_GROUP = '\\(([^()]*)\\)';
 function rewriteFeederGroups(loc, fn) {
   let removed = false;
-  const out = String(loc || '').replace(/( ?)\(([^()]*)\)/g, (whole, lead, inner) => {
+  // the one space before a removed group goes too, whatever space it is (a pasted NBSP, a tab)
+  const out = String(loc || '').replace(new RegExp('(\\s?)' + FEEDER_GROUP, 'g'), (whole, lead, inner) => {
     const toks = fn(groupTokens(inner));
     if (!toks) return whole;
     const list = toks.map(t => String(t || '').trim()).filter(Boolean);
@@ -3505,12 +3512,13 @@ function feederLocationWithout(loc, tag) {
   });
 }
 // Every drive tag in a feeder's "( … )" groups, as loto-web's names_tag reads them all.
-function feederGroupTags(loc) { return [...String(loc || '').matchAll(/\(([^()]*)\)/g)].flatMap(m => groupTokens(m[1])); }
+function feederGroupTags(loc) { return [...String(loc || '').matchAll(new RegExp(FEEDER_GROUP, 'g'))].flatMap(m => groupTokens(m[1])); }
 function feederParenText(loc) { const m = /\(([^()]*)\)\s*$/.exec(String(loc || '')); return m ? m[1] : ''; }
 function feederNamesTag(loc, tag) {
   const t = tagKey(tag);
   if (!t) return false;
   const edge = c => !c || !/[\w-]/.test(c);
+  // loto-web's own group pattern, \(([^)]*)\) — the contract test holds it
   for (const g of String(loc || '').matchAll(/\(([^)]*)\)/g)) {
     const s = pySpaces(g[1]).toLowerCase();
     for (let at = s.indexOf(t); at >= 0; at = s.indexOf(t, at + 1)) {
@@ -3639,14 +3647,13 @@ function syncFeederTags(srcList, opts) {
 // which names it by its tag. (A drive card shows no fed state, so no other card
 // goes stale.) A card being typed in is left for the render.
 function refreshAfterRetag(changed, driveIndex) {
-  if (!changed || !changed.length) return;
   const cards = document.querySelectorAll('#sourcesContainer > .source-card');
-  changed.forEach(f => {
+  (changed || []).forEach(f => {
     const i = sources.indexOf(f), live = cards[i];
     if (i < 0 || !live || live.contains(document.activeElement)) return;
     live.replaceWith(buildSourceCard(f, i));
   });
-  if (driveIndex != null) refreshSourceDependents(driveIndex);
+  if (driveIndex != null && isDriveRow(sources[driveIndex])) refreshSourceDependents(driveIndex);   // with or without a feeder renamed (eighth review)
 }
 // A link the feeder's Location no longer names — neither by the tag it was last
 // named by nor by its drive's tag now — was taken out by the tech: it goes.
@@ -5778,6 +5785,12 @@ function getPrefixForEnergySource(energySource) {
   // A pump's exhaust by any name is P, as loto-web numbers it since 2026-10-25
   // ("Exhaust - Vacuum", "Medical Vacuum Discharge Line"; its is_vacuum_exhaust)
   if (isVacuumExhaust(energySource)) return 'P';
+  return prefixByEnergyName(energySource);
+}
+// The letter by the energy source's name alone — the rule every diagram drawn
+// before 2026-10-25 was labelled by (an exhaust named otherwise was E then).
+function prefixByEnergyName(energySource) {
+  if (!energySource) return 'E';
   let prefix = 'E';
   let bestLen = 0;
   for (const [key, val] of Object.entries(ENERGY_LABEL_PREFIX)) {
@@ -5823,6 +5836,18 @@ function getLabelForLinkedSource(linkedTo) {
   const sameLabels = placedLabels.filter(l => l.text && l.text.startsWith(prefix + '-'));
   if (sameLabels[ordinal]) {
     return { text: sameLabels[ordinal].text, color: ENERGY_LABEL_COLORS[prefix] || sameLabels[ordinal].color || '#222' };
+  }
+  // A diagram drawn before an exhaust by any name became P (2026-10-25) labelled it
+  // by its name's letter (E): that placed label, when the P count has none (eighth review)
+  const oldPrefix = prefixByEnergyName(targetSrc.energySource);
+  if (oldPrefix !== prefix) {
+    let oldOrdinal = 0;   // counted as that diagram was: every row by its name's letter
+    for (let i = 0; i < srcIdx; i++) {
+      const s = entry.sources[i];
+      if (s && prefixByEnergyName(s.energySource) === oldPrefix) oldOrdinal++;
+    }
+    const hit = placedLabels.filter(l => l.text && l.text.startsWith(oldPrefix + '-'))[oldOrdinal];
+    if (hit) return { text: hit.text, color: ENERGY_LABEL_COLORS[oldPrefix] || hit.color || '#222' };
   }
 
   // Ordinal exceeds placed labels — continue numbering from the highest label on the linked equipment.

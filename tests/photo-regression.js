@@ -10582,7 +10582,7 @@
 
   // T319 — reuse asks about the closing brackets' other words too
   async function t319_reuseAsksAboutTheClosingBracketsOtherWords() {
-    const N = 'T319 build 122 seventh review: reusing "Feeder: MCC-2A bkr 14 (VFD-1, spare)" for the retagged VFD-5 puts VFD-5 in VFD-1\'s place and asks whether "spare" goes (Keep it gives "(VFD-5, spare)"), never dropping it unasked; a plain "(VFD-1)" becomes "(VFD-5)" with no question';
+    const N = 'T319 build 122 seventh / eighth reviews: reusing "Feeder: MCC-2A bkr 14 (VFD-1, spare)" for the retagged VFD-5 adds VFD-5 and asks about each old word (VFD-1 taken out, spare kept gives "(VFD-5, spare)"), never dropping one unasked; a plain "(VFD-1)" becomes "(VFD-5)" with no question';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -10594,13 +10594,15 @@
         sources = [DRIVE({ deviceId: 'VFD-5' }), FEEDER(loc), DRIVE({ deviceId: 'VFD-2' }), FEEDER('Feeder: MCC-2A bkr 15 (VFD-2)')];
         sources.forEach(ensureSourceId); renderSources();
         const asked = [];
-        await withDialogs({ choice: (o) => { asked.push(o.id); return ({ 'feeder-orphan': 'reuse', 'feeder-orphan-old': 'keep', 'drive-isolates': 'yes' })[o.id] || 'cancel'; } },
+        await withDialogs({ choice: (o) => { asked.push(o.id);
+            if (o.id === 'feeder-orphan-old') return /VFD-1/.test(unq(o.html || '')) ? 'remove' : 'keep';
+            return ({ 'feeder-orphan': 'reuse', 'drive-isolates': 'yes' })[o.id] || 'cancel'; } },
           async () => { await recordDrive(unitDrives(sources).find(d => d.src === sources[0])); });
         return [sources[1].location, asked.filter(x => x === 'feeder-orphan-old').length].join(' | ');
       };
       got.extra = await run('Feeder: MCC-2A bkr 14 (VFD-1, spare)');
       got.plain = await run('Feeder: MCC-2A bkr 14 (VFD-1)');
-      want(got.extra === 'Feeder: MCC-2A bkr 14 (VFD-5, spare) | 1' && got.plain === 'Feeder: MCC-2A bkr 14 (VFD-5) | 0', JSON.stringify(got));
+      want(got.extra === 'Feeder: MCC-2A bkr 14 (VFD-5, spare) | 2' && got.plain === 'Feeder: MCC-2A bkr 14 (VFD-5) | 0', JSON.stringify(got));
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -10656,6 +10658,111 @@
     got.p = ['Exhaust - Vacuum', 'Medical Vacuum Discharge Line', 'Vacuum Pump Exhaust', 'Vacuum Air Out', 'Vacuum Air In'].map(getPrefixForEnergySource).join();
     got.rest = ['Electrical 480V', 'HPS', 'CHW In', 'Natural Gas', 'Stored Electrical Energy'].map(getPrefixForEnergySource).join();
     const ok = got.p === 'P,P,P,P,P' && got.rest === 'E,S,W,G,ES';
+    record(N, ok, (ok ? '' : 'FAILED — ') + JSON.stringify(got));
+  }
+  // T323 — every orphan is offered in turn, the app's own form first
+  async function t323_everyOrphanIsOfferedInTurn() {
+    const N = 'T323 build 122 eighth review: an unnamed feeder whose only bracket is a word ("Feeder: MCC-2A (north) bkr 14") listed first no longer hides the feeder naming the old drive ("… bkr 16 (VFD-1)") — that one is offered first, and No moves on to the next; for an untagged drive the "(north)" row is skipped and VFD-1 is offered';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      const run = async (tag, answers) => {
+        formOfType('AHU-323', 'Air Handler', 'AHU - Steam');
+        sources = [DRIVE({ deviceId: tag }), FEEDER('Feeder: MCC-2A (north) bkr 14'), FEEDER('Feeder: MCC-2A bkr 16 (VFD-1)'),
+          DRIVE({ deviceId: 'VFD-2' }), FEEDER('Feeder: MCC-2A bkr 15 (VFD-2)')];
+        sources.forEach(ensureSourceId); renderSources();
+        const offered = [];
+        await withDialogs({ choice: (o) => {
+            if (o.id === 'feeder-orphan') { offered.push(/bkr 16/.test(unq(o.html || '')) ? 'bkr16' : 'bkr14'); return answers.shift() || 'cancel'; }
+            if (o.id === 'feeder-orphan-old') return 'keep';
+            return o.id === 'drive-isolates' ? 'yes' : 'cancel'; } },
+          async () => { await recordDrive(unitDrives(sources).find(d => d.src === sources[0])); });
+        return [offered.join(','), sources[0].deviceId, sources[1].location, sources[2].location].join(' | ');
+      };
+      got.first = await run('VFD-5', ['reuse']);
+      got.next = await run('VFD-5', ['new', 'reuse']);
+      got.untagged = await run('', ['reuse']);
+      want(got.first === 'bkr16 | VFD-5 | Feeder: MCC-2A (north) bkr 14 | Feeder: MCC-2A bkr 16 (VFD-5)', 'first: ' + got.first);
+      want(got.next === 'bkr16,bkr14 | VFD-5 | Feeder: MCC-2A (north) bkr 14 (VFD-5) | Feeder: MCC-2A bkr 16 (VFD-1)', 'next: ' + got.next);
+      want(got.untagged === 'bkr16 | VFD-1 | Feeder: MCC-2A (north) bkr 14 | Feeder: MCC-2A bkr 16 (VFD-1)', 'untagged: ' + got.untagged);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T324 — a word first in the closing brackets is asked about too
+  async function t324_aFirstWordInTheClosingBracketsIsAskedAbout() {
+    const N = 'T324 build 122 eighth review: reusing "Feeder: MCC-2A bkr 14 (spare, VFD-1)" for VFD-5 asks about "spare" and "VFD-1" both — the new tag never takes a word\'s place unasked; spare kept, VFD-1 taken out gives "(VFD-5, spare)"';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-324', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-5' }), FEEDER('Feeder: MCC-2A bkr 14 (spare, VFD-1)'), DRIVE({ deviceId: 'VFD-2' }), FEEDER('Feeder: MCC-2A bkr 15 (VFD-2)')];
+      sources.forEach(ensureSourceId); renderSources();
+      const askedAbout = [];
+      await withDialogs({ choice: (o) => {
+          if (o.id === 'feeder-orphan-old') { const w = /VFD-1/.test(unq(o.html || '')) ? 'VFD-1' : 'spare'; askedAbout.push(w); return w === 'VFD-1' ? 'remove' : 'keep'; }
+          return ({ 'feeder-orphan': 'reuse', 'drive-isolates': 'yes' })[o.id] || 'cancel'; } },
+        async () => { await recordDrive(unitDrives(sources).find(d => d.src === sources[0])); });
+      got.r = [askedAbout.sort().join(','), sources[1].location].join(' | ');
+      want(got.r === 'VFD-1,spare | Feeder: MCC-2A bkr 14 (VFD-5, spare)', got.r);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T325 — a linked row finds its label on a diagram drawn before the P letter
+  async function t325_aLinkedRowFindsItsLabelOnAnOlderDiagram() {
+    const N = 'T325 build 122 eighth review: a row linked to a typed pump exhaust ("Vacuum Pump Exhaust") takes the label its unit\'s diagram really has — "E-2" on a diagram drawn before such rows became P, "P-2" on one drawn after — never a made-up "P-2" for a valve marked E-2';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const srcs = () => [mkSrc('Electrical 480V'), mkSrc('Vacuum Air In'), mkSrc('Vacuum Pump Exhaust')];
+    const lbl = (t) => ({ text: t, xPct: 0.5, yPct: 0.5, color: '#222' });
+    const oldE = Object.assign(mkEntry('VP-OLD', { sources: srcs() }), { sketch: { labels: [lbl('E-1'), lbl('P-1'), lbl('E-2')] } });
+    const newE = Object.assign(mkEntry('VP-NEW', { sources: srcs() }), { sketch: { labels: [lbl('E-1'), lbl('P-1'), lbl('P-2')] } });
+    savedEquipment = [oldE, newE];
+    got.old = (getLabelForLinkedSource({ equipName: 'VP-OLD', sourceIndex: 2 }) || {}).text;
+    got.new = (getLabelForLinkedSource({ equipName: 'VP-NEW', sourceIndex: 2 }) || {}).text;
+    got.inlet = (getLabelForLinkedSource({ equipName: 'VP-OLD', sourceIndex: 1 }) || {}).text;
+    want(got.old === 'E-2' && got.new === 'P-2' && got.inlet === 'P-1', JSON.stringify(got));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T326 — a retagged drive's own answer line follows at once, feeder or not
+  async function t326_aRetaggedDrivesAnswerLineFollows() {
+    const N = 'T326 build 122 eighth review: retyping one unit of a Quantity-2 drive with no feeder shows its new tag in the drive\'s answer line at once, the same as after a full render (it waited for the next render when no feeder was renamed)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-326', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2 })]; sources.forEach(ensureSourceId); renderSources();
+      updateUnitDeviceId(0, 0, 'AHU-1-SF');
+      const line = () => { const g = document.getElementById('driveIsoGroup_0'); return g ? g.textContent.replace(/\s+/g, ' ').trim() : ''; };
+      got.shown = line();
+      renderSources();
+      got.same = got.shown === line();
+      want(/AHU-1-SF/.test(got.shown) && got.same, JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T327 — a bracket taken out takes whatever one space was before it
+  async function t327_aBracketTakenOutTakesTheSpaceBeforeIt() {
+    const N = 'T327 build 122 eighth review: a "( … )" taken out of a Location goes with the one space before it whatever that space is — a pasted no-break space or a tab — so no double gap is left';
+    await resetAppState();
+    const got = {};
+    got.nbsp = feederLocationWithout('Feeder: MCC-2A (VFD-1) bkr 14 (VFD-5)', 'VFD-1');
+    got.tab = feederLocationWithout('Feeder: MCC-2A\t(VFD-1) bkr 14 (VFD-5)', 'VFD-1');
+    got.space = feederLocationWithout('Feeder: MCC  2A (VFD-1) bkr 14 (VFD-5)', 'VFD-1');
+    const ok = got.nbsp === 'Feeder: MCC-2A bkr 14 (VFD-5)' && got.tab === 'Feeder: MCC-2A bkr 14 (VFD-5)' && got.space === 'Feeder: MCC  2A bkr 14 (VFD-5)';
     record(N, ok, (ok ? '' : 'FAILED — ') + JSON.stringify(got));
   }
   // ---------- runner --------------------------------------------------------
@@ -10793,7 +10900,8 @@
     t314_aRowNoLongerAFeederKeepsNoLink, t315_aDeletedDrivesRepeatedTokenGoes, t316_aReusedFeedersOldTagGoesOnlyIfAsked,
     t317_anEmptiedBoxKeepsItsLink, t318_aBracketedWordIsNeverOfferedAsATag, t319_reuseAsksAboutTheClosingBracketsOtherWords,
     t320_removingABracketKeepsTheTechsSpacing, t321_theFeederPromptOffersTheDrivesOwnTag,
-    t322_anExhaustByAnyNameIsLabelledP];
+    t322_anExhaustByAnyNameIsLabelledP, t323_everyOrphanIsOfferedInTurn, t324_aFirstWordInTheClosingBracketsIsAskedAbout,
+    t325_aLinkedRowFindsItsLabelOnAnOlderDiagram, t326_aRetaggedDrivesAnswerLineFollows, t327_aBracketTakenOutTakesTheSpaceBeforeIt];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
