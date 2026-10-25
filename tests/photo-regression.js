@@ -10660,34 +10660,37 @@
     const ok = got.p === 'P,P,P,P,P' && got.rest === 'E,S,W,G,ES';
     record(N, ok, (ok ? '' : 'FAILED — ') + JSON.stringify(got));
   }
-  // T323 — every orphan is offered in turn, the app's own form first
+  // T323 — several orphans are put in one question, the app's own form first
   async function t323_everyOrphanIsOfferedInTurn() {
-    const N = 'T323 build 122 eighth review: an unnamed feeder whose only bracket is a word ("Feeder: MCC-2A (north) bkr 14") listed first no longer hides the feeder naming the old drive ("… bkr 16 (VFD-1)") — that one is offered first, and No moves on to the next; for an untagged drive the "(north)" row is skipped and VFD-1 is offered';
+    const N = 'T323 build 122 eighth / ninth reviews: an unnamed feeder whose only bracket is a word ("Feeder: MCC-2A (north) bkr 14") listed first no longer hides the feeder naming the old drive ("… bkr 16 (VFD-1)") — both are put in one question, bkr 16 first, with "No, another breaker" the default; either can be picked; for an untagged drive only VFD-1\'s feeder is offered';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const prevCode = getHospitalCode();
     try {
       setHospitalCode('');
-      const run = async (tag, answers) => {
+      const run = async (tag, answer) => {
         formOfType('AHU-323', 'Air Handler', 'AHU - Steam');
         sources = [DRIVE({ deviceId: tag }), FEEDER('Feeder: MCC-2A (north) bkr 14'), FEEDER('Feeder: MCC-2A bkr 16 (VFD-1)'),
           DRIVE({ deviceId: 'VFD-2' }), FEEDER('Feeder: MCC-2A bkr 15 (VFD-2)')];
         sources.forEach(ensureSourceId); renderSources();
-        const offered = [];
+        const seen = [];
         await withDialogs({ choice: (o) => {
-            if (o.id === 'feeder-orphan') { offered.push(/bkr 16/.test(unq(o.html || '')) ? 'bkr16' : 'bkr14'); return answers.shift() || 'cancel'; }
+            if (o.id === 'feeder-orphan-pick') { seen.push('pick:' + o.choices.map(c => /bkr 16/.test(c.label) ? 'bkr16' : /bkr 14/.test(c.label) ? 'bkr14' : c.value + (c.primary ? '*' : '')).join(',')); return answer; }
+            if (o.id === 'feeder-orphan') { seen.push('one:' + (/bkr 16/.test(unq(o.html || '')) ? 'bkr16' : 'bkr14')); return answer === 'o0' ? 'reuse' : answer; }
             if (o.id === 'feeder-orphan-old') return 'keep';
             return o.id === 'drive-isolates' ? 'yes' : 'cancel'; } },
           async () => { await recordDrive(unitDrives(sources).find(d => d.src === sources[0])); });
-        return [offered.join(','), sources[0].deviceId, sources[1].location, sources[2].location].join(' | ');
+        return [seen.join(' '), sources[0].deviceId, sources[1].location, sources[2].location].join(' | ');
       };
-      got.first = await run('VFD-5', ['reuse']);
-      got.next = await run('VFD-5', ['new', 'reuse']);
-      got.untagged = await run('', ['reuse']);
-      want(got.first === 'bkr16 | VFD-5 | Feeder: MCC-2A (north) bkr 14 | Feeder: MCC-2A bkr 16 (VFD-5)', 'first: ' + got.first);
-      want(got.next === 'bkr16,bkr14 | VFD-5 | Feeder: MCC-2A (north) bkr 14 (VFD-5) | Feeder: MCC-2A bkr 16 (VFD-1)', 'next: ' + got.next);
-      want(got.untagged === 'bkr16 | VFD-1 | Feeder: MCC-2A (north) bkr 14 | Feeder: MCC-2A bkr 16 (VFD-1)', 'untagged: ' + got.untagged);
+      got.first = await run('VFD-5', 'o0');
+      got.second = await run('VFD-5', 'o1');
+      got.none = await run('VFD-5', 'new');
+      got.untagged = await run('', 'o0');
+      want(got.first === 'pick:bkr16,bkr14,new*,cancel | VFD-5 | Feeder: MCC-2A (north) bkr 14 | Feeder: MCC-2A bkr 16 (VFD-5)', 'first: ' + got.first);
+      want(got.second === 'pick:bkr16,bkr14,new*,cancel | VFD-5 | Feeder: MCC-2A (north) bkr 14 (VFD-5) | Feeder: MCC-2A bkr 16 (VFD-1)', 'second: ' + got.second);
+      want(got.none === 'pick:bkr16,bkr14,new*,cancel | VFD-5 | Feeder: MCC-2A (north) bkr 14 | Feeder: MCC-2A bkr 16 (VFD-1)', 'none: ' + got.none);
+      want(got.untagged === 'one:bkr16 | VFD-1 | Feeder: MCC-2A (north) bkr 14 | Feeder: MCC-2A bkr 16 (VFD-1)', 'untagged: ' + got.untagged);
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -10724,7 +10727,7 @@
     const srcs = () => [mkSrc('Electrical 480V'), mkSrc('Vacuum Air In'), mkSrc('Vacuum Pump Exhaust')];
     const lbl = (t) => ({ text: t, xPct: 0.5, yPct: 0.5, color: '#222' });
     const oldE = Object.assign(mkEntry('VP-OLD', { sources: srcs() }), { sketch: { labels: [lbl('E-1'), lbl('P-1'), lbl('E-2')] } });
-    const newE = Object.assign(mkEntry('VP-NEW', { sources: srcs() }), { sketch: { labels: [lbl('E-1'), lbl('P-1'), lbl('P-2')] } });
+    const newE = Object.assign(mkEntry('VP-NEW', { sources: srcs() }), { sketch: { labels: [lbl('E-1'), lbl('P-1'), lbl('P-2')], labelRule: 2 } });
     savedEquipment = [oldE, newE];
     got.old = (getLabelForLinkedSource({ equipName: 'VP-OLD', sourceIndex: 2 }) || {}).text;
     got.new = (getLabelForLinkedSource({ equipName: 'VP-NEW', sourceIndex: 2 }) || {}).text;
@@ -10764,6 +10767,75 @@
     got.space = feederLocationWithout('Feeder: MCC  2A (VFD-1) bkr 14 (VFD-5)', 'VFD-1');
     const ok = got.nbsp === 'Feeder: MCC-2A bkr 14 (VFD-5)' && got.tab === 'Feeder: MCC-2A bkr 14 (VFD-5)' && got.space === 'Feeder: MCC  2A bkr 14 (VFD-5)';
     record(N, ok, (ok ? '' : 'FAILED — ') + JSON.stringify(got));
+  }
+  // T328 — many word-bracket feeders: one question, not one per row
+  async function t328_manyOrphansAreOneQuestion() {
+    const N = 'T328 build 122 ninth review: a unit with four hand-typed feeders that name no drive ("(north)", "(spare)", …) asks one question for a new drive\'s breaker — the four listed, "No, another breaker" the default — never four questions in a row a reflex Yes could answer wrong';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-328', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-5' }), FEEDER('Feeder: MCC-1 (north) bkr 1'), FEEDER('Feeder: MCC-1 (south) bkr 2'), FEEDER('Feeder: MCC-1 (spare) bkr 3'), FEEDER('Feeder: MCC-1 (old) bkr 4'),
+        DRIVE({ deviceId: 'VFD-2' }), FEEDER('Feeder: MCC-2A bkr 15 (VFD-2)')];
+      sources.forEach(ensureSourceId); renderSources();
+      const asked = [];
+      await withDialogs({ choice: (o) => { asked.push(o.id + (o.choices ? '[' + o.choices.length + (o.choices.find(c => c.primary) || {}).value + ']' : '')); return 'cancel'; } },
+        async () => { await recordDrive(unitDrives(sources).find(d => d.src === sources[0])); });
+      got.asked = asked.join(' ');
+      want(got.asked === 'feeder-orphan-pick[6new]', got.asked);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T329 — each diagram keeps one label rule
+  async function t329_eachDiagramKeepsOneLabelRule() {
+    const N = 'T329 build 122 ninth review: a diagram labelled before a pump\'s exhaust by any name became P is read wholly by the name rule, and one labelled after by the new one — so a linked typed exhaust listed BEFORE the inlet takes "E-2" (old) or "P-1" (new) and the inlet "P-1" (old) or "P-2" (new), never the other\'s label; an opened old diagram keeps its rule (its picker offers E for that row), a cleared one starts on the new rule';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const srcs = () => [mkSrc('Electrical 480V'), mkSrc('Vacuum Pump Exhaust'), mkSrc('Vacuum Air In')];
+    const lbl = (t) => ({ text: t, x: 0.5, y: 0.5, color: '#222' });
+    const oldE = Object.assign(mkEntry('VP-OLD3', { sources: srcs() }), { sketch: { labels: [lbl('E-1'), lbl('E-2'), lbl('P-1')] } });
+    const newE = Object.assign(mkEntry('VP-NEW3', { sources: srcs() }), { sketch: { labels: [lbl('E-1'), lbl('P-1'), lbl('P-2')], labelRule: 2 } });
+    savedEquipment = [oldE, newE];
+    const L = (name, i) => (getLabelForLinkedSource({ equipName: name, sourceIndex: i }) || {}).text;
+    got.old = [L('VP-OLD3', 1), L('VP-OLD3', 2)].join(',');
+    got.new = [L('VP-NEW3', 1), L('VP-NEW3', 2)].join(',');
+    want(got.old === 'E-2,P-1' && got.new === 'P-1,P-2', 'linked: ' + JSON.stringify(got));
+    restoreSketch({ strokes: [], labels: [lbl('E-1')] });
+    got.openedRule = [sketchLabelRule, (getSketchData() || {}).labelRule, labelPrefixFor('Vacuum Pump Exhaust', sketchLabelRule)].join(',');
+    restoreSketch(null);
+    got.clearedRule = sketchLabelRule;
+    want(got.openedRule === '1,1,E' && got.clearedRule === 2, 'rule: ' + JSON.stringify(got));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T330 — a Device ID keystroke redraws no whole card
+  async function t330_aDeviceIdKeystrokeRedrawsNoWholeCard() {
+    const N = 'T330 build 122 ninth review: typing in a drive\'s Device ID with no feeder to rename builds no source card (only a Quantity 2+ drive\'s answer block is redrawn), where every keystroke had rebuilt the whole card';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    const real = window.buildSourceCard;
+    try {
+      setHospitalCode('');
+      formOfType('AHU-330', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-1' }), DRIVE({ deviceId: 'VFD-2; VFD-3', quantity: 2 })]; sources.forEach(ensureSourceId); renderSources();
+      let built = 0;
+      window.buildSourceCard = function () { built++; return real.apply(this, arguments); };
+      updateSource(0, 'deviceId', 'VFD-1A');
+      updateUnitDeviceId(1, 0, 'AHU-2');
+      got.built = built;
+      window.buildSourceCard = real;
+      const g = document.getElementById('driveIsoGroup_1');
+      got.block = g ? /AHU-2/.test(g.textContent) : false;
+      want(got.built === 0 && got.block === true, JSON.stringify(got));
+    } finally { window.buildSourceCard = real; setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
@@ -10901,7 +10973,8 @@
     t317_anEmptiedBoxKeepsItsLink, t318_aBracketedWordIsNeverOfferedAsATag, t319_reuseAsksAboutTheClosingBracketsOtherWords,
     t320_removingABracketKeepsTheTechsSpacing, t321_theFeederPromptOffersTheDrivesOwnTag,
     t322_anExhaustByAnyNameIsLabelledP, t323_everyOrphanIsOfferedInTurn, t324_aFirstWordInTheClosingBracketsIsAskedAbout,
-    t325_aLinkedRowFindsItsLabelOnAnOlderDiagram, t326_aRetaggedDrivesAnswerLineFollows, t327_aBracketTakenOutTakesTheSpaceBeforeIt];
+    t325_aLinkedRowFindsItsLabelOnAnOlderDiagram, t326_aRetaggedDrivesAnswerLineFollows, t327_aBracketTakenOutTakesTheSpaceBeforeIt,
+    t328_manyOrphansAreOneQuestion, t329_eachDiagramKeepsOneLabelRule, t330_aDeviceIdKeystrokeRedrawsNoWholeCard];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

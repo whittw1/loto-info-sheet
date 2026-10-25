@@ -3281,25 +3281,38 @@ async function addFeederForDrive(index, unit) {
   // drive of the unit is offered first — its drive retagged since, or (an
   // untagged drive) recorded before the drive's Device ID was typed.
   const target = unit != null ? unitDrives(sources).find(d => d.src === drive && d.k === unit) : unfed;
-  // Every orphan is offered in turn, the app's own form first (its tags in the
-  // closing "( … )"): "No, another breaker" moves to the next — a feeder whose
-  // only bracket is a word ("(north)") no longer hides the one naming the old
-  // drive (build 122 eighth review). The tag offered to an untagged drive comes
-  // from the closing "( … )" only (seventh review).
-  const orphans = (target && !target.fed ? orphanFeederRows(sources, target) : [])
-    .map((row, x) => ({ row, x, closing: feederTagsOf(row.location) }))
+  // The orphans that can be offered, the app's own form first (its tags in the
+  // closing "( … )"); the tag offered to an untagged drive comes from the closing
+  // "( … )" only (seventh review). One is asked about as before. Several are put in
+  // one question — pick the breaker, or "No, another breaker" (the default) — so a
+  // word-only feeder ("(north)") never hides the real one and a unit with many
+  // hand-typed feeders isn't asked once per row (build 122 eighth / ninth reviews).
+  const offers = (target && !target.fed ? orphanFeederRows(sources, target) : [])
+    .map((row, x) => { const closing = feederTagsOf(row.location); return { row, x, closing, asTag: !nextTag && closing.length === 1 ? closing[0] : '' }; })
+    .filter(o => nextTag || o.asTag)
     .sort((p, q) => (q.closing.length ? 1 : 0) - (p.closing.length ? 1 : 0) || p.x - q.x);
-  for (const { row: orphan, closing } of orphans) {
-    const asTag = !nextTag && closing.length === 1 ? closing[0] : '';
-    if (!nextTag && !asTag) continue;
-    if (!sources.includes(orphan)) continue;
-    const n = sources.indexOf(orphan) + 1;
+  let pick = null;
+  if (offers.length === 1) {
+    const o = offers[0], n = sources.indexOf(o.row) + 1;
     const reuse = await askChoice({ id: 'feeder-orphan', defaultValue: 'new', title: 'Feeder: the breaker',
-      html: nextTag ? html`Source #${n} (${orphan.location}) names no drive on this unit now. Is it the breaker that feeds ${nextTag}?`
-                    : html`Source #${n} (${orphan.location}) is the feeder for ${asTag}. Is this drive ${asTag}? Its Device ID is blank.`,
+      html: nextTag ? html`Source #${n} (${o.row.location}) names no drive on this unit now. Is it the breaker that feeds ${nextTag}?`
+                    : html`Source #${n} (${o.row.location}) is the feeder for ${o.asTag}. Is this drive ${o.asTag}? Its Device ID is blank.`,
       choices: [{ value: 'reuse', label: 'Yes, it is', primary: true }, { value: 'new', label: 'No, another breaker' }, { value: 'cancel', label: 'Cancel' }] });
     if (reuse === 'cancel' || !sources.includes(drive)) return null;
-    if (reuse !== 'reuse' || !sources.includes(orphan)) continue;
+    if (reuse === 'reuse') pick = o;
+  } else if (offers.length > 1) {
+    const v = await askChoice({ id: 'feeder-orphan-pick', defaultValue: 'new', title: 'Feeder: the breaker',
+      html: nextTag ? html`These feeders name no drive on this unit now. Is one of them the breaker that feeds ${nextTag}?`
+                    : html`Is one of these feeders this drive&rsquo;s? Its Device ID is blank.`,
+      choices: offers.map((o, j) => ({ value: 'o' + j, label: 'Source #' + (sources.indexOf(o.row) + 1) + ': ' + o.row.location + (o.asTag ? ' \u2014 this drive is ' + o.asTag : '') }))
+        .concat([{ value: 'new', label: 'No, another breaker', primary: true }, { value: 'cancel', label: 'Cancel' }]) });
+    if (v === 'cancel' || !sources.includes(drive)) return null;
+    const m = /^o(\d+)$/.exec(String(v || ''));
+    if (m) pick = offers[Number(m[1])];
+  }
+  if (pick && sources.includes(pick.row)) {
+    const { row: orphan, closing, asTag } = pick;
+    const n = sources.indexOf(orphan) + 1;
     if (nextTag) {
       // One tag in the closing group is the old drive's: the new tag takes its
       // place, as a retag would. Several: the new tag joins them, and each old
@@ -3643,9 +3656,9 @@ function syncFeederTags(srcList, opts) {
 }
 // After a Device ID edit: the renamed feeders' cards show their new text at once
 // — editing a box that still showed the old text put the old tag back and dropped
-// the link (build 122 sixth review) — and the retagged drive's own answer line,
-// which names it by its tag. (A drive card shows no fed state, so no other card
-// goes stale.) A card being typed in is left for the render.
+// the link (build 122 sixth review) — and the retagged drive's own answer block,
+// which names its units by their tags. (A drive card shows no fed state, so no
+// other card goes stale.) A card being typed in is left for the render.
 function refreshAfterRetag(changed, driveIndex) {
   const cards = document.querySelectorAll('#sourcesContainer > .source-card');
   (changed || []).forEach(f => {
@@ -3653,7 +3666,16 @@ function refreshAfterRetag(changed, driveIndex) {
     if (i < 0 || !live || live.contains(document.activeElement)) return;
     live.replaceWith(buildSourceCard(f, i));
   });
-  if (driveIndex != null && isDriveRow(sources[driveIndex])) refreshSourceDependents(driveIndex);   // with or without a feeder renamed (eighth review)
+  // The drive's answer block names its units only on a Quantity 2+ row: just that
+  // block is redrawn, not the whole card on every keystroke (ninth review)
+  const d = driveIndex != null ? sources[driveIndex] : null;
+  const old = d && isDriveRow(d) && valveMarkSlots(d) > 1 ? document.getElementById('driveIsoGroup_' + driveIndex) : null;
+  if (old) {
+    const t = document.createElement('template');
+    t.innerHTML = htmlValue(driveIsolatesBlock(d, driveIndex)).trim();
+    const fresh = t.content.firstElementChild;
+    if (fresh && fresh.outerHTML !== old.outerHTML) old.replaceWith(fresh);
+  }
 }
 // A link the feeder's Location no longer names — neither by the tag it was last
 // named by nor by its drive's tag now — was taken out by the tech: it goes.
@@ -5544,6 +5566,11 @@ let sketchColor = '#d94a4a';
 let sketchLineWidth = 3;
 let sketchStrokes = [];    // Array of stroke arrays (each stroke = array of {x,y} points + color + width)
 let sketchLabels = [];     // Array of {x, y, text, color} (positions as fraction 0-1 of container)
+// Which letter rule the diagram's labels follow (build 122 ninth review): 2 = a
+// pump's exhaust by any name is P (since 2026-10-25), 1 = by the name alone (every
+// diagram labelled before). Each diagram keeps its own, so a diagram is never
+// read half one way and half the other; an empty diagram starts on 2.
+let sketchLabelRule = 2;
 let sketchDiagramKey = null;
 let sketchCanvas = null;
 let sketchCtx = null;
@@ -5733,6 +5760,7 @@ function clearSketch() {
   if (!confirm('Clear all sketch annotations?')) return;
   sketchStrokes = [];
   sketchLabels = [];
+  sketchLabelRule = 2;
   redrawSketchStrokes();
   renderSketchLabels();
   autoSaveSketch();
@@ -5787,6 +5815,14 @@ function getPrefixForEnergySource(energySource) {
   if (isVacuumExhaust(energySource)) return 'P';
   return prefixByEnergyName(energySource);
 }
+// A saved diagram's label rule (see sketchLabelRule): its own, else 1 when it
+// already holds labels (placed before the rule was recorded), else 2.
+function sketchRuleOf(sketch) {
+  if (sketch && sketch.labelRule) return sketch.labelRule;
+  return (sketch && (sketch.labels || []).length) ? 1 : 2;
+}
+// The label letter for an energy source under a diagram's rule.
+function labelPrefixFor(energySource, rule) { return rule === 1 ? prefixByEnergyName(energySource) : getPrefixForEnergySource(energySource); }
 // The letter by the energy source's name alone — the rule every diagram drawn
 // before 2026-10-25 was labelled by (an exhaust named otherwise was E then).
 function prefixByEnergyName(energySource) {
@@ -5822,13 +5858,15 @@ function getLabelForLinkedSource(linkedTo) {
   const srcIdx = linkedTo.sourceIndex;
   const targetSrc = entry.sources[srcIdx];
   if (!targetSrc) return null;
-  const prefix = getPrefixForEnergySource(targetSrc.energySource);
+  // the letters as the linked diagram was labelled (its own rule, build 122 ninth review)
+  const rule = sketchRuleOf(entry.sketch);
+  const prefix = labelPrefixFor(targetSrc.energySource, rule);
 
   // 0-based ordinal: how many same-prefix sources come BEFORE this one in linked equipment
   let ordinal = 0;
   for (let i = 0; i < srcIdx; i++) {
     const s = entry.sources[i];
-    if (s && getPrefixForEnergySource(s.energySource) === prefix) ordinal++;
+    if (s && labelPrefixFor(s.energySource, rule) === prefix) ordinal++;
   }
 
   // Primary path: use the Nth actually-placed label of this prefix on the linked equipment's sketch
@@ -5836,18 +5874,6 @@ function getLabelForLinkedSource(linkedTo) {
   const sameLabels = placedLabels.filter(l => l.text && l.text.startsWith(prefix + '-'));
   if (sameLabels[ordinal]) {
     return { text: sameLabels[ordinal].text, color: ENERGY_LABEL_COLORS[prefix] || sameLabels[ordinal].color || '#222' };
-  }
-  // A diagram drawn before an exhaust by any name became P (2026-10-25) labelled it
-  // by its name's letter (E): that placed label, when the P count has none (eighth review)
-  const oldPrefix = prefixByEnergyName(targetSrc.energySource);
-  if (oldPrefix !== prefix) {
-    let oldOrdinal = 0;   // counted as that diagram was: every row by its name's letter
-    for (let i = 0; i < srcIdx; i++) {
-      const s = entry.sources[i];
-      if (s && prefixByEnergyName(s.energySource) === oldPrefix) oldOrdinal++;
-    }
-    const hit = placedLabels.filter(l => l.text && l.text.startsWith(oldPrefix + '-'))[oldOrdinal];
-    if (hit) return { text: hit.text, color: ENERGY_LABEL_COLORS[oldPrefix] || hit.color || '#222' };
   }
 
   // Ordinal exceeds placed labels — continue numbering from the highest label on the linked equipment.
@@ -5899,7 +5925,7 @@ function getLabelPickerOptions() {
       }
       continue;
     }
-    const prefix = getPrefixForEnergySource(src.energySource);
+    const prefix = labelPrefixFor(src.energySource, sketchLabelRule);   // this diagram's own rule
     if (!freshPrefixUsed.has(prefix)) {
       freshPrefixUsed.add(prefix);
       const opt = getNextForPrefix(prefix);
@@ -6118,7 +6144,8 @@ function getSketchData() {
   return {
     diagramKey: sketchDiagramKey,
     strokes: sketchStrokes,
-    labels: sketchLabels
+    labels: sketchLabels,
+    labelRule: sketchLabels.length ? sketchLabelRule : 2
   };
 }
 
@@ -6171,6 +6198,7 @@ function restoreSketch(data) {
   sketchStrokes = [];
   sketchLabels = [];
   sketchDiagramKey = null;
+  sketchLabelRule = sketchRuleOf(data);
 
   if (!data) {
     document.getElementById('sketchToolbar').style.display = 'none';
@@ -6213,6 +6241,7 @@ function clearSketchState() {
   sketchStrokes = [];
   sketchLabels = [];
   sketchDiagramKey = null;
+  sketchLabelRule = 2;
   if (sketchCtx) {
     const w = sketchCanvas.width / (window.devicePixelRatio || 2);
     const h = sketchCanvas.height / (window.devicePixelRatio || 2);
