@@ -10299,6 +10299,27 @@
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T307 — a run of spaces in a drive tag counts as one space (loto-web's names_tag)
+  async function t307_aRunOfSpacesInATagCountsAsOne() {
+    const N = 'T307 loto-web\'s names_tag with runs of spaces as one (2026-10-25): a drive tagged "AHU  9" is fed by its own "(AHU 9)" feeder beside another drive\'s named feeder; two drives tagged "AHU 9" and "AHU  9" share one tag, so Save & New\'s Tier 2 note names it';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-307', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'AHU  9' }), DRIVE({ deviceId: 'VFD-4' }), FEEDER('Feeder: MCC-4 bkr 1 (AHU 9)'), FEEDER('Feeder: MCC-4 bkr 2 (VFD-4)')];
+      sources.forEach(ensureSourceId); renderSources();
+      got.fed = unitDrives(sources).map(d => d.tag + ':' + d.fed).join();
+      want(got.fed === 'AHU  9:true,VFD-4:true', 'fed: ' + got.fed);
+      sources = [DRIVE({ deviceId: 'AHU 9' }), DRIVE({ deviceId: 'AHU  9' }), FEEDER('Feeder: MCC-4 bkr 1 (AHU 9)')];
+      sources.forEach(ensureSourceId); renderSources();
+      got.shared = [unitDrives(sources).every(d => d.fed), drivesShareATag(sources)].join(' | ');
+      want(/^true \| AHU {1,2}9$/.test(got.shared), 'a shared tag: ' + got.shared);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -10428,7 +10449,7 @@
     t297_aCollidingRetagLosesNoTag, t298_theLinkSurvivesAnEditTypedKeyByKey, t299_aTagAFeederCantNameIsRenamedOnlyIfAsked,
     t300_aHeldExhaustAnswerKeepsItsWording, t301_aRenderMidEditKeepsTheLink, t302_aTagInAMiddleGroupIsRenamedInPlace,
     t303_aHeldAnswerSaysWhyItIsNotAsked, t304_aHeldNoneFoundWritesNoChangeLaterNote, t305_aTagWithExtraSpacesIsNamedAsTagged,
-    t306_anExhaustByAnyNameAsksNothing];
+    t306_anExhaustByAnyNameAsksNothing, t307_aRunOfSpacesInATagCountsAsOne];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

@@ -3321,10 +3321,9 @@ async function addFeederForDrive(index, unit) {
   const typedTag = one(tag);
   tag = cleanTag(tag);
   if (!tag) { showToast('Not added: the drive\u2019s tag was only ";", "," or brackets \u2014 type its tag', true); return null; }   // build 122 whole review
-  // Tags compare as loto-web's names_tag does, any case — and here also with
-  // any run of spaces as one, so a Device ID typed "VFD-1,  2" is still found
-  // (build 122 fifth review).
-  const sameTag = (a, b) => !!one(a) && one(a).toLowerCase() === one(b).toLowerCase();
+  // Tags compare as loto-web's names_tag does: any case, a run of spaces as one,
+  // so a Device ID typed "VFD-1,  2" is still found (build 122 fifth review).
+  const sameTag = (a, b) => !!tagKey(a) && tagKey(a) === tagKey(b);
   // The tag a drive already carries with "," / ";" / "( )" in it can't be named in
   // a feeder's list (build 122 review of the link): the drive takes the cleaned
   // tag, once the tech says so — its Device ID is never changed without asking.
@@ -3445,14 +3444,21 @@ function feederByText(s) {
 function isFeederRow(s) { return !!s && !isDriveDeviceRow(s) && (liveRoleOf(s) === 'feeder' || feederByText(s)); }
 // Does a feeder's Location name this drive tag? loto-web's names_tag: the whole
 // tag, any case, inside a "( … )" of the Location — "VFD-1" is not in
-// "(VFD-10)", a tag "26" is not "bkr 26" — so "(VFD-1, VFD-2)" feeds both.
+// "(VFD-10)", a tag "26" is not "bkr 26" — so "(VFD-1, VFD-2)" feeds both. Runs
+// of spaces count as one on both sides, so "AHU 9" is in "(AHU  9)" (loto-web,
+// 2026-10-25: the double-space fix, live 14:20Z). `tagKey` is that comparison's
+// form of a tag: loto-web's _spaces, " ".join(text.split()) — Python's whitespace
+// set, which JS's \s differs from in a few characters.
+const PY_SPACE_RUN = /[\t\n\v\f\r \x1c-\x1f\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g;
+function pySpaces(t) { return String(t || '').replace(PY_SPACE_RUN, ' ').trim(); }
+function tagKey(t) { return pySpaces(t).toLowerCase(); }
 function feederParenText(loc) { const m = /\(([^()]*)\)\s*$/.exec(String(loc || '')); return m ? m[1] : ''; }
 function feederNamesTag(loc, tag) {
-  const t = String(tag || '').trim().toLowerCase();
+  const t = tagKey(tag);
   if (!t) return false;
   const edge = c => !c || !/[\w-]/.test(c);
   for (const g of String(loc || '').matchAll(/\(([^)]*)\)/g)) {
-    const s = g[1].toLowerCase();
+    const s = pySpaces(g[1]).toLowerCase();
     for (let at = s.indexOf(t); at >= 0; at = s.indexOf(t, at + 1)) {
       if (edge(s[at - 1]) && edge(s[at + t.length])) return true;
     }
@@ -3535,7 +3541,7 @@ function syncFeederTags(srcList, opts) {
     if (!f || !Array.isArray(f.feeds) || !f.feeds.length || !isFeederRow(f)) return;
     if (opts && opts.prune) pruneFeederLinks(f, srcList);
     if (!Array.isArray(f.feeds) || !f.feeds.length) return;
-    const lc = t => String(t || '').trim().toLowerCase();
+    const lc = tagKey;
     // each link's tag now (its drive gone or untagged: the tag it was last named by)
     const cur = f.feeds.map(l => linkCurrentTag(srcList, l) || String(l.tag || '').trim());
     const used = new Set();
@@ -3589,7 +3595,7 @@ function feedersCoverDrives(feederLocations, driveTags) {
   const locs = (feederLocations || []).map(l => String(l || ''));
   const tags = (driveTags || []).map(t => String(t || '').trim());
   if (!locs.length || !tags.length) return false;
-  const named = new Set(tags.map(t => t.toLowerCase())).size === tags.length
+  const named = new Set(tags.map(tagKey)).size === tags.length
     && tags.every(t => t && locs.some(l => feederNamesTag(l, t)));
   return named || locs.length >= tags.length;
 }
@@ -3624,7 +3630,7 @@ function drivesShareATag(srcList) {
   const feeders = (srcList || []).filter(isFeederRow).map(f => String(f.location || ''));
   if (feedersCoverDrives(feeders, drives.map(d => d.tag))) return '';
   const seen = new Map();
-  for (const d of drives) { const k = d.tag.toLowerCase(); if (k && seen.has(k)) return d.tag; seen.set(k, true); }
+  for (const d of drives) { const k = tagKey(d.tag); if (k && seen.has(k)) return d.tag; seen.set(k, true); }
   return '';
 }
 // How a drive is named to the tech: its tag, with its unit when the row's one

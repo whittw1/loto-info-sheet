@@ -275,6 +275,26 @@
    "tag": "",
    "location": "Feeder: MCC-2A bkr 14 (VFD-1)",
    "names": false
+  },
+  {
+   "tag": "AHU 9",
+   "location": "Feeder: MCC-4 bkr 1 (AHU  9)",
+   "names": true
+  },
+  {
+   "tag": "AHU  9",
+   "location": "Feeder: MCC-4 bkr 1 (AHU 9)",
+   "names": true
+  },
+  {
+   "tag": "AHU 9",
+   "location": "Feeder: MCC-4 bkr 1 (AHU 99)",
+   "names": false
+  },
+  {
+   "tag": "AHU  9",
+   "location": "Feeder: MCC-4 bkr 1 ( AHU   9 , VFD-2)",
+   "names": true
   }
  ],
  "unitIds": [
@@ -1166,6 +1186,53 @@
      "identified": true
     }
    ]
+  },
+  {
+   "name": "a tag with two spaces, named with one",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "AHU  9",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-4",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-4 bkr 1 (AHU 9)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-4 bkr 2 (VFD-4)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "AHU  9",
+     "identified": true
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-4",
+     "identified": true
+    }
+   ]
   }
  ],
  "cover": [
@@ -1273,6 +1340,26 @@
     "Feeder: MCC bkr 3"
    ],
    "driveTags": [],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (AHU  9, VFD-2)"
+   ],
+   "driveTags": [
+    "AHU 9",
+    "VFD-2"
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (AHU 9, AHU  9)"
+   ],
+   "driveTags": [
+    "AHU 9",
+    "AHU  9"
+   ],
    "covers": false
   }
  ],

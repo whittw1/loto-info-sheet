@@ -84,6 +84,11 @@ NAMES_TAG = [
     ("VFD-1 A supply", "Feeder: MCC-2A bkr 16 (VFD-1 A supply)"),
     ("A", "Feeder: MCC-2A bkr 16 (VFD-1 A supply)"),
     ("", "Feeder: MCC-2A bkr 14 (VFD-1)"),
+    # runs of spaces count as one on both sides (loto-web 2026-10-25)
+    ("AHU 9", "Feeder: MCC-4 bkr 1 (AHU  9)"),
+    ("AHU  9", "Feeder: MCC-4 bkr 1 (AHU 9)"),
+    ("AHU 9", "Feeder: MCC-4 bkr 1 (AHU 99)"),
+    ("AHU  9", "Feeder: MCC-4 bkr 1 ( AHU   9 , VFD-2)"),
 ]
 
 UNIT_IDS = [("VFD-1", 1), ("VFD-1", 2), ("VFD-1;", 2), ("VFD-1; ", 2), ("; VFD-2", 2), ("VFD-1; VFD-2", 2),
@@ -127,6 +132,8 @@ COVER = [
     (["Feeder: MCC bkr 3 (VFD-1)"], ["vfd-1"]),
     ([], ["VFD-1"]),
     (["Feeder: MCC bkr 3"], []),
+    (["Feeder: MCC bkr 3 (AHU  9, VFD-2)"], ["AHU 9", "VFD-2"]),
+    (["Feeder: MCC bkr 3 (AHU 9, AHU  9)"], ["AHU 9", "AHU  9"]),
 ]
 # drain_location.medium_kind: which energy sources the release question asks on.
 MEDIA = ["Fuel Oil In", "Fuel Oil Out", "Diesel Fuel", "FO Supply", "Chemical In", "Chem feed", "Geothermal Water In",
@@ -166,6 +173,8 @@ UNITS = {
     "one untagged Qty-2 row, one unnamed feeder": [row(dev="VFD", qty=2), row(loc="Feeder: MCC bkr 3")],
     "one untagged Qty-2 row, two unnamed feeders": [row(dev="VFD", qty=2), row(loc="Feeder: MCC bkr 3"), row(loc="Feeder: MCC bkr 4")],
     "duplicate tags, one named feeder": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-1"), row(loc="Feeder: MCC bkr 3 (VFD-1)")],
+    "a tag with two spaces, named with one": [row(dev="VFD", did="AHU  9"), row(dev="VFD", did="VFD-4"),
+                                              row(loc="Feeder: MCC-4 bkr 1 (AHU 9)"), row(loc="Feeder: MCC-4 bkr 2 (VFD-4)")],
 }
 
 
