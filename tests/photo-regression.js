@@ -10837,6 +10837,70 @@
     } finally { window.buildSourceCard = real; setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T331 — a diagram emptied label by label starts on the new rule
+  async function t331_aDiagramEmptiedLabelByLabelStartsOnTheNewRule() {
+    const N = 'T331 build 122 tenth review: an old diagram (name rule) whose labels are removed one by one starts on the new rule once empty — its picker then offers P for a typed pump exhaust, as a cleared or reopened empty diagram does';
+    await resetAppState();
+    const got = {};
+    formOfType('VP-331', 'Medical Vacuum Pump', 'Medical Vacuum Pump');
+    sources = [Object.assign(mkSrc('Vacuum Pump Exhaust'), { deviceType: 'Ball Valve' })]; sources.forEach(ensureSourceId); renderSources();
+    restoreSketch({ strokes: [], labels: [{ text: 'E-1', x: 0.5, y: 0.5, color: '#222' }] });
+    got.before = sketchLabelRule;
+    sketchLabels.pop();
+    got.offered = getLabelPickerOptions().map(o => o.text.split('-')[0]).join();
+    got.after = [sketchLabelRule, (getSketchData() || { labelRule: 'none' }).labelRule].join();
+    restoreSketch(null);
+    const ok = got.before === 1 && got.offered === 'P' && /^2/.test(got.after);
+    record(N, ok, (ok ? '' : 'FAILED — ') + JSON.stringify(got));
+  }
+
+  // T332 — the answer block is not swapped while the tech is in it
+  async function t332_theAnswerBlockIsNotSwappedWhileFocused() {
+    const N = 'T332 build 122 tenth review: with focus in a Quantity-2 drive\'s answer select, a Device ID input (a scan or paste) leaves that block in place — the tech\'s open select is never swapped out from under them; the next render brings the new names';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-332', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2 })]; sources.forEach(ensureSourceId); renderSources();
+      const sel = document.getElementById('src_driveiso_0_1');
+      if (sel) sel.focus();
+      const before = document.getElementById('driveIsoGroup_0');
+      updateUnitDeviceId(0, 0, 'AHU-1-SF');
+      got.same = document.getElementById('driveIsoGroup_0') === before;
+      got.focused = document.activeElement === sel;
+      if (sel) sel.blur();
+      updateUnitDeviceId(0, 0, 'AHU-1-RF');
+      const g = document.getElementById('driveIsoGroup_0');
+      got.unfocused = g ? /AHU-1-RF/.test(g.textContent) : false;
+      want(got.same === true && got.focused === true && got.unfocused === true, JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T333 — an untagged drive picks among several orphans by their tags
+  async function t333_anUntaggedDrivePicksAmongOrphans() {
+    const N = 'T333 build 122 tenth review: an untagged drive with two orphan feeders that each name one old tag ("(VFD-1)", "(VFD-3)") gets one question listing "… — this drive is VFD-1" and "… — this drive is VFD-3"; picking the second tags the drive VFD-3, fed by that feeder';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-333', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: '' }), FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), FEEDER('Feeder: MCC-2A bkr 16 (VFD-3)'), DRIVE({ deviceId: 'VFD-2' }), FEEDER('Feeder: MCC-2A bkr 15 (VFD-2)')];
+      sources.forEach(ensureSourceId); renderSources();
+      await withDialogs({ choice: (o) => {
+          if (o.id === 'feeder-orphan-pick') { got.labels = o.choices.slice(0, 2).map(c => c.label.replace(/^Source #\d+: /, '')).join(' / '); return 'o1'; }
+          return o.id === 'drive-isolates' ? 'yes' : 'cancel'; } },
+        async () => { await recordDrive(unitDrives(sources).find(d => d.src === sources[0])); });
+      got.r = [sources[0].deviceId, unitDrives(sources).every(d => d.fed)].join(' | ');
+      want(/this drive is VFD-1 \/ .*this drive is VFD-3$/.test(got.labels || '') && got.r === 'VFD-3 | true', JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -10974,7 +11038,8 @@
     t320_removingABracketKeepsTheTechsSpacing, t321_theFeederPromptOffersTheDrivesOwnTag,
     t322_anExhaustByAnyNameIsLabelledP, t323_everyOrphanIsOfferedInTurn, t324_aFirstWordInTheClosingBracketsIsAskedAbout,
     t325_aLinkedRowFindsItsLabelOnAnOlderDiagram, t326_aRetaggedDrivesAnswerLineFollows, t327_aBracketTakenOutTakesTheSpaceBeforeIt,
-    t328_manyOrphansAreOneQuestion, t329_eachDiagramKeepsOneLabelRule, t330_aDeviceIdKeystrokeRedrawsNoWholeCard];
+    t328_manyOrphansAreOneQuestion, t329_eachDiagramKeepsOneLabelRule, t330_aDeviceIdKeystrokeRedrawsNoWholeCard,
+    t331_aDiagramEmptiedLabelByLabelStartsOnTheNewRule, t332_theAnswerBlockIsNotSwappedWhileFocused, t333_anUntaggedDrivePicksAmongOrphans];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

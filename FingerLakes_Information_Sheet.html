@@ -3670,7 +3670,7 @@ function refreshAfterRetag(changed, driveIndex) {
   // block is redrawn, not the whole card on every keystroke (ninth review)
   const d = driveIndex != null ? sources[driveIndex] : null;
   const old = d && isDriveRow(d) && valveMarkSlots(d) > 1 ? document.getElementById('driveIsoGroup_' + driveIndex) : null;
-  if (old) {
+  if (old && !old.contains(document.activeElement)) {   // never under the tech's hand (tenth review)
     const t = document.createElement('template');
     t.innerHTML = htmlValue(driveIsolatesBlock(d, driveIndex)).trim();
     const fresh = t.content.firstElementChild;
@@ -5910,6 +5910,9 @@ function getLabelForLinkedSource(linkedTo) {
 
 // Build the list of labels to show in the picker
 function getLabelPickerOptions() {
+  // An emptied diagram (labels undone or deleted one by one) starts on the new rule, as a
+  // cleared or reopened empty one does (build 122 tenth review)
+  if (!sketchLabels.length) sketchLabelRule = 2;
   const seenText = new Set();
   const options = [];
   // Track which prefixes we've already allocated fresh numbers for
