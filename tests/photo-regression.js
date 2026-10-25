@@ -10056,7 +10056,7 @@
 
   // T297 — a retag that collides with another unit's tag loses nothing
   async function t297_aCollidingRetagLosesNoTag() {
-    const N = 'T297 build 122 review of the link: a feeder\'s "( … )" is rebuilt from its links — every linked unit\'s tag now, plus tags typed by hand — so retagging unit 2 to unit 1\'s tag by mistake and back leaves the shared feeder naming both (the order may change), a plain retag renames in place, and a typed extra tag stays';
+    const N = 'T297 build 122 review of the link: each link renames its own token of the feeder\'s "( … )" in place, and tags typed by hand stay — so retagging unit 2 to unit 1\'s tag by mistake and back leaves the shared feeder naming both (the order may change), a plain retag renames in place, and a typed extra tag stays';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -10135,7 +10135,7 @@
 
   // T300 — a held answer on a pump's exhaust keeps its wording and says it isn't asked
   async function t300_aHeldExhaustAnswerKeepsItsWording() {
-    const N = 'T300 build 122 review of the link: a release answer already held on a vacuum pump\'s exhaust row ("Vacuum Air Out") still shows under its vent wording ("Vent to atmosphere …", "On this valve (vent port)") with the note that it is no longer asked there and loto-web prints nothing for it; a row that asks has no note';
+    const N = 'T300 build 122 review of the link: a release answer already held on a vacuum pump\'s exhaust row ("Vacuum Air Out") still shows under its vent wording ("Vent to atmosphere …", "On this valve (vent port)") with the note that it is no longer asked there (loto-web names the held point only in an "Open drain…" line, fifth review); a row that asks has no note';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -10150,6 +10150,130 @@
       got.held = grp(0); got.asks = grp(1);
       want(/^Vent to atmosphere for this isolation point No longer asked here/.test(got.held) && /On this valve \(vent port\)/.test(got.held), 'the held answer: ' + got.held);
       want(/^Vent to atmosphere for this isolation point/.test(got.asks) && !/No longer asked/.test(got.asks), 'the inlet: ' + got.asks);
+      want(/vacuum pump\u2019s exhaust/.test(got.held) && /Open drain\u2026/.test(got.held) && !/prints nothing/.test(got.held), 'the note\'s wording: ' + got.held);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  // T301 — a render while the Location is mid-edit keeps the link
+  async function t301_aRenderMidEditKeepsTheLink() {
+    const N = 'T301 build 122 fifth review: a render that lands while a feeder\'s Location box holds a half-typed edit (its ")" deleted for a moment — e.g. a photo write finishing) neither drops the link nor changes the text typed; once the box\'s change names the drive again a retag still reaches the feeder, and a pick from the Location list (a committed edit) drops the link';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-301', 'Air Handler', 'AHU - Steam');
+      const d = DRIVE({ deviceId: 'VFD-7' }); ensureSourceId(d);
+      const f = Object.assign(FEEDER('Feeder: MCC-3 bkr 2 (VFD-7)'), { role: 'feeder', _customLoc: true, feeds: [{ sourceId: d.sourceId, unit: 0, tag: 'VFD-7' }] });
+      sources = [d, f]; renderSources();
+      updateSourceCustomLoc(1, 'Feeder: MCC-3 bkr 2 (VFD-7');
+      renderSources();
+      got.mid = [sources[1].location, JSON.stringify((sources[1].feeds || []).map(l => l.tag))].join(' | ');
+      want(got.mid === 'Feeder: MCC-3 bkr 2 (VFD-7 | ["VFD-7"]', 'the render mid-edit: ' + got.mid);
+      updateSourceCustomLoc(1, 'Feeder: MCC-3 bkr 2 (VFD-7)'); commitSourceLocation(1);
+      updateUnitDeviceId(0, 0, 'AHU-7-SF');
+      got.renamed = sources[1].location;
+      want(got.renamed === 'Feeder: MCC-3 bkr 2 (AHU-7-SF)', 'a retag still reaches it: ' + got.renamed);
+      handleLocationChange(1, 'On Equipment');
+      got.picked = JSON.stringify(sources[1].feeds || null);
+      want(got.picked === 'null', 'a pick drops it: ' + got.picked);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T302 — a drive tag in a middle "( … )" is renamed there, never repeated
+  async function t302_aTagInAMiddleGroupIsRenamedInPlace() {
+    const N = 'T302 build 122 fifth review: a linked feeder whose drive tag sits in a middle "( … )" ("Feeder: MCC-2A (VFD-1) bkr 14", typed by hand) keeps its text on every render — no second "(VFD-1)" — and a retag renames that group in place (loto-web\'s names_tag reads every group); two units that share a tag for a moment keep a token each, "(VFD-1, VFD-1)"';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-302', 'Air Handler', 'AHU - Steam');
+      const d = DRIVE({ deviceId: 'VFD-1' }); ensureSourceId(d);
+      const f = Object.assign(FEEDER('Feeder: MCC-2A (VFD-1) bkr 14'), { role: 'feeder', feeds: [{ sourceId: d.sourceId, unit: 0, tag: 'VFD-1' }] });
+      sources = [d, f]; renderSources(); renderSources();
+      got.render = sources[1].location;
+      want(got.render === 'Feeder: MCC-2A (VFD-1) bkr 14', 'a render: ' + got.render);
+      updateUnitDeviceId(0, 0, 'VFD-5');
+      got.retag = [sources[1].location, unitDrives(sources).every(x => x.fed), (sources[1].feeds || [])[0] && sources[1].feeds[0].tag].join(' | ');
+      want(got.retag === 'Feeder: MCC-2A (VFD-5) bkr 14 | true | VFD-5', 'a retag: ' + got.retag);
+      const d2 = DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2 }); ensureSourceId(d2);
+      const f2 = Object.assign(FEEDER('Feeder: MCC-2A bkr 15 (VFD-1, VFD-2)'), { role: 'feeder',
+        feeds: [{ sourceId: d2.sourceId, unit: 0, tag: 'VFD-1' }, { sourceId: d2.sourceId, unit: 1, tag: 'VFD-2' }] });
+      sources = [d2, f2]; renderSources();
+      updateUnitDeviceId(0, 1, 'VFD-1');
+      got.shared = sources[1].location;
+      updateUnitDeviceId(0, 1, 'VFD-2');
+      got.back = sources[1].location;
+      want(got.shared === 'Feeder: MCC-2A bkr 15 (VFD-1, VFD-1)' && got.back === 'Feeder: MCC-2A bkr 15 (VFD-1, VFD-2)', 'a shared tag: ' + got.shared + ' → ' + got.back);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T303 — a held answer on a row that isn't a pump's exhaust says why it isn't asked
+  async function t303_aHeldAnswerSaysWhyItIsNotAsked() {
+    const N = 'T303 build 122 fifth review: a release answer held on a valve row whose energy source no longer asks (changed to "Thermal" after the answer) shows the note naming that energy source — never the vacuum pump\'s exhaust — and that loto-web names the held point only in an "Open drain…" line';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-303', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('Thermal'), { deviceType: 'Ball Valve', verification: '', collapsed: false, drainLocation: { where: 'On this valve', text: '' } })];
+      sources.forEach(ensureSourceId); renderSources();
+      const g = document.getElementById('drainLocGroup_0');
+      got.note = g ? g.textContent.replace(/\s+/g, ' ').trim() : '';
+      want(/No longer asked here: “Thermal” takes no drain question/.test(got.note) && /Open drain…/.test(got.note) && !/vacuum pump/i.test(got.note), got.note);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T304 — a held "None found" writes no Change Later note
+  async function t304_aHeldNoneFoundWritesNoChangeLaterNote() {
+    const N = 'T304 build 122 fifth review: "None found" held on a row that is no longer asked — a vacuum pump\'s exhaust, or a valve row now "Thermal" — adds no "No vent / drain found…" to U2 Change Later (loto-web prints nothing new for it); an asked row\'s "None found" still does';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      const none = (es) => Object.assign(mkSrc(es), { deviceType: 'Ball Valve', drainLocation: { where: 'None found', text: '' } });
+      const e = Object.assign(mkEntry('VP-304', { sources: [none('Vacuum Air Out'), none('Thermal'), none('Chilled Water')] }),
+        { equipType: 'Medical Vacuum Pump', template: 'Medical Vacuum Pump', hospitalCode: 'Atlanta' });
+      got.u2 = changeLaterSheetText(e);
+      want(!/source #1/.test(got.u2) && !/source #2/.test(got.u2) && /No drain found for source #3 \(Chilled Water\)/.test(got.u2), got.u2);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T305 — a drive tag with a run of spaces: found, and named exactly as tagged
+  async function t305_aTagWithExtraSpacesIsNamedAsTagged() {
+    const N = 'T305 build 122 fifth review: loto-web\'s names_tag reads spaces as typed, so a feeder names its drive exactly as the Device ID has it — "VFD-1,  2" (two spaces) still gets the rename question (then "VFD-1 2", fed); "VFD  3" accepted as offered gives "(VFD  3)", fed, its answer on its unit; a retag to "AHU  9" keeps both spaces in the feeder';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      const run = async (deviceId, typed) => {
+        formOfType('AHU-305', 'Air Handler', 'AHU - Steam');
+        sources = [DRIVE({ deviceId })]; sources.forEach(ensureSourceId); renderSources();
+        const asked = [];
+        await withDialogs({ choice: (o) => { asked.push(o.id); return ({ 'feeder-panel': 'MCC-2A', 'feeder-breaker': '14', 'feeder-drive': typed, 'feeder-retag': 'rename', 'drive-isolates': 'yes' })[o.id] || 'cancel'; } },
+          async () => { await recordDrive(unitDrives(sources)[0]); });
+        return [sources[0].deviceId, (sources[1] || {}).location, unitDrives(sources).every(d => d.fed), asked.includes('feeder-retag'), driveIsolatesForJson(sources[0])[0]].join(' | ');
+      };
+      got.comma = await run('VFD-1,  2', 'VFD-1,  2');
+      want(got.comma === 'VFD-1 2 | Feeder: MCC-2A bkr 14 (VFD-1 2) | true | true | yes', 'the rename question: ' + got.comma);
+      got.spaces = await run('VFD  3', 'VFD  3');
+      want(got.spaces === 'VFD  3 | Feeder: MCC-2A bkr 14 (VFD  3) | true | false | yes', 'named as tagged: ' + got.spaces);
+      updateUnitDeviceId(0, 0, 'AHU  9');
+      got.retag = [sources[1].location, unitDrives(sources).every(d => d.fed)].join(' | ');
+      want(got.retag === 'Feeder: MCC-2A bkr 14 (AHU  9) | true', 'a retag: ' + got.retag);
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -10280,7 +10404,8 @@
     t293_theFeederKeepsItsLinkToItsDrive, t294_aPanelNamedFeederKeysAsOneBreaker, t295_aTagThatCleansToNothingSaysSo,
     t296_anUnnamedFeederCountsOnlyWhenTheFeedersCoverTheDrives,
     t297_aCollidingRetagLosesNoTag, t298_theLinkSurvivesAnEditTypedKeyByKey, t299_aTagAFeederCantNameIsRenamedOnlyIfAsked,
-    t300_aHeldExhaustAnswerKeepsItsWording];
+    t300_aHeldExhaustAnswerKeepsItsWording, t301_aRenderMidEditKeepsTheLink, t302_aTagInAMiddleGroupIsRenamedInPlace,
+    t303_aHeldAnswerSaysWhyItIsNotAsked, t304_aHeldNoneFoundWritesNoChangeLaterNote, t305_aTagWithExtraSpacesIsNamedAsTagged];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
