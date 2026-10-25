@@ -89,6 +89,8 @@ NAMES_TAG = [
     ("AHU  9", "Feeder: MCC-4 bkr 1 (AHU 9)"),
     ("AHU 9", "Feeder: MCC-4 bkr 1 (AHU 99)"),
     ("AHU  9", "Feeder: MCC-4 bkr 1 ( AHU   9 , VFD-2)"),
+    ("\ufeffAHU 9", "Feeder: MCC-4 bkr 1 (AHU 9)"),   # U+FEFF is not whitespace to Python's split
+    ("AHU\u00a09", "Feeder: MCC-4 bkr 1 (AHU 9)"),
 ]
 
 UNIT_IDS = [("VFD-1", 1), ("VFD-1", 2), ("VFD-1;", 2), ("VFD-1; ", 2), ("; VFD-2", 2), ("VFD-1; VFD-2", 2),

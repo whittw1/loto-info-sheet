@@ -3091,9 +3091,12 @@ function releaseHeldOnly(src) { return !!src && !drainCodeFollowsDrain(src) && !
 // named only where its procedure already prints an "Open drain…" line.
 function releaseHeldNote(src) {
   const es = String((src && src.energySource) || '').trim();
-  const why = isVacuumExhaust(es) ? 'a vacuum pump\u2019s exhaust is at or above atmosphere'
-    : es ? '\u201c' + es + '\u201d takes no drain question' : 'the row has no energy source yet';
-  return 'No longer asked here: ' + why + '. loto-web names the held point only in an \u201cOpen drain\u2026\u201d line its procedure already prints. Set it to \u201c-- Not answered --\u201d to clear it.';
+  const clear = ' Set it to \u201c-- Not answered --\u201d to clear it.';
+  // since 2026-10-25 13:40Z loto-web prints an exhaust row with its own check
+  // (closed, then no backflow from the exhaust header), never this answer
+  if (isVacuumExhaust(es)) return 'No longer asked here: a vacuum pump\u2019s exhaust is at or above atmosphere, and loto-web prints its own exhaust check for this row, not this answer.' + clear;
+  const why = es ? '\u201c' + es + '\u201d takes no drain question' : 'the row has no energy source yet';
+  return 'No longer asked here: ' + why + '. loto-web names the held point only in an \u201cOpen drain\u2026\u201d line its procedure already prints.' + clear;
 }
 const DRAINS_TO_LABEL = { 'Containment': 'Containment (drip pan or bucket)' };
 // The rows whose verification code follows the drain answer: the water family
@@ -3267,22 +3270,19 @@ async function addFeederForDrive(index, unit) {
   const nextTag = unit != null ? (driveUnitTags(drive)[unit] || '') : (unfed ? unfed.tag : (tags[0] || ''));
   const filled = v => !!String(v || '').trim();
   const one = v => String(v || '').replace(/\s+/g, ' ').trim();
-  // A drive tag is one tag (build 122 third review): ";" would split the Device ID
-  // into units and "," / "( )" the feeder's drive list, so they become spaces
-  const cleanTag = v => one(String(v || '').replace(/[;,()]+/g, ' '));
   const done = (row, tag, msg) => {
     markSourceEdited(sources.indexOf(row));
     renderSources();
     autoSaveCurrent();
     showToast(msg);
-    return one(tag);
+    return String(tag || '').trim();   // the drive's tag as written (its answer goes to that unit)
   };
   // The drive unit being recorded, when it has no feeder: a Feeder row naming no
   // drive of the unit is offered first — its drive retagged since, or (an
   // untagged drive) recorded before the drive's Device ID was typed.
   const target = unit != null ? unitDrives(sources).find(d => d.src === drive && d.k === unit) : unfed;
   const orphan = target && !target.fed && orphanFeederRows(sources, target)[0];
-  const named = orphan ? feederTagsOf(orphan.location) : [];
+  const named = orphan ? feederGroupTags(orphan.location) : [];   // every "( … )" group (build 122 sixth review)
   const asTag = !nextTag && named.length === 1 ? named[0] : '';
   if (orphan && (nextTag || asTag)) {
     const n = sources.indexOf(orphan) + 1;
@@ -3296,7 +3296,10 @@ async function addFeederForDrive(index, unit) {
         orphan.location = feederLocationNaming(orphan.location, [nextTag]);
         orphan.feeds = [];
         addFeederLink(orphan, target.src, target.k);
-        return done(orphan, nextTag, 'Source #' + n + ' is now the feeder for ' + one(nextTag));
+        // a tag in another "( … )" is the tech's text: it stays, and the toast says so
+        const left = feederGroupTags(orphan.location).filter(t => tagKey(t) !== tagKey(nextTag));
+        return done(orphan, nextTag, 'Source #' + n + ' is now the feeder for ' + one(nextTag)
+          + (left.length ? ' \u2014 its Location still reads \u201c' + left.join(', ') + '\u201d: edit it if that\u2019s gone' : ''));
       }
       setDriveUnitTag(drive, target.k, asTag);   // the unit's box was blank: nothing typed is replaced
       addFeederLink(orphan, drive, target.k);
@@ -3318,33 +3321,32 @@ async function addFeederForDrive(index, unit) {
     input: { type: 'text', placeholder: 'e.g. VFD-1', value: nextTag, valid: filled },
     choices: [{ label: 'Add the feeder', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] });
   if (!filled(tag) || tag === 'cancel' || !sources.includes(drive)) return null;
-  const typedTag = one(tag);
-  tag = cleanTag(tag);
+  tag = cleanTagText(tag);
   if (!tag) { showToast('Not added: the drive\u2019s tag was only ";", "," or brackets \u2014 type its tag', true); return null; }   // build 122 whole review
-  // Tags compare as loto-web's names_tag does: any case, a run of spaces as one,
-  // so a Device ID typed "VFD-1,  2" is still found (build 122 fifth review).
+  // Tags compare as loto-web's names_tag does: any case, a run of spaces as one.
   const sameTag = (a, b) => !!tagKey(a) && tagKey(a) === tagKey(b);
   // The tag a drive already carries with "," / ";" / "( )" in it can't be named in
   // a feeder's list (build 122 review of the link): the drive takes the cleaned
   // tag, once the tech says so — its Device ID is never changed without asking.
-  if (typedTag !== tag) {
-    const own = unitDrives(sources).find(d => d.src === drive && sameTag(d.tag, typedTag));
-    if (own) {
-      const ok = await askChoice({ id: 'feeder-retag', defaultValue: 'cancel', title: 'Feeder: the drive\u2019s tag',
-        html: html`A feeder can\u2019t name &ldquo;${typedTag}&rdquo;: its &ldquo;,&rdquo;, &ldquo;;&rdquo; or brackets split the list loto-web reads. Rename the drive &ldquo;${tag}&rdquo;?`,
-        choices: [{ value: 'rename', label: 'Rename it and add the feeder', primary: true }, { value: 'cancel', label: 'Cancel' }] });
-      if (ok !== 'rename' || !sources.includes(drive)) return null;
-      renameDriveUnitTag(drive, own.k, tag);
-      syncFeederTags(sources);
-      markSourceEdited(sources.indexOf(drive));
-    }
+  // It is found by its cleaned tag however the separators were typed: "VFD-1,2",
+  // "VFD-1 2" or "VFD-1;2" for a Device ID "VFD-1, 2" (build 122 sixth review).
+  const own = unitDrives(sources).find(d => d.src === drive && d.tag && cleanTagText(d.tag) !== pySpaces(d.tag)
+    && sameTag(cleanTagText(d.tag), tag));
+  if (own) {
+    const ok = await askChoice({ id: 'feeder-retag', defaultValue: 'cancel', title: 'Feeder: the drive\u2019s tag',
+      html: html`A feeder can\u2019t name &ldquo;${own.tag}&rdquo;: its &ldquo;,&rdquo;, &ldquo;;&rdquo; or brackets split the list loto-web reads. Rename the drive &ldquo;${tag}&rdquo;?`,
+      choices: [{ value: 'rename', label: 'Rename it and add the feeder', primary: true }, { value: 'cancel', label: 'Cancel' }] });
+    if (ok !== 'rename' || !sources.includes(drive)) return null;
+    renameDriveUnitTag(drive, own.k, tag);
+    syncFeederTags(sources);
+    markSourceEdited(sources.indexOf(drive));
   }
   // The drive recorded had no tag: the one typed is its tag, in its blank box
   // (never one another drive of the unit carries) — else neither the app nor
   // loto-web can tell its feeder from another drive's (build 122 second review).
   let tagNote = '';
   if (target && !target.tag && !unitDrives(sources).some(d => sameTag(d.tag, tag))) {
-    setDriveUnitTag(drive, target.k, one(tag));
+    setDriveUnitTag(drive, target.k, tag);
     syncFeederTags(sources);
     markSourceEdited(sources.indexOf(drive));
     tagNote = ' — and tagged the drive ' + one(tag);
@@ -3353,9 +3355,10 @@ async function addFeederForDrive(index, unit) {
   // The drive unit the feeder is linked to: the one carrying the tag typed, else the one being recorded
   const namedDrive = unitDrives(sources).find(d => sameTag(d.tag, tag));
   const linkTo = namedDrive || target;
-  // The feeder names the drive exactly as its Device ID has it: loto-web's
-  // names_tag reads a run of spaces as typed, so "(VFD 3)" doesn't name "VFD  3"
-  const name = namedDrive ? String(namedDrive.tag).trim() : one(tag);
+  // The feeder names the drive as its Device ID has it, inner spaces too, so the
+  // printed text matches the Device ID (loto-web's names_tag reads either way
+  // since 2026-10-25 14:25Z; before, only this exact copy named "VFD  3").
+  const name = namedDrive ? String(namedDrive.tag).trim() : tag;
   const same = one(bkr) && sources.find(s => isFeederRow(s) && feederBreakerKey(s.location) === feederBreakerKey(body));
   if (same) {
     if (!feederNamesTag(same.location, name)) same.location = feederLocationNaming(same.location, feederTagsOf(same.location).concat(name));
@@ -3450,8 +3453,17 @@ function isFeederRow(s) { return !!s && !isDriveDeviceRow(s) && (liveRoleOf(s) =
 // form of a tag: loto-web's _spaces, " ".join(text.split()) — Python's whitespace
 // set, which JS's \s differs from in a few characters.
 const PY_SPACE_RUN = /[\t\n\v\f\r \x1c-\x1f\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g;
-function pySpaces(t) { return String(t || '').replace(PY_SPACE_RUN, ' ').trim(); }
+// (trimmed of that one space only: JS's trim() also strips U+FEFF, which Python keeps)
+function pySpaces(t) { return String(t || '').replace(PY_SPACE_RUN, ' ').replace(/^ | $/g, ''); }
 function tagKey(t) { return pySpaces(t).toLowerCase(); }
+// A drive tag as a feeder can name it: ";" would split the Device ID into units
+// and "," / "( )" the feeder's drive list, so they become spaces (build 122 third
+// review). Every tag comparison is tagKey, of this form where separators differ.
+function cleanTagText(t) { return pySpaces(String(t || '').replace(/[;,()]+/g, ' ')); }
+// Every drive tag in a feeder's "( … )" groups, as loto-web's names_tag reads them all.
+function feederGroupTags(loc) {
+  return [...String(loc || '').matchAll(/\(([^()]*)\)/g)].flatMap(m => m[1].split(/[,;]/)).map(t => t.trim()).filter(Boolean);
+}
 function feederParenText(loc) { const m = /\(([^()]*)\)\s*$/.exec(String(loc || '')); return m ? m[1] : ''; }
 function feederNamesTag(loc, tag) {
   const t = tagKey(tag);
@@ -3468,7 +3480,7 @@ function feederNamesTag(loc, tag) {
 // The drive tags in a feeder's closing "( … )", and its Location naming `tags` instead.
 function feederTagsOf(loc) { return feederParenText(loc).split(/[,;]/).map(t => t.trim()).filter(Boolean); }
 function feederLocationNaming(loc, tags) {
-  const list = (tags || []).map(t => String(t || '').trim()).filter(Boolean);   // as tagged: names_tag reads spaces as typed
+  const list = (tags || []).map(t => String(t || '').trim()).filter(Boolean);   // as tagged: each drive's own text
   const base = String(loc || '').replace(/\s*\([^()]*\)\s*$/, '').trim();
   return list.length ? base + ' (' + list.join(', ') + ')' : base;
 }
@@ -3533,39 +3545,72 @@ function addFeederLink(feeder, drive, k) {
 // fifth review): a token that is a link's last tag becomes that link's tag now,
 // in place. Each link takes one token, so two units that share a tag for a
 // moment keep a token each, "(VFD-1, VFD-1)", and nothing is lost when one is
-// retagged again. A group with no renamed token, and every other part of the
-// text, is left exactly as typed. A link that no token names is left alone (the
-// text may be mid-edit); only `{ prune: true }` (a committed edit) takes it out.
+// retagged again. A live drive's link takes a token before a deleted drive's,
+// and a deleted drive's token that only repeats one already named goes, with
+// its link (build 122 sixth review). A group with no renamed or dropped token,
+// and every other part of the text, is left exactly as typed. A link that no
+// token names is left alone (the text may be mid-edit); only `{ prune: true }`
+// (a committed edit) takes it out, and takes every link off a row that is no
+// longer a feeder. Returns the feeder rows whose Location changed.
 function syncFeederTags(srcList, opts) {
+  const prune = !!(opts && opts.prune), changed = [];
   (srcList || []).forEach(f => {
-    if (!f || !Array.isArray(f.feeds) || !f.feeds.length || !isFeederRow(f)) return;
-    if (opts && opts.prune) pruneFeederLinks(f, srcList);
+    if (!f || !Array.isArray(f.feeds) || !f.feeds.length) return;
+    if (!isFeederRow(f)) { if (prune) delete f.feeds; return; }
+    if (prune) pruneFeederLinks(f, srcList);
     if (!Array.isArray(f.feeds) || !f.feeds.length) return;
     const lc = tagKey;
     // each link's tag now (its drive gone or untagged: the tag it was last named by)
-    const cur = f.feeds.map(l => linkCurrentTag(srcList, l) || String(l.tag || '').trim());
-    const used = new Set();
+    const now = f.feeds.map(l => linkCurrentTag(srcList, l));
+    const cur = f.feeds.map((l, x) => now[x] || String(l.tag || '').trim());
+    const used = new Set(), seen = new Set(), dropped = new Set();
     const loc = String(f.location || '');
+    let emptied = false;
     const next = loc.replace(/\(([^()]*)\)/g, (group, inner) => {
-      let renamed = false;
+      let edited = false;
       const toks = inner.split(/[,;]/).map(tok => {
-        const j = f.feeds.findIndex((l, x) => !used.has(x) && lc(l.tag) && lc(l.tag) === lc(tok));
-        if (j < 0) return tok;
+        const k = lc(tok);
+        const fits = x => !used.has(x) && !!lc(f.feeds[x].tag) && lc(f.feeds[x].tag) === k;
+        let j = f.feeds.findIndex((l, x) => fits(x) && !!now[x]);
+        if (j < 0) j = f.feeds.findIndex((l, x) => fits(x));
+        if (j < 0) { if (k) seen.add(k); return tok; }
         used.add(j);
-        if (!cur[j] || cur[j] === tok.trim()) return tok;
-        renamed = true;
+        if (!now[j] && seen.has(k)) { dropped.add(j); edited = true; return ''; }
+        if (!cur[j] || cur[j] === tok.trim()) { seen.add(k); return tok; }
+        edited = true;
+        seen.add(lc(cur[j]));
         return cur[j];
       });
-      return renamed ? '(' + toks.map(t => t.trim()).filter(Boolean).join(', ') + ')' : group;
+      if (!edited) return group;
+      const list = toks.map(t => t.trim()).filter(Boolean);
+      if (!list.length) { emptied = true; return ''; }
+      return '(' + list.join(', ') + ')';
     });
-    if (next !== loc) f.location = next;
+    if (dropped.size) f.feeds = f.feeds.filter((l, x) => !dropped.has(x));
+    const tidy = emptied ? next.replace(/ {2,}/g, ' ').trim() : next;
+    if (tidy !== loc) { f.location = tidy; changed.push(f); }
     // a link is named by its tag now once the text has it (renamed here, or typed)
-    f.feeds.forEach((l, x) => { if (cur[x] && feederNamesTag(f.location, cur[x])) l.tag = cur[x]; });
+    f.feeds.forEach(l => { const c = linkCurrentTag(srcList, l); if (c && feederNamesTag(f.location, c)) l.tag = c; });
   });
+  return changed;
+}
+// A retag renames the drive in its feeders' Locations (syncFeederTags); their
+// cards show it at once, not at the next render — editing a box that still
+// showed the old text put the old tag back and dropped the link (build 122 sixth
+// review). A card being typed in is left for the render.
+function refreshRenamedFeeders(changed, driveIndex) {
+  if (!changed || !changed.length) return;
+  const cards = document.querySelectorAll('#sourcesContainer > .source-card');
+  changed.forEach(f => {
+    const i = sources.indexOf(f), live = cards[i];
+    if (i < 0 || !live || live.contains(document.activeElement)) return;
+    live.replaceWith(buildSourceCard(f, i));
+  });
+  if (driveIndex != null) refreshSourceDependents(driveIndex);   // the drive's own "fed" line
 }
 // A link the feeder's Location no longer names — neither by the tag it was last
 // named by nor by its drive's tag now — was taken out by the tech: it goes.
-// Committed edits only (syncFeederTags with prune, a Location pick).
+// Committed edits only (syncFeederTags with prune, a pick from the Location list).
 function pruneFeederLinks(f, srcList) {
   if (!f || !Array.isArray(f.feeds)) return;
   const list = srcList || sources;
@@ -3584,7 +3629,7 @@ function orphanFeederRows(srcList, except) {
   const drives = unitDrives(srcList);
   if (drives.some(d => !d.tag && !(except && d.src === except.src && d.k === except.k))) return [];
   const tags = drives.map(d => d.tag).filter(Boolean);
-  return (srcList || []).filter(s => isFeederRow(s) && feederTagsOf(s.location).length
+  return (srcList || []).filter(s => isFeederRow(s) && feederGroupTags(s.location).length   // any "( … )" (sixth review)
     && !tags.some(t => feederNamesTag(s.location, t)));
 }
 // loto-web's drive_isolation.feeders_cover_drives (its Tier 1 rule since its
@@ -3612,7 +3657,7 @@ function unitDrives(srcList) {
     if (!isDriveRow(s)) return;
     const tags = driveUnitTags(s), ans = driveIsolatesForJson(s);
     tags.forEach((tag, k) => drives.push({ src: s, k, n: tags.length, tag, answer: ans[k],
-      shared: !!tag && tags.filter(x => x.toLowerCase() === tag.toLowerCase()).length > 1 }));
+      shared: !!tag && tags.filter(x => tagKey(x) === tagKey(tag)).length > 1 }));
   });
   const feeders = list.filter(isFeederRow).map(f => String(f.location || ''));
   const tagged = [...new Set(drives.map(d => d.tag).filter(Boolean))];
@@ -3646,8 +3691,8 @@ function driveRef(d, capital) {
 // asked for when that one is unanswered, else the first unanswered unit.
 function driveAnswerPosition(src, tag, prefer) {
   const tags = driveUnitTags(src), ans = driveIsolatesForJson(src);
-  const t = String(tag || '').trim().toLowerCase();
-  const hits = t ? tags.map((x, k) => (x.toLowerCase() === t ? k : -1)).filter(k => k >= 0) : [];
+  const t = tagKey(tag);
+  const hits = t ? tags.map((x, k) => (tagKey(x) === t ? k : -1)).filter(k => k >= 0) : [];
   if (prefer != null && hits.includes(prefer)) return prefer;
   if (hits.length) { const open = hits.find(k => !ans[k]); return open != null ? open : hits[0]; }
   if (prefer != null && prefer < tags.length && !ans[prefer]) return prefer;
@@ -3659,7 +3704,7 @@ async function askDriveIsolates(src, prefer, tag) {
   // the drive as unitDrives names it (a shared tag says its unit); a tag typed at the feeder that isn't its own, as typed
   const k = prefer || 0, t = String(tag || '').trim();
   const own = unitDrives(sources).find(x => x.src === src && x.k === k);
-  const d = (own && own.tag.toLowerCase() === t.toLowerCase()) ? own : { tag: t, k, n: valveMarkSlots(src) };
+  const d = (own && tagKey(own.tag) === tagKey(t)) ? own : { tag: t, k, n: valveMarkSlots(src) };
   const v = await askChoice({ id: 'drive-isolates', defaultValue: 'cancel', drive: d.tag,
     title: html`Does ${driveRef(d)}&rsquo;s own disconnect isolate all incoming power?`,
     html: html`Look for a lockable handle on the drive that switches the incoming line.`,
@@ -4251,7 +4296,7 @@ function setUnitAnswer(key, value) {
   // Electrical Energy row and No takes an untouched one away. A row with a
   // photo or anything typed stays (Save & New then notes the mismatch).
   if (key === 'vacuumExhaust' && value) {
-    const isOut = s => /^Vacuum Air Out/.test(String(s.energySource || ''));
+    const isOut = s => isVacuumExhaust(s.energySource);
     if (value === 'Own valve') addVacuumExhaustRow();
     else removeUntouchedAutoRow(isOut);
   }
@@ -4334,7 +4379,9 @@ const VACUUM_EXHAUST_CHOICES = [
   { value: 'shared', answer: 'Shared line, no valve', label: 'A shared line, no valve' },
   { value: 'unknown', answer: 'Can\'t see', label: 'I can\u2019t see' }
 ];
-function hasVacuumExhaustRow() { return sources.some(s => /^Vacuum Air Out/.test((s && s.energySource) || '')); }
+// An exhaust row by loto-web's rule (is_vacuum_exhaust), the app's own "Vacuum Air
+// Out" or one typed ("Vacuum Pump Exhaust"; build 122 sixth review).
+function hasVacuumExhaustRow() { return sources.some(s => !!s && isVacuumExhaust(s.energySource)); }
 function addVacuumExhaustRow() {
   if (hasVacuumExhaustRow()) return;
   sources.push({ energySource: 'Vacuum Air Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '',
@@ -7730,7 +7777,7 @@ function kineticDefaultLocation() {
 function updateSource(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
-  if (field === 'deviceId') syncFeederTags(sources);   // a retagged drive renames itself in its feeder (build 122)
+  if (field === 'deviceId') refreshRenamedFeeders(syncFeederTags(sources), index);   // a retagged drive renames itself in its feeder (build 122)
   if (field === 'verification') delete sources[index]._drainDefault;   // the tech picked the code
   if (field === 'energySource' && value && SOURCE_DEFAULTS[value]) {
     const defaults = SOURCE_DEFAULTS[value];
@@ -8397,7 +8444,7 @@ function locationIdInfo(location) {
 
 function handleLocationChange(index, value) {
   markSourceEdited(index);
-  const prune = () => { if (Array.isArray(sources[index].feeds)) pruneFeederLinks(sources[index], sources); };   // a pick is a committed edit
+  const prune = () => { if (Array.isArray(sources[index].feeds)) syncFeederTags(sources, { prune: true }); };   // a whole Location picked is a committed edit
   if (value === '** Custom Location **') {
     sources[index]._customLoc = true;
     sources[index].location = '';   // its link waits for what is typed (the box's change)
@@ -8408,8 +8455,7 @@ function handleLocationChange(index, value) {
     // Re-selecting the same prefix keeps any ID typed ("MCC 3"); switching prefix resets it
     sources[index]._customLoc = false;
     const li = locationIdInfo(sources[index].location);
-    if (!li || li.prefix !== value) sources[index].location = value;
-    prune();
+    if (!li || li.prefix !== value) sources[index].location = value;   // its link waits for the ID typed (the box's change)
     renderSources();
     const el = document.getElementById('src_locid_' + index);
     if (el) el.focus();
@@ -11721,8 +11767,8 @@ function collectSaveNotices() {
   {
     const k = unitKinds(getEquipType(), getTemplate(), sources), a = unitAnswers;
     const hasOut = hasVacuumExhaustRow(), hasCap = sources.some(s => s && s.energySource === 'Stored Electrical Energy');
-    if (k.vacPump && a.vacuumExhaust === 'Own valve' && !hasOut) notices.push('The exhaust has its own valve, but there’s no Vacuum Air Out row for it.');
-    if (k.vacPump && a.vacuumExhaust && a.vacuumExhaust !== 'Own valve' && hasOut) notices.push('The exhaust is “' + a.vacuumExhaust + '”, but the unit has a Vacuum Air Out row.');
+    if (k.vacPump && a.vacuumExhaust === 'Own valve' && !hasOut) notices.push('The exhaust has its own valve, but there’s no exhaust row (Vacuum Air Out) for it.');
+    if (k.vacPump && a.vacuumExhaust && a.vacuumExhaust !== 'Own valve' && hasOut) notices.push('The exhaust is “' + a.vacuumExhaust + '”, but the unit has an exhaust row (Vacuum Air Out).');
     if (k.chiller && a.capacitors === 'No' && hasCap) notices.push('Capacitor bank is No, but the unit has a Stored Electrical Energy row.');
   }
   const other = VACUUM_RECORD_OTHER[getTemplate()];

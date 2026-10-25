@@ -295,6 +295,16 @@
    "tag": "AHU  9",
    "location": "Feeder: MCC-4 bkr 1 ( AHU   9 , VFD-2)",
    "names": true
+  },
+  {
+   "tag": "﻿AHU 9",
+   "location": "Feeder: MCC-4 bkr 1 (AHU 9)",
+   "names": false
+  },
+  {
+   "tag": "AHU 9",
+   "location": "Feeder: MCC-4 bkr 1 (AHU 9)",
+   "names": true
   }
  ],
  "unitIds": [

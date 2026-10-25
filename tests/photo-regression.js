@@ -7743,7 +7743,7 @@
     // the app's exhaust row dropped (as a template change drops it): Save & New
     // notes it, and the next ask puts it back for "Own valve" without asking
     sources = sources.filter(s => s.energySource !== 'Vacuum Air Out'); renderSources();
-    got.ownNotice = collectSaveNotices().some(n => /no Vacuum Air Out row/.test(n));
+    got.ownNotice = collectSaveNotices().some(n => /no exhaust row \(Vacuum Air Out\)/.test(n));   // reworded in the sixth review
     const asked2 = [];
     await withDialogs({ choice: (o) => { asked2.push(o.id); return 'cancel'; } }, async () => { await maybeAskVacuumExhaust(); });
     got.ownBack = hasVacuumExhaustRow() + '/' + asked2.join();
@@ -10135,7 +10135,7 @@
 
   // T300 — a held answer on a pump's exhaust keeps its wording and says it isn't asked
   async function t300_aHeldExhaustAnswerKeepsItsWording() {
-    const N = 'T300 build 122 review of the link: a release answer already held on a vacuum pump\'s exhaust row ("Vacuum Air Out") still shows under its vent wording ("Vent to atmosphere …", "On this valve (vent port)") with the note that it is no longer asked there (loto-web names the held point only in an "Open drain…" line, fifth review); a row that asks has no note';
+    const N = 'T300 build 122 review of the link: a release answer already held on a vacuum pump\'s exhaust row ("Vacuum Air Out") still shows under its vent wording ("Vent to atmosphere …", "On this valve (vent port)") with the note that it is no longer asked there and loto-web prints its own exhaust check for the row (sixth review); a row that asks has no note';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -10150,7 +10150,7 @@
       got.held = grp(0); got.asks = grp(1);
       want(/^Vent to atmosphere for this isolation point No longer asked here/.test(got.held) && /On this valve \(vent port\)/.test(got.held), 'the held answer: ' + got.held);
       want(/^Vent to atmosphere for this isolation point/.test(got.asks) && !/No longer asked/.test(got.asks), 'the inlet: ' + got.asks);
-      want(/vacuum pump\u2019s exhaust/.test(got.held) && /Open drain\u2026/.test(got.held) && !/prints nothing/.test(got.held), 'the note\'s wording: ' + got.held);
+      want(/vacuum pump\u2019s exhaust/.test(got.held) && /its own exhaust check/.test(got.held) && !/Open drain/.test(got.held), 'the note\'s wording: ' + got.held);
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -10252,7 +10252,7 @@
 
   // T305 — a drive tag with a run of spaces: found, and named exactly as tagged
   async function t305_aTagWithExtraSpacesIsNamedAsTagged() {
-    const N = 'T305 build 122 fifth review: loto-web\'s names_tag reads spaces as typed, so a feeder names its drive exactly as the Device ID has it — "VFD-1,  2" (two spaces) still gets the rename question (then "VFD-1 2", fed); "VFD  3" accepted as offered gives "(VFD  3)", fed, its answer on its unit; a retag to "AHU  9" keeps both spaces in the feeder';
+    const N = 'T305 build 122 fifth review: a feeder names its drive exactly as the Device ID has it (so the printed text matches; loto-web\'s names_tag reads a run of spaces as one since 2026-10-25) — "VFD-1,  2" (two spaces) still gets the rename question (then "VFD-1 2", fed); "VFD  3" accepted as offered gives "(VFD  3)", fed, its answer on its unit; a retag to "AHU  9" keeps both spaces in the feeder';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -10317,6 +10317,188 @@
       sources.forEach(ensureSourceId); renderSources();
       got.shared = [unitDrives(sources).every(d => d.fed), drivesShareATag(sources)].join(' | ');
       want(/^true \| AHU {1,2}9$/.test(got.shared), 'a shared tag: ' + got.shared);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  // T308 — a retag shows in the feeder's box at once
+  async function t308_aRetagShowsInTheFeedersBoxAtOnce() {
+    const N = 'T308 build 122 sixth review: retyping a drive\'s Device ID shows the new tag in its feeder\'s Location box at once (no render needed), so editing that box keeps the renamed tag and the link — before, the box still showed the old tag, the edit put it back and the link was dropped (the drive read unfed)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-308', 'Air Handler', 'AHU - Steam');
+      const d1 = DRIVE({ deviceId: 'VFD-1' }), d2 = DRIVE({ deviceId: 'VFD-2' }); [d1, d2].forEach(ensureSourceId);
+      const f1 = Object.assign(FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), { role: 'feeder', _customLoc: true, collapsed: false, feeds: [{ sourceId: d1.sourceId, unit: 0, tag: 'VFD-1' }] });
+      const f2 = Object.assign(FEEDER('Feeder: MCC-2A bkr 15 (VFD-2)'), { role: 'feeder', _customLoc: true, collapsed: false, feeds: [{ sourceId: d2.sourceId, unit: 0, tag: 'VFD-2' }] });
+      sources = [d1, d2, f1, f2]; renderSources();
+      updateSource(0, 'deviceId', 'VFD-5');
+      const box = document.getElementById('src_loc_custom_2');
+      got.box = box ? box.value : '(no box)';
+      want(got.box === 'Feeder: MCC-2A bkr 14 (VFD-5)', 'the box: ' + got.box);
+      updateSourceCustomLoc(2, got.box + ' spare'); commitSourceLocation(2);
+      got.after = [sources[2].location, JSON.stringify((sources[2].feeds || []).map(l => l.tag)), unitDrives(sources).map(d => d.tag + ':' + d.fed).join()].join(' | ');
+      want(got.after === 'Feeder: MCC-2A bkr 14 (VFD-5) spare | ["VFD-5"] | VFD-5:true,VFD-2:true', 'after the edit: ' + got.after);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T309 — a pump's exhaust row by any name is its exhaust row
+  async function t309_anExhaustRowByAnyNameIsThePumpsExhaust() {
+    const N = 'T309 build 122 sixth review: on a Medical Vacuum Pump a row typed "Vacuum Pump Exhaust" is the pump\'s exhaust row, by loto-web\'s is_vacuum_exhaust — answering "Its own valve" adds no second (Vacuum Air Out) row, and Save & New says nothing about a missing exhaust row';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('VP-309', 'Medical Vacuum Pump', 'Medical Vacuum Pump');
+      sources = [Object.assign(mkSrc('Vacuum Air In'), { deviceType: 'Ball Valve', collapsed: false }),
+        Object.assign(mkSrc('Vacuum Pump Exhaust'), { deviceType: 'Ball Valve', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      setUnitAnswer('vacuumExhaust', 'Own valve');
+      got.rows = sources.map(s => s.energySource).join(', ');
+      want(got.rows === 'Vacuum Air In, Vacuum Pump Exhaust', 'rows: ' + got.rows);
+      got.notices = collectSaveNotices().map(n => typeof n === 'string' ? n : JSON.stringify(n)).filter(n => /exhaust/i.test(n)).join(' / ');
+      want(!/no exhaust row|no Vacuum Air Out row/.test(got.notices), 'notices: ' + got.notices);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T310 — the rename question finds a drive however its separators were typed
+  async function t310_theRenameQuestionFindsTheDriveByItsCleanedTag() {
+    const N = 'T310 build 122 sixth review: a drive tagged "VFD-1, 2" gets the rename question when the tech types "VFD-1,2" or "VFD-1 2" at the feeder prompt (it is found by its cleaned tag) — Rename makes drive and feeder "VFD-1 2", fed beside another drive\'s named feeder';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      const run = async (typed) => {
+        formOfType('AHU-310', 'Air Handler', 'AHU - Steam');
+        sources = [DRIVE({ deviceId: 'VFD-9' }), FEEDER('Feeder: MCC-1 bkr 1 (VFD-9)'), DRIVE({ deviceId: 'VFD-1, 2' })];
+        sources.forEach(ensureSourceId); renderSources();
+        const asked = [];
+        await withDialogs({ choice: (o) => { asked.push(o.id); return ({ 'feeder-panel': 'MCC-2A', 'feeder-breaker': '14', 'feeder-drive': typed, 'feeder-retag': 'rename', 'drive-isolates': 'yes' })[o.id] || 'cancel'; } },
+          async () => { await recordDrive(unitDrives(sources).find(d => d.src === sources[2])); });
+        return [asked.includes('feeder-retag'), sources[2].deviceId, sources[sources.length - 1].location, unitDrives(sources).every(d => d.fed)].join(' | ');
+      };
+      got.comma = await run('VFD-1,2');
+      got.space = await run('VFD-1 2');
+      const want1 = 'true | VFD-1 2 | Feeder: MCC-2A bkr 14 (VFD-1 2) | true';
+      want(got.comma === want1 && got.space === want1, JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T311 — a tag shared with only a run of spaces between is shared
+  async function t311_aTagSharedButForSpacesIsShared() {
+    const N = 'T311 build 122 sixth review: on a Quantity-2 drive row "AHU 9; AHU  9" both units share one tag, as loto-web reads it — each is named with its unit ("AHU 9 (unit 1)", "AHU  9 (unit 2)") and the answer position finds both';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-311', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'AHU 9; AHU  9', quantity: 2 })]; sources.forEach(ensureSourceId); renderSources();
+      got.names = unitDrives(sources).map(driveName).join(' / ');
+      got.pos = [driveAnswerPosition(sources[0], 'AHU 9', 1), driveAnswerPosition(sources[0], 'AHU  9', 0)].join();
+      want(/unit 1/.test(got.names) && /unit 2/.test(got.names) && got.pos === '1,0', JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T312 — a feeder naming its old drive in a middle "( … )" is offered for reuse
+  async function t312_aMiddleGroupOrphanIsOfferedForReuse() {
+    const N = 'T312 build 122 sixth review: a hand-typed feeder that names its old drive in a middle "( … )" ("Feeder: MCC-2A (VFD-1) bkr 14") is offered when the retagged drive (VFD-5) gets its feeder — Yes names VFD-5 (fed) and leaves the tech\'s "(VFD-1)" text as typed';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-312', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-5' }), FEEDER('Feeder: MCC-2A (VFD-1) bkr 14'), DRIVE({ deviceId: 'VFD-2' }), FEEDER('Feeder: MCC-2A bkr 15 (VFD-2)')];
+      sources.forEach(ensureSourceId); renderSources();
+      const asked = [];
+      await withDialogs({ choice: (o) => { asked.push(o.id); return ({ 'feeder-orphan': 'reuse', 'drive-isolates': 'yes' })[o.id] || 'cancel'; } },
+        async () => { await recordDrive(unitDrives(sources).find(d => d.src === sources[0])); });
+      got.r = [asked.includes('feeder-orphan'), sources[1].location, unitDrives(sources).every(d => d.fed), sources.length].join(' | ');
+      want(got.r === 'true | Feeder: MCC-2A (VFD-1) bkr 14 (VFD-5) | true | 4', got.r);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T313 — a prefix pick keeps the link until the ID box's change
+  async function t313_aPrefixPickKeepsTheLinkUntilTheIdIsCommitted() {
+    const N = 'T313 build 122 sixth review: picking the "MCC" prefix on a linked feeder keeps its link while the ID is typed, as the Custom pick does; the ID box\'s change (also what a scanned ID fires) keeps it when the ID names the drive, so a later retag still renames it';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-313', 'Air Handler', 'AHU - Steam');
+      const d = DRIVE({ deviceId: 'VFD-1' }); ensureSourceId(d);
+      const f = Object.assign(FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), { role: 'feeder', collapsed: false, feeds: [{ sourceId: d.sourceId, unit: 0, tag: 'VFD-1' }] });
+      sources = [d, f]; renderSources();
+      handleLocationChange(1, 'MCC');
+      got.picked = JSON.stringify((sources[1].feeds || []).map(l => l.tag));
+      const box = document.getElementById('src_locid_1');
+      if (box) { box.value = '2A bkr 14 (VFD-1)'; box.dispatchEvent(new Event('input', { bubbles: true })); box.dispatchEvent(new Event('change', { bubbles: true })); }
+      got.typed = [sources[1].location, JSON.stringify((sources[1].feeds || []).map(l => l.tag))].join(' | ');
+      updateUnitDeviceId(0, 0, 'VFD-5');
+      got.retag = sources[1].location;
+      want(got.picked === '["VFD-1"]' && got.typed === 'MCC 2A bkr 14 (VFD-1) | ["VFD-1"]' && got.retag === 'MCC 2A bkr 14 (VFD-5)', JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T314 — a row that is no longer a feeder keeps no link
+  async function t314_aRowNoLongerAFeederKeepsNoLink() {
+    const N = 'T314 build 122 sixth review: a hand-typed feeder (no role) whose Location is edited so it is no longer a feeder ("MCC-2A bkr 14 (VFD-1)") loses its link when the edit is committed — it no longer rides in entries.json or comes back if the text is made a feeder again';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-314', 'Air Handler', 'AHU - Steam');
+      const d = DRIVE({ deviceId: 'VFD-1' }); ensureSourceId(d);
+      const f = Object.assign(FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), { _customLoc: true, collapsed: false, feeds: [{ sourceId: d.sourceId, unit: 0, tag: 'VFD-1' }] });
+      sources = [d, f]; renderSources();
+      updateSourceCustomLoc(1, 'MCC-2A bkr 14 (VFD-1)'); commitSourceLocation(1);
+      got.feeds = JSON.stringify(sources[1].feeds || null);
+      want(got.feeds === 'null', 'feeds: ' + got.feeds);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T315 — a deleted drive's repeated token goes with its link
+  async function t315_aDeletedDrivesRepeatedTokenGoes() {
+    const N = 'T315 build 122 sixth review: after two drives briefly shared a tag ("(VFD-1, VFD-1)"), deleting one drive row leaves the feeder "(VFD-1)" with the live drive\'s link only; a deleted drive\'s tag that nothing else names stays as typed';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-315', 'Air Handler', 'AHU - Steam');
+      const a = DRIVE({ deviceId: 'VFD-1' }), b = DRIVE({ deviceId: 'VFD-1' }); [a, b].forEach(ensureSourceId);
+      const f = Object.assign(FEEDER('Feeder: MCC-2A bkr 14 (VFD-1, VFD-1)'), { role: 'feeder', collapsed: false,
+        feeds: [{ sourceId: b.sourceId, unit: 0, tag: 'VFD-1' }, { sourceId: a.sourceId, unit: 0, tag: 'VFD-1' }] });
+      sources = [a, b, f]; renderSources();
+      await withDialogs({ confirm: true }, async () => { removeSource(1); });
+      got.dup = [sources[1].location, JSON.stringify((sources[1].feeds || []).map(l => l.sourceId === a.sourceId ? 'a' : '?'))].join(' | ');
+      want(got.dup === 'Feeder: MCC-2A bkr 14 (VFD-1) | ["a"]', 'after the delete: ' + got.dup);
+      const c = DRIVE({ deviceId: 'VFD-3' }); ensureSourceId(c);
+      const g = Object.assign(FEEDER('Feeder: MCC-2A bkr 16 (VFD-3)'), { role: 'feeder', collapsed: false, feeds: [{ sourceId: c.sourceId, unit: 0, tag: 'VFD-3' }] });
+      sources = [c, g]; renderSources();
+      await withDialogs({ confirm: true }, async () => { removeSource(0); });
+      want(sources[0].location === 'Feeder: MCC-2A bkr 16 (VFD-3)', 'a lone tag stays: ' + sources[0].location);
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -10449,7 +10631,10 @@
     t297_aCollidingRetagLosesNoTag, t298_theLinkSurvivesAnEditTypedKeyByKey, t299_aTagAFeederCantNameIsRenamedOnlyIfAsked,
     t300_aHeldExhaustAnswerKeepsItsWording, t301_aRenderMidEditKeepsTheLink, t302_aTagInAMiddleGroupIsRenamedInPlace,
     t303_aHeldAnswerSaysWhyItIsNotAsked, t304_aHeldNoneFoundWritesNoChangeLaterNote, t305_aTagWithExtraSpacesIsNamedAsTagged,
-    t306_anExhaustByAnyNameAsksNothing, t307_aRunOfSpacesInATagCountsAsOne];
+    t306_anExhaustByAnyNameAsksNothing, t307_aRunOfSpacesInATagCountsAsOne,
+    t308_aRetagShowsInTheFeedersBoxAtOnce, t309_anExhaustRowByAnyNameIsThePumpsExhaust, t310_theRenameQuestionFindsTheDriveByItsCleanedTag,
+    t311_aTagSharedButForSpacesIsShared, t312_aMiddleGroupOrphanIsOfferedForReuse, t313_aPrefixPickKeepsTheLinkUntilTheIdIsCommitted,
+    t314_aRowNoLongerAFeederKeepsNoLink, t315_aDeletedDrivesRepeatedTokenGoes];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
