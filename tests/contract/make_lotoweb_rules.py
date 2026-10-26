@@ -30,6 +30,7 @@ from app.services import transformer_survey as ts  # noqa: E402
 from app.services.unit_ids import unit_ids  # noqa: E402
 from app.services import label_wait as lw  # noqa: E402
 from app.services import drain_location as dl  # noqa: E402
+from app.services import valve_state as vs  # noqa: E402
 
 
 def row(es="Electrical 480V", dev="Breaker", did="", qty=1, loc=""):
@@ -145,6 +146,36 @@ MEDIA = ["Fuel Oil In", "Fuel Oil Out", "Diesel Fuel", "FO Supply", "Chemical In
          "Vacuum Air Outlet", "Vacuum Outlet", "Vacuum Pump Exhaust", "Exhaust - Vacuum", "vacuum air out",
          "Medical Vacuum Discharge Line", "Vacuum In / Out", "Vacuum Air Outdoor Unit", "Vacuum Air Inlet"]
 
+# valve_state.takes_valve_state (loto-web 2026-10-26): which rows may carry Normally
+# Closed / Lock Open. loto-web's 35 cases as (source, device, the ID prefix its
+# generator resolves; None where it has none), then the app's own. The app has no
+# prefix: it must agree with the call loto-web's save hook makes, code None.
+VALVE_STATE = [
+    ("Electrical 480V", "Breaker", "E"), ("Electrical 480V", "Ball Valve", "E"), ("Kinetic", "Rotating", "K"),
+    ("Gravity/Potential", "Potential", "CG"), ("Thermal", "", "T"), ("Stored Electrical Energy", "Capacitor", "ES"),
+    ("Damper Actuator", "Electric Actuator", "MS"), ("Hydraulic", "Hydraulic", "H"), ("Hydraulic", "Ball Valve", "H"),
+    ("CHW In", "Ball Valve", "W"), ("CHW In", "Pump", "W"), ("Natural Gas", "Ball Valve", "G"),
+    ("Refrigerant Gas", "Ball Valve", "RG"), ("CA In", "Quick Disconnect", "P"),
+    ("Power Feed 277V", "Breaker", "X"), ("Battery", "Bag", "X"), ("Process Air", "Ball Valve", "X"), ("Process Air", "", "X"),
+    ("Mystery Line", "Breaker", "X"), ("Mystery Line", "Chain", "X"), ("Mystery Line", "Plug Valve", "X"), ("Mystery Line", "Plug", "X"),
+    ("Electrical 480V", "Breaker", None), ("Kinetic", "Rotating", None), ("Hydraulic", "Gate Valve", None),
+    ("Hydraulic", "Hydraulic", None), ("CHW In", "Ball Valve", None), ("HPS 100 PSI", "Gate Valve", None),
+    ("CA In 100 PSI", "Ball Valve", None), ("Vacuum Air In", "Ball Valve", None), ("Condensate Out", "Gate Valve", None),
+    ("Stored Electrical Energy", "Capacitor", None), ("Gravity/Potential", "Potential", None), ("Thermal", "", None),
+    ("Natural Gas", "Plug Valve", None),
+    # the app's own: its picker's names and Devices, and the custom names its reviews met
+    ("UPS Output", "Breaker", None), ("Hydraulic", "Chain", None), ("Hydraulic", "Butterfly w/Padlock", None),
+    ("Electrical 480V", "Plug Valve", None), ("Battery 12V DC", "Bag", None), ("Damper Actuator", "Pneumatic Actuator", None),
+    ("277 volt feed", "", None), ("Refrigerant Hot Gas Bypass", "Ball Valve", None), ("Steam In", "Gate Valve w/Cable", None),
+    ("CHW Out", "Ckt Setter - Universal Valve", None), ("Fuel Oil In", "Pump", None), ("", "", None), ("", "Breaker", None),
+    # the stem words at a word start (loto-web 2026-10-26): a Geothermal water line keeps its valve state
+    ("Geothermal", "Ball Valve", None), ("Geothermal Water In", "Gate Valve", None), ("Geothermal", "", None),
+    ("Solar Thermal", "Ball Valve", None), ("Hydroelectric Feed", "Breaker", None), ("Electro-Mechanical Drive", "", None),
+    # loto-web's own word-start cases (2026-10-26)
+    ("Geothermal Water In", "Ball Valve", None), ("Geothermal Supply", "Gate Valve", None), ("Geothermal Water In", "Ball Valve", "W"),
+    ("Thermal Energy", "", None), ("DHW-Electric", "Breaker", None),
+]
+
 UNITS = {
     "two tagged drives, one feeder each": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-2"),
                                            row(loc="Feeder: MCC-2A bkr 14 (VFD-1)"), row(loc="Feeder: MCC-2A bkr 15 (VFD-2)")],
@@ -219,6 +250,8 @@ def main():
         "labelAsked": [{"energySource": e, "deviceType": d, "linked": k, "asked": bool(lw.asked(e, d, k))} for e, d, k in LABEL_ASKED],
         "waitCells": [{"labelWait": a, "quantity": q, "text": t, "parsed": lw.parse_wait_cell(t, q)} for a, q, t in WAIT_CELLS],
         "voltCells": [{"dcBusV": a, "quantity": q, "text": t, "parsed": lw.parse_volts_cell(t, q)} for a, q, t in VOLT_CELLS],
+        "valveState": [{"energySource": e, "deviceType": d, "code": c, "takes": bool(vs.takes_valve_state(e, d)),
+                        "takesWithCode": bool(vs.takes_valve_state(e, d, c))} for e, d, c in VALVE_STATE],
     }
     out = os.path.join(HERE, "lotoweb-rules.json")
     with open(out, "w", encoding="utf-8") as f:

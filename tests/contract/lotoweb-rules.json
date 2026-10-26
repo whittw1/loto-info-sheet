@@ -1715,5 +1715,420 @@
     null
    ]
   }
+ ],
+ "valveState": [
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker",
+   "code": "E",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Ball Valve",
+   "code": "E",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Kinetic",
+   "deviceType": "Rotating",
+   "code": "K",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Gravity/Potential",
+   "deviceType": "Potential",
+   "code": "CG",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Thermal",
+   "deviceType": "",
+   "code": "T",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Stored Electrical Energy",
+   "deviceType": "Capacitor",
+   "code": "ES",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Damper Actuator",
+   "deviceType": "Electric Actuator",
+   "code": "MS",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Hydraulic",
+   "deviceType": "Hydraulic",
+   "code": "H",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Hydraulic",
+   "deviceType": "Ball Valve",
+   "code": "H",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "CHW In",
+   "deviceType": "Ball Valve",
+   "code": "W",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "CHW In",
+   "deviceType": "Pump",
+   "code": "W",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Natural Gas",
+   "deviceType": "Ball Valve",
+   "code": "G",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Refrigerant Gas",
+   "deviceType": "Ball Valve",
+   "code": "RG",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "CA In",
+   "deviceType": "Quick Disconnect",
+   "code": "P",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Power Feed 277V",
+   "deviceType": "Breaker",
+   "code": "X",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Battery",
+   "deviceType": "Bag",
+   "code": "X",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Process Air",
+   "deviceType": "Ball Valve",
+   "code": "X",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Process Air",
+   "deviceType": "",
+   "code": "X",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Mystery Line",
+   "deviceType": "Breaker",
+   "code": "X",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Mystery Line",
+   "deviceType": "Chain",
+   "code": "X",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Mystery Line",
+   "deviceType": "Plug Valve",
+   "code": "X",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Mystery Line",
+   "deviceType": "Plug",
+   "code": "X",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Kinetic",
+   "deviceType": "Rotating",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Hydraulic",
+   "deviceType": "Gate Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Hydraulic",
+   "deviceType": "Hydraulic",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "CHW In",
+   "deviceType": "Ball Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "HPS 100 PSI",
+   "deviceType": "Gate Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "CA In 100 PSI",
+   "deviceType": "Ball Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Vacuum Air In",
+   "deviceType": "Ball Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Condensate Out",
+   "deviceType": "Gate Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Stored Electrical Energy",
+   "deviceType": "Capacitor",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Gravity/Potential",
+   "deviceType": "Potential",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Thermal",
+   "deviceType": "",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Natural Gas",
+   "deviceType": "Plug Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "UPS Output",
+   "deviceType": "Breaker",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Hydraulic",
+   "deviceType": "Chain",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Hydraulic",
+   "deviceType": "Butterfly w/Padlock",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Plug Valve",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Battery 12V DC",
+   "deviceType": "Bag",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Damper Actuator",
+   "deviceType": "Pneumatic Actuator",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "277 volt feed",
+   "deviceType": "",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Refrigerant Hot Gas Bypass",
+   "deviceType": "Ball Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Steam In",
+   "deviceType": "Gate Valve w/Cable",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "CHW Out",
+   "deviceType": "Ckt Setter - Universal Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Fuel Oil In",
+   "deviceType": "Pump",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "",
+   "deviceType": "",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "",
+   "deviceType": "Breaker",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Geothermal",
+   "deviceType": "Ball Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Geothermal Water In",
+   "deviceType": "Gate Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Geothermal",
+   "deviceType": "",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Solar Thermal",
+   "deviceType": "Ball Valve",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Hydroelectric Feed",
+   "deviceType": "Breaker",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Electro-Mechanical Drive",
+   "deviceType": "",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Geothermal Water In",
+   "deviceType": "Ball Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Geothermal Supply",
+   "deviceType": "Gate Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Geothermal Water In",
+   "deviceType": "Ball Valve",
+   "code": "W",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Thermal Energy",
+   "deviceType": "",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "DHW-Electric",
+   "deviceType": "Breaker",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  }
  ]
 }

@@ -9145,18 +9145,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 125 (was build 122\'s): APP_BUILD and the header label say 125, the service worker\'s cache is loto-collector-v7.121, Xcode\'s CURRENT_PROJECT_VERSION is 125 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
+    const N = 'T268 build 126 (was build 122\'s): APP_BUILD and the header label say 126, the service worker\'s cache is loto-collector-v7.122, Xcode\'s CURRENT_PROJECT_VERSION is 126 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 125 && !!label && +label[1] === 125, 'the build');
+    want(APP_BUILD === 126 && !!label && +label[1] === 126, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.121', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.122', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 125;,CURRENT_PROJECT_VERSION = 125;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 126;,CURRENT_PROJECT_VERSION = 126;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -9834,7 +9834,7 @@
 
   // T290 — the app's rules agree with loto-web's own functions
   async function t290_theAppsRulesAgreeWithLotoWeb() {
-    const N = 'T290 build 122 whole review: the app decides as loto-web\'s own functions do (tests/contract/lotoweb-rules.json, written by make_lotoweb_rules.py from _is_drive_feeder, _is_vfd_device, _is_vfd_dc_bus, names_tag, unit_ids, role_of_location, feeders_for, label_wait.asked, the col 18 / 19 parsers, feeders_cover_drives and medium_kind): every feeder, drive and DC-bus case, every tag match, every unit\'s Device ID, every transformer role, and for every drive of every unit the same drives — the app never calling a drive fed that loto-web leaves not identified (it may ask more: a second untagged drive on one feeder)';
+    const N = 'T290 build 122 whole review: the app decides as loto-web\'s own functions do (tests/contract/lotoweb-rules.json, written by make_lotoweb_rules.py from _is_drive_feeder, _is_vfd_device, _is_vfd_dc_bus, names_tag, unit_ids, role_of_location, feeders_for, label_wait.asked, the col 18 / 19 parsers, feeders_cover_drives , medium_kind and valve_state.takes_valve_state): every feeder, drive and DC-bus case, every tag match, every unit\'s Device ID, every transformer role, and for every drive of every unit the same drives — the app never calling a drive fed that loto-web leaves not identified (it may ask more: a second untagged drive on one feeder)';
     const fails = [], got = { counts: {} };
     const want = (ok, what) => { if (!ok) fails.push(what); };
     let fx = null;
@@ -9888,6 +9888,10 @@
     check('cover', fx.cover || [], c => ({ ok: feedersCoverDrives(c.feeders, c.driveTags) === c.covers, what: JSON.stringify([c.feeders, c.driveTags]) + ' loto-web ' + c.covers }));
     check('mediumKind', fx.mediumKind || [], c => ({ ok: releaseMediumOf(c.energySource) === c.kind, what: JSON.stringify(c.energySource) + ' app ' + JSON.stringify(releaseMediumOf(c.energySource)) + ' loto-web ' + JSON.stringify(c.kind) }));
     want((fx.cover || []).length && (fx.mediumKind || []).length, 'the fixture carries the cover and medium cases');
+    // Which rows may carry Normally Closed / Lock Open (valve_state.takes_valve_state, build 126), as loto-web's
+    // save hook asks it (no ID prefix) — the app's one rule for its card, a source change and the export
+    check('valveState', fx.valveState || [], c => ({ ok: takesValveState(c.energySource, c.deviceType) === c.takes, what: JSON.stringify([c.energySource, c.deviceType]) + ' app ' + takesValveState(c.energySource, c.deviceType) + ' loto-web ' + c.takes }));
+    want((fx.valveState || []).length >= 35, 'the fixture carries loto-web\'s valve-state cases');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
   // T291 — a feeder is what loto-web calls one
@@ -11904,6 +11908,167 @@
     want(got.r === 'normally_closed/Yes | normal/- | normal/-', got.r);
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T377 — a held valve answer the export won't write says so on the card
+  async function t377_aDroppedValveAnswerSaysSoOnTheCard() {
+    const N = 'T377 build 126 review: a valve answer the card holds but the export won\'t write is never dropped silently — an Electrical 480V row on a Ball Valve holding Normally Closed shows "Not on the sheet: loto-web takes no valve state on “Electrical 480V” (Ball Valve)…", a CHW Pump row holding Lock Open shows "Lock Open is for a valve…", and a CHW Ball Valve row holding Normally Closed (exported) shows no note';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-377', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Ball Valve', valveState: 'normally_closed', collapsed: false }),
+        Object.assign(mkSrc('CHW In'), { deviceType: 'Pump', verification: 'Temp Only - CHW', lockOpen: true, collapsed: false }),
+        Object.assign(mkSrc('CHW Out'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', valveState: 'normally_closed', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      const txt = id => { const g = document.getElementById(id); return g ? g.textContent.replace(/\s+/g, ' ') : ''; };
+      got.e = /Not on the sheet: loto-web takes no valve state on “Electrical 480V” \(Ball Valve\)/.test(txt('valveStateGroup_0'));
+      got.pump = /Not on the sheet: Lock Open is for a valve, and the Device is “Pump”/.test(txt('lockOpenGroup_1'));
+      got.valve = !/Not on the sheet/.test(txt('valveStateGroup_2'));
+      got.sheet = [valveStateForExport(sources[0]), lockOpenSheetText(sources[1]) || '-', valveStateForExport(sources[2])].join();
+      want(got.e && got.pump && got.valve && got.sheet === 'normal,-,normally_closed', JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T378 — one rule for the card, a source change and the export
+  async function t378_oneValveStateRuleEverywhere() {
+    const N = 'T378 build 126 review: the card, a source change and the export follow one rule, loto-web\'s takes_valve_state — a Thermal row isn\'t offered a valve state and exports none, a custom "UPS Output" Breaker row and a Hydraulic row on a Chain export none, and a Hydraulic row on a Butterfly w/Padlock keeps its Normally Closed';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const R = (es, dev) => ({ energySource: es, deviceType: dev, valveState: 'normally_closed' });
+    got.offer = [sourceOffersValveState({ energySource: 'Thermal', deviceType: 'Ball Valve' }), sourceOffersValveState({ energySource: 'CHW In', deviceType: 'Ball Valve' })].join();
+    got.sheet = [R('Thermal', 'Ball Valve'), R('UPS Output', 'Breaker'), R('Hydraulic', 'Chain'), R('Hydraulic', 'Butterfly w/Padlock')].map(valveStateForExport).join();
+    want(got.offer === 'false,true' && got.sheet === 'normal,normal,normal,normally_closed', JSON.stringify(got));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T379 — the one reset still covers a swap the rule alone wouldn't
+  async function t379_theOneResetCoversEverySwap() {
+    const N = 'T379 build 126 review (one reset in the source-change step): a CHW Ball Valve row holding Normally Closed and Lock Open, re-typed as a custom "277 volt feed" (an electrical line to the app, whose name loto-web\'s rule doesn\'t read as one), loses its valve and with it both answers — the reset follows the swap as well as the rule';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-379', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', valveState: 'normally_closed', lockOpen: true, collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      handleEnergySourceChange(0, '** Custom Energy **');
+      updateSourceCustomField(0, 'energySource', '277 volt feed');
+      commitCustomEnergy(0);
+      got.row = [sources[0].deviceType || '(none)', sources[0].valveState, !!sources[0].lockOpen, takesValveState('277 volt feed', '')].join();
+      want(got.row === '(none),normal,false,true', got.row);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  // T380 — Lock Open goes exactly where the card offers it
+  async function t380_lockOpenGoesWhereTheCardOffersIt() {
+    const N = 'T380 build 126: Lock Open is for a valve and goes exactly where the card offers it — a CHW Pump row holding Normally Closed and Lock Open exports its Normally Closed (loto-web takes it) but not the Lock Open, which the card notes, and a CHW Pump row holding only Normally Closed isn\'t offered Lock Open (a held state no longer opens the box)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-380', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Pump', verification: 'Temp Only - CHW', valveState: 'normally_closed', lockOpen: true, collapsed: false }),
+        Object.assign(mkSrc('CHW Out'), { deviceType: 'Pump', verification: 'Temp Only - CHW', valveState: 'normally_closed', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      const g = id => document.getElementById(id);
+      got.sheet = [valveStateForExport(sources[0]), lockOpenSheetText(sources[0]) || '-'].join();
+      got.note = /Not on the sheet: Lock Open is for a valve, and the Device is “Pump”/.test(g('lockOpenGroup_0') ? g('lockOpenGroup_0').textContent : '');
+      got.offered = !!(g('src_lockopen_1'));
+      want(got.sheet === 'normally_closed,-' && got.note && !got.offered, JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T381 — a Geothermal water line keeps its valve state
+  async function t381_aGeothermalLineKeepsItsValveState() {
+    const N = 'T381 build 126: "thermal" ends a valve state only at a word start, as loto-web\'s generator reads it — a Geothermal Ball Valve row is offered Valve State and Lock Open and exports its Normally Closed with no note, while a Thermal or "Solar Thermal" row takes none';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-381', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('Geothermal'), { deviceType: 'Ball Valve', valveState: 'normally_closed', lockOpen: true, collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      const txt = id => { const el = document.getElementById(id); return el ? el.textContent : ''; };
+      got.row = [sourceOffersValveState(sources[0]), valveStateForExport(sources[0]), lockOpenSheetText(sources[0]) || '-', /Not on the sheet/.test(txt('valveStateGroup_0') + txt('lockOpenGroup_0'))].join();
+      got.thermal = [takesValveState('Thermal', ''), takesValveState('Solar Thermal', 'Ball Valve'), takesValveState('Geothermal Water In', 'Gate Valve')].join();
+      want(got.row === 'true,normally_closed,Yes,false' && got.thermal === 'false,false,true', JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T382 — a source change clears a valve answer on a row no valve can be on
+  async function t382_aChangeToARowWithNoValveClearsTheAnswers() {
+    const N = 'T382 build 126 (build 125\'s rule kept): a CHW In row with no Device holding Normally Closed and Lock Open, re-typed as a custom "277 volt feed" (no valve on its list; a name loto-web\'s rule would take), loses both — a held answer never rides onto a row no valve can be on — while CHW In re-picked as CHW Out keeps them';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-382', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: '', verification: 'Temp Only - CHW', valveState: 'normally_closed', lockOpen: true, collapsed: false }),
+        Object.assign(mkSrc('CHW In'), { deviceType: '', verification: 'Temp Only - CHW', valveState: 'normally_closed', lockOpen: true, collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      handleEnergySourceChange(0, '** Custom Energy **');
+      updateSourceCustomField(0, 'energySource', '277 volt feed');
+      commitCustomEnergy(0);
+      handleEnergySourceChange(1, 'CHW Out');
+      got.volt = [sources[0].energySource, sources[0].valveState, !!sources[0].lockOpen].join();
+      got.chw = [sources[1].energySource, sources[1].valveState, !!sources[1].lockOpen].join();
+      want(got.volt === '277 volt feed,normal,false' && got.chw === 'CHW Out,normally_closed,true', JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  // T383 — a Lock Open the export won't write hides no drain answer
+  async function t383_anUnsentLockOpenHidesNoDrainAnswer() {
+    const N = 'T383 build 126: a Lock Open the export won\'t write hides no drain answer — a CHW Pump row holding Lock Open and the drain answer "On the equipment" exports that answer (col 14) and no Lock Open, while a CHW Ball Valve locked open (written) is still never asked for a relief point';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-383', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Pump', verification: 'Temp Only - CHW', lockOpen: true, drainLocation: { where: 'On the equipment', text: '' }, collapsed: false }),
+        Object.assign(mkSrc('CHW Out'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', lockOpen: true, collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      got.pump = [drainLocationSheetText(sources[0]) || '-', lockOpenSheetText(sources[0]) || '-'].join();
+      got.valve = [sourceTakesDrainLocation(sources[1]), lockOpenSheetText(sources[1]) || '-'].join();
+      want(got.pump === 'On the equipment,-' && got.valve === 'false,Yes', JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T384 — Split 1 defaults Normally Closed only where the card offers a valve state
+  async function t384_aSplitDefaultsNormallyClosedOnlyWhereOffered() {
+    const N = 'T384 build 126: Split 1 defaults the split-off unit to Normally Closed only where the card offers a valve state — a CHW Ball Valve row of 2 splits off a Normally Closed valve, an Electrical 480V row on a Ball Valve (loto-web takes no valve state there) splits off a Normal one';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-384', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', quantity: 2, verification: 'Temp Only - CHW', collapsed: false }),
+        Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Ball Valve', quantity: 2, collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      splitSource(1); splitSource(0);
+      got.rows = sources.map(s => s.energySource + ':' + s.quantity + ':' + (s.valveState || 'normal')).join(' | ');
+      want(got.rows === 'CHW In:1:normal | CHW In:1:normally_closed | Electrical 480V:1:normal | Electrical 480V:1:normal', got.rows);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -12057,7 +12222,10 @@
     t366_aSwappedValvesPhotoIsListedUntilRetaken, t367_oneSettleStepForEveryPath, t368_aLinksMessageReadsLikeTheOthers,
     t369_aFlaggedPhotoIsNotTheRowsPhoto, t370_aRetakeFlagClearsWhenTheValveIsBack, t371_aValveCantIsolateAnElectricalLine,
     t372_aFlaggedPhotosDuplicateIsNo, t373_theSlotSaysRetake, t374_noValveStateOnAValvelessSource,
-    t375_aChangeToAValvelessSourceDropsTheValveState, t376_aHydraulicValveKeepsItsValveAnswers];
+    t375_aChangeToAValvelessSourceDropsTheValveState, t376_aHydraulicValveKeepsItsValveAnswers, t377_aDroppedValveAnswerSaysSoOnTheCard,
+    t378_oneValveStateRuleEverywhere, t379_theOneResetCoversEverySwap, t380_lockOpenGoesWhereTheCardOffersIt,
+    t381_aGeothermalLineKeepsItsValveState, t382_aChangeToARowWithNoValveClearsTheAnswers, t383_anUnsentLockOpenHidesNoDrainAnswer,
+    t384_aSplitDefaultsNormallyClosedOnlyWhereOffered];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
