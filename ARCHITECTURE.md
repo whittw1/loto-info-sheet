@@ -1315,7 +1315,12 @@ nothing printed from the answer.
 
 `entries.json` follows the sheet too: `sources[].drainLocation` only where col 14 carries it. T303 now expects a held
 answer on a "Thermal" row to be neither shown nor exported. That ends the fifth review's rule that loto-web names such
-a point in an "Open drain…" line: a Thermal row is not a source loto-web's rule takes. Each new test fails on
+a point in an "Open drain…" line: a Thermal row is not a source loto-web's rule takes. The deficiencies chat confirmed
+the rule on 2026-10-26 on a live-code copy. A Thermal row always prints as its T- row ("Thermal Hazard…", cool where
+the matrix calls for it, a non-contact temperature gun) and never reads a drain answer, so nothing is lost there. Only
+a custom-typed liquid that loto-web runs through its water wording loses the drain named inside its "Open drain…" line
+(`drain_location.name_relief`): the generic "Open drain valve…" line prints, as before build 118. It accepted that,
+since the app never asked the question there. Each new test fails on
 `912108b` except T345, which covers code that already worked. Suite **355 / 355** headless web and native-mock; the
 contract regenerated unchanged (153 cases); the bundle was synced.
 
