@@ -1270,8 +1270,28 @@ photos. All four blocks parse:
 - the Pump rows' answers read as `drain_location` / `drains_to`, and the held None found adds no Change Later;
 - the copy's col 13 is blank, and its main photo came across.
 
-The deficiencies chat was told on 2026-10-26 and asked whether its generator wants a drain answer on a Pump row.
-Its answer is pending.
+The deficiencies chat was told on 2026-10-26 and checked its live code:
+- col 13 is read on any block, whatever its type: the photo is linked view-only, "No label" sets the chip, and
+  nothing prints. Nothing for loto-web to change;
+- a blank U3 was safe (the generic alternate-source text, a pre-QC INFO); the fix only ends the silent gap;
+- loto-web has **no device gate on col 14**: a held answer prints as on any row. The water family renames the drain
+  in the verification text. On the new media, with Simplified Drain Language off, a found point adds the Section 1
+  release lines and the Section 3 / 4 steps, and None found adds the stop line.
+
+Its guidance: export a held answer only while the row is still a fluid isolation point. A Ball Valve changed to
+Chain or Cable is fine (both count as valve devices already); one changed to Breaker probably isn't. Build 123
+keeps the answer on any non-valve Device, a Breaker's too, so it goes further than that. That is the first finding of
+the follow-up review below, which waits on wilkins' go-ahead.
+
+The deficiencies chat then generated the GEN-P sample with a live-code copy (a hospital with Simplified Drain
+Language off), once with Device Pump and once with Ball Valve:
+- the drain text was identical, so a kept *found* answer and its Drains To are fine;
+- the location follows the answer, not the device: "On this valve" prints as "the drain on F-1". It suggests the
+  card's "No longer asked here" note tell the tech to re-check that point;
+- **a kept None found still prints the stop line** ("If no drain is present, do not proceed…", or the medium's own),
+  but build 123 writes no Change Later note for it, so the office is never told. Its preference: write the note as
+  on a valve row (pre-QC holds a FIX until the office clears it), or leave None found off a non-valve row's sheet.
+  This is a defect of build 123's fix 4, to fix with the review's findings.
 
 ### Build 122 — drives, the arc flash label, transformers, the release question for every medium
 
