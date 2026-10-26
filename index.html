@@ -479,7 +479,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b124</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b125</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1162,7 +1162,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 124;
+const APP_BUILD = 125;
 
 // ============================================================================
 // DATA
@@ -1762,7 +1762,8 @@ function sourcePhotoTaken(i) { return photoSlotTaken('source_' + i); }
 // warning, and a "Y" sheet row loto-web laid on the photo before it.
 function effectiveDuplicate(src, ref) {
   if (!src) return '';
-  if (src.duplicate === 'Yes' && src.dupAuto && !(ref && ref.dbKey && isRecordedDup(ref))) return 'No';
+  // a photo flagged for a retake leaves the row (build 125 review): its Yes goes with it
+  if (src.duplicate === 'Yes' && src.dupAuto && !(ref && ref.dbKey && isRecordedDup(ref) && !ref.retakeFor)) return 'No';
   return src.duplicate || '';
 }
 // Bring the form's automatic answers in line with their photos (renderSources
@@ -1945,6 +1946,17 @@ function sourceTakesValveState(src) {
 function getFilteredDevices(energySource) {
   const override = templateSourceOverride(TEMPLATE_SOURCE_DEVICE_OVERRIDES, energySource);
   if (override) return override;
+  return baseDevicesFor(energySource);
+}
+// Does a source take a valve at all? Not an Electrical line, Kinetic, Gravity/
+// Potential, Hydraulic, a battery or a capacitor: none of their Devices is a valve.
+// By the source alone (no template), so the export can ask it of any saved unit.
+// No source yet: unknown, so yes.
+function sourceTakesValves(energySource) {
+  const es = String(energySource || '').trim();
+  return !es || baseDevicesFor(es).some(isValveDevice);
+}
+function baseDevicesFor(energySource) {
   if (!energySource) return DATA.deviceTypes; // no energy source selected → full list
   // Longest prefix match first
   let bestDevices = null;
@@ -3165,54 +3177,92 @@ function waterSpecificCode(v) {
 // (the picker, the custom box, a link filling a blank source; Copy Source brings
 // its own, and an In/Out split never changes medium) takes what the new source
 // needs. loto-web prints both on the row (2026-10-26, from its live code):
-// - a gas line never keeps Gauge/Drain, Drain Only or Temp Only, nor a blank
-//   code (each prints a drain line): GaugeOnly, or Controls in simplified mode;
+// - a code or Device that is the old source's own default (Kinetic's Rotating,
+//   Gravity/Potential's Potential and Block, Hydraulic's Hydraulic and GaugeOnly,
+//   a battery's Bag) becomes the new source's own, or none where it has none and
+//   doesn't offer it (build 125: Kinetic re-picked as Gravity/Potential kept
+//   Rotating / Rotating). A valve default (steam's Gate Valve) is any medium's;
 // - a row leaving the water family (or compressed air: the codes that follow a
 //   drain), or one with no source before and a water-specific code, takes the new
 //   source's own code and, for a valve, its own Device (Rotating; Block and
 //   Potential; GaugeOnly and Hydraulic), as its template writes them; a tech can
 //   still pick a valve for a real hydraulic isolation valve. Without a code of its
 //   own, a water-specific code is blanked for the tech to pick (Save & New lists
-//   it); a suffix-less gauge or drain code stays (the vacuum lines', fuel oil's).
-// `before` is the source the row had ('' for none).
-// Returns whether it swapped a valve Device: the caller then clears that row's
-// valve marks (they sit on its photo, which shows the valve) and asks for a retake.
+//   it); a suffix-less gauge or drain code stays (the vacuum lines', fuel oil's);
+// - a gas line never keeps Gauge/Drain, Drain Only or Temp Only, nor a blank
+//   code (each prints a drain line): GaugeOnly, or Controls in simplified mode;
+// - a valve Device it replaced takes what only a valve has with it (build 124,
+//   loto-web: a kept Lock Open printed "Slowly open valve fully and lock it" on a
+//   K, CG or H row, and Normally Closed changed H's Sections 2 and 4).
+// `before` is the source the row had ('' for none). Returns the valve Device it
+// replaced ('' for none): the caller clears that row's valve marks and flags its
+// photo, which shows the valve.
 function takeNewSourceDefaults(src, before) {
   const es = String((src && src.energySource) || '').trim();
   const was = String(before || '').trim();
-  if (!es || before === undefined || was === es) return false;
+  if (!es || before === undefined || was === es) return '';
+  const setCode = (code) => { src.verification = code; delete src._drainDefault; };
+  const setDevice = (d) => { src.deviceType = d; delete src._customDevice; };
+  const oldDevice = String(src.deviceType || '');
+  const def = SOURCE_DEFAULTS[es] || {}, wasDef = SOURCE_DEFAULTS[was] || {};
+  if (wasDef.device && !isValveDevice(wasDef.device) && oldDevice === wasDef.device && def.device !== wasDef.device) setDevice(def.device || '');
+  if (wasDef.verification && String(src.verification || '').trim() === wasDef.verification
+      && !getFilteredVerifications(src.deviceType, es).includes(wasDef.verification)) setCode(def.verification || '');
+  // A valve Device the new source doesn't offer can't isolate it (an Electrical
+  // line, Kinetic, Gravity/Potential, Hydraulic, a battery, a capacitor): it becomes
+  // the source's own, or none for the tech to pick (build 125 review: a CHW Ball
+  // Valve re-picked as Electrical 480V kept the valve and its valve answers)
+  if (isValveDevice(src.deviceType) && !getFilteredDevices(es).some(isValveDevice)) setDevice(def.device || '');
+  const gas = releaseMediumOf(es) === 'gas';
   const v = String(src.verification || '').trim();
   const p = parseWaterVerification(v);
-  const setCode = (code) => { src.verification = code; delete src._drainDefault; };
-  if (releaseMediumOf(es) === 'gas') {
-    if (p.recognized && v !== 'GaugeOnly') setCode(simpleVerifEnabled() ? 'Controls' : 'GaugeOnly');
-    return false;
+  if (!gas && !drainCodeFollowsDrain(src) && (was ? drainCodeFollowsDrain({ energySource: was }) : waterSpecificCode(v))) {
+    if (def.verification) { if (p.recognized && !p.blank) setCode(def.verification); }
+    else if (waterSpecificCode(v)) setCode('');
   }
-  if (drainCodeFollowsDrain(src)) return false;
-  if (!(was ? drainCodeFollowsDrain({ energySource: was }) : waterSpecificCode(v))) return false;
-  const def = SOURCE_DEFAULTS[es] || {};
-  let swapped = false;
-  if (def.device && isValveDevice(src.deviceType)) {
-    src.deviceType = def.device;
-    delete src._customDevice;
-    // …and what only a valve has goes with it (build 124, loto-web 2026-10-26: a
-    // kept Lock Open printed "Slowly open valve fully and lock it" on a K, CG or H
-    // row, and Normally Closed changed H's Sections 2 and 4)
-    src.valveState = 'normal';
-    delete src.lockOpen;
-    swapped = true;
+  if (gas) {
+    const g = String(src.verification || '').trim();
+    if (parseWaterVerification(g).recognized && g !== 'GaugeOnly') setCode(simpleVerifEnabled() ? 'Controls' : 'GaugeOnly');
   }
-  if (def.verification) { if (p.recognized && !p.blank) setCode(def.verification); }
-  else if (waterSpecificCode(v)) setCode('');
-  return swapped;
+  // A source that takes no valve has no valve state or Lock Open, whatever its
+  // Device (build 125 review: a Pump row with Normally Closed re-picked as
+  // Electrical kept it, and loto-web then never locked out the breaker)
+  if (!sourceTakesValves(es)) { src.valveState = 'normal'; delete src.lockOpen; }
+  if (!isValveDevice(oldDevice) || isValveDevice(src.deviceType)) return '';
+  src.valveState = 'normal';
+  delete src.lockOpen;
+  return oldDevice;
 }
 // What a swap says: the row's photo shows the valve, not what isolates it now.
-function deviceSwapNote(src, photoMap, slot) {
+function deviceSwapNote(src, photoMap, slot, valve) {
   const ref = photoMap && photoMap[slot];
-  return 'Device set to ' + src.deviceType + (ref && ref.dbKey ? ': its photo shows the valve \u2014 retake it' : '');
+  const what = src.deviceType ? 'Device set to ' + src.deviceType
+    : 'Device cleared (a ' + valve + ' can\u2019t isolate ' + String(src.energySource || '').trim() + ')';
+  return what + (ref && ref.dbKey ? ': its photo shows the old ' + valve + ' \u2014 retake it' : '');
 }
-// A settle note inside another message: " — cleared the … answer: …".
-function noteClause(note) { return note ? ' \u2014 ' + note.charAt(0).toLowerCase() + note.slice(1) : ''; }
+// …and the photo stays flagged (retakeFor) until a retake or another photo
+// replaces its reference: Save & New lists it (build 125, loto-web: C-12 asks for
+// the restraint, not the valve). A NEW reference — see VALVE MARKS.
+function flagPhotoRetake(photoMap, slot, valve) {
+  const ref = photoMap && photoMap[slot];
+  if (!ref || !ref.dbKey) return;
+  photoMap[slot] = Object.assign({}, ref, { retakeFor: valve });
+  if (photoMap === photos) paintPhotoSlot(slot);
+}
+// Every rule that follows a committed source change, in one step, for the paths
+// where the code and Device stay with the row (build 125: the picker, the custom
+// box and a link each assembled it): the new source's defaults, the swapped
+// valve's marks and photo, and the drain answer. Returns the notes to show.
+function settleSourceChange(src, before, photoMap, slot) {
+  const valve = takeNewSourceDefaults(src, before);
+  if (valve) { clearMarksOf(photoMap, slot); flagPhotoRetake(photoMap, slot, valve); }
+  return [settleSourceEnergy(src, before), valve ? deviceSwapNote(src, photoMap, slot, valve) : ''].filter(Boolean);
+}
+// Settle notes inside another message: " — cleared the … answer: … — device set …"
+// (one note or a list, build 125).
+function noteClause(notes) {
+  return [].concat(notes || []).filter(Boolean).map(n => ' \u2014 ' + n.charAt(0).toLowerCase() + n.slice(1)).join('');
+}
 // Valve rows (or no device yet), not locked open, of a source that takes the
 // question; the release media only where the unit's facility asks (`facility`,
 // the form's unit by default). An answer a row already holds stays wherever its
@@ -3241,7 +3291,21 @@ function drainsToSheetText(src, facility) {
   const to = String(d.to || '').replace(/\s+/g, ' ').trim();
   return /^Other:?$/i.test(to) ? '' : to;   // "Other…" with nothing typed is no answer
 }
-function lockOpenSheetText(src) { return (src && src.lockOpen && sourceTakesValveState(src)) ? 'Yes' : ''; }
+function lockOpenSheetText(src) { return (src && src.lockOpen && sourceTakesValveState(src) && exportsValveAnswers(src)) ? 'Yes' : ''; }
+// Where the export writes a row's valve state and Lock Open: on a source that takes
+// a valve, and on a Hydraulic row whose Device is a valve (a real hydraulic
+// isolation valve the tech picked: loto-web prints "Verify valve H-1 is closed" from
+// it). Never on an Electrical, Kinetic, Gravity/Potential, battery or capacitor row,
+// even if the row holds one from before (build 125 review: units saved under builds
+// 122–124 can carry Normally Closed on an Electrical row, and loto-web printed
+// "Leave valve E-1 closed" with no breaker lockout). The row's data is untouched.
+function exportsValveAnswers(src) {
+  const es = String((src && src.energySource) || '').trim();
+  return sourceTakesValves(es) || (/^Hydraulic/.test(es) && isValveDevice(src.deviceType));
+}
+function valveStateForExport(src) {
+  return (src && src.valveState && exportsValveAnswers(src)) ? src.valveState : 'normal';
+}
 
 // A drain found for the isolated side is a drain the row's check can use: the
 // code gains it as if the Drain box were ticked (Temp Only \u2192 Drain Only,
@@ -7592,6 +7656,7 @@ function photoSlotBadge(ref) {
   if (!ref || !ref.dbKey) return '';
   if (ref.saving) return b('rgba(0,0,0,0.7)', '#e0a44a', '… Saving');
   if (ref.unsaved) return b('rgba(200,40,40,0.92)', '#fff', '⚠ NOT SAVED');
+  if (ref.retakeFor) return b('rgba(200,110,20,0.94)', '#fff', '&#8635; Retake: shows the old ' + escHtml(ref.retakeFor));   // build 125 review
   if (ref.shared) return b('rgba(0,0,0,0.7)', '#e0a44a', '&#8635; Shared');
   if (ref.dupOf) return b('rgba(0,0,0,0.7)', '#4ab86a', '&#10004; Duplicated');
   return b('rgba(0,0,0,0.7)', '#4ab86a', '&#10004; Captured');
@@ -7619,9 +7684,21 @@ function paintPhotoSlot(slot) {
 }
 function paintEquipPhotoSlots() { ['equip_main', 'equip_dataplate', 'equip_ee', 'equip_arcflash'].forEach(paintPhotoSlot); syncArcFlashSlot(); }
 
+// A photo flagged for a retake whose row has the valve back (the change undone):
+// the photo shows the row's Device again, so the flag goes (build 125 review).
+function settleRetakeFlags() {
+  sources.forEach((s, i) => {
+    const slot = 'source_' + i, ref = photos[slot];
+    if (!s || !ref || !ref.retakeFor || String(s.deviceType || '') !== ref.retakeFor) return;
+    const next = Object.assign({}, ref);
+    delete next.retakeFor;
+    photos[slot] = next;
+  });
+}
 function renderSources() {
   applySimpleVerifDefaults();
   settleAutoDuplicates();   // an automatic Duplicate = Yes follows its photo (build 110)
+  settleRetakeFlags();      // …and a retake flag its row's Device (build 125 review)
   try { syncFeederTags(sources); } catch (e) {}   // each feeder names its linked drives as tagged now (build 122)
   const container = document.getElementById('sourcesContainer');
   container.innerHTML = '';
@@ -7964,9 +8041,7 @@ function settleCustomSource(src, photoMap, slot) {
   if (!src || !('_customFrom' in src)) return '';
   const before = src._customFrom;
   delete src._customFrom;
-  const swapped = takeNewSourceDefaults(src, before);
-  if (swapped) clearMarksOf(photoMap, slot);
-  return [settleSourceEnergy(src, before), swapped ? deviceSwapNote(src, photoMap, slot) : ''].filter(Boolean).join('\n');
+  return settleSourceChange(src, before, photoMap, slot).join('\n');
 }
 function settlePendingCustomSources(list, photoMap) {
   return (list || []).map((src, i) => settleCustomSource(src, photoMap, 'source_' + i)).filter(Boolean);
@@ -8605,9 +8680,7 @@ function handleEnergySourceChange(index, value) {
     delete row._customFrom;
     sources[index]._customEnergy = false;
     sources[index].energySource = value;
-    const swapped = takeNewSourceDefaults(sources[index], before);   // build 123 review
-    if (swapped) clearMarksOf(photos, 'source_' + index);
-    const drainNote = [settleSourceEnergy(sources[index], before), swapped ? deviceSwapNote(sources[index], photos, 'source_' + index) : ''].filter(Boolean).join('\n');
+    const drainNote = settleSourceChange(sources[index], before, photos, 'source_' + index).join('\n');   // build 123 review
     // A row that is no longer Electrical is no feeder or transformer breaker
     // (build 122 second review): its role and the prefix that says it go. (A
     // custom energy source being typed keeps them; the card's button clears them.)
@@ -9144,9 +9217,7 @@ function applyLink(equipIndex, sourceIndex) {
   if (tookEnergy && (parseInt(src.quantity, 10) || 1) !== (parseInt(mine.quantity, 10) || 1)) {
     mine.quantity = parseInt(src.quantity, 10) || 1;
   }
-  const swapped = tookEnergy && takeNewSourceDefaults(mine, '');   // build 123 review
-  if (swapped) clearMarksOf(photos, 'source_' + pendingLinkSourceIndex);
-  const drainNote = [tookEnergy ? settleSourceEnergy(mine) : '', swapped ? deviceSwapNote(mine, photos, 'source_' + pendingLinkSourceIndex) : ''].filter(Boolean).join('; ');
+  const drainNotes = tookEnergy ? settleSourceChange(mine, '', photos, 'source_' + pendingLinkSourceIndex) : [];   // build 123 review
   const marksCleared = reconcileSourceMarks(pendingLinkSourceIndex, true);
   mine.userEdited = true;
   sources[pendingLinkSourceIndex].linkedTo = {
@@ -9166,8 +9237,8 @@ function applyLink(equipIndex, sourceIndex) {
   closeLinkDialog();
   renderSources();
   autoSaveCurrent();
-  showToast(`Linked to ${entry.equipName}` + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '') + noteClause(drainNote),
-    marksCleared || !!drainNote);
+  showToast(`Linked to ${entry.equipName}` + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '') + noteClause(drainNotes),
+    marksCleared || drainNotes.length > 0);
 }
 
 function unlinkSource(index) {
@@ -12056,6 +12127,12 @@ function collectSaveNotices() {
     if (k.vacPump && a.vacuumExhaust && a.vacuumExhaust !== 'Own valve' && hasOut) notices.push('The exhaust is “' + a.vacuumExhaust + '”, but the unit has an exhaust row (Vacuum Air Out).');
     if (k.chiller && a.capacitors === 'No' && hasCap) notices.push('Capacitor bank is No, but the unit has a Stored Electrical Energy row.');
   }
+  // A photo of the valve a row no longer has (build 125): flagged when the app
+  // swapped its Device, until a retake replaces it
+  sources.forEach((s, i) => {
+    const ref = photos['source_' + i];
+    if (s && ref && ref.dbKey && ref.retakeFor) notices.push('Source #' + (i + 1) + ': its photo shows the old ' + ref.retakeFor + ' \u2014 retake it.');
+  });
   const other = VACUUM_RECORD_OTHER[getTemplate()];
   const room = placeKey((document.getElementById('equipRoom') || {}).value);
   if (other && room) {
@@ -13812,7 +13889,7 @@ async function runCombinedExport(opts) {
   }
 
   for (const entry of allEntries) {
-    const map = { mainH: null, dpH: null, eeH: null, afH: null, sourceHs: [] };
+    const map = { mainH: null, dpH: null, eeH: null, afH: null, sourceHs: [], retakeHs: [] };
     const ep = entry.photos || {};
 
     map.mainH = await resolveExportPhoto(entry, 'main', ep.equip_main);
@@ -13832,6 +13909,11 @@ async function runCombinedExport(opts) {
       if (src && ref && ref.dbKey) {
         srcH = await resolveExportPhoto(entry, 'source-' + (i + 1), ref, { sourceId: src.sourceId, src: src, entrySources: entry.sources });
       }
+      // A photo flagged for a retake shows the valve the row no longer has (build 125,
+      // loto-web: it prints a row's photo as that row's own, with its ID box). It ships
+      // with the unit's misc photos (PASS 1C), never as the row's, so it is kept, and
+      // the row prints no photo until the retake.
+      if (srcH && ref.retakeFor) { map.retakeHs.push({ name: srcH, ref: ref }); srcH = null; }
       map.sourceHs.push(srcH);
     }
     // The rows' label photos (build 121), numbered in the photo sequence like
@@ -13904,6 +13986,8 @@ async function runCombinedExport(opts) {
       const f = await resolveExportPhoto(entry, 'misc-' + (mi + 1), mp, { fileName: (ext) => stem + '_Misc' + (mi + 1) + ext });
       if (f) { names.push(f); caps.push(captureInfoOf(mp, f)); }
     }
+    // …and the photos a row lost to a Device swap, flagged for a retake (build 125)
+    for (const r of ((entryMaps[ei] || {}).retakeHs || [])) { names.push(r.name); caps.push(captureInfoOf(r.ref, r.name)); }
     miscFileNames.push(names.join(', '));
     miscCaptured.push(caps);
   }
@@ -13940,7 +14024,7 @@ async function runCombinedExport(opts) {
         quote(entry.tiedToName || ''), quote(entry.notes || ''),
         i + 1, quote(src.energySource), quote(src.deviceType), quote(src.deviceId || ''), src.quantity,
         quote(sourceLocationForExport(src)), effectiveDuplicate(src, (entry.photos || {})['source_' + i]), quote(src.verification),
-        quote(src.valveState || 'normal'),
+        quote(valveStateForExport(src)),
         quote(map.sourceHs[i] || ''), quote(src.detail || ''),
         quote(linkedStr),
         quote(map.mainH || ''),
@@ -13974,7 +14058,7 @@ async function runCombinedExport(opts) {
         location: sourceLocationForExport(src),   // a role row keeps its prefix (build 122)
         // an automatic Yes holds only with its borrowed photo (build 110)
         duplicate: effectiveDuplicate(src, ref),
-        valveState: src.valveState || 'normal',   // always present for downstream (loto-web)
+        valveState: valveStateForExport(src),   // always present for downstream (loto-web); none on a source that takes no valve (build 125 review)
         photoFile: map.sourceHs[i] ? 'photos/' + map.sourceHs[i] : '',
         // when its photo was taken (build 109), as in the JPEG's EXIF
         photoCapturedAt: cap.capturedAt || '',
@@ -13999,6 +14083,7 @@ async function runCombinedExport(opts) {
       // The drain answer only where the sheet carries it (build 123 review): never one
       // kept on an Electrical or exhaust row
       if (!sourceTakesDrainLocation(src, entryHospitalCode(entry))) delete out.drainLocation;
+      if (!lockOpenSheetText(src)) delete out.lockOpen;   // …and Lock Open only where col 15 carries it (build 125 review)
       return out;
     });
     const miscOut = miscFileNames[ei]
@@ -14232,7 +14317,7 @@ async function runCombinedExport(opts) {
             // Valve state (build 91). The office imports THIS sheet, and it had
             // no valve state: a Normally Closed valve arrived as an ordinary one
             // and the procedure said to open it at restore. Blank = normal.
-            src ? (VALVE_STATE_SHEET_TEXT[src.valveState] || '') : '',
+            src ? (VALVE_STATE_SHEET_TEXT[valveStateForExport(src)] || '') : '',
             // Valve mark (build 92): where the tech tapped the valve in THIS
             // row's photo — "x,y" fractions, qty-N rows "x,y; x,y". loto-web
             // starts the box + arrow there. Blank without a photo.
