@@ -9145,18 +9145,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 123 (was build 122\'s): APP_BUILD and the header label say 123, the service worker\'s cache is loto-collector-v7.119, Xcode\'s CURRENT_PROJECT_VERSION is 123 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
+    const N = 'T268 build 124 (was build 122\'s): APP_BUILD and the header label say 124, the service worker\'s cache is loto-collector-v7.120, Xcode\'s CURRENT_PROJECT_VERSION is 124 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 123 && !!label && +label[1] === 123, 'the build');
+    want(APP_BUILD === 124 && !!label && +label[1] === 124, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.119', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.120', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 123;,CURRENT_PROJECT_VERSION = 123;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 124;,CURRENT_PROJECT_VERSION = 124;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -11532,6 +11532,126 @@
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T360 — picking a regular source ends a custom session
+  async function t360_thePickerEndsACustomSession() {
+    const N = 'T360 build 124: a CHW row set to Custom and then (nothing typed) to Hydraulic becomes Hydraulic / Hydraulic / GaugeOnly, and the custom session ends there — a Ball Valve the tech then picks for a real hydraulic isolation valve stays through the save (it used to be reset to Hydraulic); a compressed-air row (Gauge/Drain) set to Custom and then to Kinetic takes Rotating (the source before Custom counts)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      fillForm('AHU-360');
+      document.getElementById('equipType').value = 'Air Handler'; filterTemplateDropdown('Air Handler');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', location: 'MER', collapsed: false }),
+        Object.assign(mkSrc('Compressed Air In'), { deviceType: 'Ball Valve', verification: 'Gauge/Drain', location: 'MER', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      handleEnergySourceChange(0, '** Custom Energy **'); handleEnergySourceChange(0, 'Hydraulic');
+      handleEnergySourceChange(1, '** Custom Energy **'); handleEnergySourceChange(1, 'Kinetic');
+      got.after = sources.map(x => [x.energySource, x.deviceType, x.verification, '_customFrom' in x].join('/')).join(' | ');
+      sources[0].deviceType = 'Ball Valve';
+      const e = saveEntry();
+      got.saved = ((e && e.sources) || []).map(x => x.deviceType).join(',');
+      want(got.after === 'Hydraulic/Hydraulic/GaugeOnly/false | Kinetic/Rotating/Rotating/false' && got.saved === 'Ball Valve,Rotating', JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T361 — loto-web's medium order in the water family itself
+  async function t361_aRefrigerantLineIsNeverGivenAWaterCode() {
+    const N = 'T361 build 124, as loto-web asked (2026-10-26: an RG row coded Temp Only - Hot prints "Verify temperature reaches ambient"): a custom "Refrigerant Hot Gas Bypass" line is no water family — no - Hot suffix in its verification list, and simplified verification leaves its blank code blank (it used to fill Temp Only - Hot); "Hot Oil" (no medium) is still hot water';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    let prevSimple = null;
+    try { prevSimple = localStorage.getItem('loto_simple_verification'); } catch (e) {}
+    try {
+      setHospitalCode('Atlanta');
+      try { localStorage.setItem('loto_simple_verification', '1'); } catch (e) {}
+      formOfType('GEN-361', 'Generator', '');
+      got.family = [isWaterFamilySource('Refrigerant Hot Gas Bypass'), getTempSuffixFor('Refrigerant Hot Gas Bypass'), isWaterFamilySource('Hot Oil'), getTempSuffixFor('Hot Oil')].join();
+      got.hotChoices = getFilteredVerifications('Ball Valve', 'Refrigerant Hot Gas Bypass').filter(v => /- Hot$/.test(v)).length;
+      sources = [Object.assign(mkSrc('Refrigerant Hot Gas Bypass'), { deviceType: 'Ball Valve', verification: '', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      got.code = sources[0].verification || '(blank)';
+      want(got.family === 'false,,true,hot' && got.hotChoices === 0 && got.code === '(blank)', JSON.stringify(got));
+    } finally {
+      try { if (prevSimple == null) localStorage.removeItem('loto_simple_verification'); else localStorage.setItem('loto_simple_verification', prevSimple); } catch (e) {}
+      setHospitalCode(prevCode);
+    }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T362 — the save re-renders the cards it changed
+  async function t362_theSaveShowsWhatItCommitted() {
+    const N = 'T362 build 124: when Save & New commits a custom source still being typed (restored mid-typing) and blanks its CHW code, the card is redrawn, so it no longer shows the old code beside Save & New\'s "Verification" warning';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    const rp = window.__askChoiceAuto;
+    try {
+      setHospitalCode('Atlanta');
+      fillForm('AHU-362');
+      document.getElementById('equipType').value = 'Air Handler'; filterTemplateDropdown('Air Handler');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', location: 'MER', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      handleEnergySourceChange(0, '** Custom Energy **');
+      updateSourceCustomField(0, 'energySource', 'Process Air');
+      sources = JSON.parse(JSON.stringify(sources)); renderSources();
+      const sel = () => { const el = document.getElementById('src_ver_0'); return el ? el.value : '(none)'; };
+      got.before = sel();
+      window.__askChoiceAuto = (o) => (o && o.defaultValue) || 'cancel';
+      await saveAndNew();
+      got.after = sel();
+      got.data = sources[0] ? (sources[0].verification || '(blank)') : '(gone)';
+      want(got.before === 'Temp Only - CHW' && got.after === '' && got.data === '(blank)', JSON.stringify(got));
+    } finally {
+      window.__askChoiceAuto = rp;
+      if (typeof closeIncompleteWarning === 'function') { try { closeIncompleteWarning(); } catch (e) {} }
+      setHospitalCode(prevCode);
+    }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T363 — the app's Device swap drops what only a valve has
+  async function t363_aSwappedValveDropsItsValveFields() {
+    const N = 'T363 build 124, as loto-web asked (2026-10-26): a Normally Closed CHW valve row, locked open and with a valve mark on its photo, turned Hydraulic by the picker becomes Hydraulic / normal with no Lock Open and no mark — loto-web printed "open valve fully and lock it" and "Leave valve closed" steps from them — and the message asks for a retake of its photo';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-363', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', valveState: 'normally_closed', lockOpen: true, collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      photos.source_0 = { dbKey: 'loto:t363', thumbnail: '', fileType: 'image/jpeg', timestamp: new Date().toISOString(), marks: [{ x: 0.4, y: 0.5 }], marksFor: { qty: 1, inOut: false } };
+      _toastItems = [];
+      handleEnergySourceChange(0, 'Hydraulic');
+      const t = document.getElementById('toast');
+      got.row = [sources[0].deviceType, sources[0].valveState, !!sources[0].lockOpen, (photos.source_0 && photos.source_0.marks) ? photos.source_0.marks.length : 0].join();
+      got.msg = t ? /Device set to Hydraulic: its photo shows the valve/.test(t.textContent) : false;
+      want(got.row === 'Hydraulic,normal,false,0' && got.msg === true, JSON.stringify(got));
+    } finally { delete photos.source_0; setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T364 — a recovered draft's pending custom source clears marks in its own photo map
+  async function t364_aRecoveredDraftClearsItsOwnMarks() {
+    const N = 'T364 build 124 (a test gap): a pending custom source committed outside the form (a recovered draft) whose valve Device is swapped clears the valve mark in that draft\'s own photo map, and drops its Lock Open';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const list = [{ energySource: 'Gravity/Potential Custom Arm', _customFrom: 'CHW In', deviceType: 'Ball Valve', verification: 'Temp Only - CHW', valveState: 'normal', lockOpen: true }];
+    list[0].energySource = 'Hydraulic';
+    const map = { source_0: { dbKey: 'loto:t364', marks: [{ x: 0.2, y: 0.3 }], marksFor: { qty: 1, inOut: false } } };
+    const notes = settlePendingCustomSources(list, map);
+    got.r = [list[0].deviceType, list[0].verification, !!list[0].lockOpen, map.source_0.marks ? map.source_0.marks.length : 0, '_customFrom' in list[0], notes.length].join();
+    want(got.r === 'Hydraulic,GaugeOnly,false,0,false,1', got.r);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -11679,7 +11799,9 @@
     t348_everyPathSettlesTheEnergySource, t349_theClearMessageNamesThePoint, t350_oneRuleForAHeldArcFlashPhoto, t351_copySourceClearsAndSaysSo,
     t352_aRowLeavingWaterTakesItsSourcesCode, t353_anUncommittedCustomSourceIsCommittedBySave, t354_aSettleNoteReadsAsAClause,
     t355_theCodeRuleIsItsOwnStep, t356_aValveDeviceBecomesTheSourcesOwn, t357_gasNeverKeepsADrainCode,
-    t358_aReleaseMediumIsNeverTheWaterFamily, t359_aLinkThatFillsTheSourceTakesItsDefaults];
+    t358_aReleaseMediumIsNeverTheWaterFamily, t359_aLinkThatFillsTheSourceTakesItsDefaults,
+    t360_thePickerEndsACustomSession, t361_aRefrigerantLineIsNeverGivenAWaterCode, t362_theSaveShowsWhatItCommitted,
+    t363_aSwappedValveDropsItsValveFields, t364_aRecoveredDraftClearsItsOwnMarks];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
