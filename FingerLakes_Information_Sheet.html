@@ -1762,7 +1762,8 @@ function sourcePhotoTaken(i) { return photoSlotTaken('source_' + i); }
 // warning, and a "Y" sheet row loto-web laid on the photo before it.
 function effectiveDuplicate(src, ref) {
   if (!src) return '';
-  if (src.duplicate === 'Yes' && src.dupAuto && !(ref && ref.dbKey && isRecordedDup(ref))) return 'No';
+  // a photo flagged for a retake leaves the row (build 125 review): its Yes goes with it
+  if (src.duplicate === 'Yes' && src.dupAuto && !(ref && ref.dbKey && isRecordedDup(ref) && !ref.retakeFor)) return 'No';
   return src.duplicate || '';
 }
 // Bring the form's automatic answers in line with their photos (renderSources
@@ -3196,11 +3197,15 @@ function takeNewSourceDefaults(src, before) {
   if (wasDef.device && !isValveDevice(wasDef.device) && oldDevice === wasDef.device && def.device !== wasDef.device) setDevice(def.device || '');
   if (wasDef.verification && String(src.verification || '').trim() === wasDef.verification
       && !getFilteredVerifications(src.deviceType, es).includes(wasDef.verification)) setCode(def.verification || '');
+  // A valve Device the new source doesn't offer can't isolate it (an Electrical
+  // line, Kinetic, Gravity/Potential, Hydraulic, a battery, a capacitor): it becomes
+  // the source's own, or none for the tech to pick (build 125 review: a CHW Ball
+  // Valve re-picked as Electrical 480V kept the valve and its valve answers)
+  if (isValveDevice(src.deviceType) && !getFilteredDevices(es).some(isValveDevice)) setDevice(def.device || '');
   const gas = releaseMediumOf(es) === 'gas';
   const v = String(src.verification || '').trim();
   const p = parseWaterVerification(v);
   if (!gas && !drainCodeFollowsDrain(src) && (was ? drainCodeFollowsDrain({ energySource: was }) : waterSpecificCode(v))) {
-    if (def.device && isValveDevice(src.deviceType)) setDevice(def.device);
     if (def.verification) { if (p.recognized && !p.blank) setCode(def.verification); }
     else if (waterSpecificCode(v)) setCode('');
   }
@@ -3216,7 +3221,9 @@ function takeNewSourceDefaults(src, before) {
 // What a swap says: the row's photo shows the valve, not what isolates it now.
 function deviceSwapNote(src, photoMap, slot, valve) {
   const ref = photoMap && photoMap[slot];
-  return 'Device set to ' + (src.deviceType || 'none') + (ref && ref.dbKey ? ': its photo shows the old ' + valve + ' \u2014 retake it' : '');
+  const what = src.deviceType ? 'Device set to ' + src.deviceType
+    : 'Device cleared (a ' + valve + ' can\u2019t isolate ' + String(src.energySource || '').trim() + ')';
+  return what + (ref && ref.dbKey ? ': its photo shows the old ' + valve + ' \u2014 retake it' : '');
 }
 // …and the photo stays flagged (retakeFor) until a retake or another photo
 // replaces its reference: Save & New lists it (build 125, loto-web: C-12 asks for
@@ -7620,6 +7627,7 @@ function photoSlotBadge(ref) {
   if (!ref || !ref.dbKey) return '';
   if (ref.saving) return b('rgba(0,0,0,0.7)', '#e0a44a', '… Saving');
   if (ref.unsaved) return b('rgba(200,40,40,0.92)', '#fff', '⚠ NOT SAVED');
+  if (ref.retakeFor) return b('rgba(200,110,20,0.94)', '#fff', '&#8635; Retake: shows the old ' + escHtml(ref.retakeFor));   // build 125 review
   if (ref.shared) return b('rgba(0,0,0,0.7)', '#e0a44a', '&#8635; Shared');
   if (ref.dupOf) return b('rgba(0,0,0,0.7)', '#4ab86a', '&#10004; Duplicated');
   return b('rgba(0,0,0,0.7)', '#4ab86a', '&#10004; Captured');
@@ -7647,9 +7655,21 @@ function paintPhotoSlot(slot) {
 }
 function paintEquipPhotoSlots() { ['equip_main', 'equip_dataplate', 'equip_ee', 'equip_arcflash'].forEach(paintPhotoSlot); syncArcFlashSlot(); }
 
+// A photo flagged for a retake whose row has the valve back (the change undone):
+// the photo shows the row's Device again, so the flag goes (build 125 review).
+function settleRetakeFlags() {
+  sources.forEach((s, i) => {
+    const slot = 'source_' + i, ref = photos[slot];
+    if (!s || !ref || !ref.retakeFor || String(s.deviceType || '') !== ref.retakeFor) return;
+    const next = Object.assign({}, ref);
+    delete next.retakeFor;
+    photos[slot] = next;
+  });
+}
 function renderSources() {
   applySimpleVerifDefaults();
   settleAutoDuplicates();   // an automatic Duplicate = Yes follows its photo (build 110)
+  settleRetakeFlags();      // …and a retake flag its row's Device (build 125 review)
   try { syncFeederTags(sources); } catch (e) {}   // each feeder names its linked drives as tagged now (build 122)
   const container = document.getElementById('sourcesContainer');
   container.innerHTML = '';

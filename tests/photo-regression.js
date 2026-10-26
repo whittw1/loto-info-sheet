@@ -11776,6 +11776,79 @@
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T370 — a retake flag clears when the row's valve comes back
+  async function t370_aRetakeFlagClearsWhenTheValveIsBack() {
+    const N = 'T370 build 125 review: a CHW Ball Valve row mis-picked as Kinetic (its photo flagged), then picked back to CHW In with Device Ball Valve again, loses the flag — the photo shows its valve, Save & New no longer asks for a retake, and the export carries it as the row\'s own photo again';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-370', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      photos.source_0 = { dbKey: 'loto:t370', thumbnail: '', fileType: 'image/jpeg', timestamp: new Date().toISOString() };
+      handleEnergySourceChange(0, 'Kinetic');
+      got.flagged = photos.source_0.retakeFor || '';
+      handleEnergySourceChange(0, 'CHW In');
+      handleDeviceTypeChange(0, 'Ball Valve');
+      renderSources();
+      got.after = [photos.source_0.retakeFor || '(none)', collectSaveNotices().some(n => /retake it/.test(n))].join();
+      want(got.flagged === 'Ball Valve' && got.after === '(none),false', JSON.stringify(got));
+    } finally { delete photos.source_0; setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T371 — a valve the new source doesn't offer is cleared (an Electrical line)
+  async function t371_aValveCantIsolateAnElectricalLine() {
+    const N = 'T371 build 125 review: a CHW Ball Valve row — Normally Closed, locked open, with a marked photo — re-picked as Electrical 480V clears its Device (Save & New lists Device Type), drops its valve answers and marks and flags its photo; a Natural Gas Ball Valve re-picked as Kinetic takes Rotating';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      fillForm('AHU-371');
+      document.getElementById('equipType').value = 'Air Handler'; filterTemplateDropdown('Air Handler');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', valveState: 'normally_closed', lockOpen: true, location: 'MER', collapsed: false }),
+        Object.assign(mkSrc('Natural Gas'), { deviceType: 'Ball Valve', verification: 'Controls', location: 'MER', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      photos.source_0 = { dbKey: 'loto:t371', thumbnail: '', fileType: 'image/jpeg', timestamp: new Date().toISOString(), marks: [{ x: 0.5, y: 0.5 }], marksFor: { qty: 1, inOut: false } };
+      handleEnergySourceChange(0, 'Electrical 480V'); handleEnergySourceChange(1, 'Kinetic');
+      got.e = [sources[0].deviceType || '(none)', sources[0].valveState, !!sources[0].lockOpen, (photos.source_0.marks || []).length, photos.source_0.retakeFor || ''].join();
+      got.k = sources[1].deviceType;
+      got.listed = collectIncompleteFields().some(m => /Source #1\b.*Device Type/.test(m));
+      want(got.e === '(none),normal,false,0,Ball Valve' && got.k === 'Rotating' && got.listed === true, JSON.stringify(got));
+    } finally { delete photos.source_0; setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T372 — a flagged photo's automatic Duplicate = Yes doesn't export
+  async function t372_aFlaggedPhotosDuplicateIsNo() {
+    const N = 'T372 build 125 review: a row whose reused photo (an automatic Duplicate = Yes) is flagged for a retake exports Dup Photo = No — the photo has left the row — while a manual Yes stays the tech\'s';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const ref = { dbKey: 'loto:t372', dupOf: { entryId: null, dbKey: 'loto:t372-orig', label: 'X' } };
+    got.r = [effectiveDuplicate({ duplicate: 'Yes', dupAuto: true }, ref), effectiveDuplicate({ duplicate: 'Yes', dupAuto: true }, Object.assign({}, ref, { retakeFor: 'Ball Valve' })),
+      effectiveDuplicate({ duplicate: 'Yes' }, Object.assign({}, ref, { retakeFor: 'Ball Valve' }))].join();
+    want(got.r === 'Yes,No,Yes', got.r);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T373 — the photo slot says it needs a retake
+  async function t373_theSlotSaysRetake() {
+    const N = 'T373 build 125 review: a photo flagged for a retake says so on its slot ("Retake: shows the old Ball Valve"), escaped, so the tech sees it at the equipment, not only at Save & New';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const h = photoSlotInnerHtml({ dbKey: 'loto:t373', thumbnail: '', retakeFor: 'Ball Valve' }, null);
+    const evil = photoSlotInnerHtml({ dbKey: 'loto:t373b', thumbnail: '', retakeFor: '<b>x</b>' }, null);
+    got.r = [/Retake: shows the old Ball Valve/.test(h), !/<b>x<\/b>/.test(evil)].join();
+    want(got.r === 'true,true', got.r);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -11927,7 +12000,8 @@
     t360_thePickerEndsACustomSession, t361_aRefrigerantLineIsNeverGivenAWaterCode, t362_theSaveShowsWhatItCommitted,
     t363_aSwappedValveDropsItsValveFields, t364_aRecoveredDraftClearsItsOwnMarks, t365_theOldSourcesDefaultsBecomeTheNewOnes,
     t366_aSwappedValvesPhotoIsListedUntilRetaken, t367_oneSettleStepForEveryPath, t368_aLinksMessageReadsLikeTheOthers,
-    t369_aFlaggedPhotoIsNotTheRowsPhoto];
+    t369_aFlaggedPhotoIsNotTheRowsPhoto, t370_aRetakeFlagClearsWhenTheValveIsBack, t371_aValveCantIsolateAnElectricalLine,
+    t372_aFlaggedPhotosDuplicateIsNo, t373_theSlotSaysRetake];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
