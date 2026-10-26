@@ -479,7 +479,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b125</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b126</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1162,7 +1162,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 125;
+const APP_BUILD = 126;
 
 // ============================================================================
 // DATA
@@ -1936,25 +1936,45 @@ function isValveDevice(device) {
   if (!d) return false;
   return VALVE_DEVICES_WITH_CKT.includes(d) || VALVE_DEVICES_NO_CKT.includes(d) || /valve/i.test(d);
 }
+// loto-web's valve_state.takes_valve_state (2026-10-26), pattern for pattern (the
+// contract test, T290), asked as its save hook asks it (no ID prefix): whether
+// Normally Closed / Lock Open may apply to a row at all. A Hydraulic line only on a
+// valve Device (a real hydraulic isolation valve); never an electrical, stored,
+// kinetic, gravity, thermal or spring source by its name (an Electrical row's valve
+// state replaced its breaker lockout); else a Device naming a valve, or any Device
+// that is no breaker, disconnect, switch, drive, fuse, plug, bag, capacitor or
+// actuator. One rule for the card, a source change and the export (build 126).
+// The stem words (electric … mechanical) count at a word start only, as loto-web
+// reads them since 2026-10-26 (its (?<![a-z]) is (?:^|[^a-z]) here): a Geothermal
+// water line keeps its valve state (asked of loto-web's valve_state that day).
+const LW_VALVE_DEVICE_RE = /\bvalve\b|\bbutterfly\b|\bckt\s*setter\b|\bcircuit\s*setter\b/i;
+const LW_NON_VALVE_NAME_RE = /(?:^|[^a-z])(?:electric|eletrical|kinetic|gravity|potential|thermal|capacitor|mechanical)|\bbreaker\b|\bdisconnect\b|\bvfd\b|\bbattery\b|\bups\b|\b\d+(?:\.\d+)?\s*v(?:ac|dc)?\b|\bspring\b|damper\s*actuator/i;
+const LW_NON_VALVE_DEVICE_RE = /^\s*(?:breaker|disconnect|switch|vfd|fuse|plug|bag|capacitor|rotating|potential|hydraulic|electric\s+actuator|pneumatic\s+actuator)\b/i;
+function takesValveState(source, device) {
+  const name = String(source || ''), dev = String(device || '');
+  if (/hydraulic/i.test(name)) return LW_VALVE_DEVICE_RE.test(dev);
+  if (LW_NON_VALVE_NAME_RE.test(name)) return false;
+  return LW_VALVE_DEVICE_RE.test(dev) || !LW_NON_VALVE_DEVICE_RE.test(dev);
+}
+// The card offers Valve State and Lock Open on a row that takes a valve state and
+// whose Device is a valve (or none yet, on a valve line)…
+function sourceOffersValveState(src) {
+  if (!src || !takesValveState(src.energySource, src.deviceType)) return false;
+  if (src.deviceType) return isValveDevice(src.deviceType);
+  return getFilteredDevices(src.energySource).some(isValveDevice);
+}
+// …and shows a non-normal state wherever a row holds one: nothing saved is hidden.
+// Where the export won't write it, the card says so (valveAnswerNote).
 function sourceTakesValveState(src) {
   if (!src) return false;
   if (src.valveState && src.valveState !== 'normal') return true;
-  if (src.deviceType) return isValveDevice(src.deviceType);
-  return getFilteredDevices(src.energySource).some(isValveDevice);
+  return sourceOffersValveState(src);
 }
 
 function getFilteredDevices(energySource) {
   const override = templateSourceOverride(TEMPLATE_SOURCE_DEVICE_OVERRIDES, energySource);
   if (override) return override;
   return baseDevicesFor(energySource);
-}
-// Does a source take a valve at all? Not an Electrical line, Kinetic, Gravity/
-// Potential, Hydraulic, a battery or a capacitor: none of their Devices is a valve.
-// By the source alone (no template), so the export can ask it of any saved unit.
-// No source yet: unknown, so yes.
-function sourceTakesValves(energySource) {
-  const es = String(energySource || '').trim();
-  return !es || baseDevicesFor(es).some(isValveDevice);
 }
 function baseDevicesFor(energySource) {
   if (!energySource) return DATA.deviceTypes; // no energy source selected → full list
@@ -3224,14 +3244,16 @@ function takeNewSourceDefaults(src, before) {
     const g = String(src.verification || '').trim();
     if (parseWaterVerification(g).recognized && g !== 'GaugeOnly') setCode(simpleVerifEnabled() ? 'Controls' : 'GaugeOnly');
   }
-  // A source that takes no valve has no valve state or Lock Open, whatever its
-  // Device (build 125 review: a Pump row with Normally Closed re-picked as
-  // Electrical kept it, and loto-web then never locked out the breaker)
-  if (!sourceTakesValves(es)) { src.valveState = 'normal'; delete src.lockOpen; }
-  if (!isValveDevice(oldDevice) || isValveDevice(src.deviceType)) return '';
-  src.valveState = 'normal';
-  delete src.lockOpen;
-  return oldDevice;
+  // What only a valve has goes with the valve; and it never stays on a row no valve
+  // can be on (no valve Device, none on the new source's list: a custom "277 volt
+  // feed"), nor where the row takes no valve state at all, whatever its Device
+  // (loto-web's rule, takesValveState; build 125 review: a Pump row with Normally
+  // Closed re-picked as Electrical kept it, and loto-web then never locked out the
+  // breaker). One reset (build 126).
+  const valveGone = isValveDevice(oldDevice) && !isValveDevice(src.deviceType);
+  const noValve = !isValveDevice(src.deviceType) && !getFilteredDevices(es).some(isValveDevice);
+  if (valveGone || noValve || !takesValveState(es, src.deviceType)) { src.valveState = 'normal'; delete src.lockOpen; }
+  return valveGone ? oldDevice : '';
 }
 // What a swap says: the row's photo shows the valve, not what isolates it now.
 function deviceSwapNote(src, photoMap, slot, valve) {
@@ -3268,9 +3290,10 @@ function noteClause(notes) {
 // the form's unit by default). An answer a row already holds stays wherever its
 // source takes the question: data is never hidden there (a Device that isn't a
 // valve, the setting off). A valve locked open carries live flow and is never a
-// relief point.
+// relief point: a Lock Open the export writes (lockOpenSheetText). One it won't
+// (a Pump row's) hides no drain answer (build 126).
 function sourceTakesDrainLocation(src, facility) {
-  if (!src || src.lockOpen || !drainTakingSource(src)) return false;
+  if (!src || lockOpenSheetText(src) || !drainTakingSource(src)) return false;
   if (src.drainLocation && src.drainLocation.where) return true;
   if (nonValveDevice(src)) return false;
   return drainCodeFollowsDrain(src) || releasePromptOn(facility === undefined ? formFacilityCode() : facility);
@@ -3291,20 +3314,30 @@ function drainsToSheetText(src, facility) {
   const to = String(d.to || '').replace(/\s+/g, ' ').trim();
   return /^Other:?$/i.test(to) ? '' : to;   // "Other…" with nothing typed is no answer
 }
-function lockOpenSheetText(src) { return (src && src.lockOpen && sourceTakesValveState(src) && exportsValveAnswers(src)) ? 'Yes' : ''; }
-// Where the export writes a row's valve state and Lock Open: on a source that takes
-// a valve, and on a Hydraulic row whose Device is a valve (a real hydraulic
-// isolation valve the tech picked: loto-web prints "Verify valve H-1 is closed" from
-// it). Never on an Electrical, Kinetic, Gravity/Potential, battery or capacitor row,
-// even if the row holds one from before (build 125 review: units saved under builds
-// 122–124 can carry Normally Closed on an Electrical row, and loto-web printed
-// "Leave valve E-1 closed" with no breaker lockout). The row's data is untouched.
-function exportsValveAnswers(src) {
-  const es = String((src && src.energySource) || '').trim();
-  return sourceTakesValves(es) || (/^Hydraulic/.test(es) && isValveDevice(src.deviceType));
+// The export writes a row's valve state and Lock Open only where loto-web's rule
+// lets the row carry one (takesValveState), even if the row holds one from before
+// (build 125 review: units saved under builds 122–124 can carry Normally Closed on
+// an Electrical row, and loto-web printed "Leave valve E-1 closed" with no breaker
+// lockout). Lock Open is for a valve: it goes exactly where the card offers it. The
+// data is untouched.
+function lockOpenSheetText(src) {
+  return (src && src.lockOpen && sourceOffersValveState(src)) ? 'Yes' : '';
 }
 function valveStateForExport(src) {
-  return (src && src.valveState && exportsValveAnswers(src)) ? src.valveState : 'normal';
+  return (src && src.valveState && takesValveState(src.energySource, src.deviceType)) ? src.valveState : 'normal';
+}
+// The card's note on a held answer the export won't write (build 126): it isn't
+// silently dropped. `what` is 'state' or 'lock'.
+function valveAnswerNote(src, what) {
+  if (!src) return '';
+  const held = what === 'state' ? (src.valveState && src.valveState !== 'normal') : !!src.lockOpen;
+  const sent = what === 'state' ? valveStateForExport(src) === src.valveState : !!lockOpenSheetText(src);
+  if (!held || sent) return '';
+  const es = String(src.energySource || '').trim(), dev = String(src.deviceType || '').trim();
+  const why = !takesValveState(es, dev)
+    ? 'loto-web takes no valve state on ' + (es ? '\u201c' + es + '\u201d' : 'this row') + (dev ? ' (' + dev + ')' : '')
+    : 'Lock Open is for a valve, and ' + (dev ? 'the Device is \u201c' + dev + '\u201d' : (es ? '\u201c' + es + '\u201d' : 'this row') + ' has none');
+  return 'Not on the sheet: ' + why + '. ' + (what === 'state' ? 'Set it to Normal' : 'Untick it') + ' to clear it.';
 }
 
 // A drain found for the isolated side is a drain the row's check can use: the
@@ -7934,13 +7967,15 @@ function buildSourceCard(src, i) {
             })()}
             ${sourceTakesValveState(src) ? html`<div class="form-group" id="valveStateGroup_${i}">
               <label>Valve State</label>
+              ${valveAnswerNote(src, 'state') ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${valveAnswerNote(src, 'state')}</div>` : ''}
               <select onchange="updateSource(${i},'valveState',this.value)" id="src_valvestate_${i}">
                 ${DATA.valveStateOptions.map(o => html`<option value="${o.value}" ${(src.valveState||'normal')===o.value?'selected':''}>${o.label}</option>`)}
                 ${src.valveState && !DATA.valveStateOptions.some(o => o.value === src.valveState) ? html`<option value="${src.valveState}" selected>${src.valveState}</option>` : ''}
               </select>
             </div>` : html`<div id="valveStateGroup_${i}" style="display:none;"></div>`}
-            ${sourceTakesValveState(src) ? html`<div class="form-group" id="lockOpenGroup_${i}">
+            ${(sourceOffersValveState(src) || src.lockOpen) ? html`<div class="form-group" id="lockOpenGroup_${i}">
               <label>Locked open</label>
+              ${valveAnswerNote(src, 'lock') ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${valveAnswerNote(src, 'lock')}</div>` : ''}
               <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;font-size:14px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500;">
                 <input type="checkbox" class="painted-check" id="src_lockopen_${i}" ${src.lockOpen ? 'checked' : ''} onchange="updateLockOpen(${i},this.checked)">
                 Opened and locked open during lockout (rare)
@@ -8552,7 +8587,7 @@ function splitSource(index) {
   const pairBefore = src.energySource;
   const pairRef = pair ? photos['source_' + index] : null;
   const pairInMark = (pairRef && pairRef.marksFor && pairRef.marksFor.inOut) ? cleanValveMarks(pairRef.marks).slice(0, 1) : [];
-  const takesState = sourceTakesValveState(Object.assign({}, src, { valveState: 'normal' }));
+  const takesState = sourceOffersValveState(src);
 
   // Original keeps the remaining valves
   src.quantity = qty - 1;
