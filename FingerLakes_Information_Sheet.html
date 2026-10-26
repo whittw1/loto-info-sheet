@@ -3132,14 +3132,22 @@ function drainCodeFollowsDrain(src) {
 // column 14 but would store it as stale data: the app neither asks, shows nor
 // exports a drain answer there (build 123 review).
 function drainTakingSource(src) { return drainCodeFollowsDrain(src) || !!releaseMediumOf(src && src.energySource); }
-// A row's energy source changed to a named one that takes no question: its drain
-// answer goes (loto-web: "clear it when the source changes to anything else").
-// Returns whether one went. No source picked yet clears nothing, and a custom
-// source being typed is only hidden (sourceTakesDrainLocation), never cleared mid-word.
-function dropDrainAnswerOffSource(src) {
-  if (!src || !src.drainLocation || !String(src.energySource || '').trim() || drainTakingSource(src)) return false;
+// The rules that follow a row's energy source once one is committed, on every
+// path that commits it: the picker, the custom box's change (never a keystroke),
+// Copy Source, Split (an In/Out pair's halves) and a link filling a blank one
+// (build 123 review: each path used to remember them on its own; a voltage pick
+// keeps a row Electrical). A drain answer stays only where the new source takes
+// the question (loto-web: "clear it when the source changes to anything else"),
+// and the code it set goes back with it. `before` (the source the answer was
+// given under, where the path knows it) names the point in the message; no
+// source yet clears nothing. Returns the message to show, or ''.
+function settleSourceEnergy(src, before) {
+  if (!src || !src.drainLocation || !String(src.energySource || '').trim() || drainTakingSource(src)) return '';
+  undoDrainCode(src, src.drainLocation);
   delete src.drainLocation;
-  return true;
+  const was = { energySource: before || '' };
+  const noun = drainTakingSource(was) ? releasePointOf(was).noun : 'drain or vent';
+  return 'Cleared the ' + noun + ' answer: \u201c' + String(src.energySource).trim() + '\u201d takes no ' + noun + ' question';
 }
 // Valve rows (or no device yet), not locked open, of a source that takes the
 // question; the release media only where the unit's facility asks (`facility`,
@@ -3189,6 +3197,12 @@ function verificationWithDrain(src) {
 // it), so codes compare without it and the code put back takes the row's
 // current one (loto-web review 2026-10-23).
 const drainCodeBase = v => String(v || '').replace(/\s*-\s*(Hot|CHW)$/i, '').trim();
+function undoDrainCode(src, d) {
+  if (!d || !d._codeSet || drainCodeBase(src.verification) !== drainCodeBase(d._codeSet)) return false;
+  const sfx = /\s*-\s*(Hot|CHW)$/i.exec(src.verification || '');
+  src.verification = d._codeBefore ? drainCodeBase(d._codeBefore) + (sfx ? ' - ' + sfx[1] : '') : '';
+  return true;
+}
 function updateDrainWhere(index, where) {
   const src = sources[index];
   if (!src) return;
@@ -3201,11 +3215,7 @@ function updateDrainWhere(index, where) {
   // …but the code an answer set goes back with the answer, whatever the Device is
   // now (build 123 review: clearing one on a pump row left its drain in the code)
   const ours = drainCodeFollowsDrain(src) && !!prev._codeSet && drainCodeBase(src.verification) === drainCodeBase(prev._codeSet);
-  const undo = () => {
-    if (!ours) return;
-    const sfx = /\s*-\s*(Hot|CHW)$/i.exec(src.verification || '');
-    src.verification = prev._codeBefore ? drainCodeBase(prev._codeBefore) + (sfx ? ' - ' + sfx[1] : '') : '';
-  };
+  const undo = () => { if (ours) undoDrainCode(src, prev); };
   if (!where) { undo(); delete src.drainLocation; }
   else if (DRAIN_FOUND.includes(where)) {
     const d = { where: where, text: prev.text || '' };
@@ -3897,13 +3907,16 @@ const ARC_FLASH_TYPES = ['ATS', 'Generator', 'Transformer'];
 // template, as unitKinds does (build 123: a unit picked by template alone got the
 // ATS questions but no arc flash label). loto-web reads column 13 by its header
 // on any block.
+// The unit holds an arc flash label photo (its bytes may still be saving) — the
+// slot, the Duplicate dialog and its message ask the same way (build 123 review).
+function holdsArcFlashPhoto(photoMap) { return !!(photoMap && photoMap.equip_arcflash && photoMap.equip_arcflash.dbKey); }
 function arcFlashAskedFor(type, template) { return ARC_FLASH_TYPES.includes(String(type || '')) || unitKinds(type, template).ats; }
 // A ref whose bytes never saved (unsaved: a failed write or copy) holds the slot
 // open but is no photo: "No label" can still be said (build 122 review).
 function syncArcFlashSlot() {
   const slot = document.getElementById('arcFlashSlot');
   if (!slot) return;
-  const held = !!(photos.equip_arcflash && photos.equip_arcflash.dbKey);
+  const held = holdsArcFlashPhoto(photos);
   const taken = photoSlotTaken('equip_arcflash');
   slot.style.display = (held || arcFlashAskedFor(getEquipType(), getTemplate())) ? '' : 'none';
   const box = document.getElementById('arcFlashNone'), lbl = document.getElementById('arcFlashNoneLabel');
@@ -7666,7 +7679,7 @@ function buildSourceCard(src, i) {
             ${src._customEnergy ? html`<div class="form-group" id="customEnergyGroup_${i}">
               <label>Custom Energy Source</label>
               <input type="text" id="src_energy_custom_${i}" value="${src.energySource||''}" placeholder="Enter custom energy source"
-                oninput="updateSourceCustomField(${i},'energySource',this.value)" onchange="refreshSourceDependents(${i})">
+                oninput="updateSourceCustomField(${i},'energySource',this.value)" onchange="commitCustomEnergy(${i})">
             </div>` : html`<div id="customEnergyGroup_${i}" style="display:none;"></div>`}
             <div class="form-group">
               <label>Device Type</label>
@@ -7879,6 +7892,15 @@ function buildSourceCard(src, i) {
 // what depends on it is refreshed in place — the Device list, the Verification
 // field and the Valve State row — from a freshly built copy of the card, so
 // the box itself and any control the tech tapped next stay where they are.
+// The custom energy box's change (the typed source committed, build 123 review):
+// the energy source's rules, then the card.
+function commitCustomEnergy(index) {
+  const src = sources[index];
+  if (!src) return;
+  const note = settleSourceEnergy(src);
+  if (note) { showToast(note, true); autoSaveCurrent(); }
+  refreshSourceDependents(index);
+}
 function refreshSourceDependents(index) {
   const src = sources[index];
   const live = document.querySelectorAll('#sourcesContainer > .source-card')[index];
@@ -8373,6 +8395,7 @@ function splitSource(index) {
   // tag and the original keeps the rest, in order.
   const unitIds = String(src.deviceId || '').includes(';') ? splitUnitIds(src.deviceId) : null;
   const pair = isInOutPair(src) ? inOutSplitNames(src.energySource) : null;
+  const pairBefore = src.energySource;
   const pairRef = pair ? photos['source_' + index] : null;
   const pairInMark = (pairRef && pairRef.marksFor && pairRef.marksFor.inOut) ? cleanValveMarks(pairRef.marks).slice(0, 1) : [];
   const takesState = sourceTakesValveState(Object.assign({}, src, { valveState: 'normal' }));
@@ -8385,11 +8408,15 @@ function splitSource(index) {
   const newSrc = JSON.parse(JSON.stringify(src));
   newSrc.quantity   = 1;
   newSrc.valveState = (pair || !takesState) ? (src.valveState || 'normal') : 'normally_closed';
+  // …each half then settles (build 123 review): "Vacuum In/Out" splits into an
+  // inlet that keeps its vent answer and an exhaust that takes no question
+  let pairNote = '';
   if (pair) {
     src.energySource = pair.inName;
     newSrc.energySource = pair.outName;
     delete src._autoQty2;
     delete newSrc._autoQty2;
+    pairNote = [settleSourceEnergy(src, pairBefore), settleSourceEnergy(newSrc, pairBefore)].filter(Boolean).join('\n');
   }
   newSrc.duplicate  = 'No';
   delete newSrc.dupAuto;
@@ -8456,7 +8483,7 @@ function splitSource(index) {
   const splitMsg = pair
     ? 'Split into “' + pair.inName + '” and “' + pair.outName + '” — photograph the Out valve.'
     : (newSrc.valveState === 'normally_closed' ? 'Split out 1 valve — set as Normally Closed. State & photograph it.' : 'Split out 1 — photograph it.');
-  showSourceToast([splitMsg, marksCleared ? MARKS_CLEARED_NOTE : ''].filter(Boolean).join('\n'), marksCleared);
+  showSourceToast([splitMsg, marksCleared ? MARKS_CLEARED_NOTE : '', pairNote].filter(Boolean).join('\n'), marksCleared || !!pairNote);
   setTimeout(() => {
     const cards = document.querySelectorAll('.source-card');
     if (cards[index + 1]) cards[index + 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -8490,11 +8517,10 @@ function handleEnergySourceChange(index, value) {
     const el = document.getElementById('src_energy_custom_' + index);
     if (el) el.focus();
   } else {
+    const before = sources[index].energySource;
     sources[index]._customEnergy = false;
     sources[index].energySource = value;
-    // A drain answer stays only on a source that takes the question (build 123
-    // review, loto-web 2026-10-26)
-    const drainCleared = dropDrainAnswerOffSource(sources[index]);
+    const drainNote = settleSourceEnergy(sources[index], before);   // build 123 review
     // A row that is no longer Electrical is no feeder or transformer breaker
     // (build 122 second review): its role and the prefix that says it go. (A
     // custom energy source being typed keeps them; the card's button clears them.)
@@ -8544,7 +8570,7 @@ function handleEnergySourceChange(index, value) {
     // Fewer devices, or now an In/Out pair: the marks tapped before no longer
     // say which valve is which (build 95 — marksFit).
     reconcileSourceMarks(index);
-    if (drainCleared) showToast('Cleared the drain answer: \u201c' + value + '\u201d takes no drain question', true);
+    if (drainNote) showToast(drainNote, true);
     // Re-render to update device + verification dropdowns
     renderSources();
     autoSaveCurrent();
@@ -8745,6 +8771,7 @@ function applyCopySource(entryIndex, sourceIndex) {
   const src   = entry && entry.sources ? entry.sources[sourceIndex] : null;
   const dest  = sources[targetIndex];
   if (!src || !dest) { closeCopySourceDialog(); return; }
+  const before = dest.energySource;
   // Fields carried over — cover both regular and _customEnergy/_customDevice
   // /_customLoc markers so custom-typed values still show as "custom".
   const carry = [
@@ -8758,7 +8785,7 @@ function applyCopySource(entryIndex, sourceIndex) {
   // copied Location that says a role still reads as one, as typed
   delete dest.role; delete dest.altKind; delete dest.feeds;
   // …and keeps its drain answer only where its new source takes the question (build 123 review)
-  const drainCleared = dropDrainAnswerOffSource(dest);
+  const drainNote = settleSourceEnergy(dest, before);
   // Duplicate follows THIS source's own photo (build 109): a copy never brings
   // the other source's photo. A reused photo here makes it an automatic Yes;
   // the other source's automatic Yes stays automatic, and renderSources then
@@ -8786,7 +8813,7 @@ function applyCopySource(entryIndex, sourceIndex) {
   renderSources();
   autoSaveCurrent();
   showToast(`Copied source #${sourceIndex + 1} from "${entry.equipName || '(unnamed)'}"` + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '')
-    + (drainCleared ? ' \u2014 its drain answer was cleared (' + dest.energySource + ' takes no drain question)' : ''), marksCleared || drainCleared);
+    + (drainNote ? ' \u2014 ' + drainNote.charAt(0).toLowerCase() + drainNote.slice(1) : ''), marksCleared || !!drainNote);
 }
 
 function closeCopySourceDialog() {
@@ -9030,6 +9057,7 @@ function applyLink(equipIndex, sourceIndex) {
   if (tookEnergy && (parseInt(src.quantity, 10) || 1) !== (parseInt(mine.quantity, 10) || 1)) {
     mine.quantity = parseInt(src.quantity, 10) || 1;
   }
+  const drainNote = tookEnergy ? settleSourceEnergy(mine) : '';   // build 123 review
   const marksCleared = reconcileSourceMarks(pendingLinkSourceIndex, true);
   mine.userEdited = true;
   sources[pendingLinkSourceIndex].linkedTo = {
@@ -9049,7 +9077,8 @@ function applyLink(equipIndex, sourceIndex) {
   closeLinkDialog();
   renderSources();
   autoSaveCurrent();
-  showToast(`Linked to ${entry.equipName}` + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : ''), marksCleared);
+  showToast(`Linked to ${entry.equipName}` + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '')
+    + (drainNote ? ' \u2014 ' + drainNote.charAt(0).toLowerCase() + drainNote.slice(1) : ''), marksCleared || !!drainNote);
 }
 
 function unlinkSource(index) {
@@ -12799,7 +12828,7 @@ function duplicateSaved(index) {
 function showDuplicateDialog(index) {
   const entry = savedEquipment[index];
   // The arc flash label photo stays with its unit (build 123): not counted
-  const hasLabel = !!(entry.photos && entry.photos.equip_arcflash && entry.photos.equip_arcflash.dbKey);
+  const hasLabel = holdsArcFlashPhoto(entry.photos);
   const photoCount = (entry.photos ? Object.keys(entry.photos).filter(k => k !== 'equip_arcflash' && entry.photos[k] && entry.photos[k].dbKey).length : 0)
     + (entry.miscPhotos ? entry.miscPhotos.filter(mp => mp && mp.dbKey).length : 0);
 
@@ -13020,7 +13049,7 @@ async function executeDuplicate(index, withPhotos) {
     // Build 122 review: say so when the original's own breaker rows stayed behind
     const own = droppedBreakerRows ? ` — record its own ${droppedKinds.join(' / ')} breaker${droppedBreakerRows !== 1 ? 's' : ''}` : '';
     // …and that the arc flash label stayed behind (build 123 review)
-    const label = (entry.photos && entry.photos.equip_arcflash && entry.photos.equip_arcflash.dbKey) ? ' \u2014 photograph its own arc flash label' : '';
+    const label = holdsArcFlashPhoto(entry.photos) ? ' \u2014 photograph its own arc flash label' : '';
     if (withPhotos) showToast(`Duplicated "${entry.equipName}" with ${photoCount} photo${photoCount !== 1 ? 's' : ''} (copies) — update name` + own + label);
     else showToast(`Duplicated "${entry.equipName}" (info only) — update name` + own);
   }

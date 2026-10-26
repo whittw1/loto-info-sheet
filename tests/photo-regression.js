@@ -11216,6 +11216,154 @@
     } finally { window.__askChoiceAuto = rp; const o = document.getElementById('choiceDialogOverlay'); if (o) o.remove(); setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T346 — clearing a drain answer on an energy-source change puts back the code it set
+  async function t346_clearingOnAnEnergyChangePutsBackItsCode() {
+    const N = 'T346 build 123 third review: a CHW valve row answered "On the equipment" (code Temp Only - CHW → Drain Only - CHW) then switched to "Kinetic" with the picker loses its answer and gets its code back (Temp Only - CHW), as clearing the answer by hand does — where the drain stayed in the code with no drain recorded';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-346', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      updateDrainWhere(0, 'On the equipment');
+      got.set = sources[0].verification;
+      handleEnergySourceChange(0, 'Kinetic');
+      got.after = [sources[0].verification, !!sources[0].drainLocation].join();
+      want(got.set === 'Drain Only - CHW' && got.after === 'Temp Only - CHW,false', JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T347 — a custom energy source clears a parked answer when committed, never on a keystroke
+  async function t347_aCustomSourceClearsItsAnswerWhenCommitted() {
+    const N = 'T347 build 123 third review: a CHW row\'s drain answer is kept while "** Custom Energy **" is picked and "Process Air" typed, and goes when the box is committed (its change), with its code put back and a message — so picking "HHW In" afterwards brings no stale CHW drain back';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-347', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      updateDrainWhere(0, 'On this valve');
+      handleEnergySourceChange(0, '** Custom Energy **');
+      updateSourceCustomField(0, 'energySource', 'Process Air');
+      got.typing = !!sources[0].drainLocation;
+      commitCustomEnergy(0);
+      const toast = document.getElementById('toast');
+      got.committed = [!!sources[0].drainLocation, sources[0].verification, toast ? /Cleared the drain or vent answer: “Process Air”/.test(toast.textContent) : false].join();
+      handleEnergySourceChange(0, 'HHW In');
+      got.later = !!sources[0].drainLocation;
+      want(got.typing === true && got.committed === 'false,Temp Only - CHW,true' && got.later === false, JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T348 — every path that commits an energy source settles it (Split, a link)
+  async function t348_everyPathSettlesTheEnergySource() {
+    const N = 'T348 build 123 third review: the energy source\'s rules apply on every path that commits one — splitting an answered "Vacuum Air In/Out" leaves the vent answer on "Vacuum Air In" and none on the exhaust half "Vacuum Air Out", and a link that fills a blank source with "Electrical 480V" clears the answer that row held';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('VP-348', 'Medical Vacuum Pump', 'Medical Vacuum Pump');
+      sources = [Object.assign(mkSrc('Vacuum Air In/Out'), { deviceType: 'Ball Valve', quantity: 2, verification: '', collapsed: false, drainLocation: { where: 'On this valve', text: 'vent port' } }),
+        Object.assign(mkSrc(''), { deviceType: '', verification: '', collapsed: false, drainLocation: { where: 'None found', text: '' } })];
+      sources.forEach(ensureSourceId); renderSources();
+      splitSource(0);
+      got.split = sources.slice(0, 2).map(x => x.energySource + ':' + (x.drainLocation ? x.drainLocation.where : '-')).join(' | ');
+      savedEquipment = [Object.assign(mkEntry('PNL-348', { sources: [Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Breaker', sourceId: genUuid() })] }), { equipType: 'Panel' })];
+      pendingLinkSourceIndex = 2;
+      applyLink(0, 0);
+      got.link = [sources[2].energySource, !!sources[2].drainLocation].join();
+      want(got.split === 'Vacuum Air In:On this valve | Vacuum Air Out:-' && got.link === 'Electrical 480V,false', JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T349 — the clearing message names the point the answer was about
+  async function t349_theClearMessageNamesThePoint() {
+    const N = 'T349 build 123 third review: the message that a cleared answer gives names its point by the medium it was given under — "Cleared the vent answer: “Vacuum Air Out” takes no vent question" for a vacuum inlet turned exhaust, "purge point" for a Natural Gas row turned Electrical — never "drain" for a vent or a purge point';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('VP-349', 'Medical Vacuum Pump', 'Medical Vacuum Pump');
+      const A = (es) => Object.assign(mkSrc(es), { deviceType: 'Ball Valve', verification: '', collapsed: false, drainLocation: { where: 'On this valve', text: '' } });
+      sources = [A('Vacuum Air In'), A('Natural Gas')];
+      sources.forEach(ensureSourceId); renderSources();
+      const toast = () => { const t = document.getElementById('toast'); return t ? t.textContent : ''; };
+      _toastItems = [];
+      handleEnergySourceChange(0, 'Vacuum Air Out');
+      got.vent = toast();
+      _toastItems = [];
+      handleEnergySourceChange(1, 'Electrical 480V');
+      got.gas = toast();
+      want(/Cleared the vent answer: “Vacuum Air Out” takes no vent question/.test(got.vent) && !/drain/.test(got.vent)
+        && /Cleared the purge point answer: “Electrical 480V” takes no purge point question/.test(got.gas) && !/drain/.test(got.gas), JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T350 — one rule for "holds an arc flash label photo"
+  async function t350_oneRuleForAHeldArcFlashPhoto() {
+    const N = 'T350 build 123 third review: one rule (holdsArcFlashPhoto) says whether a unit holds an arc flash label photo, and the slot and the Duplicate dialog follow it — a held photo shows the slot on any type and the dialog says "(not its arc flash label)"; without one, neither';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    try {
+      got.rule = [holdsArcFlashPhoto({ equip_arcflash: { dbKey: 'k' } }), holdsArcFlashPhoto({ equip_arcflash: {} }), holdsArcFlashPhoto(undefined)].join();
+      formOfType('PMP-350', 'Pump', '');
+      photos.equip_arcflash = { dbKey: 'loto:t350', thumbnail: '', fileType: 'image/jpeg', timestamp: new Date().toISOString() };
+      syncArcFlashSlot();
+      const slot = document.getElementById('arcFlashSlot');
+      got.slot = !!slot && slot.style.display !== 'none';
+      delete photos.equip_arcflash;
+      const dialogSays = (ph) => {
+        savedEquipment = [Object.assign(mkEntry('ATS-350'), { equipType: 'ATS', photos: ph })];
+        showDuplicateDialog(0);
+        const d = document.getElementById('duplicateDialog');
+        const t = d ? d.textContent : '';
+        if (d) d.remove();
+        return /not its arc flash label/.test(t);
+      };
+      got.dialog = [dialogSays({ equip_main: { dbKey: 'm' }, equip_arcflash: { dbKey: 'a' } }), dialogSays({ equip_main: { dbKey: 'm' } })].join();
+      want(got.rule === 'true,false,false' && got.slot === true && got.dialog === 'true,false', JSON.stringify(got));
+    } finally { delete photos.equip_arcflash; }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T351 — Copy Source onto an answered row: cleared, and its message says so (a test gap)
+  async function t351_copySourceClearsAndSaysSo() {
+    const N = 'T351 build 123 third review (a test gap): Copy Source of an "Electrical 208V" disconnect onto a CHW row holding a drain answer clears the answer, takes the copied row\'s code, and says "cleared the drain answer: “Electrical 208V” takes no drain question"';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-351', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      updateDrainWhere(0, 'On the equipment');
+      savedEquipment = [Object.assign(mkEntry('PNL-351', { sources: [Object.assign(mkSrc('Electrical 208V'), { deviceType: 'Disconnect', verification: 'Controls' })] }), { equipType: 'Panel' })];
+      const ov = document.createElement('div'); ov.id = 'copySourceOverlay'; ov.dataset.targetIndex = '0'; document.body.appendChild(ov);
+      applyCopySource(0, 0);
+      const toast = document.getElementById('toast');
+      got.after = [sources[0].energySource, sources[0].verification, !!sources[0].drainLocation].join();
+      got.msg = toast ? toast.textContent : '';
+      want(got.after === 'Electrical 208V,Controls,false' && /cleared the drain answer: “Electrical 208V” takes no drain question/.test(got.msg), JSON.stringify(got));
+    } finally { const o = document.getElementById('copySourceOverlay'); if (o) o.remove(); setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -11359,7 +11507,8 @@
     t337_aHeldDrainAnswerOnANonValveRowStays, t338_typedTextIsNeverAButton,
     t339_aDrainAnswerNeverRidesAnElectricalRow, t340_anExhaustRowsHeldAnswerStaysOffTheSheet, t341_aHeldNoneFoundOnAPumpRowWritesItsNote,
     t342_clearingAHeldAnswerPutsBackItsCode, t343_theHooksTypedAnswerIsReadInOnePlace, t344_theDuplicateDialogSaysTheLabelStays,
-    t345_theAtsFeedsKeepTypedTextInTheRealDialogs];
+    t345_theAtsFeedsKeepTypedTextInTheRealDialogs, t346_clearingOnAnEnergyChangePutsBackItsCode, t347_aCustomSourceClearsItsAnswerWhenCommitted,
+    t348_everyPathSettlesTheEnergySource, t349_theClearMessageNamesThePoint, t350_oneRuleForAHeldArcFlashPhoto, t351_copySourceClearsAndSaysSo];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
