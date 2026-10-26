@@ -11218,7 +11218,7 @@
   }
   // T346 — clearing a drain answer on an energy-source change puts back the code it set
   async function t346_clearingOnAnEnergyChangePutsBackItsCode() {
-    const N = 'T346 build 123 third review: a CHW valve row answered "On the equipment" (code Temp Only - CHW → Drain Only - CHW) then switched to "Kinetic" with the picker loses its answer and gets its code back (Temp Only - CHW), as clearing the answer by hand does — where the drain stayed in the code with no drain recorded';
+    const N = 'T346 build 123 third review, as loto-web asked (2026-10-26): a CHW valve row answered "On the equipment" (code Temp Only - CHW → Drain Only - CHW) then switched to "Kinetic" with the picker loses its answer and takes Kinetic\'s own code, Rotating — never its drain code, nor the CHW code it had before, both of which loto-web prints as water checks on the K row';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -11232,14 +11232,14 @@
       got.set = sources[0].verification;
       handleEnergySourceChange(0, 'Kinetic');
       got.after = [sources[0].verification, !!sources[0].drainLocation].join();
-      want(got.set === 'Drain Only - CHW' && got.after === 'Temp Only - CHW,false', JSON.stringify(got));
+      want(got.set === 'Drain Only - CHW' && got.after === 'Rotating,false', JSON.stringify(got));
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
   // T347 — a custom energy source clears a parked answer when committed, never on a keystroke
   async function t347_aCustomSourceClearsItsAnswerWhenCommitted() {
-    const N = 'T347 build 123 third review: a CHW row\'s drain answer is kept while "** Custom Energy **" is picked and "Process Air" typed, and goes when the box is committed (its change), with its code put back and a message — so picking "HHW In" afterwards brings no stale CHW drain back';
+    const N = 'T347 build 123 third review: a CHW row\'s drain answer is kept while "** Custom Energy **" is picked and "Process Air" typed, and goes when the box is committed (its change), with a message; the row left the water family, so its CHW code is blanked for the tech to pick (loto-web 2026-10-26) — and picking "HHW In" afterwards brings no stale CHW drain back';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -11255,10 +11255,10 @@
       got.typing = !!sources[0].drainLocation;
       commitCustomEnergy(0);
       const toast = document.getElementById('toast');
-      got.committed = [!!sources[0].drainLocation, sources[0].verification, toast ? /Cleared the drain or vent answer: “Process Air”/.test(toast.textContent) : false].join();
+      got.committed = [!!sources[0].drainLocation, sources[0].verification, toast ? /Cleared the drain answer: “Process Air” takes no drain question/.test(toast.textContent) : false].join();
       handleEnergySourceChange(0, 'HHW In');
       got.later = !!sources[0].drainLocation;
-      want(got.typing === true && got.committed === 'false,Temp Only - CHW,true' && got.later === false, JSON.stringify(got));
+      want(got.typing === true && got.committed === 'false,,true' && got.later === false, JSON.stringify(got));
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -11361,6 +11361,34 @@
       got.after = [sources[0].energySource, sources[0].verification, !!sources[0].drainLocation].join();
       got.msg = toast ? toast.textContent : '';
       want(got.after === 'Electrical 208V,Controls,false' && /cleared the drain answer: “Electrical 208V” takes no drain question/.test(got.msg), JSON.stringify(got));
+    } finally { const o = document.getElementById('copySourceOverlay'); if (o) o.remove(); setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  // T352 — a row leaving the water family takes its new source's own code (loto-web 2026-10-26)
+  async function t352_aRowLeavingWaterTakesItsSourcesCode() {
+    const N = 'T352 build 123 third review, as loto-web asked (2026-10-26): with the picker, a CHW row (Temp Only - CHW) turned Kinetic takes Rotating, one turned Gravity/Potential takes Block, an HHW row (Drain Only - Hot) turned Hydraulic takes GaugeOnly, a CHW row turned Refrigerant is left blank for the tech (Save & New lists it), one turned Natural Gas takes the app\'s own gas default (Controls), and Electrical stays blank as before — while a Hydraulic row (GaugeOnly) turned Natural Gas keeps its code (it never was a water code) and Copy Source keeps the code it brings (a vacuum row\'s Gauge/Drain)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-352', 'Air Handler', 'AHU - Steam');
+      const R = (es, v, dev) => Object.assign(mkSrc(es), { deviceType: dev || 'Ball Valve', verification: v, collapsed: false });
+      sources = [R('CHW In', 'Temp Only - CHW'), R('CHW Out', 'Temp Only - CHW'), R('HHW In', 'Drain Only - Hot'), R('CHW In', 'Temp Only - CHW'),
+        R('CHW Out', 'GaugeOnly - CHW'), R('Hydraulic', 'GaugeOnly', 'Hydraulic'), R('CHW In', 'Temp Only - CHW'), R('CHW In', 'Temp Only - CHW')];
+      sources.forEach(ensureSourceId); renderSources();
+      handleEnergySourceChange(0, 'Kinetic'); handleEnergySourceChange(1, 'Gravity/Potential'); handleEnergySourceChange(2, 'Hydraulic');
+      handleEnergySourceChange(3, 'Refrigerant'); handleEnergySourceChange(4, 'Electrical 480V'); handleEnergySourceChange(5, 'Natural Gas');
+      handleEnergySourceChange(7, 'Natural Gas');
+      got.codes = [0, 1, 2, 3, 4, 5, 7].map(i => sources[i].energySource + '=' + (sources[i].verification || '(blank)')).join(' | ');
+      got.nudge = collectIncompleteFields().some(m => /Source #4\b.*Verification/.test(m));
+      savedEquipment = [Object.assign(mkEntry('VP-352', { sources: [Object.assign(mkSrc('Vacuum Air In'), { deviceType: 'Ball Valve', verification: 'Gauge/Drain' })] }), { equipType: 'Medical Vacuum Pump' })];
+      const ov = document.createElement('div'); ov.id = 'copySourceOverlay'; ov.dataset.targetIndex = '6'; document.body.appendChild(ov);
+      applyCopySource(0, 0);
+      got.copied = sources[6].energySource + '=' + sources[6].verification;
+      want(got.codes === 'Kinetic=Rotating | Gravity/Potential=Block | Hydraulic=GaugeOnly | Refrigerant=(blank) | Electrical 480V=(blank) | Natural Gas=GaugeOnly | Natural Gas=Controls'
+        && got.nudge === true && got.copied === 'Vacuum Air In=Gauge/Drain', JSON.stringify(got));
     } finally { const o = document.getElementById('copySourceOverlay'); if (o) o.remove(); setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -11508,7 +11536,8 @@
     t339_aDrainAnswerNeverRidesAnElectricalRow, t340_anExhaustRowsHeldAnswerStaysOffTheSheet, t341_aHeldNoneFoundOnAPumpRowWritesItsNote,
     t342_clearingAHeldAnswerPutsBackItsCode, t343_theHooksTypedAnswerIsReadInOnePlace, t344_theDuplicateDialogSaysTheLabelStays,
     t345_theAtsFeedsKeepTypedTextInTheRealDialogs, t346_clearingOnAnEnergyChangePutsBackItsCode, t347_aCustomSourceClearsItsAnswerWhenCommitted,
-    t348_everyPathSettlesTheEnergySource, t349_theClearMessageNamesThePoint, t350_oneRuleForAHeldArcFlashPhoto, t351_copySourceClearsAndSaysSo];
+    t348_everyPathSettlesTheEnergySource, t349_theClearMessageNamesThePoint, t350_oneRuleForAHeldArcFlashPhoto, t351_copySourceClearsAndSaysSo,
+    t352_aRowLeavingWaterTakesItsSourcesCode];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

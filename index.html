@@ -3136,14 +3136,29 @@ function drainTakingSource(src) { return drainCodeFollowsDrain(src) || !!release
 // path that commits it: the picker, the custom box's change (never a keystroke),
 // Copy Source, Split (an In/Out pair's halves) and a link filling a blank one
 // (build 123 review: each path used to remember them on its own; a voltage pick
-// keeps a row Electrical). A drain answer stays only where the new source takes
-// the question (loto-web: "clear it when the source changes to anything else"),
-// and the code it set goes back with it. `before` (the source the answer was
-// given under, where the path knows it) names the point in the message; no
-// source yet clears nothing. Returns the message to show, or ''.
-function settleSourceEnergy(src, before) {
-  if (!src || !src.drainLocation || !String(src.energySource || '').trim() || drainTakingSource(src)) return '';
-  undoDrainCode(src, src.drainLocation);
+// keeps a row Electrical). `before` is the source the row had, where the path
+// knows it; `keepCode`, a path that brought the code with the new source (Copy
+// Source). No source yet changes nothing. Returns the message to show, or ''.
+// - A row leaving the water family (or compressed air: the codes that follow a
+//   drain) takes the new source's own code — Rotating, Block, GaugeOnly, as its
+//   template writes it — or none, for the tech to pick (Save & New lists a blank
+//   Verification). loto-web prints the code's own text (2026-10-26): a CHW
+//   temperature check on a Kinetic row or an air line is a check the VA rejects.
+//   Only on leaving: GaugeOnly and Gauge/Drain are Hydraulic's, compressed air's
+//   and the vacuum lines' own codes too.
+// - A drain answer stays only where the new source takes the question (loto-web:
+//   "clear it when the source changes to anything else"); `before` names its point.
+function settleSourceEnergy(src, before, keepCode) {
+  const es = String((src && src.energySource) || '').trim();
+  if (!es) return '';
+  if (!keepCode && before && drainCodeFollowsDrain({ energySource: before }) && !drainCodeFollowsDrain(src)) {
+    const p = parseWaterVerification(src.verification);
+    if (p.recognized && !p.blank) {
+      src.verification = (SOURCE_DEFAULTS[es] && SOURCE_DEFAULTS[es].verification) || '';
+      delete src._drainDefault;
+    }
+  }
+  if (!src.drainLocation || drainTakingSource(src)) return '';
   delete src.drainLocation;
   const was = { energySource: before || '' };
   const noun = drainTakingSource(was) ? releasePointOf(was).noun : 'drain or vent';
@@ -7893,12 +7908,17 @@ function buildSourceCard(src, i) {
 // field and the Valve State row — from a freshly built copy of the card, so
 // the box itself and any control the tech tapped next stay where they are.
 // The custom energy box's change (the typed source committed, build 123 review):
-// the energy source's rules, then the card.
+// the energy source's rules, then the card. The source the row left when Custom
+// was picked is remembered here, never saved with the row.
+const energyBeforeCustom = new WeakMap();
 function commitCustomEnergy(index) {
   const src = sources[index];
   if (!src) return;
-  const note = settleSourceEnergy(src);
-  if (note) { showToast(note, true); autoSaveCurrent(); }
+  const code = src.verification;
+  const note = settleSourceEnergy(src, energyBeforeCustom.get(src));
+  energyBeforeCustom.delete(src);
+  if (note) showToast(note, true);
+  if (note || src.verification !== code) autoSaveCurrent();
   refreshSourceDependents(index);
 }
 function refreshSourceDependents(index) {
@@ -8510,6 +8530,7 @@ function applyNoPhotoDefault(index) {
 function handleEnergySourceChange(index, value) {
   markSourceEdited(index);
   if (value === '** Custom Energy **') {
+    energyBeforeCustom.set(sources[index], sources[index].energySource);   // for its commit (build 123 review)
     sources[index]._customEnergy = true;
     sources[index].energySource = '';
     applyNoPhotoDefault(index);
@@ -8785,7 +8806,7 @@ function applyCopySource(entryIndex, sourceIndex) {
   // copied Location that says a role still reads as one, as typed
   delete dest.role; delete dest.altKind; delete dest.feeds;
   // …and keeps its drain answer only where its new source takes the question (build 123 review)
-  const drainNote = settleSourceEnergy(dest, before);
+  const drainNote = settleSourceEnergy(dest, before, true);   // the code came with the source
   // Duplicate follows THIS source's own photo (build 109): a copy never brings
   // the other source's photo. A reused photo here makes it an automatic Yes;
   // the other source's automatic Yes stays automatic, and renderSources then
