@@ -4432,6 +4432,8 @@ only where loto-web's rule lets the row carry one — `takesValveState`, a mirro
 `valve_state.takes_valve_state` checked by T290 — and Lock Open (col 15, `lockOpen`) only where the card offers it: that
 rule, on a valve Device (or none yet, on a valve line). Elsewhere col 11 and col 15 are blank, `valveState` is
 `"normal"` and `lockOpen` is absent; the row's own data is untouched and its card says "Not on the sheet: …".
+loto-web applies the same rule on its side: since 2026-10-26 its save hook (`valve_state.clear_on_flush`) never stores
+either flag where the rule says no, whichever path writes the row.
 
 ### CSV column layout (`LOTO_FieldData_*.csv`)
 
@@ -4836,6 +4838,8 @@ The mappings the deployed ingester actually applies:
 | `sources[].duplicate` (`"Yes"`) | `EnergySource.dup_photo` (`"Y"`) | |
 | `sources[].detail` | `EnergySource.photo_detail` | field-side equivalent of the office XLSX detail cell |
 | `sources[].photoFile` stem | `EnergySource.photo_ref` | drives photo→source binding |
+| `sources[].valveState` (`"normally_closed"`) | `EnergySource.normally_closed` | since 2026-10-26 loto-web's save hook (`valve_state.clear_on_flush`) stores it only where `valve_state.takes_valve_state` lets the row carry one — the rule the app mirrors (`takesValveState`, T290) |
+| `sources[].lockOpen` (`true`) | *(not read by this endpoint)* | the endpoint sets `lock_open` only from a reserved `valveState` of `"locked_open"`, which the app never sends (its comment still says the collector doesn't emit Lock Open). The XLSX path the office uses reads col 15 (checked in loto-web's code 2026-10-26) |
 | source ordering | `EnergySource.sort_order` | 1-based |
 | Photo files (from ZIP) | `Photo` | UUID filename on disk + `Photo` row; source photos linked by `photo_ref` stem, others equipment-level |
 | `equipType` | *(not stored directly)* | the human category; `template` carries the type key |
