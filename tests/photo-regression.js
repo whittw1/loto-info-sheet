@@ -11392,6 +11392,146 @@
     } finally { const o = document.getElementById('copySourceOverlay'); if (o) o.remove(); setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T353 — a custom source never committed (the app put away mid-typing) is committed by the save
+  async function t353_anUncommittedCustomSourceIsCommittedBySave() {
+    const N = 'T353 build 123 fourth review: a CHW row (Temp Only - CHW, a drain answer) turned Custom and typed "Process Air", whose box never lost focus before the form was put away and restored, is committed when it is saved — the unit saves with a blank code and no drain answer, and nothing of the pending commit is saved with it';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      fillForm('AHU-353');
+      document.getElementById('equipType').value = 'Air Handler'; filterTemplateDropdown('Air Handler');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', location: 'MER', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      updateDrainWhere(0, 'On the equipment');
+      handleEnergySourceChange(0, '** Custom Energy **');
+      updateSourceCustomField(0, 'energySource', 'Process Air');
+      sources = JSON.parse(JSON.stringify(sources)); renderSources();   // the form in progress, restored
+      got.restored = [sources[0].energySource, sources[0].verification, !!sources[0].drainLocation].join();
+      const e = saveEntry();
+      const r = (e && e.sources && e.sources[0]) || {};
+      got.saved = [r.energySource, r.verification || '(blank)', !!r.drainLocation, '_customFrom' in r].join();
+      want(got.saved === 'Process Air,(blank),false,false', JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T354 — one helper puts a settle note inside another message
+  async function t354_aSettleNoteReadsAsAClause() {
+    const N = 'T354 build 123 fourth review: Copy Source and a link put the settle note into their messages through one helper (noteClause): " — cleared the vent answer: …", nothing for no note';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    got.c = [noteClause('Cleared the vent answer: “Vacuum Air Out” takes no vent question'), noteClause('')].map(x => JSON.stringify(x)).join(' | ');
+    want(got.c === '" — cleared the vent answer: “Vacuum Air Out” takes no vent question" | ""', got.c);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T355 — the code rule is its own step, with no flag on the drain rule
+  async function t355_theCodeRuleIsItsOwnStep() {
+    const N = 'T355 build 123 fourth review: the drain rule (settleSourceEnergy) takes no flag — the code rule is its own step (takeNewSourceDefaults), run only where the code stays with the row: a CHW row turned Kinetic takes Rotating, while a row that never left the water family is left alone';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const a = { energySource: 'Kinetic', verification: 'Temp Only - CHW' };
+    takeNewSourceDefaults(a, 'CHW In');
+    const b = { energySource: 'HHW In', verification: 'Temp Only - CHW' };
+    takeNewSourceDefaults(b, 'CHW In');
+    got.r = [settleSourceEnergy.length, a.verification, b.verification].join();
+    want(got.r === '2,Rotating,Temp Only - CHW', got.r);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  // T356 — a valve Device becomes the new source's own when the row leaves the water family
+  async function t356_aValveDeviceBecomesTheSourcesOwn() {
+    const N = 'T356 build 123 fourth review, as loto-web asked (2026-10-26: it prints the Device — "Slowly rotate ball valve…" on a K-1 row): with the picker, a CHW Ball Valve row turned Kinetic becomes Rotating / Rotating, a Gate Valve row turned Gravity/Potential Potential / Block, an HHW Ball Valve row turned Hydraulic Hydraulic / GaugeOnly; a Device that is no valve (a Pump) stays';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-356', 'Air Handler', 'AHU - Steam');
+      const R = (es, v, dev) => Object.assign(mkSrc(es), { deviceType: dev, verification: v, collapsed: false });
+      sources = [R('CHW In', 'Temp Only - CHW', 'Ball Valve'), R('CHW Out', 'Temp Only - CHW', 'Gate Valve'), R('HHW In', 'Drain Only - Hot', 'Ball Valve'), R('CHW In', 'Temp Only - CHW', 'Pump')];
+      sources.forEach(ensureSourceId); renderSources();
+      handleEnergySourceChange(0, 'Kinetic'); handleEnergySourceChange(1, 'Gravity/Potential'); handleEnergySourceChange(2, 'Hydraulic'); handleEnergySourceChange(3, 'Kinetic');
+      got.rows = sources.map(x => x.energySource + ' / ' + x.deviceType + ' / ' + x.verification).join(' | ');
+      want(got.rows === 'Kinetic / Rotating / Rotating | Gravity/Potential / Potential / Block | Hydraulic / Hydraulic / GaugeOnly | Kinetic / Pump / Rotating', got.rows);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T357 — gas, compressed air and vacuum codes on a change of source
+  async function t357_gasNeverKeepsADrainCode() {
+    const N = 'T357 build 123 fourth review, as loto-web asked (2026-10-26): a compressed-air row\'s Gauge/Drain stays when it becomes a vacuum line (the vacuum lines print their own text) and a suffix-less Drain Only stays on fuel oil; a row that becomes Natural Gas never keeps Gauge/Drain nor a blank code (both print a drain line) — Controls in simplified mode, GaugeOnly in classic; a CHW code (GaugeOnly - CHW) on a vacuum line is blanked';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    let prevSimple = null;
+    try { prevSimple = localStorage.getItem('loto_simple_verification'); } catch (e) {}
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AC-357', 'Air Compressor', '');
+      const R = (es, v, dev) => Object.assign(mkSrc(es), { deviceType: dev || 'Ball Valve', verification: v, collapsed: false });
+      const run = (simple) => {
+        try { localStorage.setItem('loto_simple_verification', simple ? '1' : '0'); } catch (e) {}
+        sources = [R('Compressed Air In', 'Gauge/Drain'), R('Compressed Air In', 'Gauge/Drain'), R('Electrical 480V', '', 'Breaker'), R('Compressed Air In', 'Drain Only'), R('CHW In', 'GaugeOnly - CHW')];
+        sources.forEach(ensureSourceId); renderSources();
+        handleEnergySourceChange(0, 'Vacuum Air In'); handleEnergySourceChange(1, 'Natural Gas'); handleEnergySourceChange(2, 'Natural Gas');
+        handleEnergySourceChange(3, 'Fuel Oil In'); handleEnergySourceChange(4, 'Vacuum Air In');
+        return sources.map(x => x.energySource + '=' + (x.verification || '(blank)')).join(' | ');
+      };
+      got.simple = run(true);
+      got.classic = run(false);
+      want(got.simple === 'Vacuum Air In=Gauge/Drain | Natural Gas=Controls | Natural Gas=Controls | Fuel Oil In=Drain Only | Vacuum Air In=(blank)'
+        && got.classic === 'Vacuum Air In=Gauge/Drain | Natural Gas=GaugeOnly | Natural Gas=GaugeOnly | Fuel Oil In=Drain Only | Vacuum Air In=(blank)', JSON.stringify(got));
+    } finally {
+      try { if (prevSimple == null) localStorage.removeItem('loto_simple_verification'); else localStorage.setItem('loto_simple_verification', prevSimple); } catch (e) {}
+      setHospitalCode(prevCode);
+    }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T358 — loto-web's medium order: a release medium is never the water family
+  async function t358_aReleaseMediumIsNeverTheWaterFamily() {
+    const N = 'T358 build 123 fourth review, as loto-web orders it (medium_kind first, 2026-10-26): a custom "Refrigerant Hot Gas Bypass" line is a refrigerant line — its code never follows a drain answer and, where the release question is off, it is not asked — while "Hot Oil" (no medium) keeps the water wording; CHW is the water family as before';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      got.follows = ['Refrigerant Hot Gas Bypass', 'Hot Oil', 'CHW In'].map(es => drainCodeFollowsDrain({ energySource: es })).join();
+      const r = Object.assign(mkSrc('Refrigerant Hot Gas Bypass'), { deviceType: 'Ball Valve', verification: '' });
+      got.asked = [sourceTakesDrainLocation(r, ''), releasePointOf(r).noun].join();
+      want(got.follows === 'false,true,true' && got.asked === 'false,recovery port', JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T359 — a link that fills a blank source applies the new source's defaults too
+  async function t359_aLinkThatFillsTheSourceTakesItsDefaults() {
+    const N = 'T359 build 123 fourth review (a test gap): a row with no source yet but a CHW code and a Ball Valve, linked to another unit\'s Kinetic row, takes "Kinetic" and with it Kinetic\'s own Device and code (Rotating / Rotating) — never a water check on the K row';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-359', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc(''), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      savedEquipment = [Object.assign(mkEntry('EF-359', { sources: [Object.assign(mkSrc('Kinetic'), { deviceType: 'Rotating', verification: 'Rotating', sourceId: genUuid() })] }), { equipType: 'Exhaust Fan' })];
+      pendingLinkSourceIndex = 0;
+      applyLink(0, 0);
+      got.row = [sources[0].energySource, sources[0].deviceType, sources[0].verification].join(' / ');
+      want(got.row === 'Kinetic / Rotating / Rotating', got.row);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -11537,7 +11677,9 @@
     t342_clearingAHeldAnswerPutsBackItsCode, t343_theHooksTypedAnswerIsReadInOnePlace, t344_theDuplicateDialogSaysTheLabelStays,
     t345_theAtsFeedsKeepTypedTextInTheRealDialogs, t346_clearingOnAnEnergyChangePutsBackItsCode, t347_aCustomSourceClearsItsAnswerWhenCommitted,
     t348_everyPathSettlesTheEnergySource, t349_theClearMessageNamesThePoint, t350_oneRuleForAHeldArcFlashPhoto, t351_copySourceClearsAndSaysSo,
-    t352_aRowLeavingWaterTakesItsSourcesCode];
+    t352_aRowLeavingWaterTakesItsSourcesCode, t353_anUncommittedCustomSourceIsCommittedBySave, t354_aSettleNoteReadsAsAClause,
+    t355_theCodeRuleIsItsOwnStep, t356_aValveDeviceBecomesTheSourcesOwn, t357_gasNeverKeepsADrainCode,
+    t358_aReleaseMediumIsNeverTheWaterFamily, t359_aLinkThatFillsTheSourceTakesItsDefaults];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

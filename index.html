@@ -3123,6 +3123,9 @@ const DRAINS_TO_LABEL = { 'Containment': 'Containment (drip pan or bucket)' };
 // the other media never changes the code.
 function drainCodeFollowsDrain(src) {
   const es = String((src && src.energySource) || '');
+  // loto-web's medium_kind comes first (2026-10-26): a release medium is never the
+  // water family, whatever keyword it carries ("Refrigerant Hot Gas Bypass")
+  if (releaseMediumOf(es)) return false;
   return isWaterFamilySource(es) || /^(Compressed Air|CA)\b/.test(es);
 }
 // The energy sources that take the question (loto-web 2026-10-26, from its live
@@ -3132,38 +3135,62 @@ function drainCodeFollowsDrain(src) {
 // column 14 but would store it as stale data: the app neither asks, shows nor
 // exports a drain answer there (build 123 review).
 function drainTakingSource(src) { return drainCodeFollowsDrain(src) || !!releaseMediumOf(src && src.energySource); }
-// The rules that follow a row's energy source once one is committed, on every
-// path that commits it: the picker, the custom box's change (never a keystroke),
-// Copy Source, Split (an In/Out pair's halves) and a link filling a blank one
-// (build 123 review: each path used to remember them on its own; a voltage pick
-// keeps a row Electrical). `before` is the source the row had, where the path
-// knows it; `keepCode`, a path that brought the code with the new source (Copy
-// Source). No source yet changes nothing. Returns the message to show, or ''.
-// - A row leaving the water family (or compressed air: the codes that follow a
-//   drain) takes the new source's own code — Rotating, Block, GaugeOnly, as its
-//   template writes it — or none, for the tech to pick (Save & New lists a blank
-//   Verification). loto-web prints the code's own text (2026-10-26): a CHW
-//   temperature check on a Kinetic row or an air line is a check the VA rejects.
-//   Only on leaving: GaugeOnly and Gauge/Drain are Hydraulic's, compressed air's
-//   and the vacuum lines' own codes too.
-// - A drain answer stays only where the new source takes the question (loto-web:
-//   "clear it when the source changes to anything else"); `before` names its point.
-function settleSourceEnergy(src, before, keepCode) {
+// A drain answer stays only where a row's energy source takes the question
+// (loto-web: "clear it when the source changes to anything else"), on every path
+// that commits a source: the picker, the custom box's change (never a keystroke)
+// or the save of one still being typed, Copy Source, Split (an In/Out pair's
+// halves) and a link filling a blank one (build 123 review; a voltage pick keeps
+// a row Electrical). `before` is the source the row had, where the path knows it:
+// it names the cleared answer's point. No source yet changes nothing. Returns the
+// message to show, or ''.
+function settleSourceEnergy(src, before) {
   const es = String((src && src.energySource) || '').trim();
-  if (!es) return '';
-  if (!keepCode && before && drainCodeFollowsDrain({ energySource: before }) && !drainCodeFollowsDrain(src)) {
-    const p = parseWaterVerification(src.verification);
-    if (p.recognized && !p.blank) {
-      src.verification = (SOURCE_DEFAULTS[es] && SOURCE_DEFAULTS[es].verification) || '';
-      delete src._drainDefault;
-    }
-  }
-  if (!src.drainLocation || drainTakingSource(src)) return '';
+  if (!es || !src.drainLocation || drainTakingSource(src)) return '';
   delete src.drainLocation;
   const was = { energySource: before || '' };
   const noun = drainTakingSource(was) ? releasePointOf(was).noun : 'drain or vent';
-  return 'Cleared the ' + noun + ' answer: \u201c' + String(src.energySource).trim() + '\u201d takes no ' + noun + ' question';
+  return 'Cleared the ' + noun + ' answer: \u201c' + es + '\u201d takes no ' + noun + ' question';
 }
+// The water family's own codes: a temperature check, or a code carrying its
+// - Hot / - CHW (never right on another medium, loto-web 2026-10-26).
+function waterSpecificCode(v) {
+  const t = String(v || '').trim();
+  return /\s*-\s*(Hot|CHW)$/i.test(t) || ['Temp Only', 'G/Tmp/Drain'].includes(drainCodeBase(t));
+}
+// A row whose source changed on a path where its code and Device stay with it
+// (the picker, the custom box, a link filling a blank source; Copy Source brings
+// its own, and an In/Out split never changes medium) takes what the new source
+// needs. loto-web prints both on the row (2026-10-26, from its live code):
+// - a gas line never keeps Gauge/Drain, Drain Only or Temp Only, nor a blank
+//   code (each prints a drain line): GaugeOnly, or Controls in simplified mode;
+// - a row leaving the water family (or compressed air: the codes that follow a
+//   drain), or one with no source before and a water-specific code, takes the new
+//   source's own code and, for a valve, its own Device (Rotating; Block and
+//   Potential; GaugeOnly and Hydraulic), as its template writes them; a tech can
+//   still pick a valve for a real hydraulic isolation valve. Without a code of its
+//   own, a water-specific code is blanked for the tech to pick (Save & New lists
+//   it); a suffix-less gauge or drain code stays (the vacuum lines', fuel oil's).
+// `before` is the source the row had ('' for none).
+function takeNewSourceDefaults(src, before) {
+  const es = String((src && src.energySource) || '').trim();
+  const was = String(before || '').trim();
+  if (!es || before === undefined || was === es) return;
+  const v = String(src.verification || '').trim();
+  const p = parseWaterVerification(v);
+  const setCode = (code) => { src.verification = code; delete src._drainDefault; };
+  if (releaseMediumOf(es) === 'gas') {
+    if (p.recognized && v !== 'GaugeOnly') setCode(simpleVerifEnabled() ? 'Controls' : 'GaugeOnly');
+    return;
+  }
+  if (drainCodeFollowsDrain(src)) return;
+  if (!(was ? drainCodeFollowsDrain({ energySource: was }) : waterSpecificCode(v))) return;
+  const def = SOURCE_DEFAULTS[es] || {};
+  if (def.device && isValveDevice(src.deviceType)) { src.deviceType = def.device; delete src._customDevice; }
+  if (def.verification) { if (p.recognized && !p.blank) setCode(def.verification); }
+  else if (waterSpecificCode(v)) setCode('');
+}
+// A settle note inside another message: " — cleared the … answer: …".
+function noteClause(note) { return note ? ' \u2014 ' + note.charAt(0).toLowerCase() + note.slice(1) : ''; }
 // Valve rows (or no device yet), not locked open, of a source that takes the
 // question; the release media only where the unit's facility asks (`facility`,
 // the form's unit by default). An answer a row already holds stays wherever its
@@ -7907,18 +7934,25 @@ function buildSourceCard(src, i) {
 // what depends on it is refreshed in place — the Device list, the Verification
 // field and the Valve State row — from a freshly built copy of the card, so
 // the box itself and any control the tech tapped next stay where they are.
-// The custom energy box's change (the typed source committed, build 123 review):
-// the energy source's rules, then the card. The source the row left when Custom
-// was picked is remembered here, never saved with the row.
-const energyBeforeCustom = new WeakMap();
+// A custom source is committed by its box's change (never a keystroke), or by the
+// save if the box never lost focus (the app put away mid-typing and restored):
+// the source the row left when Custom was picked rides on it as _customFrom until
+// then, and saves with the form in progress, never with the unit (build 123 review).
+function settleCustomSource(src) {
+  if (!src || !('_customFrom' in src)) return '';
+  const before = src._customFrom;
+  delete src._customFrom;
+  takeNewSourceDefaults(src, before);
+  return settleSourceEnergy(src, before);
+}
+function settlePendingCustomSources(list) { return (list || []).map(settleCustomSource).filter(Boolean); }
 function commitCustomEnergy(index) {
   const src = sources[index];
   if (!src) return;
-  const code = src.verification;
-  const note = settleSourceEnergy(src, energyBeforeCustom.get(src));
-  energyBeforeCustom.delete(src);
+  const code = src.verification, pending = '_customFrom' in src;
+  const note = settleCustomSource(src);
   if (note) showToast(note, true);
-  if (note || src.verification !== code) autoSaveCurrent();
+  if (pending || note || src.verification !== code) autoSaveCurrent();
   refreshSourceDependents(index);
 }
 function refreshSourceDependents(index) {
@@ -8530,7 +8564,7 @@ function applyNoPhotoDefault(index) {
 function handleEnergySourceChange(index, value) {
   markSourceEdited(index);
   if (value === '** Custom Energy **') {
-    energyBeforeCustom.set(sources[index], sources[index].energySource);   // for its commit (build 123 review)
+    sources[index]._customFrom = sources[index].energySource;   // until its commit or the save (build 123 review)
     sources[index]._customEnergy = true;
     sources[index].energySource = '';
     applyNoPhotoDefault(index);
@@ -8541,7 +8575,8 @@ function handleEnergySourceChange(index, value) {
     const before = sources[index].energySource;
     sources[index]._customEnergy = false;
     sources[index].energySource = value;
-    const drainNote = settleSourceEnergy(sources[index], before);   // build 123 review
+    takeNewSourceDefaults(sources[index], before);   // build 123 review
+    const drainNote = settleSourceEnergy(sources[index], before);
     // A row that is no longer Electrical is no feeder or transformer breaker
     // (build 122 second review): its role and the prefix that says it go. (A
     // custom energy source being typed keeps them; the card's button clears them.)
@@ -8806,7 +8841,7 @@ function applyCopySource(entryIndex, sourceIndex) {
   // copied Location that says a role still reads as one, as typed
   delete dest.role; delete dest.altKind; delete dest.feeds;
   // …and keeps its drain answer only where its new source takes the question (build 123 review)
-  const drainNote = settleSourceEnergy(dest, before, true);   // the code came with the source
+  const drainNote = settleSourceEnergy(dest, before);   // its code came with the source
   // Duplicate follows THIS source's own photo (build 109): a copy never brings
   // the other source's photo. A reused photo here makes it an automatic Yes;
   // the other source's automatic Yes stays automatic, and renderSources then
@@ -8834,7 +8869,7 @@ function applyCopySource(entryIndex, sourceIndex) {
   renderSources();
   autoSaveCurrent();
   showToast(`Copied source #${sourceIndex + 1} from "${entry.equipName || '(unnamed)'}"` + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '')
-    + (drainNote ? ' \u2014 ' + drainNote.charAt(0).toLowerCase() + drainNote.slice(1) : ''), marksCleared || !!drainNote);
+    + noteClause(drainNote), marksCleared || !!drainNote);
 }
 
 function closeCopySourceDialog() {
@@ -9078,7 +9113,8 @@ function applyLink(equipIndex, sourceIndex) {
   if (tookEnergy && (parseInt(src.quantity, 10) || 1) !== (parseInt(mine.quantity, 10) || 1)) {
     mine.quantity = parseInt(src.quantity, 10) || 1;
   }
-  const drainNote = tookEnergy ? settleSourceEnergy(mine) : '';   // build 123 review
+  if (tookEnergy) takeNewSourceDefaults(mine, '');   // build 123 review
+  const drainNote = tookEnergy ? settleSourceEnergy(mine) : '';
   const marksCleared = reconcileSourceMarks(pendingLinkSourceIndex, true);
   mine.userEdited = true;
   sources[pendingLinkSourceIndex].linkedTo = {
@@ -9098,8 +9134,8 @@ function applyLink(equipIndex, sourceIndex) {
   closeLinkDialog();
   renderSources();
   autoSaveCurrent();
-  showToast(`Linked to ${entry.equipName}` + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '')
-    + (drainNote ? ' \u2014 ' + drainNote.charAt(0).toLowerCase() + drainNote.slice(1) : ''), marksCleared || !!drainNote);
+  showToast(`Linked to ${entry.equipName}` + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '') + noteClause(drainNote),
+    marksCleared || !!drainNote);
 }
 
 function unlinkSource(index) {
@@ -12081,6 +12117,10 @@ async function saveAndNew() {
     showToast('Add at least one energy source', true);
     return;
   }
+  // A custom source still being typed is committed now (build 123 review), so
+  // Save & New's checks see its code
+  const customNotes = settlePendingCustomSources(sources);
+  if (customNotes.length) { renderSources(); showToast(customNotes.join('\n'), true); }
   // What the cards show is what is saved (build 110 — see refreshSourceDependents)
   applySimpleVerifDefaults();
   // Build 122: the drives' feeders and disconnects and the arc flash label are
@@ -12109,6 +12149,7 @@ function performSaveAndNew() {
   // Two sources must never share an id (older Duplicate-source copies did):
   // the first keeps it, a later one gets a fresh id and remembers the old one
   // in priorSourceIds, so the photo it was already shot under still binds.
+  settlePendingCustomSources(sources);   // a custom source still being typed (build 123 review)
   const seenSourceIds = new Set();
   sources.forEach(src => {
     if (!src) return;
@@ -15491,6 +15532,7 @@ function keepWipAsRecoveredEntry(st) {
   if (st.entryId != null && savedEquipment.some(e => sameEntryId(e.id, st.entryId))) return false;
   const photosMap = Object.assign({}, st.photos || {});
   dropStaleSourceRefs(photosMap, st.sources || []);
+  settlePendingCustomSources(st.sources);   // a custom source still being typed (build 123 review)
   const now = new Date().toISOString();
   const entry = {
     id: normEntryId(st.entryId) || genUuid(),
