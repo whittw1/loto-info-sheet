@@ -2140,18 +2140,24 @@ function jsArg(v) { return new RawHtml(escHtml(JSON.stringify(v === undefined ? 
 // the buttons — [{ value, label, exclusive }]; every button then answers
 // { value, checked: [ticked values] } (an exclusive box clears the others), and a
 // choice with needsCheck stays off until a box is ticked (build 123).
-// Closed without a button: 'cancel'. Tests answer through window.__askChoiceAuto.
-// The text a dialog's field answered (askChoice's { typed }), else null for one of
-// its buttons. A plain string — the test hook's answers — is the typed text unless
-// it is one of `buttonValues`, the dialog's own button values.
-function typedOf(r, buttonValues) {
-  if (r && typeof r === 'object' && typeof r.typed === 'string') return r.typed;
-  if (typeof r === 'string' && !(buttonValues || []).includes(r)) return r;
-  return null;
+// Closed without a button: 'cancel'. Tests answer through window.__askChoiceAuto,
+// whose typed answers come back as { typed } too (hookTyped).
+// The text a dialog's field answered (askChoice's { typed }), else null: one of its
+// buttons, or the dialog closed.
+function typedOf(r) { return (r && typeof r === 'object' && typeof r.typed === 'string') ? r.typed : null; }
+// The test hook answers with plain strings. On a dialog with a field, one that is
+// neither a button's value nor 'cancel' (closed) is what was typed, and comes back
+// as the real field answers it (build 123 review: each caller used to keep its own
+// list of button values).
+function hookTyped(opts, v) {
+  if (!opts.input || typeof v !== 'string' || v === 'cancel') return v;
+  return (opts.choices || []).some(c => !c.needsInput && c.value === v) ? v : { typed: v };
 }
 function askChoice(opts) {
   if (typeof window.__askChoiceAuto === 'function') {
-    try { return Promise.resolve(window.__askChoiceAuto(opts)); } catch (e) { return Promise.resolve('cancel'); }
+    let v;
+    try { v = window.__askChoiceAuto(opts); } catch (e) { return Promise.resolve('cancel'); }
+    return Promise.resolve(v).then(x => hookTyped(opts, x));
   }
   return new Promise(resolve => {
     const old = document.getElementById('choiceDialogOverlay');
@@ -2244,7 +2250,7 @@ function askSurveyDate(units) {
       { value: 'undated', label: 'Leave them undated (loto-web can\u2019t import that sheet)' },
       { value: 'cancel', label: 'Cancel' }
     ]
-  }).then(r => { const t = typedOf(r, ['undated', 'cancel']); return t !== null ? t : r; });
+  }).then(r => { const t = typedOf(r); return t !== null ? t : r; });
 }
 let miscPhotos = [];       // Current equipment's misc photos [{dbKey, thumbnail, fileType, timestamp}]
 // Another tab of the app holds the claim: this tab writes nothing (build 94,
@@ -3093,31 +3099,23 @@ const RELEASE_POINT = {
   vacuum: mediumPoint('Vent to atmosphere for this isolation point', 'vent', 'vent valve on the inlet line', 'On this valve (vent port)', 'On the equipment'),
   refrigerant: mediumPoint('Recovery port for this isolation point', 'recovery port', 'suction line service valve', 'On this valve (service port)', 'On the equipment (access port)')
 };
-// A vacuum pump's exhaust row no longer asks, but an answer it already holds
-// keeps the vent wording it was given under (build 122 review of the link).
+// The point a row's question names, by its medium (else the water family's drain).
 function releasePointOf(src) {
-  const es = String((src && src.energySource) || '');
-  return RELEASE_POINT[releaseMediumOf(es) || (isVacuumExhaust(es) ? 'vacuum' : '')] || RELEASE_POINT.water;
+  return RELEASE_POINT[releaseMediumOf((src && src.energySource) || '')] || RELEASE_POINT.water;
 }
 // A row whose Device isn't a valve (a pump, a custom device): asked nothing, but an
 // answer it already holds stays (build 123).
 function nonValveDevice(src) { return !!(src && src.deviceType && !isValveDevice(src.deviceType)); }
-// The question shows only for an answer it already holds (its medium no longer
-// asks, or its Device is no valve).
-function releaseHeldOnly(src) { return !!src && (nonValveDevice(src) || (!drainCodeFollowsDrain(src) && !releaseMediumOf(src.energySource))); }
-// Why such a row isn't asked, for the card's note (build 122 fifth review): a
-// pump's exhaust, or an energy source changed since the answer was given. With
-// no medium, loto-web takes the row's old water path, so the held point is
-// named only where its procedure already prints an "Open drain…" line.
+// The card's note on such a held answer. loto-web prints it whatever the Device,
+// at the point it names, and a held "None found" prints its stop line
+// (2026-10-26), so the note says the answer still counts.
 function releaseHeldNote(src) {
-  const es = String((src && src.energySource) || '').trim();
-  const clear = ' Set it to \u201c-- Not answered --\u201d to clear it.';
-  if (nonValveDevice(src)) return 'No longer asked here: \u201c' + String(src.deviceType).trim() + '\u201d is not a valve. The answer still goes on the sheet.' + clear;
-  // since 2026-10-25 13:40Z loto-web prints an exhaust row with its own check
-  // (closed, then no backflow from the exhaust header), never this answer
-  if (isVacuumExhaust(es)) return 'No longer asked here: a vacuum pump\u2019s exhaust is at or above atmosphere, and loto-web prints its own exhaust check for this row, not this answer.' + clear;
-  const why = es ? '\u201c' + es + '\u201d takes no drain question' : 'the row has no energy source yet';
-  return 'No longer asked here: ' + why + '. loto-web names the held point only in an \u201cOpen drain\u2026\u201d line its procedure already prints.' + clear;
+  const d = (src && src.drainLocation) || {};
+  const still = d.where === 'None found'
+    ? '\u201cNone found\u201d still goes on the sheet, with its Change Later note.'
+    : 'The answer still goes on the sheet: check the ' + releasePointOf(src).noun + ' is still where it says.';
+  return 'No longer asked here: \u201c' + String(src.deviceType).trim() + '\u201d is not a valve. ' + still
+    + ' Set it to \u201c-- Not answered --\u201d to clear it.';
 }
 const DRAINS_TO_LABEL = { 'Containment': 'Containment (drip pan or bucket)' };
 // The rows whose verification code follows the drain answer: the water family
@@ -3127,17 +3125,33 @@ function drainCodeFollowsDrain(src) {
   const es = String((src && src.energySource) || '');
   return isWaterFamilySource(es) || /^(Compressed Air|CA)\b/.test(es);
 }
-// Valve rows (or no device yet) of a water, steam, condensate, glycol or
-// compressed-air line; since build 122 also of the release media where the
-// unit's facility asks (`facility` — the form's unit by default), and any such
-// row that already holds an answer (data is never hidden). A valve locked open
-// carries live flow and is never a relief point.
+// The energy sources that take the question (loto-web 2026-10-26, from its live
+// code): the water family and compressed air, and the release media (fuel oil,
+// chemical, geothermal, gas, a vacuum pump's inlet, refrigerant). On any other
+// (Electrical, a vacuum pump's exhaust, Thermal) loto-web prints nothing from
+// column 14 but would store it as stale data: the app neither asks, shows nor
+// exports a drain answer there (build 123 review).
+function drainTakingSource(src) { return drainCodeFollowsDrain(src) || !!releaseMediumOf(src && src.energySource); }
+// A row's energy source changed to a named one that takes no question: its drain
+// answer goes (loto-web: "clear it when the source changes to anything else").
+// Returns whether one went. No source picked yet clears nothing, and a custom
+// source being typed is only hidden (sourceTakesDrainLocation), never cleared mid-word.
+function dropDrainAnswerOffSource(src) {
+  if (!src || !src.drainLocation || !String(src.energySource || '').trim() || drainTakingSource(src)) return false;
+  delete src.drainLocation;
+  return true;
+}
+// Valve rows (or no device yet), not locked open, of a source that takes the
+// question; the release media only where the unit's facility asks (`facility`,
+// the form's unit by default). An answer a row already holds stays wherever its
+// source takes the question: data is never hidden there (a Device that isn't a
+// valve, the setting off). A valve locked open carries live flow and is never a
+// relief point.
 function sourceTakesDrainLocation(src, facility) {
-  if (!src || src.lockOpen) return false;
-  if (nonValveDevice(src)) return !!(src.drainLocation && src.drainLocation.where);   // a held answer is never hidden (build 123)
-  if (drainCodeFollowsDrain(src)) return true;
-  if (!releaseMediumOf(src.energySource)) return !!(src.drainLocation && src.drainLocation.where);   // a held answer is never hidden
-  return releasePromptOn(facility === undefined ? formFacilityCode() : facility) || !!(src.drainLocation && src.drainLocation.where);
+  if (!src || src.lockOpen || !drainTakingSource(src)) return false;
+  if (src.drainLocation && src.drainLocation.where) return true;
+  if (nonValveDevice(src)) return false;
+  return drainCodeFollowsDrain(src) || releasePromptOn(facility === undefined ? formFacilityCode() : facility);
 }
 function drainLocationSheetText(src, facility) {
   const d = src && src.drainLocation;
@@ -3184,7 +3198,9 @@ function updateDrainWhere(index, where) {
   // answer kept from before the row's medium changed never rewrites the code of
   // a build 122 medium (build 122 review).
   const follows = drainCodeFollowsDrain(src) && !nonValveDevice(src);   // a held answer on a non-valve row never moves its code (build 123)
-  const ours = follows && !!prev._codeSet && drainCodeBase(src.verification) === drainCodeBase(prev._codeSet);
+  // …but the code an answer set goes back with the answer, whatever the Device is
+  // now (build 123 review: clearing one on a pump row left its drain in the code)
+  const ours = drainCodeFollowsDrain(src) && !!prev._codeSet && drainCodeBase(src.verification) === drainCodeBase(prev._codeSet);
   const undo = () => {
     if (!ours) return;
     const sfx = /\s*-\s*(Hot|CHW)$/i.exec(src.verification || '');
@@ -3365,18 +3381,18 @@ async function addFeederForDrive(index, unit) {
   const panel = typedOf(await askChoice({ id: 'feeder-panel', defaultValue: 'cancel', title: 'Feeder: the panel',
     html: html`The panel or MCC that feeds this drive, as labelled.`,
     input: { type: 'text', placeholder: 'e.g. MCC-2A', valid: filled },
-    choices: [{ label: 'Next', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] }), ['cancel']);
+    choices: [{ label: 'Next', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] }));
   if (!filled(panel)) return null;
   const bkrAnswer = await askChoice({ id: 'feeder-breaker', defaultValue: '', title: 'Feeder: the breaker',
     html: html`Its breaker or bucket number in ${panel.trim()}.`,
     input: { type: 'text', placeholder: 'e.g. 14', valid: filled },
     choices: [{ label: 'Next', needsInput: true, primary: true }, { value: '', label: 'No number' }, { value: 'cancel', label: 'Cancel' }] });
   if (bkrAnswer === 'cancel') return null;
-  const bkr = typedOf(bkrAnswer, ['', 'cancel']) || '';   // No number: ''
+  const bkr = typedOf(bkrAnswer) || '';   // No number: ''
   let tag = typedOf(await askChoice({ id: 'feeder-drive', defaultValue: nextTag || 'cancel', title: 'Feeder: the drive',
     html: html`The drive this breaker feeds, as tagged.`,
     input: { type: 'text', placeholder: 'e.g. VFD-1', value: nextTag, valid: filled },
-    choices: [{ label: 'Add the feeder', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] }), ['cancel']);
+    choices: [{ label: 'Add the feeder', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] }));
   if (!filled(tag) || !sources.includes(drive)) return null;
   tag = cleanTagText(tag);
   if (!tag) { showToast('Not added: the drive\u2019s tag was only ";", "," or brackets \u2014 type its tag', true); return null; }   // build 122 whole review
@@ -4072,7 +4088,7 @@ async function askXfmrFeed(opts) {
     choices: [{ label: 'Next', needsInput: true, primary: true }, { value: 'skip', label: 'Skip' }] });
   // closed at the first step: what was typed there isn't known, but not that nothing was added (build 122 third review)
   if (panelAnswer === 'cancel') { showToast('Not added: ' + opts.title + ' — the question was closed', true); return null; }
-  const panel = typedOf(panelAnswer, ['skip', 'cancel']);   // typed text, never a button (build 123)
+  const panel = typedOf(panelAnswer);   // typed text, never a button (build 123)
   if (!filled(panel)) return null;
   const bkrAnswer = await askChoice({ id: opts.id + '-breaker', defaultValue: '', kind, title: opts.title + ': the breaker',
     html: html`Its breaker number in ${one(panel)}.`,
@@ -4080,7 +4096,7 @@ async function askXfmrFeed(opts) {
     choices: [{ label: 'Next', needsInput: true, primary: true }, { value: '', label: 'No number' }, { value: 'skip', label: 'Skip' }] });
   if (bkrAnswer === 'cancel') return closed(one(panel));
   if (bkrAnswer === 'skip') return null;
-  const bkr = typedOf(bkrAnswer, ['', 'skip', 'cancel']) || '';   // No number: ''
+  const bkr = typedOf(bkrAnswer) || '';   // No number: ''
   const text = one(panel) + (one(bkr) ? ' bkr ' + one(bkr) : '');
   const MAIN = ['208V', '240V', '480V'];
   for (let round = 0; round < 50; round++) {
@@ -4173,11 +4189,13 @@ function changeLaterAutoNotes(entryLike) {
   const k = unitKinds(entryLike.equipType, entryLike.template, entryLike.sources);
   const notes = [];
   if (k.vacPump && a.reliefJoint === 'No') notes.push(RELIEF_JOINT_NOTE);
-  // The point is named for the medium since build 122 ("No purge point found…");
-  // never for a held answer the row is no longer asked (build 122 fifth review)
+  // The point is named for the medium since build 122 ("No purge point found…").
+  // Every "None found" that goes on the sheet: loto-web prints its stop line
+  // whatever the Device, so one held on a pump row writes it too (build 123
+  // review, loto-web 2026-10-26)
   const fac = entryHospitalCode(entryLike);
   (entryLike.sources || []).forEach((s, i) => {
-    if (s && s.drainLocation && s.drainLocation.where === 'None found' && sourceTakesDrainLocation(s, fac) && !releaseHeldOnly(s)) {
+    if (s && s.drainLocation && s.drainLocation.where === 'None found' && sourceTakesDrainLocation(s, fac)) {
       notes.push('No ' + releasePointOf(s).noun + ' found for source #' + (i + 1) + ' (' + (s.energySource || 'no energy source')
         + (s.deviceId ? ', ' + s.deviceId : '') + ')');
     }
@@ -4544,7 +4562,7 @@ function askAtsFeeds(rows) {
       ? '(generator)' : '(utility)'} feed, as labelled. loto-web reads the side from this row&rsquo;s Location.`,
     input: { type: 'text', placeholder: side === 'Emergency' ? 'e.g. EDP-1 bkr 3' : 'e.g. NDP-2 bkr 7' },
     choices: [{ label: 'OK', needsInput: true, primary: true }, { value: '', label: 'Skip' }]
-  }).then(t => String(typedOf(t, ['', 'cancel']) || '').replace(/\s+/g, ' ').trim());   // typed text only (build 123)
+  }).then(t => String(typedOf(t) || '').replace(/\s+/g, ' ').trim());   // typed text only (build 123)
   const label = (side, t) => side + ' Feed' + (t ? ': ' + t : '');
   if (rows[0]) rows[0].location = label('Emergency', '');
   if (rows[1]) rows[1].location = label('Normal', '');
@@ -7781,7 +7799,7 @@ function buildSourceCard(src, i) {
               const toOther = /^Other:/.test(d.to || '');
               return html`<div class="form-group" id="drainLocGroup_${i}">
               <label>${pt.label}</label>
-              ${releaseHeldOnly(src) ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${releaseHeldNote(src)}</div>` : ''}
+              ${nonValveDevice(src) ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${releaseHeldNote(src)}</div>` : ''}
               <select id="src_drainwhere_${i}" onchange="updateDrainWhere(${i},this.value)">
                 <option value="">-- Not answered --</option>
                 ${DATA.drainLocations.map(w => html`<option value="${w}" ${d.where === w ? 'selected' : ''}>${pt.choices[w] || w}</option>`)}
@@ -8474,6 +8492,9 @@ function handleEnergySourceChange(index, value) {
   } else {
     sources[index]._customEnergy = false;
     sources[index].energySource = value;
+    // A drain answer stays only on a source that takes the question (build 123
+    // review, loto-web 2026-10-26)
+    const drainCleared = dropDrainAnswerOffSource(sources[index]);
     // A row that is no longer Electrical is no feeder or transformer breaker
     // (build 122 second review): its role and the prefix that says it go. (A
     // custom energy source being typed keeps them; the card's button clears them.)
@@ -8523,6 +8544,7 @@ function handleEnergySourceChange(index, value) {
     // Fewer devices, or now an In/Out pair: the marks tapped before no longer
     // say which valve is which (build 95 — marksFit).
     reconcileSourceMarks(index);
+    if (drainCleared) showToast('Cleared the drain answer: \u201c' + value + '\u201d takes no drain question', true);
     // Re-render to update device + verification dropdowns
     renderSources();
     autoSaveCurrent();
@@ -8735,6 +8757,8 @@ function applyCopySource(entryIndex, sourceIndex) {
   // …and is that source, not the role this row had (build 122 second review): a
   // copied Location that says a role still reads as one, as typed
   delete dest.role; delete dest.altKind; delete dest.feeds;
+  // …and keeps its drain answer only where its new source takes the question (build 123 review)
+  const drainCleared = dropDrainAnswerOffSource(dest);
   // Duplicate follows THIS source's own photo (build 109): a copy never brings
   // the other source's photo. A reused photo here makes it an automatic Yes;
   // the other source's automatic Yes stays automatic, and renderSources then
@@ -8761,7 +8785,8 @@ function applyCopySource(entryIndex, sourceIndex) {
   closeCopySourceDialog();
   renderSources();
   autoSaveCurrent();
-  showToast(`Copied source #${sourceIndex + 1} from "${entry.equipName || '(unnamed)'}"` + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : ''), marksCleared);
+  showToast(`Copied source #${sourceIndex + 1} from "${entry.equipName || '(unnamed)'}"` + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '')
+    + (drainCleared ? ' \u2014 its drain answer was cleared (' + dest.energySource + ' takes no drain question)' : ''), marksCleared || drainCleared);
 }
 
 function closeCopySourceDialog() {
@@ -12773,7 +12798,9 @@ function duplicateSaved(index) {
 
 function showDuplicateDialog(index) {
   const entry = savedEquipment[index];
-  const photoCount = (entry.photos ? Object.keys(entry.photos).filter(k => entry.photos[k] && entry.photos[k].dbKey).length : 0)
+  // The arc flash label photo stays with its unit (build 123): not counted
+  const hasLabel = !!(entry.photos && entry.photos.equip_arcflash && entry.photos.equip_arcflash.dbKey);
+  const photoCount = (entry.photos ? Object.keys(entry.photos).filter(k => k !== 'equip_arcflash' && entry.photos[k] && entry.photos[k].dbKey).length : 0)
     + (entry.miscPhotos ? entry.miscPhotos.filter(mp => mp && mp.dbKey).length : 0);
 
   const overlay = document.createElement('div');
@@ -12782,7 +12809,7 @@ function showDuplicateDialog(index) {
   overlay.innerHTML = html`
     <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:320px;width:90%;text-align:center;">
       <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">Duplicate "${entry.equipName}"</div>
-      <div style="font-size:12px;color:var(--text-dim);margin-bottom:18px;">${photoCount} photo${photoCount !== 1 ? 's' : ''} available to copy</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:18px;">${photoCount} photo${photoCount !== 1 ? 's' : ''} available to copy${hasLabel ? ' (not its arc flash label)' : ''}</div>
       <button onclick="executeDuplicate(${index}, true)" style="width:100%;padding:12px;margin-bottom:8px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">
         With Photos
       </button>
@@ -12992,7 +13019,9 @@ async function executeDuplicate(index, withPhotos) {
   } else {
     // Build 122 review: say so when the original's own breaker rows stayed behind
     const own = droppedBreakerRows ? ` — record its own ${droppedKinds.join(' / ')} breaker${droppedBreakerRows !== 1 ? 's' : ''}` : '';
-    if (withPhotos) showToast(`Duplicated "${entry.equipName}" with ${photoCount} photo${photoCount !== 1 ? 's' : ''} (copies) — update name` + own);
+    // …and that the arc flash label stayed behind (build 123 review)
+    const label = (entry.photos && entry.photos.equip_arcflash && entry.photos.equip_arcflash.dbKey) ? ' \u2014 photograph its own arc flash label' : '';
+    if (withPhotos) showToast(`Duplicated "${entry.equipName}" with ${photoCount} photo${photoCount !== 1 ? 's' : ''} (copies) — update name` + own + label);
     else showToast(`Duplicated "${entry.equipName}" (info only) — update name` + own);
   }
 }
@@ -13834,6 +13863,9 @@ async function runCombinedExport(opts) {
       } else { delete out.labelWait; delete out.dcBusV; delete out.labelPhotoFile; }
       // The drive's own disconnect (build 122, backup only): per unit on a drive row, else no key.
       if (isDriveRow(src)) out.driveIsolates = driveIsolatesForJson(src); else delete out.driveIsolates;
+      // The drain answer only where the sheet carries it (build 123 review): never one
+      // kept on an Electrical or exhaust row
+      if (!sourceTakesDrainLocation(src, entryHospitalCode(entry))) delete out.drainLocation;
       return out;
     });
     const miscOut = miscFileNames[ei]

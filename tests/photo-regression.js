@@ -10024,7 +10024,7 @@
 
   // T296 — loto-web's Tier 1: an unnamed feeder counts only when the feeders cover the drives
   async function t296_anUnnamedFeederCountsOnlyWhenTheFeedersCoverTheDrives() {
-    const N = 'T296 loto-web\'s xhigh review (live 2026-10-24 21:59Z): a feeder that names no drive counts for the drives only when the feeders cover them (as many feeder rows as drive units) — one unnamed feeder for two drives feeds neither, so both are asked; two drives sharing one tag, each "fed" by name, get the Save & New note that loto-web keeps the unit on Tier 2; a vacuum pump\'s exhaust row ("Vacuum Air Out") no longer asks the release question (a held answer still shows)';
+    const N = 'T296 loto-web\'s xhigh review (live 2026-10-24 21:59Z): a feeder that names no drive counts for the drives only when the feeders cover them (as many feeder rows as drive units) — one unnamed feeder for two drives feeds neither, so both are asked; two drives sharing one tag, each "fed" by name, get the Save & New note that loto-web keeps the unit on Tier 2; a vacuum pump\'s exhaust row ("Vacuum Air Out") no longer asks the release question, nor shows a held answer (loto-web\'s rule, build 123 review)';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -10047,7 +10047,7 @@
       const exHeld = Object.assign(mkSrc('Vacuum Air Out'), { deviceType: 'Ball Valve', verification: '', drainLocation: { where: 'On this valve', text: '' } });
       const inlet = Object.assign(mkSrc('Vacuum Air In'), { deviceType: 'Ball Valve', verification: '' });
       got.vac = [sourceTakesDrainLocation(ex, 'Atlanta'), sourceTakesDrainLocation(exHeld, 'Atlanta'), sourceTakesDrainLocation(inlet, 'Atlanta')].join();
-      want(got.vac === 'false,true,true', 'vacuum exhaust: ' + got.vac);
+      want(got.vac === 'false,false,true', 'vacuum exhaust: ' + got.vac);
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -10135,7 +10135,7 @@
 
   // T300 — a held answer on a pump's exhaust keeps its wording and says it isn't asked
   async function t300_aHeldExhaustAnswerKeepsItsWording() {
-    const N = 'T300 build 122 review of the link: a release answer already held on a vacuum pump\'s exhaust row ("Vacuum Air Out") still shows under its vent wording ("Vent to atmosphere …", "On this valve (vent port)") with the note that it is no longer asked there and loto-web prints its own exhaust check for the row (sixth review); a row that asks has no note';
+    const N = 'T300 build 122 review of the link, updated by the build 123 review (loto-web 2026-10-26): a release answer already held on a vacuum pump\'s exhaust row ("Vacuum Air Out") is neither shown on its card nor written to column 14 — loto-web prints its own exhaust check and nothing from the answer — while the inlet still asks for its vent, with no note';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -10148,9 +10148,9 @@
       sources.forEach(ensureSourceId); renderSources();
       const grp = (i) => { const g = document.getElementById('drainLocGroup_' + i); return g ? g.textContent.replace(/\s+/g, ' ').trim() : ''; };
       got.held = grp(0); got.asks = grp(1);
-      want(/^Vent to atmosphere for this isolation point No longer asked here/.test(got.held) && /On this valve \(vent port\)/.test(got.held), 'the held answer: ' + got.held);
+      got.sheet = drainLocationSheetText(sources[0], 'Atlanta');
+      want(got.held === '' && got.sheet === '', 'the held answer: ' + got.held + ' | sheet: ' + got.sheet);
       want(/^Vent to atmosphere for this isolation point/.test(got.asks) && !/No longer asked/.test(got.asks), 'the inlet: ' + got.asks);
-      want(/vacuum pump\u2019s exhaust/.test(got.held) && /its own exhaust check/.test(got.held) && !/Open drain/.test(got.held), 'the note\'s wording: ' + got.held);
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -10215,7 +10215,7 @@
 
   // T303 — a held answer on a row that isn't a pump's exhaust says why it isn't asked
   async function t303_aHeldAnswerSaysWhyItIsNotAsked() {
-    const N = 'T303 build 122 fifth review: a release answer held on a valve row whose energy source no longer asks (changed to "Thermal" after the answer) shows the note naming that energy source — never the vacuum pump\'s exhaust — and that loto-web names the held point only in an "Open drain…" line';
+    const N = 'T303 build 122 fifth review, updated by the build 123 review (loto-web 2026-10-26): a release answer held on a valve row whose energy source takes no drain question ("Thermal", set after the answer) is neither shown on its card nor written to column 14 — loto-web prints nothing from it there';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -10227,7 +10227,8 @@
       sources.forEach(ensureSourceId); renderSources();
       const g = document.getElementById('drainLocGroup_0');
       got.note = g ? g.textContent.replace(/\s+/g, ' ').trim() : '';
-      want(/No longer asked here: “Thermal” takes no drain question/.test(got.note) && /Open drain…/.test(got.note) && !/vacuum pump/i.test(got.note), got.note);
+      got.sheet = drainLocationSheetText(sources[0], 'Atlanta');
+      want(got.note === '' && got.sheet === '', JSON.stringify(got));
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -10985,7 +10986,7 @@
   }
   // T337 — a held drain answer on a row whose Device isn't a valve stays
   async function t337_aHeldDrainAnswerOnANonValveRowStays() {
-    const N = 'T337 build 123: a drain answer held on a row whose Device was changed to a non-valve ("Pump") still shows on its card with the note that it is no longer asked, and still goes to the sheet (col 14, col 20); changing it never moves the row\'s verification code, and its "None found" writes no Change Later note';
+    const N = 'T337 build 123: a drain answer held on a row whose Device was changed to a non-valve ("Pump") still shows on its card with the note that it is no longer asked, and still goes to the sheet (col 14, col 20); changing it never moves the row\'s verification code, and its "None found" still writes its Change Later note (build 123 review: loto-web prints its stop line whatever the Device)';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -11005,7 +11006,7 @@
       updateDrainWhere(1, 'None found');
       const e = Object.assign(mkEntry('GEN-337', { sources: sources.map(x => JSON.parse(JSON.stringify(x))) }), { equipType: 'Generator', hospitalCode: 'Atlanta' });
       got.u2 = changeLaterSheetText(e);
-      want(got.sheet === 'On this valve: drain cock | Containment' && got.note && got.code === 'Gauge -> Gauge' && !/No drain found/.test(got.u2), JSON.stringify(got));
+      want(got.sheet === 'On this valve: drain cock | Containment' && got.note && got.code === 'Gauge -> Gauge' && /No drain found for source #2 \(CHW In\)/.test(got.u2), JSON.stringify(got));
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -11043,6 +11044,175 @@
       await Promise.race([p2, sleep(2000)]);
       got.main = (sources.find(isSecondaryMainRow) || {}).location;
       want(got.feeder === 'Feeder: cancel bkr cancel (VFD-1)' && got.main === 'Secondary Main: skip bkr skip', JSON.stringify(got));
+    } finally { window.__askChoiceAuto = rp; const o = document.getElementById('choiceDialogOverlay'); if (o) o.remove(); setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  // T339 — a drain answer never rides an Electrical row (loto-web 2026-10-26)
+  async function t339_aDrainAnswerNeverRidesAnElectricalRow() {
+    const N = 'T339 build 123 review: a drain answer stays only where the row\'s energy source takes the question (loto-web 2026-10-26 prints nothing from column 14 on an Electrical row but would store it) — a CHW row changed to "Electrical 480V" loses its answer with a message, Copy Source of an Electrical source clears it too, and an answer already held on an Electrical Breaker row is neither shown nor written to column 14 or U2';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-339', 'Air Handler', 'AHU - Steam');
+      const W = (es) => Object.assign(mkSrc(es), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', collapsed: false, drainLocation: { where: 'On the equipment', text: 'hose bib' } });
+      sources = [W('CHW In'), Object.assign(mkSrc('Electrical 480V'), { collapsed: false, drainLocation: { where: 'None found', text: '' } }), W('CHW Out')];
+      sources.forEach(ensureSourceId); renderSources();
+      handleEnergySourceChange(0, 'Electrical 480V');
+      const toast = document.getElementById('toast');
+      got.changed = [!!sources[0].drainLocation, toast ? /Cleared the drain answer/.test(toast.textContent) : false].join();
+      got.held = [sourceTakesDrainLocation(sources[1], 'Atlanta'), drainLocationSheetText(sources[1], 'Atlanta'), !!document.querySelector('#drainLocGroup_1 select')].join();
+      savedEquipment = [Object.assign(mkEntry('PNL-339', { sources: [Object.assign(mkSrc('Electrical 208V'), { deviceType: 'Disconnect' })] }), { equipType: 'Panel' })];
+      const ov = document.createElement('div'); ov.id = 'copySourceOverlay'; ov.dataset.targetIndex = '2'; document.body.appendChild(ov);
+      applyCopySource(0, 0);
+      got.copied = [sources[2].energySource, !!sources[2].drainLocation].join();
+      const e = Object.assign(mkEntry('AHU-339', { sources: sources.map(x => JSON.parse(JSON.stringify(x))) }), { equipType: 'Air Handler', hospitalCode: 'Atlanta' });
+      got.u2 = changeLaterSheetText(e);
+      want(got.changed === 'false,true' && got.held === 'false,,false' && got.copied === 'Electrical 208V,false' && !/No drain found/.test(got.u2), JSON.stringify(got));
+    } finally { const o = document.getElementById('copySourceOverlay'); if (o) o.remove(); setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T340 — a vacuum pump's exhaust row: a held answer stays off the card and the sheet
+  async function t340_anExhaustRowsHeldAnswerStaysOffTheSheet() {
+    const N = 'T340 build 123 review: a vacuum pump\'s exhaust row whose Device is "Pump" and holds a vent answer, or "None found", shows nothing and writes nothing to column 14 or U2 (loto-web prints its own exhaust check, nothing from the answer, 2026-10-26) where build 123 said "The answer still goes on the sheet"; an inlet changed to the exhaust loses its answer';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('VP-340', 'Medical Vacuum Pump', 'Medical Vacuum Pump');
+      const X = (where) => Object.assign(mkSrc('Vacuum Air Out'), { deviceType: 'Pump', verification: 'Gauge/Drain', collapsed: false, drainLocation: { where, text: where === 'None found' ? '' : 'vent port' } });
+      sources = [X('On this valve'), X('None found'), Object.assign(mkSrc('Vacuum Air In'), { deviceType: 'Ball Valve', verification: '', collapsed: false, drainLocation: { where: 'On this valve', text: '' } })];
+      sources.forEach(ensureSourceId); renderSources();
+      got.shown = [0, 1].map(i => !!document.querySelector('#drainLocGroup_' + i + ' select')).join();
+      got.sheet = [0, 1].map(i => drainLocationSheetText(sources[i], 'Atlanta')).join('|');
+      const e = Object.assign(mkEntry('VP-340', { sources: sources.map(x => JSON.parse(JSON.stringify(x))) }), { equipType: 'Medical Vacuum Pump', template: 'Medical Vacuum Pump', hospitalCode: 'Atlanta' });
+      got.u2 = changeLaterSheetText(e);
+      handleEnergySourceChange(2, 'Vacuum Air Out');
+      got.inlet = !!sources[2].drainLocation;
+      want(got.shown === 'false,false' && got.sheet === '|' && !/source #1|source #2/.test(got.u2) && got.inlet === false, JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T341 — a "None found" held on a pump row writes its Change Later note
+  async function t341_aHeldNoneFoundOnAPumpRowWritesItsNote() {
+    const N = 'T341 build 123 review: loto-web prints a held answer whatever the Device (2026-10-26), so on a Generator\'s Pump rows a found fuel oil drain still goes to columns 14 / 20 with a card note to check the drain is still where it says, and a "None found" held on CHW In writes "No drain found for source #2 (CHW In)" to U2 (loto-web prints its stop line), its note saying so';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('GEN-341', 'Generator', '');
+      sources = [Object.assign(mkSrc('Fuel Oil In'), { deviceType: 'Pump', collapsed: false, verification: '', drainLocation: { where: 'On this valve', text: 'drain cock', to: 'Containment' } }),
+        Object.assign(mkSrc('CHW In'), { deviceType: 'Pump', collapsed: false, verification: 'Drain Only - CHW', drainLocation: { where: 'None found', text: '' } })];
+      sources.forEach(ensureSourceId); renderSources();
+      const note = (i) => { const g = document.getElementById('drainLocGroup_' + i); return g ? g.textContent.replace(/\s+/g, ' ') : ''; };
+      got.notes = [/check the drain is still where it says/.test(note(0)), /None found” still goes on the sheet, with its Change Later note/.test(note(1))].join();
+      got.sheet = [drainLocationSheetText(sources[0], 'Atlanta'), drainsToSheetText(sources[0], 'Atlanta'), drainLocationSheetText(sources[1], 'Atlanta')].join(' | ');
+      const e = Object.assign(mkEntry('GEN-341', { sources: sources.map(x => JSON.parse(JSON.stringify(x))) }), { equipType: 'Generator', hospitalCode: 'Atlanta' });
+      got.u2 = changeLaterSheetText(e);
+      want(got.notes === 'true,true' && got.sheet === 'On this valve: drain cock | Containment | None found' && /No drain found for source #2 \(CHW In\)/.test(got.u2), JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T342 — clearing a held answer on a pump row puts back the code it set
+  async function t342_clearingAHeldAnswerPutsBackItsCode() {
+    const N = 'T342 build 123 review: a CHW valve row answered "On the equipment" gains the drain in its code (Temp Only - CHW → Drain Only - CHW); after its Device is corrected to "Pump", clearing the held answer ("-- Not answered --", as its note says) puts the code back to Temp Only - CHW, as on a valve row — where build 123 left the drain in the code';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-342', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      updateDrainWhere(0, 'On the equipment');
+      got.set = sources[0].verification;
+      sources[0].deviceType = 'Pump'; renderSources();
+      updateDrainWhere(0, '');
+      got.cleared = [sources[0].verification, !!sources[0].drainLocation].join();
+      want(got.set === 'Drain Only - CHW' && got.cleared === 'Temp Only - CHW,false', JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T343 — the test hook's typed answers are read in one place (askChoice)
+  async function t343_theHooksTypedAnswerIsReadInOnePlace() {
+    const N = 'T343 build 123 review: on a dialog with a field, the test hook\'s plain string comes back as the typed text ({ typed }) unless it is a button\'s value or "cancel", so no caller keeps its own list of button values — "later" is text, "skip" the Skip button, "cancel" closed; a dialog without a field is unchanged';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const rp = window.__askChoiceAuto;
+    try {
+      const ask = (answer, withField) => { window.__askChoiceAuto = () => answer;
+        return askChoice({ id: 't343', title: 'T343', input: withField ? { type: 'text' } : undefined,
+          choices: [{ label: 'Next', needsInput: true, primary: true }, { value: 'skip', label: 'Skip' }] }); };
+      got.r = [await ask('later', true), await ask('skip', true), await ask('cancel', true), await ask('later', false)].map(r => JSON.stringify(r)).join(' ');
+      got.t = [typedOf({ typed: 'later' }), typedOf('later'), typedOf('skip')].map(String).join();
+      want(got.r === '{"typed":"later"} "skip" "cancel" "later"' && got.t === 'later,null,null', JSON.stringify(got));
+    } finally { window.__askChoiceAuto = rp; }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T344 — the Duplicate dialog leaves the arc flash label out of its count, and says so
+  async function t344_theDuplicateDialogSaysTheLabelStays() {
+    const N = 'T344 build 123 review: duplicating an ATS with a main and an arc flash label photo, the dialog counts the one photo it copies ("1 photo available to copy (not its arc flash label)") and the toast says to photograph the copy\'s own label — where it said 2 and then copied 1';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillForm('ATS-344');
+    document.getElementById('equipType').value = 'ATS'; filterTemplateDropdown('ATS');
+    await captureInto('equip_main', await makePhotoFile('t344-main'));
+    await captureInto('equip_arcflash', await makePhotoFile('t344-arc'));
+    saveEntry();
+    showDuplicateDialog(0);
+    const dlg = document.getElementById('duplicateDialog');
+    got.dialog = dlg ? dlg.textContent.replace(/\s+/g, ' ').trim() : '';
+    await executeDuplicate(0, true);
+    const toast = document.getElementById('toast');
+    got.toast = toast ? toast.textContent : '';
+    await waitForPhotoWritesIdle(15000);
+    want(/1 photo available to copy \(not its arc flash label\)/.test(got.dialog) && /photograph its own arc flash label/.test(got.toast), JSON.stringify(got));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T345 — the ATS feeds through the real dialogs keep what was typed (a test gap)
+  async function t345_theAtsFeedsKeepTypedTextInTheRealDialogs() {
+    const N = 'T345 build 123 review (a test gap): the ATS feed prompts in the real dialogs keep what is typed, even "cancel", and Skip leaves the bare label — "Emergency Feed: cancel" / "Normal Feed"';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    const rp = window.__askChoiceAuto;
+    const step = async (text, label) => {
+      await sleep(0);
+      const o = document.getElementById('choiceDialogOverlay');
+      const input = o && o.querySelector('input[type="text"]');
+      if (input && text != null) { input.value = text; input.dispatchEvent(new Event('input', { bubbles: true })); }
+      const b = o && [...o.querySelectorAll('button')].find(x => x.textContent === label);
+      if (b) b.click();
+      return !!b;
+    };
+    try {
+      setHospitalCode('');
+      formOfType('ATS-345', 'ATS', 'ATS - Generic');
+      sources = [Object.assign(mkSrc('Electrical 480V'), { location: '' }), Object.assign(mkSrc('Electrical 480V'), { location: '' })];
+      sources.forEach(ensureSourceId); renderSources();
+      window.__askChoiceAuto = undefined;
+      const rows = sources.slice();
+      const p = askAtsFeeds(rows);
+      got.steps = [await step('cancel', 'OK'), await step(null, 'Skip')].join();
+      await Promise.race([p, sleep(2000)]);
+      got.locs = rows.map(r => r.location).join(' / ');
+      want(got.steps === 'true,true' && got.locs === 'Emergency Feed: cancel / Normal Feed', JSON.stringify(got));
     } finally { window.__askChoiceAuto = rp; const o = document.getElementById('choiceDialogOverlay'); if (o) o.remove(); setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -11186,7 +11356,10 @@
     t328_manyOrphansAreOneQuestion, t329_eachDiagramKeepsOneLabelRule, t330_aDeviceIdKeystrokeRedrawsNoWholeCard,
     t331_aDiagramEmptiedLabelByLabelStartsOnTheNewRule, t332_theAnswerBlockIsNotSwappedWhileFocused, t333_anUntaggedDrivePicksAmongOrphans,
     t334_otherSourcesOkWaitsForATick, t335_aDuplicateNeverBringsTheArcFlashLabel, t336_anAtsByTemplateGetsTheArcFlashLabel,
-    t337_aHeldDrainAnswerOnANonValveRowStays, t338_typedTextIsNeverAButton];
+    t337_aHeldDrainAnswerOnANonValveRowStays, t338_typedTextIsNeverAButton,
+    t339_aDrainAnswerNeverRidesAnElectricalRow, t340_anExhaustRowsHeldAnswerStaysOffTheSheet, t341_aHeldNoneFoundOnAPumpRowWritesItsNote,
+    t342_clearingAHeldAnswerPutsBackItsCode, t343_theHooksTypedAnswerIsReadInOnePlace, t344_theDuplicateDialogSaysTheLabelStays,
+    t345_theAtsFeedsKeepTypedTextInTheRealDialogs];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
