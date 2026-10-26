@@ -479,7 +479,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b123</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b124</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1162,7 +1162,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 123;
+const APP_BUILD = 124;
 
 // ============================================================================
 // DATA
@@ -1427,7 +1427,11 @@ const HOT_VERIFICATION_EQUIP = ['Domestic Water Heater'];
 // synthesis (build 79) so both always agree on the "- Hot"/"- CHW" suffix.
 function getTempSuffixFor(energySource) {
   let tempSuffix = '';
-  if (energySource) {
+  // loto-web's medium_kind comes first (2026-10-26): a release medium is never
+  // hot or chilled water, whatever its name says ("Refrigerant Hot Gas Bypass"),
+  // so it is never the water family and is never offered or given a water code
+  // (build 124)
+  if (energySource && !releaseMediumOf(energySource)) {
     for (const hot of HOT_ENERGY_SOURCES) {
       if (energySource.startsWith(hot)) { tempSuffix = 'hot'; break; }
     }
@@ -3123,8 +3127,8 @@ const DRAINS_TO_LABEL = { 'Containment': 'Containment (drip pan or bucket)' };
 // the other media never changes the code.
 function drainCodeFollowsDrain(src) {
   const es = String((src && src.energySource) || '');
-  // loto-web's medium_kind comes first (2026-10-26): a release medium is never the
-  // water family, whatever keyword it carries ("Refrigerant Hot Gas Bypass")
+  // loto-web's medium_kind comes first (2026-10-26), for compressed-air names too
+  // (the water family checks it in getTempSuffixFor)
   if (releaseMediumOf(es)) return false;
   return isWaterFamilySource(es) || /^(Compressed Air|CA)\b/.test(es);
 }
@@ -3171,23 +3175,41 @@ function waterSpecificCode(v) {
 //   own, a water-specific code is blanked for the tech to pick (Save & New lists
 //   it); a suffix-less gauge or drain code stays (the vacuum lines', fuel oil's).
 // `before` is the source the row had ('' for none).
+// Returns whether it swapped a valve Device: the caller then clears that row's
+// valve marks (they sit on its photo, which shows the valve) and asks for a retake.
 function takeNewSourceDefaults(src, before) {
   const es = String((src && src.energySource) || '').trim();
   const was = String(before || '').trim();
-  if (!es || before === undefined || was === es) return;
+  if (!es || before === undefined || was === es) return false;
   const v = String(src.verification || '').trim();
   const p = parseWaterVerification(v);
   const setCode = (code) => { src.verification = code; delete src._drainDefault; };
   if (releaseMediumOf(es) === 'gas') {
     if (p.recognized && v !== 'GaugeOnly') setCode(simpleVerifEnabled() ? 'Controls' : 'GaugeOnly');
-    return;
+    return false;
   }
-  if (drainCodeFollowsDrain(src)) return;
-  if (!(was ? drainCodeFollowsDrain({ energySource: was }) : waterSpecificCode(v))) return;
+  if (drainCodeFollowsDrain(src)) return false;
+  if (!(was ? drainCodeFollowsDrain({ energySource: was }) : waterSpecificCode(v))) return false;
   const def = SOURCE_DEFAULTS[es] || {};
-  if (def.device && isValveDevice(src.deviceType)) { src.deviceType = def.device; delete src._customDevice; }
+  let swapped = false;
+  if (def.device && isValveDevice(src.deviceType)) {
+    src.deviceType = def.device;
+    delete src._customDevice;
+    // …and what only a valve has goes with it (build 124, loto-web 2026-10-26: a
+    // kept Lock Open printed "Slowly open valve fully and lock it" on a K, CG or H
+    // row, and Normally Closed changed H's Sections 2 and 4)
+    src.valveState = 'normal';
+    delete src.lockOpen;
+    swapped = true;
+  }
   if (def.verification) { if (p.recognized && !p.blank) setCode(def.verification); }
   else if (waterSpecificCode(v)) setCode('');
+  return swapped;
+}
+// What a swap says: the row's photo shows the valve, not what isolates it now.
+function deviceSwapNote(src, photoMap, slot) {
+  const ref = photoMap && photoMap[slot];
+  return 'Device set to ' + src.deviceType + (ref && ref.dbKey ? ': its photo shows the valve \u2014 retake it' : '');
 }
 // A settle note inside another message: " — cleared the … answer: …".
 function noteClause(note) { return note ? ' \u2014 ' + note.charAt(0).toLowerCase() + note.slice(1) : ''; }
@@ -7938,19 +7960,22 @@ function buildSourceCard(src, i) {
 // save if the box never lost focus (the app put away mid-typing and restored):
 // the source the row left when Custom was picked rides on it as _customFrom until
 // then, and saves with the form in progress, never with the unit (build 123 review).
-function settleCustomSource(src) {
+function settleCustomSource(src, photoMap, slot) {
   if (!src || !('_customFrom' in src)) return '';
   const before = src._customFrom;
   delete src._customFrom;
-  takeNewSourceDefaults(src, before);
-  return settleSourceEnergy(src, before);
+  const swapped = takeNewSourceDefaults(src, before);
+  if (swapped) clearMarksOf(photoMap, slot);
+  return [settleSourceEnergy(src, before), swapped ? deviceSwapNote(src, photoMap, slot) : ''].filter(Boolean).join('\n');
 }
-function settlePendingCustomSources(list) { return (list || []).map(settleCustomSource).filter(Boolean); }
+function settlePendingCustomSources(list, photoMap) {
+  return (list || []).map((src, i) => settleCustomSource(src, photoMap, 'source_' + i)).filter(Boolean);
+}
 function commitCustomEnergy(index) {
   const src = sources[index];
   if (!src) return;
   const code = src.verification, pending = '_customFrom' in src;
-  const note = settleCustomSource(src);
+  const note = settleCustomSource(src, photos, 'source_' + index);
   if (note) showToast(note, true);
   if (pending || note || src.verification !== code) autoSaveCurrent();
   refreshSourceDependents(index);
@@ -8572,11 +8597,17 @@ function handleEnergySourceChange(index, value) {
     const el = document.getElementById('src_energy_custom_' + index);
     if (el) el.focus();
   } else {
-    const before = sources[index].energySource;
+    // A custom session ends here (build 124): left on the row, _customFrom made the
+    // save redo this change and undo a Device the tech picked since; a box never
+    // typed in hands over the source the row had before Custom
+    const row = sources[index];
+    const before = ('_customFrom' in row && !String(row.energySource || '').trim()) ? row._customFrom : row.energySource;
+    delete row._customFrom;
     sources[index]._customEnergy = false;
     sources[index].energySource = value;
-    takeNewSourceDefaults(sources[index], before);   // build 123 review
-    const drainNote = settleSourceEnergy(sources[index], before);
+    const swapped = takeNewSourceDefaults(sources[index], before);   // build 123 review
+    if (swapped) clearMarksOf(photos, 'source_' + index);
+    const drainNote = [settleSourceEnergy(sources[index], before), swapped ? deviceSwapNote(sources[index], photos, 'source_' + index) : ''].filter(Boolean).join('\n');
     // A row that is no longer Electrical is no feeder or transformer breaker
     // (build 122 second review): its role and the prefix that says it go. (A
     // custom energy source being typed keeps them; the card's button clears them.)
@@ -9113,8 +9144,9 @@ function applyLink(equipIndex, sourceIndex) {
   if (tookEnergy && (parseInt(src.quantity, 10) || 1) !== (parseInt(mine.quantity, 10) || 1)) {
     mine.quantity = parseInt(src.quantity, 10) || 1;
   }
-  if (tookEnergy) takeNewSourceDefaults(mine, '');   // build 123 review
-  const drainNote = tookEnergy ? settleSourceEnergy(mine) : '';
+  const swapped = tookEnergy && takeNewSourceDefaults(mine, '');   // build 123 review
+  if (swapped) clearMarksOf(photos, 'source_' + pendingLinkSourceIndex);
+  const drainNote = [tookEnergy ? settleSourceEnergy(mine) : '', swapped ? deviceSwapNote(mine, photos, 'source_' + pendingLinkSourceIndex) : ''].filter(Boolean).join('; ');
   const marksCleared = reconcileSourceMarks(pendingLinkSourceIndex, true);
   mine.userEdited = true;
   sources[pendingLinkSourceIndex].linkedTo = {
@@ -9562,12 +9594,20 @@ function reconcileSourceMarks(index, quiet) {
   const slot = 'source_' + index, ref = photos[slot], src = sources[index];
   if (!ref || !src || !ref.dbKey) return false;
   if (marksFit(ref, src)) return false;
+  clearMarksOf(photos, slot);
+  if (!quiet) showToast(MARKS_CLEARED_NOTE, true);
+  return true;
+}
+// A source photo's valve marks cleared (a NEW reference — see VALVE MARKS), in the
+// form's photos or another photo map (a recovered draft's). Returns whether any went.
+function clearMarksOf(photoMap, slot) {
+  const ref = photoMap && photoMap[slot];
+  if (!ref || !(ref.marks || ref.marksFor)) return false;
   const next = Object.assign({}, ref);
   delete next.marks;
   delete next.marksFor;
-  photos[slot] = next;
-  paintPhotoSlot(slot);
-  if (!quiet) showToast(MARKS_CLEARED_NOTE, true);
+  photoMap[slot] = next;
+  if (photoMap === photos) paintPhotoSlot(slot);
   return true;
 }
 // The marks an export ships for entry source i — none without its photo.
@@ -12119,8 +12159,10 @@ async function saveAndNew() {
   }
   // A custom source still being typed is committed now (build 123 review), so
   // Save & New's checks see its code
-  const customNotes = settlePendingCustomSources(sources);
-  if (customNotes.length) { renderSources(); showToast(customNotes.join('\n'), true); }
+  const pending = sources.some(src => src && '_customFrom' in src);
+  const customNotes = settlePendingCustomSources(sources, photos);
+  if (pending) renderSources();   // the cards show what it changed (build 124)
+  if (customNotes.length) showToast(customNotes.join('\n'), true);
   // What the cards show is what is saved (build 110 — see refreshSourceDependents)
   applySimpleVerifDefaults();
   // Build 122: the drives' feeders and disconnects and the arc flash label are
@@ -12149,7 +12191,7 @@ function performSaveAndNew() {
   // Two sources must never share an id (older Duplicate-source copies did):
   // the first keeps it, a later one gets a fresh id and remembers the old one
   // in priorSourceIds, so the photo it was already shot under still binds.
-  settlePendingCustomSources(sources);   // a custom source still being typed (build 123 review)
+  settlePendingCustomSources(sources, photos);   // a custom source still being typed (build 123 review)
   const seenSourceIds = new Set();
   sources.forEach(src => {
     if (!src) return;
@@ -15532,7 +15574,7 @@ function keepWipAsRecoveredEntry(st) {
   if (st.entryId != null && savedEquipment.some(e => sameEntryId(e.id, st.entryId))) return false;
   const photosMap = Object.assign({}, st.photos || {});
   dropStaleSourceRefs(photosMap, st.sources || []);
-  settlePendingCustomSources(st.sources);   // a custom source still being typed (build 123 review)
+  settlePendingCustomSources(st.sources, photosMap);   // a custom source still being typed (build 123 review)
   const now = new Date().toISOString();
   const entry = {
     id: normEntryId(st.entryId) || genUuid(),
