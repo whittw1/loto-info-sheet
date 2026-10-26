@@ -9145,18 +9145,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 124 (was build 122\'s): APP_BUILD and the header label say 124, the service worker\'s cache is loto-collector-v7.120, Xcode\'s CURRENT_PROJECT_VERSION is 124 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
+    const N = 'T268 build 125 (was build 122\'s): APP_BUILD and the header label say 125, the service worker\'s cache is loto-collector-v7.121, Xcode\'s CURRENT_PROJECT_VERSION is 125 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 124 && !!label && +label[1] === 124, 'the build');
+    want(APP_BUILD === 125 && !!label && +label[1] === 125, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.120', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.121', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 124;,CURRENT_PROJECT_VERSION = 124;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 125;,CURRENT_PROJECT_VERSION = 125;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -11632,7 +11632,7 @@
       handleEnergySourceChange(0, 'Hydraulic');
       const t = document.getElementById('toast');
       got.row = [sources[0].deviceType, sources[0].valveState, !!sources[0].lockOpen, (photos.source_0 && photos.source_0.marks) ? photos.source_0.marks.length : 0].join();
-      got.msg = t ? /Device set to Hydraulic: its photo shows the valve/.test(t.textContent) : false;
+      got.msg = t ? /Device set to Hydraulic: its photo shows the old Ball Valve/.test(t.textContent) : false;
       want(got.row === 'Hydraulic,normal,false,0' && got.msg === true, JSON.stringify(got));
     } finally { delete photos.source_0; setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
@@ -11650,6 +11650,130 @@
     const notes = settlePendingCustomSources(list, map);
     got.r = [list[0].deviceType, list[0].verification, !!list[0].lockOpen, map.source_0.marks ? map.source_0.marks.length : 0, '_customFrom' in list[0], notes.length].join();
     want(got.r === 'Hydraulic,GaugeOnly,false,0,false,1', got.r);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  // T365 — a code or Device that is the old source's own default becomes the new source's
+  async function t365_theOldSourcesDefaultsBecomeTheNewOnes() {
+    const N = 'T365 build 125: with the picker, a Kinetic row (Rotating / Rotating) turned Gravity/Potential becomes Potential / Block, a Hydraulic row (Hydraulic / GaugeOnly) turned Kinetic Rotating / Rotating, a Kinetic row turned Natural Gas has no Device and Controls (simplified), a battery (Bag / Controls) turned Electrical 480V keeps Controls (Electrical offers it) with no Device, and a steam Gate Valve turned Kinetic becomes Rotating with its valve fields dropped — while a steam Gate Valve turned Natural Gas keeps the valve';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    let prevSimple = null;
+    try { prevSimple = localStorage.getItem('loto_simple_verification'); } catch (e) {}
+    try {
+      setHospitalCode('Atlanta');
+      try { localStorage.setItem('loto_simple_verification', '1'); } catch (e) {}
+      formOfType('AHU-365', 'Air Handler', 'AHU - Steam');
+      const R = (es, dev, v, x) => Object.assign(mkSrc(es), { deviceType: dev, verification: v, collapsed: false }, x || {});
+      sources = [R('Kinetic', 'Rotating', 'Rotating'), R('Hydraulic', 'Hydraulic', 'GaugeOnly'), R('Kinetic', 'Rotating', 'Rotating'),
+        R('Battery 12V DC', 'Bag', 'Controls'), R('LPS 10 PSI', 'Gate Valve', 'Temp Only - Hot', { valveState: 'normally_closed' }), R('LPS 10 PSI', 'Gate Valve', 'Temp Only - Hot')];
+      sources.forEach(ensureSourceId); renderSources();
+      handleEnergySourceChange(0, 'Gravity/Potential'); handleEnergySourceChange(1, 'Kinetic'); handleEnergySourceChange(2, 'Natural Gas');
+      handleEnergySourceChange(3, 'Electrical 480V'); handleEnergySourceChange(4, 'Kinetic'); handleEnergySourceChange(5, 'Natural Gas');
+      got.rows = sources.map(x => x.energySource + ' / ' + (x.deviceType || '(none)') + ' / ' + (x.verification || '(blank)')).join(' | ');
+      got.steamState = sources[4].valveState;
+      want(got.rows === 'Gravity/Potential / Potential / Block | Kinetic / Rotating / Rotating | Natural Gas / (none) / Controls | Electrical 480V / (none) / Controls | Kinetic / Rotating / Rotating | Natural Gas / Gate Valve / Controls'
+        && got.steamState === 'normal', JSON.stringify(got));
+    } finally {
+      try { if (prevSimple == null) localStorage.removeItem('loto_simple_verification'); else localStorage.setItem('loto_simple_verification', prevSimple); } catch (e) {}
+      setHospitalCode(prevCode);
+    }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T366 — a swapped valve's photo stays flagged until a retake
+  async function t366_aSwappedValvesPhotoIsListedUntilRetaken() {
+    const N = 'T366 build 125, as loto-web suggested (C-12 asks for the restraint photo): a CHW Ball Valve row with a photo turned Kinetic keeps the photo, flagged — Save & New lists "Source #1: its photo shows the old Ball Valve — retake it." — until a new photo replaces it';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-366', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      photos.source_0 = { dbKey: 'loto:t366', thumbnail: '', fileType: 'image/jpeg', timestamp: new Date().toISOString() };
+      handleEnergySourceChange(0, 'Kinetic');
+      const listed = () => collectSaveNotices().some(n => /Source #1: its photo shows the old Ball Valve — retake it/.test(n));
+      got.flagged = [photos.source_0.retakeFor, listed()].join();
+      photos.source_0 = { dbKey: 'loto:t366b', thumbnail: '', fileType: 'image/jpeg', timestamp: new Date().toISOString() };   // the retake
+      got.afterRetake = listed();
+      want(got.flagged === 'Ball Valve,true' && got.afterRetake === false, JSON.stringify(got));
+    } finally { delete photos.source_0; setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T367 — one settle step for the picker, the custom box and a link
+  async function t367_oneSettleStepForEveryPath() {
+    const N = 'T367 build 125: the picker, the custom box and a link run one settle step (settleSourceChange) and so say the same thing — a CHW Ball Valve row holding a drain answer, turned Kinetic by the picker and by a committed custom "Kinetic", gives the same two notes';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      const mk = () => Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', drainLocation: { where: 'None found', text: '' } });
+      const a = mk(); a.energySource = 'Kinetic';
+      const viaStep = settleSourceChange(a, 'CHW In', {}, 'source_0');
+      const b = Object.assign(mk(), { _customFrom: 'CHW In' }); b.energySource = 'Kinetic';
+      const viaCustom = settleCustomSource(b, {}, 'source_0').split('\n');
+      got.step = viaStep.join(' / ');
+      got.same = JSON.stringify(viaStep) === JSON.stringify(viaCustom);
+      want(got.same && got.step === 'Cleared the drain answer: “Kinetic” takes no drain question / Device set to Rotating', JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T368 — a link's message reads like the others
+  async function t368_aLinksMessageReadsLikeTheOthers() {
+    const N = 'T368 build 125: a link that fills a blank source and swaps its valve says so in the same form as the other messages — "Linked to EF-368 — cleared the … — device set to Rotating …", each note its own lower-case clause';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-368', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc(''), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', collapsed: false, drainLocation: { where: 'None found', text: '' } })];
+      sources.forEach(ensureSourceId); renderSources();
+      savedEquipment = [Object.assign(mkEntry('EF-368', { sources: [Object.assign(mkSrc('Kinetic'), { deviceType: 'Rotating', verification: 'Rotating', sourceId: genUuid() })] }), { equipType: 'Exhaust Fan' })];
+      pendingLinkSourceIndex = 0;
+      _toastItems = [];
+      applyLink(0, 0);
+      const t = document.getElementById('toast');
+      got.msg = t ? t.textContent : '';
+      want(/^Linked to EF-368 — cleared the drain or vent answer: “Kinetic” takes no drain or vent question — device set to Rotating$/.test(got.msg), got.msg);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  // T369 — a photo flagged for a retake ships with the unit's misc photos, not as the row's
+  async function t369_aFlaggedPhotoIsNotTheRowsPhoto() {
+    const N = 'T369 build 125, as loto-web asked (2026-10-26: it prints a row\'s photo as that row\'s own, with its ID box): a CHW Ball Valve row turned Kinetic by the picker exports no photo of its own — the valve photo ships with the unit\'s misc photos instead, so it is kept — and K-1 prints the standard fan image until the retake';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      fillForm('AHU-369');
+      document.getElementById('equipType').value = 'Air Handler'; filterTemplateDropdown('Air Handler');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Ball Valve', verification: 'Temp Only - CHW', location: 'MER', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      await captureInto('source_0', await makePhotoFile('t369-valve'));
+      await waitForPhotoWritesIdle(15000);
+      handleEnergySourceChange(0, 'Kinetic');
+      saveEntry();
+      const { zip } = await runExport();
+      const u = zip ? await unzipExport(zip.blob) : null;
+      const e = u && u.entriesJson && u.entriesJson.entries && u.entriesJson.entries[0];
+      const misc = (e && e.photoFiles && e.photoFiles.misc) || [];
+      got.row = e ? (e.sources[0].photoFile || '(none)') : '(no export)';
+      got.misc = misc.length;
+      got.shipped = misc.every(m => !!(u && u.files[m]));
+      want(got.row === '(none)' && got.misc === 1 && got.shipped, JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
   // ---------- runner --------------------------------------------------------
@@ -11801,7 +11925,9 @@
     t355_theCodeRuleIsItsOwnStep, t356_aValveDeviceBecomesTheSourcesOwn, t357_gasNeverKeepsADrainCode,
     t358_aReleaseMediumIsNeverTheWaterFamily, t359_aLinkThatFillsTheSourceTakesItsDefaults,
     t360_thePickerEndsACustomSession, t361_aRefrigerantLineIsNeverGivenAWaterCode, t362_theSaveShowsWhatItCommitted,
-    t363_aSwappedValveDropsItsValveFields, t364_aRecoveredDraftClearsItsOwnMarks];
+    t363_aSwappedValveDropsItsValveFields, t364_aRecoveredDraftClearsItsOwnMarks, t365_theOldSourcesDefaultsBecomeTheNewOnes,
+    t366_aSwappedValvesPhotoIsListedUntilRetaken, t367_oneSettleStepForEveryPath, t368_aLinksMessageReadsLikeTheOthers,
+    t369_aFlaggedPhotoIsNotTheRowsPhoto];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
