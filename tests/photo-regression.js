@@ -11892,6 +11892,18 @@
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T376 — a Hydraulic row on a real isolation valve keeps its valve answers
+  async function t376_aHydraulicValveKeepsItsValveAnswers() {
+    const N = 'T376 build 125 review, as loto-web asked (2026-10-26: on a real hydraulic isolation valve it prints "Verify valve H-1 is closed" / "Leave valve H-1 closed"): a Hydraulic row whose Device is a Ball Valve the tech picked still exports its Normally Closed and Lock Open; a Hydraulic row on its own Hydraulic device, and an Electrical row on a Ball Valve, export neither';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const R = (es, dev) => Object.assign(mkSrc(es), { deviceType: dev, valveState: 'normally_closed', lockOpen: true });
+    const rows = [R('Hydraulic', 'Ball Valve'), R('Hydraulic', 'Hydraulic'), R('Electrical 480V', 'Ball Valve')];
+    got.r = rows.map(r => valveStateForExport(r) + '/' + (lockOpenSheetText(r) || '-')).join(' | ');
+    want(got.r === 'normally_closed/Yes | normal/- | normal/-', got.r);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -12045,7 +12057,7 @@
     t366_aSwappedValvesPhotoIsListedUntilRetaken, t367_oneSettleStepForEveryPath, t368_aLinksMessageReadsLikeTheOthers,
     t369_aFlaggedPhotoIsNotTheRowsPhoto, t370_aRetakeFlagClearsWhenTheValveIsBack, t371_aValveCantIsolateAnElectricalLine,
     t372_aFlaggedPhotosDuplicateIsNo, t373_theSlotSaysRetake, t374_noValveStateOnAValvelessSource,
-    t375_aChangeToAValvelessSourceDropsTheValveState];
+    t375_aChangeToAValvelessSourceDropsTheValveState, t376_aHydraulicValveKeepsItsValveAnswers];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

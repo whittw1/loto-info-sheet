@@ -3291,13 +3291,20 @@ function drainsToSheetText(src, facility) {
   const to = String(d.to || '').replace(/\s+/g, ' ').trim();
   return /^Other:?$/i.test(to) ? '' : to;   // "Other…" with nothing typed is no answer
 }
-function lockOpenSheetText(src) { return (src && src.lockOpen && sourceTakesValveState(src) && sourceTakesValves(src.energySource)) ? 'Yes' : ''; }
-// The valve state the export writes: none on a source that takes no valve, even if
-// the row holds one from before (build 125 review: units saved under builds
+function lockOpenSheetText(src) { return (src && src.lockOpen && sourceTakesValveState(src) && exportsValveAnswers(src)) ? 'Yes' : ''; }
+// Where the export writes a row's valve state and Lock Open: on a source that takes
+// a valve, and on a Hydraulic row whose Device is a valve (a real hydraulic
+// isolation valve the tech picked: loto-web prints "Verify valve H-1 is closed" from
+// it). Never on an Electrical, Kinetic, Gravity/Potential, battery or capacitor row,
+// even if the row holds one from before (build 125 review: units saved under builds
 // 122–124 can carry Normally Closed on an Electrical row, and loto-web printed
 // "Leave valve E-1 closed" with no breaker lockout). The row's data is untouched.
+function exportsValveAnswers(src) {
+  const es = String((src && src.energySource) || '').trim();
+  return sourceTakesValves(es) || (/^Hydraulic/.test(es) && isValveDevice(src.deviceType));
+}
 function valveStateForExport(src) {
-  return (src && src.valveState && sourceTakesValves(src.energySource)) ? src.valveState : 'normal';
+  return (src && src.valveState && exportsValveAnswers(src)) ? src.valveState : 'normal';
 }
 
 // A drain found for the isolated side is a drain the row's check can use: the
