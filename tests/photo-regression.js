@@ -11849,6 +11849,49 @@
     want(got.r === 'true,true', got.r);
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T374 — a source that takes no valve exports no valve state or Lock Open, whatever the row holds
+  async function t374_noValveStateOnAValvelessSource() {
+    const N = 'T374 build 125 review (loto-web 2026-10-26: Normally Closed on an Electrical row printed "Leave valve E-1 closed" and never locked out the breaker): a saved unit whose Electrical 480V Breaker row still holds Normally Closed and Lock Open (from builds 122–124) exports neither — col 11 and col 15 blank, the CSV and entries.json "normal", no lockOpen — while a CHW valve row keeps its Normally Closed; the saved data is untouched';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      const e = Object.assign(mkEntry('AHU-374', { sources: [
+        Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Breaker', verification: 'Controls', valveState: 'normally_closed', lockOpen: true }),
+        Object.assign(mkSrc('CHW In'), { sourceId: genUuid(), deviceType: 'Ball Valve', verification: 'Temp Only - CHW', valveState: 'normally_closed' })] }),
+        { equipType: 'Air Handler', template: 'AHU - Steam', hospitalCode: 'Atlanta', surveyDate: localDateStr(new Date()) });
+      savedEquipment = [e]; saveAll();
+      got.fn = [valveStateForExport(e.sources[0]), lockOpenSheetText(e.sources[0]), valveStateForExport(e.sources[1])].join();
+      const { zip } = await runExport();
+      const u = zip ? await unzipExport(zip.blob) : null;
+      const rows = (u && u.entriesJson && u.entriesJson.entries && u.entriesJson.entries[0] && u.entriesJson.entries[0].sources) || [];
+      got.json = rows.map(r => r.valveState + (r.lockOpen ? '+lock' : '')).join();
+      got.kept = [savedEquipment[0].sources[0].valveState, !!savedEquipment[0].sources[0].lockOpen].join();
+      want(got.fn === 'normal,,normally_closed' && got.json === 'normal,normally_closed' && got.kept === 'normally_closed,true', JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T375 — a change to a source that takes no valve drops the valve state, whatever the Device
+  async function t375_aChangeToAValvelessSourceDropsTheValveState() {
+    const N = 'T375 build 125 review: a CHW row whose Device is a Pump but which still holds Normally Closed and Lock Open, re-picked as Electrical 480V, drops both (there was no valve to swap, so the swap cleanup never ran)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-375', 'Air Handler', 'AHU - Steam');
+      sources = [Object.assign(mkSrc('CHW In'), { deviceType: 'Pump', verification: 'Temp Only - CHW', valveState: 'normally_closed', lockOpen: true, collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      handleEnergySourceChange(0, 'Electrical 480V');
+      got.row = [sources[0].deviceType, sources[0].valveState, !!sources[0].lockOpen].join();
+      want(got.row === 'Pump,normal,false', got.row);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -12001,7 +12044,8 @@
     t363_aSwappedValveDropsItsValveFields, t364_aRecoveredDraftClearsItsOwnMarks, t365_theOldSourcesDefaultsBecomeTheNewOnes,
     t366_aSwappedValvesPhotoIsListedUntilRetaken, t367_oneSettleStepForEveryPath, t368_aLinksMessageReadsLikeTheOthers,
     t369_aFlaggedPhotoIsNotTheRowsPhoto, t370_aRetakeFlagClearsWhenTheValveIsBack, t371_aValveCantIsolateAnElectricalLine,
-    t372_aFlaggedPhotosDuplicateIsNo, t373_theSlotSaysRetake];
+    t372_aFlaggedPhotosDuplicateIsNo, t373_theSlotSaysRetake, t374_noValveStateOnAValvelessSource,
+    t375_aChangeToAValvelessSourceDropsTheValveState];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

@@ -1946,6 +1946,17 @@ function sourceTakesValveState(src) {
 function getFilteredDevices(energySource) {
   const override = templateSourceOverride(TEMPLATE_SOURCE_DEVICE_OVERRIDES, energySource);
   if (override) return override;
+  return baseDevicesFor(energySource);
+}
+// Does a source take a valve at all? Not an Electrical line, Kinetic, Gravity/
+// Potential, Hydraulic, a battery or a capacitor: none of their Devices is a valve.
+// By the source alone (no template), so the export can ask it of any saved unit.
+// No source yet: unknown, so yes.
+function sourceTakesValves(energySource) {
+  const es = String(energySource || '').trim();
+  return !es || baseDevicesFor(es).some(isValveDevice);
+}
+function baseDevicesFor(energySource) {
   if (!energySource) return DATA.deviceTypes; // no energy source selected → full list
   // Longest prefix match first
   let bestDevices = null;
@@ -3213,6 +3224,10 @@ function takeNewSourceDefaults(src, before) {
     const g = String(src.verification || '').trim();
     if (parseWaterVerification(g).recognized && g !== 'GaugeOnly') setCode(simpleVerifEnabled() ? 'Controls' : 'GaugeOnly');
   }
+  // A source that takes no valve has no valve state or Lock Open, whatever its
+  // Device (build 125 review: a Pump row with Normally Closed re-picked as
+  // Electrical kept it, and loto-web then never locked out the breaker)
+  if (!sourceTakesValves(es)) { src.valveState = 'normal'; delete src.lockOpen; }
   if (!isValveDevice(oldDevice) || isValveDevice(src.deviceType)) return '';
   src.valveState = 'normal';
   delete src.lockOpen;
@@ -3276,7 +3291,14 @@ function drainsToSheetText(src, facility) {
   const to = String(d.to || '').replace(/\s+/g, ' ').trim();
   return /^Other:?$/i.test(to) ? '' : to;   // "Other…" with nothing typed is no answer
 }
-function lockOpenSheetText(src) { return (src && src.lockOpen && sourceTakesValveState(src)) ? 'Yes' : ''; }
+function lockOpenSheetText(src) { return (src && src.lockOpen && sourceTakesValveState(src) && sourceTakesValves(src.energySource)) ? 'Yes' : ''; }
+// The valve state the export writes: none on a source that takes no valve, even if
+// the row holds one from before (build 125 review: units saved under builds
+// 122–124 can carry Normally Closed on an Electrical row, and loto-web printed
+// "Leave valve E-1 closed" with no breaker lockout). The row's data is untouched.
+function valveStateForExport(src) {
+  return (src && src.valveState && sourceTakesValves(src.energySource)) ? src.valveState : 'normal';
+}
 
 // A drain found for the isolated side is a drain the row's check can use: the
 // code gains it as if the Drain box were ticked (Temp Only \u2192 Drain Only,
@@ -13995,7 +14017,7 @@ async function runCombinedExport(opts) {
         quote(entry.tiedToName || ''), quote(entry.notes || ''),
         i + 1, quote(src.energySource), quote(src.deviceType), quote(src.deviceId || ''), src.quantity,
         quote(sourceLocationForExport(src)), effectiveDuplicate(src, (entry.photos || {})['source_' + i]), quote(src.verification),
-        quote(src.valveState || 'normal'),
+        quote(valveStateForExport(src)),
         quote(map.sourceHs[i] || ''), quote(src.detail || ''),
         quote(linkedStr),
         quote(map.mainH || ''),
@@ -14029,7 +14051,7 @@ async function runCombinedExport(opts) {
         location: sourceLocationForExport(src),   // a role row keeps its prefix (build 122)
         // an automatic Yes holds only with its borrowed photo (build 110)
         duplicate: effectiveDuplicate(src, ref),
-        valveState: src.valveState || 'normal',   // always present for downstream (loto-web)
+        valveState: valveStateForExport(src),   // always present for downstream (loto-web); none on a source that takes no valve (build 125 review)
         photoFile: map.sourceHs[i] ? 'photos/' + map.sourceHs[i] : '',
         // when its photo was taken (build 109), as in the JPEG's EXIF
         photoCapturedAt: cap.capturedAt || '',
@@ -14054,6 +14076,7 @@ async function runCombinedExport(opts) {
       // The drain answer only where the sheet carries it (build 123 review): never one
       // kept on an Electrical or exhaust row
       if (!sourceTakesDrainLocation(src, entryHospitalCode(entry))) delete out.drainLocation;
+      if (!lockOpenSheetText(src)) delete out.lockOpen;   // …and Lock Open only where col 15 carries it (build 125 review)
       return out;
     });
     const miscOut = miscFileNames[ei]
@@ -14287,7 +14310,7 @@ async function runCombinedExport(opts) {
             // Valve state (build 91). The office imports THIS sheet, and it had
             // no valve state: a Normally Closed valve arrived as an ordinary one
             // and the procedure said to open it at restore. Blank = normal.
-            src ? (VALVE_STATE_SHEET_TEXT[src.valveState] || '') : '',
+            src ? (VALVE_STATE_SHEET_TEXT[valveStateForExport(src)] || '') : '',
             // Valve mark (build 92): where the tech tapped the valve in THIS
             // row's photo — "x,y" fractions, qty-N rows "x,y; x,y". loto-web
             // starts the box + arrow there. Blank without a photo.
