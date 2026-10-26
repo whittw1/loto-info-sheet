@@ -9145,18 +9145,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 122: APP_BUILD and the header label say 122, the service worker\'s cache is loto-collector-v7.118, Xcode\'s CURRENT_PROJECT_VERSION is 122 in both entries, app-lists.json carries the new lists, and the Finger Lakes copy is the same page';
+    const N = 'T268 build 123 (was build 122\'s): APP_BUILD and the header label say 123, the service worker\'s cache is loto-collector-v7.119, Xcode\'s CURRENT_PROJECT_VERSION is 123 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 122 && !!label && +label[1] === 122, 'the build');
+    want(APP_BUILD === 123 && !!label && +label[1] === 123, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.118', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.119', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 122;,CURRENT_PROJECT_VERSION = 122;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 123;,CURRENT_PROJECT_VERSION = 123;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -10901,6 +10901,151 @@
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T334 — the transformer's other sources: OK waits for a tick
+  async function t334_otherSourcesOkWaitsForATick() {
+    const N = 'T334 build 123: in "Other sources that can energize the secondary" OK stays off until a box is ticked (None found included), so an empty OK can no longer record nothing; an OK that arrives with nothing ticked (the test hook) records nothing and says so';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    const rp = window.__askChoiceAuto;
+    try {
+      setHospitalCode('');
+      formOfType('XF-334', 'Transformer', 'Standard Electrical');
+      sources = [Object.assign(mkSrc('Electrical 480V'), { location: 'Primary: MDP-1 bkr 7' })]; renderSources(); loadUnitAnswers({});
+      window.__askChoiceAuto = undefined;
+      const p = askXfmrOtherSources();
+      const ov = document.getElementById('choiceDialogOverlay');
+      const ok = ov && [...ov.querySelectorAll('button')].find(b => b.textContent === 'OK');
+      const boxes = ov ? [...ov.querySelectorAll('input[type="checkbox"]')] : [];
+      got.offAtFirst = !!(ok && ok.disabled);
+      if (boxes[6]) boxes[6].click();
+      got.onAfterTick = !!(ok && !ok.disabled);
+      if (boxes[6]) boxes[6].click();
+      got.offAfterUntick = !!(ok && ok.disabled);
+      const skip = ov && [...ov.querySelectorAll('button')].find(b => b.textContent === 'Skip');
+      if (skip) skip.click();
+      await Promise.race([p, sleep(2000)]);
+      window.__askChoiceAuto = (o) => (o.id === 'xfmr-other-sources' ? { value: 'ok', checked: [] } : 'cancel');
+      await askXfmrOtherSources();
+      const toast = document.getElementById('toast');
+      got.toast = toast ? /nothing was ticked/.test(toast.textContent) : false;
+      got.recorded = [!!unitAnswers.xfmrAltNone, sources.filter(isAlternateSourceRow).length].join();
+      want(got.offAtFirst && got.onAfterTick && got.offAfterUntick && got.toast && got.recorded === 'false,0', JSON.stringify(got));
+    } finally { window.__askChoiceAuto = rp; const o = document.getElementById('choiceDialogOverlay'); if (o) o.remove(); setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T335 — a duplicate unit never brings the original's arc flash label photo
+  async function t335_aDuplicateNeverBringsTheArcFlashLabel() {
+    const N = 'T335 build 123: "Duplicate with photos" of an ATS copies its main photo but not its arc flash label photo (another enclosure\'s label) — so the copy\'s slot is empty and Save & New asks for its own label';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillForm('ATS-335');
+    document.getElementById('equipType').value = 'ATS'; filterTemplateDropdown('ATS');
+    await captureInto('equip_main', await makePhotoFile('t335-main'));
+    await captureInto('equip_arcflash', await makePhotoFile('t335-arc'));
+    const A = saveEntry();
+    got.original = [!!(A.photos.equip_main && A.photos.equip_main.dbKey), !!(A.photos.equip_arcflash && A.photos.equip_arcflash.dbKey)].join();
+    showDuplicateDialog(0);
+    await executeDuplicate(0, true);
+    await waitForPhotoWritesIdle(15000);
+    got.copy = [!!(photos.equip_main && photos.equip_main.dbKey), !!(photos.equip_arcflash && photos.equip_arcflash.dbKey)].join();
+    got.asks = arcFlashToAskAtSave();
+    want(got.original === 'true,true' && got.copy === 'true,false' && got.asks === true, JSON.stringify(got));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T336 — an ATS by its template alone gets the arc flash label
+  async function t336_anAtsByTemplateGetsTheArcFlashLabel() {
+    const N = 'T336 build 123: a unit picked by its "ATS - Generic" template with no type (the app counts it as an ATS: it gets the ATS questions) also gets the arc flash label — the slot shows, Save & New asks ("on this ATS"), and column 13 says "No label" once ticked';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    const rp = window.__askChoiceAuto;
+    try {
+      setHospitalCode('');
+      formOfType('ATS-336', '', 'ATS - Generic');
+      sources = [mkSrc('Electrical 480V')]; sources.forEach(ensureSourceId); renderSources(); loadUnitAnswers({});
+      got.kind = unitKinds(getEquipType(), getTemplate()).ats;
+      syncArcFlashSlot();
+      const slot = document.getElementById('arcFlashSlot');
+      got.slot = !!slot && slot.style.display !== 'none';
+      got.asks = arcFlashToAskAtSave();
+      let asked = '';
+      window.__askChoiceAuto = (o) => { if (o.id === 'arc-flash-save') { asked = unq(o.html || ''); return 'none'; } return 'later'; };
+      await askBeforeSave();
+      got.asked = /on this ATS/.test(asked);
+      got.sheet = arcFlashSheetValue({ equipType: '', template: 'ATS - Generic', unitAnswers: unitAnswers }, '');
+      want(got.kind && got.slot && got.asks && got.asked && got.sheet === 'No label', JSON.stringify(got));
+    } finally { window.__askChoiceAuto = rp; setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  // T337 — a held drain answer on a row whose Device isn't a valve stays
+  async function t337_aHeldDrainAnswerOnANonValveRowStays() {
+    const N = 'T337 build 123: a drain answer held on a row whose Device was changed to a non-valve ("Pump") still shows on its card with the note that it is no longer asked, and still goes to the sheet (col 14, col 20); changing it never moves the row\'s verification code, and its "None found" writes no Change Later note';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('GEN-337', 'Generator', '');
+      sources = [Object.assign(mkSrc('Fuel Oil In'), { deviceType: 'Pump', collapsed: false, verification: '', drainLocation: { where: 'On this valve', text: 'drain cock', to: 'Containment' } }),
+        Object.assign(mkSrc('CHW In'), { deviceType: 'Pump', collapsed: false, verification: 'Gauge', drainLocation: { where: 'None found', text: '' } })];
+      sources.forEach(ensureSourceId); renderSources();
+      got.sheet = [drainLocationSheetText(sources[0], 'Atlanta'), drainsToSheetText(sources[0], 'Atlanta')].join(' | ');
+      const g = document.getElementById('drainLocGroup_0');
+      got.note = g ? /is not a valve/.test(g.textContent) : false;
+      const before = sources[1].verification;
+      updateDrainWhere(1, 'On the equipment');
+      got.code = before + ' -> ' + sources[1].verification;
+      updateDrainWhere(1, 'None found');
+      const e = Object.assign(mkEntry('GEN-337', { sources: sources.map(x => JSON.parse(JSON.stringify(x))) }), { equipType: 'Generator', hospitalCode: 'Atlanta' });
+      got.u2 = changeLaterSheetText(e);
+      want(got.sheet === 'On this valve: drain cock | Containment' && got.note && got.code === 'Gauge -> Gauge' && !/No drain found/.test(got.u2), JSON.stringify(got));
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T338 — text typed as "cancel" or "skip" is that text, never a button
+  async function t338_typedTextIsNeverAButton() {
+    const N = 'T338 build 123: a panel or breaker typed as "cancel" (feeder) or "skip" (transformer) in the real dialogs is kept as that text — the row is added ("Feeder: cancel bkr cancel (VFD-1)", "Secondary Main: skip bkr skip") — where before it was taken for the Cancel / Skip button and nothing was added';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    const rp = window.__askChoiceAuto;
+    const step = async (text, label) => {
+      await sleep(0);
+      const o = document.getElementById('choiceDialogOverlay');
+      const input = o && o.querySelector('input[type="text"]');
+      if (input && text != null) { input.value = text; input.dispatchEvent(new Event('input', { bubbles: true })); }
+      const b = o && [...o.querySelectorAll('button')].find(x => x.textContent === label);
+      if (b) b.click();
+      return !!b;
+    };
+    try {
+      setHospitalCode('');
+      formOfType('AHU-338', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-1' })]; sources.forEach(ensureSourceId); renderSources();
+      window.__askChoiceAuto = undefined;
+      const p1 = addFeederFromCard(0);
+      got.f = [await step('cancel', 'Next'), await step('cancel', 'Next'), await step(null, 'Add the feeder'), await step(null, 'Cancel')].join();
+      await Promise.race([p1, sleep(2000)]);
+      got.feeder = (sources.find(isFeederRow) || {}).location;
+      formOfType('XF-338', 'Transformer', 'Standard Electrical');
+      sources = []; renderSources(); loadUnitAnswers({});
+      const p2 = addSecondaryMain();
+      got.x = [await step('skip', 'Next'), await step('skip', 'Next'), await step(null, '480V')].join();
+      await Promise.race([p2, sleep(2000)]);
+      got.main = (sources.find(isSecondaryMainRow) || {}).location;
+      want(got.feeder === 'Feeder: cancel bkr cancel (VFD-1)' && got.main === 'Secondary Main: skip bkr skip', JSON.stringify(got));
+    } finally { window.__askChoiceAuto = rp; const o = document.getElementById('choiceDialogOverlay'); if (o) o.remove(); setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -11039,7 +11184,9 @@
     t322_anExhaustByAnyNameIsLabelledP, t323_everyOrphanIsOfferedInTurn, t324_aFirstWordInTheClosingBracketsIsAskedAbout,
     t325_aLinkedRowFindsItsLabelOnAnOlderDiagram, t326_aRetaggedDrivesAnswerLineFollows, t327_aBracketTakenOutTakesTheSpaceBeforeIt,
     t328_manyOrphansAreOneQuestion, t329_eachDiagramKeepsOneLabelRule, t330_aDeviceIdKeystrokeRedrawsNoWholeCard,
-    t331_aDiagramEmptiedLabelByLabelStartsOnTheNewRule, t332_theAnswerBlockIsNotSwappedWhileFocused, t333_anUntaggedDrivePicksAmongOrphans];
+    t331_aDiagramEmptiedLabelByLabelStartsOnTheNewRule, t332_theAnswerBlockIsNotSwappedWhileFocused, t333_anUntaggedDrivePicksAmongOrphans,
+    t334_otherSourcesOkWaitsForATick, t335_aDuplicateNeverBringsTheArcFlashLabel, t336_anAtsByTemplateGetsTheArcFlashLabel,
+    t337_aHeldDrainAnswerOnANonValveRowStays, t338_typedTextIsNeverAButton];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

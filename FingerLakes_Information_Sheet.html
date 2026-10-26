@@ -479,7 +479,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b122</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b123</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1162,7 +1162,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 122;
+const APP_BUILD = 123;
 
 // ============================================================================
 // DATA
@@ -2135,10 +2135,20 @@ function jsArg(v) { return new RawHtml(escHtml(JSON.stringify(v === undefined ? 
 // native confirm() whose Cancel button does something destructive is a trap.
 // opts.input (build 110): a field above the buttons — { type, max, valid(v) };
 // a choice with needsInput stays off until valid(value) and answers with the
-// field's value. opts.checks (build 122): tick boxes above the
-// buttons — [{ value, label, exclusive }]; every button then answers
-// { value, checked: [ticked values] } (an exclusive box clears the others).
+// field's value as { typed } (build 123: text typed as "skip" or "cancel" is never
+// taken for a button; typedOf reads it). opts.checks (build 122): tick boxes above
+// the buttons — [{ value, label, exclusive }]; every button then answers
+// { value, checked: [ticked values] } (an exclusive box clears the others), and a
+// choice with needsCheck stays off until a box is ticked (build 123).
 // Closed without a button: 'cancel'. Tests answer through window.__askChoiceAuto.
+// The text a dialog's field answered (askChoice's { typed }), else null for one of
+// its buttons. A plain string — the test hook's answers — is the typed text unless
+// it is one of `buttonValues`, the dialog's own button values.
+function typedOf(r, buttonValues) {
+  if (r && typeof r === 'object' && typeof r.typed === 'string') return r.typed;
+  if (typeof r === 'string' && !(buttonValues || []).includes(r)) return r;
+  return null;
+}
 function askChoice(opts) {
   if (typeof window.__askChoiceAuto === 'function') {
     try { return Promise.resolve(window.__askChoiceAuto(opts)); } catch (e) { return Promise.resolve('cancel'); }
@@ -2169,7 +2179,8 @@ function askChoice(opts) {
       input.style.cssText = 'width:100%;padding:10px;margin-bottom:12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:15px;';
       box.appendChild(input);
     }
-    const ticks = [];
+    const ticks = [], checkGated = [];
+    const anyTicked = () => ticks.some(t => t.cb.checked);
     if (opts.checks) {
       const list = document.createElement('div');
       list.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-bottom:12px;';
@@ -2179,7 +2190,10 @@ function askChoice(opts) {
         const cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.style.cssText = 'width:18px;height:18px;flex:0 0 auto;';
-        cb.onchange = () => { if (cb.checked) ticks.forEach(t => { if (t.cb !== cb && (c.exclusive || t.c.exclusive)) t.cb.checked = false; }); };
+        cb.onchange = () => {
+          if (cb.checked) ticks.forEach(t => { if (t.cb !== cb && (c.exclusive || t.c.exclusive)) t.cb.checked = false; });
+          checkGated.forEach(b => { b.disabled = !anyTicked(); });
+        };
         row.appendChild(cb);
         row.appendChild(document.createTextNode(c.label));
         list.appendChild(row);
@@ -2198,9 +2212,11 @@ function askChoice(opts) {
       b.textContent = c.label;
       if (c.needsInput && input) {
         b.disabled = !inputOk(); gated.push(b);
-        b.onclick = () => { if (inputOk()) done(input.value); };
+        b.onclick = () => { if (inputOk()) done({ typed: input.value }); };
+      } else {
+        if (c.needsCheck) { b.disabled = !anyTicked(); checkGated.push(b); }
+        b.onclick = () => { if (!c.needsCheck || anyTicked()) done(answer(c.value)); };
       }
-      else b.onclick = () => done(answer(c.value));
       col.appendChild(b);
     });
     if (input) input.oninput = input.onchange = () => { const ok = inputOk(); gated.forEach(b => { b.disabled = !ok; }); };
@@ -2228,7 +2244,7 @@ function askSurveyDate(units) {
       { value: 'undated', label: 'Leave them undated (loto-web can\u2019t import that sheet)' },
       { value: 'cancel', label: 'Cancel' }
     ]
-  });
+  }).then(r => { const t = typedOf(r, ['undated', 'cancel']); return t !== null ? t : r; });
 }
 let miscPhotos = [];       // Current equipment's misc photos [{dbKey, thumbnail, fileType, timestamp}]
 // Another tab of the app holds the claim: this tab writes nothing (build 94,
@@ -3083,8 +3099,12 @@ function releasePointOf(src) {
   const es = String((src && src.energySource) || '');
   return RELEASE_POINT[releaseMediumOf(es) || (isVacuumExhaust(es) ? 'vacuum' : '')] || RELEASE_POINT.water;
 }
-// The question shows only for an answer it already holds (its medium no longer asks).
-function releaseHeldOnly(src) { return !!src && !drainCodeFollowsDrain(src) && !releaseMediumOf(src.energySource); }
+// A row whose Device isn't a valve (a pump, a custom device): asked nothing, but an
+// answer it already holds stays (build 123).
+function nonValveDevice(src) { return !!(src && src.deviceType && !isValveDevice(src.deviceType)); }
+// The question shows only for an answer it already holds (its medium no longer
+// asks, or its Device is no valve).
+function releaseHeldOnly(src) { return !!src && (nonValveDevice(src) || (!drainCodeFollowsDrain(src) && !releaseMediumOf(src.energySource))); }
 // Why such a row isn't asked, for the card's note (build 122 fifth review): a
 // pump's exhaust, or an energy source changed since the answer was given. With
 // no medium, loto-web takes the row's old water path, so the held point is
@@ -3092,6 +3112,7 @@ function releaseHeldOnly(src) { return !!src && !drainCodeFollowsDrain(src) && !
 function releaseHeldNote(src) {
   const es = String((src && src.energySource) || '').trim();
   const clear = ' Set it to \u201c-- Not answered --\u201d to clear it.';
+  if (nonValveDevice(src)) return 'No longer asked here: \u201c' + String(src.deviceType).trim() + '\u201d is not a valve. The answer still goes on the sheet.' + clear;
   // since 2026-10-25 13:40Z loto-web prints an exhaust row with its own check
   // (closed, then no backflow from the exhaust header), never this answer
   if (isVacuumExhaust(es)) return 'No longer asked here: a vacuum pump\u2019s exhaust is at or above atmosphere, and loto-web prints its own exhaust check for this row, not this answer.' + clear;
@@ -3113,7 +3134,7 @@ function drainCodeFollowsDrain(src) {
 // carries live flow and is never a relief point.
 function sourceTakesDrainLocation(src, facility) {
   if (!src || src.lockOpen) return false;
-  if (src.deviceType && !isValveDevice(src.deviceType)) return false;
+  if (nonValveDevice(src)) return !!(src.drainLocation && src.drainLocation.where);   // a held answer is never hidden (build 123)
   if (drainCodeFollowsDrain(src)) return true;
   if (!releaseMediumOf(src.energySource)) return !!(src.drainLocation && src.drainLocation.where);   // a held answer is never hidden
   return releasePromptOn(facility === undefined ? formFacilityCode() : facility) || !!(src.drainLocation && src.drainLocation.where);
@@ -3162,7 +3183,8 @@ function updateDrainWhere(index, where) {
   // Only a row whose code follows its drain puts a code back (D5): a drain
   // answer kept from before the row's medium changed never rewrites the code of
   // a build 122 medium (build 122 review).
-  const ours = drainCodeFollowsDrain(src) && !!prev._codeSet && drainCodeBase(src.verification) === drainCodeBase(prev._codeSet);
+  const follows = drainCodeFollowsDrain(src) && !nonValveDevice(src);   // a held answer on a non-valve row never moves its code (build 123)
+  const ours = follows && !!prev._codeSet && drainCodeBase(src.verification) === drainCodeBase(prev._codeSet);
   const undo = () => {
     if (!ours) return;
     const sfx = /\s*-\s*(Hot|CHW)$/i.exec(src.verification || '');
@@ -3177,7 +3199,7 @@ function updateDrainWhere(index, where) {
     const fromNone = ours && prev.where === 'None found';
     if (fromNone) undo();
     if (ours && !fromNone) { d._codeBefore = prev._codeBefore; d._codeSet = prev._codeSet; }
-    else if (drainCodeFollowsDrain(src)) {   // D5: never on the build 122 media
+    else if (follows) {   // D5: never on the build 122 media
       const before = src.verification || '';
       const after = verificationWithDrain(src);
       if (after !== before) { src.verification = after; d._codeBefore = before; d._codeSet = after; }
@@ -3192,7 +3214,7 @@ function updateDrainWhere(index, where) {
     // and loto-web prints its "If no drain is present" stop either way.
     // Not on the build 122 media (D5): their code never follows the answer.
     const p = parseWaterVerification(src.verification);
-    if (src._drainDefault && drainCodeFollowsDrain(src) && p.recognized && !p.blank && p.drain) {
+    if (src._drainDefault && follows && p.recognized && !p.blank && p.drain) {
       const before = src.verification;
       const m = /\s*-\s*(Hot|CHW)$/i.exec(before);
       const after = synthesizeWaterVerification(false, p.gauge, m ? m[1].toLowerCase() : '');
@@ -3338,21 +3360,24 @@ async function addFeederForDrive(index, unit) {
     addFeederLink(orphan, drive, target.k);
     return done(drive, asTag, 'Drive tagged ' + one(asTag) + ' \u2014 source #' + n + ' is its feeder');
   }
-  const panel = await askChoice({ id: 'feeder-panel', defaultValue: 'cancel', title: 'Feeder: the panel',
+  // Each answer is the typed text (typedOf), so a panel, breaker or tag typed as
+  // "cancel" is that text, never the Cancel button (build 123)
+  const panel = typedOf(await askChoice({ id: 'feeder-panel', defaultValue: 'cancel', title: 'Feeder: the panel',
     html: html`The panel or MCC that feeds this drive, as labelled.`,
     input: { type: 'text', placeholder: 'e.g. MCC-2A', valid: filled },
-    choices: [{ label: 'Next', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] });
-  if (!filled(panel) || panel === 'cancel') return null;
-  const bkr = await askChoice({ id: 'feeder-breaker', defaultValue: '', title: 'Feeder: the breaker',
+    choices: [{ label: 'Next', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] }), ['cancel']);
+  if (!filled(panel)) return null;
+  const bkrAnswer = await askChoice({ id: 'feeder-breaker', defaultValue: '', title: 'Feeder: the breaker',
     html: html`Its breaker or bucket number in ${panel.trim()}.`,
     input: { type: 'text', placeholder: 'e.g. 14', valid: filled },
     choices: [{ label: 'Next', needsInput: true, primary: true }, { value: '', label: 'No number' }, { value: 'cancel', label: 'Cancel' }] });
-  if (bkr === 'cancel') return null;
-  let tag = await askChoice({ id: 'feeder-drive', defaultValue: nextTag || 'cancel', title: 'Feeder: the drive',
+  if (bkrAnswer === 'cancel') return null;
+  const bkr = typedOf(bkrAnswer, ['', 'cancel']) || '';   // No number: ''
+  let tag = typedOf(await askChoice({ id: 'feeder-drive', defaultValue: nextTag || 'cancel', title: 'Feeder: the drive',
     html: html`The drive this breaker feeds, as tagged.`,
     input: { type: 'text', placeholder: 'e.g. VFD-1', value: nextTag, valid: filled },
-    choices: [{ label: 'Add the feeder', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] });
-  if (!filled(tag) || tag === 'cancel' || !sources.includes(drive)) return null;
+    choices: [{ label: 'Add the feeder', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] }), ['cancel']);
+  if (!filled(tag) || !sources.includes(drive)) return null;
   tag = cleanTagText(tag);
   if (!tag) { showToast('Not added: the drive\u2019s tag was only ";", "," or brackets \u2014 type its tag', true); return null; }   // build 122 whole review
   // Tags compare as loto-web's names_tag does: any case, a run of spaces as one.
@@ -3852,7 +3877,11 @@ function driveIsolatesBlock(src, i) {
 // (unitAnswers.arcFlashNone), which a photo clears. Save & New asks when neither
 // is there. The sheet: the name row's column 13 (Information Sheet §1.1).
 const ARC_FLASH_TYPES = ['ATS', 'Generator', 'Transformer'];
-function arcFlashAskedFor(type) { return ARC_FLASH_TYPES.includes(String(type || '')); }
+// …and on any unit the app counts as an ATS, by its type or its "ATS - Generic"
+// template, as unitKinds does (build 123: a unit picked by template alone got the
+// ATS questions but no arc flash label). loto-web reads column 13 by its header
+// on any block.
+function arcFlashAskedFor(type, template) { return ARC_FLASH_TYPES.includes(String(type || '')) || unitKinds(type, template).ats; }
 // A ref whose bytes never saved (unsaved: a failed write or copy) holds the slot
 // open but is no photo: "No label" can still be said (build 122 review).
 function syncArcFlashSlot() {
@@ -3860,7 +3889,7 @@ function syncArcFlashSlot() {
   if (!slot) return;
   const held = !!(photos.equip_arcflash && photos.equip_arcflash.dbKey);
   const taken = photoSlotTaken('equip_arcflash');
-  slot.style.display = (held || arcFlashAskedFor(getEquipType())) ? '' : 'none';
+  slot.style.display = (held || arcFlashAskedFor(getEquipType(), getTemplate())) ? '' : 'none';
   const box = document.getElementById('arcFlashNone'), lbl = document.getElementById('arcFlashNoneLabel');
   if (box) box.checked = !taken && !!unitAnswers.arcFlashNone;
   if (lbl) lbl.style.display = taken ? 'none' : 'flex';
@@ -3877,7 +3906,7 @@ function setArcFlashNone(checked) {
 // naming it); "No label" only on the types that ask.
 function arcFlashSheetValue(entry, fileName) {
   if (fileName) return fileName;
-  if (!arcFlashAskedFor(entry && entry.equipType)) return '';
+  if (!arcFlashAskedFor(entry && entry.equipType, entry && entry.template)) return '';
   return ((entry && entry.unitAnswers) || {}).arcFlashNone ? 'No label' : '';
 }
 function scrollToArcFlashSlot() {
@@ -4038,18 +4067,20 @@ async function askXfmrFeed(opts) {
   const one = v => String(v || '').replace(/\s+/g, ' ').trim();
   const kind = opts.kind || '';
   const closed = (typed) => { showToast('Not added: ' + opts.title + ' (' + typed + ') — the question was closed', true); return null; };
-  const panel = await askChoice({ id: opts.id, defaultValue: 'skip', kind, title: opts.title, html: opts.html,
+  const panelAnswer = await askChoice({ id: opts.id, defaultValue: 'skip', kind, title: opts.title, html: opts.html,
     input: { type: 'text', placeholder: opts.placeholder, valid: filled },
     choices: [{ label: 'Next', needsInput: true, primary: true }, { value: 'skip', label: 'Skip' }] });
   // closed at the first step: what was typed there isn't known, but not that nothing was added (build 122 third review)
-  if (panel === 'cancel') { showToast('Not added: ' + opts.title + ' — the question was closed', true); return null; }
-  if (!filled(panel) || panel === 'skip') return null;
-  const bkr = await askChoice({ id: opts.id + '-breaker', defaultValue: '', kind, title: opts.title + ': the breaker',
+  if (panelAnswer === 'cancel') { showToast('Not added: ' + opts.title + ' — the question was closed', true); return null; }
+  const panel = typedOf(panelAnswer, ['skip', 'cancel']);   // typed text, never a button (build 123)
+  if (!filled(panel)) return null;
+  const bkrAnswer = await askChoice({ id: opts.id + '-breaker', defaultValue: '', kind, title: opts.title + ': the breaker',
     html: html`Its breaker number in ${one(panel)}.`,
     input: { type: 'text', placeholder: 'e.g. 1', valid: filled },
     choices: [{ label: 'Next', needsInput: true, primary: true }, { value: '', label: 'No number' }, { value: 'skip', label: 'Skip' }] });
-  if (bkr === 'cancel') return closed(one(panel));
-  if (bkr === 'skip') return null;
+  if (bkrAnswer === 'cancel') return closed(one(panel));
+  if (bkrAnswer === 'skip') return null;
+  const bkr = typedOf(bkrAnswer, ['', 'skip', 'cancel']) || '';   // No number: ''
   const text = one(panel) + (one(bkr) ? ' bkr ' + one(bkr) : '');
   const MAIN = ['208V', '240V', '480V'];
   for (let round = 0; round < 50; round++) {
@@ -4114,10 +4145,13 @@ async function askXfmrOtherSources() {
   const r = await askChoice({ id: 'xfmr-other-sources', defaultValue: 'skip', title: 'Other sources that can energize the secondary',
     html: html`Tick each one you find. Each gets a row of its own (its panel, breaker and voltage) &mdash; photograph each breaker.`,
     checks: DATA.xfmrAltKinds.map(k => ({ value: k, label: k })).concat([{ value: 'none', label: 'None found', exclusive: true }]),
-    choices: [{ value: 'ok', label: 'OK', primary: true }, { value: 'skip', label: 'Skip' }] });
+    // OK waits for a tick (build 123): an OK with nothing ticked recorded neither a
+    // source nor None found, and U3 went to the office blank
+    choices: [{ value: 'ok', label: 'OK', primary: true, needsCheck: true }, { value: 'skip', label: 'Skip' }] });
   const v = (r && typeof r === 'object') ? r.value : r;
   const ticked = (r && typeof r === 'object' && Array.isArray(r.checked)) ? r.checked : [];
   if (v !== 'ok' || getEquipType() !== 'Transformer') return;
+  if (!ticked.length) { showToast('Not recorded: nothing was ticked — tick “None found” if there are no other sources', true); return; }
   if (ticked.includes('none')) { setXfmrAltNone(true); return; }
   for (const kind of DATA.xfmrAltKinds.filter(k => ticked.includes(k))) await addAlternateSourceRow(kind);
 }
@@ -4214,7 +4248,7 @@ function unitAnswersForJson(entryLike) {
   if ('Refrigerant' in byLabel) out.refrigerant = { type: byLabel['Refrigerant'], psi: byLabel['Refrigerant PSI'] };
   if ('Damper Actuators' in byLabel) out.dampersNone = true;   // build 120
   // build 122: "No arc flash label on this equipment" on the types that ask
-  if (arcFlashAskedFor(entryLike.equipType) && (entryLike.unitAnswers || {}).arcFlashNone) out.arcFlashNone = true;
+  if (arcFlashAskedFor(entryLike.equipType, entryLike.template) && (entryLike.unitAnswers || {}).arcFlashNone) out.arcFlashNone = true;
   return out;
 }
 // A facility code as it goes into a file name — the ZIP name's rule:
@@ -4510,7 +4544,7 @@ function askAtsFeeds(rows) {
       ? '(generator)' : '(utility)'} feed, as labelled. loto-web reads the side from this row&rsquo;s Location.`,
     input: { type: 'text', placeholder: side === 'Emergency' ? 'e.g. EDP-1 bkr 3' : 'e.g. NDP-2 bkr 7' },
     choices: [{ label: 'OK', needsInput: true, primary: true }, { value: '', label: 'Skip' }]
-  }).then(t => (t === 'cancel' ? '' : String(t || '').replace(/\s+/g, ' ').trim()));
+  }).then(t => String(typedOf(t, ['', 'cancel']) || '').replace(/\s+/g, ' ').trim());   // typed text only (build 123)
   const label = (side, t) => side + ' Feed' + (t ? ': ' + t : '');
   if (rows[0]) rows[0].location = label('Emergency', '');
   if (rows[1]) rows[1].location = label('Normal', '');
@@ -11934,7 +11968,7 @@ function formHasData() {
 // on the form (closed, or "Take the photo").
 function drivesToAskAtSave() { return unitDrives(sources).filter(d => !d.fed || !d.answer); }
 function arcFlashToAskAtSave() {
-  return arcFlashAskedFor(getEquipType()) && !photoSlotTaken('equip_arcflash') && !unitAnswers.arcFlashNone;
+  return arcFlashAskedFor(getEquipType(), getTemplate()) && !photoSlotTaken('equip_arcflash') && !unitAnswers.arcFlashNone;
 }
 async function askBeforeSave() {
   for (const t of drivesToAskAtSave().map(d => ({ src: d.src, k: d.k }))) {
@@ -11950,8 +11984,9 @@ async function askBeforeSave() {
   }
   if (arcFlashToAskAtSave()) {
     const type = getEquipType();
+    const what = unitKinds(type, getTemplate()).ats ? 'ATS' : (String(type || '').toLowerCase() || 'equipment');
     const v = await askChoice({ id: 'arc-flash-save', defaultValue: 'save', title: 'Arc flash label',
-      html: html`Photograph the arc flash label on this ${type === 'ATS' ? type : type.toLowerCase()}.`,
+      html: html`Photograph the arc flash label on this ${what}.`,
       choices: [{ value: 'photo', label: 'Take the photo', primary: true }, { value: 'none', label: 'No label on it' }, { value: 'save', label: 'Save without it' }] });
     if (v === 'photo') { scrollToArcFlashSlot(); return false; }
     if (v === 'none') setArcFlashNone(true);
@@ -12909,6 +12944,9 @@ async function executeDuplicate(index, withPhotos) {
         const sm = /^source_(\d+)$/.exec(slot);
         if (sm && !dupSources[parseInt(sm[1], 10)]) continue;       // stale ref past the last source
         if (sm && !sources.includes(dupSources[parseInt(sm[1], 10)])) continue;   // a row not copied (above), or removed meanwhile
+        // The arc flash label is this unit's own, like its "No label" (build 123):
+        // a copy of another enclosure's label would silence Save & New's question
+        if (slot === 'equip_arcflash') continue;
         const copy = await copyPhoto(photo, slotTokenFor(slot, dupSources));
         if (session !== formSession) { abandoned = true; break; }
         // Place it where its SOURCE is now (the user may have reordered).
@@ -13949,7 +13987,7 @@ async function runCombinedExport(opts) {
         // Column 13 (build 122): "Arc Flash Label" on ATS, Generator and Transformer
         // blocks — the photo's file name, "No label", or blank (not checked) — and
         // on any block whose unit holds an arc flash photo (build 122 review).
-        const arcHere = arcFlashAskedFor(entry.equipType) || !!map.afH;
+        const arcHere = arcFlashAskedFor(entry.equipType, entry.template) || !!map.afH;
         const eqHeaderRow = ws.addRow(['Equipment ID/Name','','','Location','Main Photo','Equipment Type','','Data Plate Photo','EE Number Photo','Page #','Diagram File','Misc Photo Files',
           arcHere ? 'Arc Flash Label' : '']);
         applyRow(eqHeaderRow, headerFont, labelFill, allBorders);
