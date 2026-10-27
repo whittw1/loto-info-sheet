@@ -102,7 +102,7 @@ def main():
                 counts['ambiguous-by-design'] += 1
                 continue
             got = db.query(EnergySource).filter_by(equipment_id=eq.id).order_by(EnergySource.sort_order).all()
-            exp = (e.get('sources') or [])[:10]
+            exp = e.get('sources') or []   # every source since the more-than-10-sources change (it was the first 10)
             tag = f'{os.path.basename(zp)} "{e.get("equipName")}"'
             if len(got) != len(exp):
                 others = [x for x in by_id.values() if x[1].id != eq.id and db.query(EnergySource).filter_by(equipment_id=x[1].id).count() > len(x[0].get('sources') or [])]
