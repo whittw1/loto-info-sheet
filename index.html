@@ -479,7 +479,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b126</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b127</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1162,7 +1162,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 126;
+const APP_BUILD = 127;
 
 // ============================================================================
 // DATA
@@ -2997,11 +2997,20 @@ function onTemplateSelectChange() {
 let unitAnswers = {};
 
 // Where each answer goes: [label row, column] in loto-web's numbering of a
-// 27-row block (row 24 = the Tied to \u2026 Template labels, row 25 their values;
-// row 26 = "Notes:", row 27 the notes). The value sits one row below its label.
-// U1 Shop is loto-web's 2026-10-09 contract; U7 and U8 are spare.
+// 10-source (27-row) block (row 24 = the Tied to \u2026 Template labels, row 25
+// their values; row 26 = "Notes:", row 27 the notes). The value sits one row
+// below its label. On a taller block both rows move down with the Tied to row,
+// and loto-web reads them from there. U1 Shop is loto-web's 2026-10-09
+// contract; U7 and U8 are spare.
 const UNIT_SHEET_SLOTS = { U1: [24, 10], U2: [24, 11], U3: [24, 12], U4: [24, 13],
                            U5: [26, 10], U6: [26, 11], U7: [26, 12], U8: [26, 13] };
+
+// The Information Sheet's source rows per unit (loto-web/docs/
+// Field_App_More_Than_10_Sources_Spec_2026-10-27.md): at least 10 label / data
+// row pairs, the unused ones blank, and one pair per source past that. A unit
+// with 10 or fewer keeps the 27-row block every older sheet has; loto-web finds
+// each block by its header and its Tied to row.
+const MIN_SHEET_SOURCE_ROWS = 10;
 
 // The five templates loto-web gives a refrigerant row of its own: the app
 // doesn't offer a Refrigerant source on them (wilkins 2026-10-22), and asks
@@ -7047,9 +7056,9 @@ function applyElectricalCountChoice(n) {
   rebindSourcePhotos(prev);
   renderSources();
   autoSaveCurrent();
-  if (blocked) showSourceToast(`Kept ${blocked} electrical source${blocked > 1 ? 's' : ''} you filled in or photographed — remove it manually if it doesn't apply`, true);
-  else if (fans && fans.blocked) showSourceToast(`Kept ${fans.blocked} Kinetic source${fans.blocked > 1 ? 's' : ''} you filled in or photographed — remove it manually if it doesn't apply`, true);
-  else showSourceToast(fans && fans.rows ? `${n} fan${n > 1 ? 's' : ''}: ${n} electrical and ${n} Kinetic source${n > 1 ? 's' : ''}` : `${n} electrical source${n > 1 ? 's' : ''}`, false);
+  if (blocked) showToast(`Kept ${blocked} electrical source${blocked > 1 ? 's' : ''} you filled in or photographed — remove it manually if it doesn't apply`, true);
+  else if (fans && fans.blocked) showToast(`Kept ${fans.blocked} Kinetic source${fans.blocked > 1 ? 's' : ''} you filled in or photographed — remove it manually if it doesn't apply`, true);
+  else showToast(fans && fans.rows ? `${n} fan${n > 1 ? 's' : ''}: ${n} electrical and ${n} Kinetic source${n > 1 ? 's' : ''}` : `${n} electrical source${n > 1 ? 's' : ''}`, false);
 }
 // The count prompt's copy of a row: another disconnect / fan, so its own row and
 // id, and nothing the user typed on the first — no tag, no edit mark (build 113:
@@ -7646,21 +7655,6 @@ function sourcesWithPhotos() {
 function dropStaleSourceRefs(photoMap, srcList) {
   Object.keys(photoMap || {}).forEach(k => { const m = /^source_(\d+)$/.exec(k); if (m && +m[1] >= (srcList || []).length) delete photoMap[k]; });
 }
-// The Information Sheet XLSX holds 10 sources per unit (loto-web's office
-// importer reads fixed 27-row blocks); more still export in the CSV and
-// entries.json. Say so the moment an 11th source appears.
-const MAX_XLSX_SOURCES = 10;
-const SOURCE_LIMIT_NOTE = 'Heads-up: the Information Sheet holds ' + MAX_XLSX_SOURCES + ' sources per unit — #11+ export in the CSV / entries.json only';
-// The heads-up, when this change just made the 11th source — callers put it
-// in their own message (build 99: one rule, not a copy of it per caller).
-function sourceLimitNote() { return sources.length === MAX_XLSX_SOURCES + 1 ? SOURCE_LIMIT_NOTE : ''; }
-// A message with the heads-up under it when due — a warning if either part is.
-function showSourceToast(msg, isWarning) {
-  const note = sourceLimitNote();
-  if (msg || note) showToast([msg, note].filter(Boolean).join('\n'), !!isWarning || !!note);
-}
-function noteSourceLimit() { showSourceToast('', false); }
-
 function addSource() {
   const index = sources.length;
   delete photos['source_' + index];   // never inherit a stale ref
@@ -7669,7 +7663,6 @@ function addSource() {
     duplicate: 'No', verification: isATSEquipment() ? 'Meter' : '', detail: '', collapsed: false
   });
   renderSources();
-  noteSourceLimit();
   setTimeout(() => {
     const cards = document.querySelectorAll('.source-card');
     if (cards[index]) cards[index].scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -8667,12 +8660,12 @@ function splitSource(index) {
 
   renderSources();
   autoSaveCurrent();
-  // One message (build 97): the 10-source heads-up used to replace this one
-  // in the same tick, "marks cleared" with it.
+  // One message (build 97): a second toast in the same tick used to replace
+  // this one, "marks cleared" with it.
   const splitMsg = pair
     ? 'Split into “' + pair.inName + '” and “' + pair.outName + '” — photograph the Out valve.'
     : (newSrc.valveState === 'normally_closed' ? 'Split out 1 valve — set as Normally Closed. State & photograph it.' : 'Split out 1 — photograph it.');
-  showSourceToast([splitMsg, marksCleared ? MARKS_CLEARED_NOTE : '', pairNote].filter(Boolean).join('\n'), marksCleared || !!pairNote);
+  showToast([splitMsg, marksCleared ? MARKS_CLEARED_NOTE : '', pairNote].filter(Boolean).join('\n'), marksCleared || !!pairNote);
   setTimeout(() => {
     const cards = document.querySelectorAll('.source-card');
     if (cards[index + 1]) cards[index + 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -9063,7 +9056,7 @@ function duplicateSource(index) {
   }
   renderSources();
   autoSaveCurrent();
-  showSourceToast(`Duplicated source #${index + 1}` + (roleCopied ? ' — as an ordinary row: one breaker keeps one ' + SOURCE_ROLES[roleCopied].noun + ' row' : ''), false);
+  showToast(`Duplicated source #${index + 1}` + (roleCopied ? ' — as an ordinary row: one breaker keeps one ' + SOURCE_ROLES[roleCopied].noun + ' row' : ''), false);
 }
 
 function moveSource(index, direction) {
@@ -13748,16 +13741,6 @@ async function runCombinedExport(opts) {
   if (allEntries.length === 0) { showToast('Nothing to export', true); return; }
   if (typeof ExcelJS === 'undefined' || typeof JSZip === 'undefined') { showToast('⚠ Export library not loaded — restart the app', true); return; }
 
-  // The Information Sheet XLSX holds 10 sources per unit (loto-web's office
-  // importer reads fixed 27-row blocks), so sources 11+ can't be on it.
-  const over = allEntries.filter(e => (e.sources || []).length > MAX_XLSX_SOURCES);
-  if (over.length && !confirm('ℹ ' + over.length + ' unit' + (over.length === 1 ? ' has' : 's have') + ' more than ' + MAX_XLSX_SOURCES + ' energy sources:\n\n' +
-    over.slice(0, 12).map(e => '• ' + (e.equipName || '(unnamed)') + ' — ' + e.sources.length + ' sources').join('\n') + (over.length > 12 ? '\n…' : '') +
-    '\n\nThe Information Sheet (XLSX) holds ' + MAX_XLSX_SOURCES + ' sources per unit, so sources 11+ (and their photos) are in the CSV and entries.json only. loto-web imports the Information Sheet, so they will NOT reach loto-web — add them there by hand, or split the unit into two.\n\nOK = export\nCancel = stop')) {
-    showToast('Export cancelled', true);
-    return;
-  }
-
   // A unit with no survey date — saved before the app recorded one — gets a
   // date now (build 109). It went on "Information_Sheet_undated.xlsx", and
   // loto-web's field-export import refuses a sheet without a day in its name.
@@ -14300,10 +14283,10 @@ async function runCombinedExport(opts) {
         const lwHere = (entry.sources || []).some(x => sourceTakesLabelWait(x, entry.equipType, entry.template));
         // The unit's facility (build 122): the release question on the new media follows it
         const fac = entryHospitalCode(entry);
-        // 10 energy source rows — FIXED: loto-web's office importer reads this
-        // sheet as 27-row blocks, so a taller block would shift every unit after
-        // it. Sources 11+ are in the CSV and entries.json (the export warns).
-        for (let s = 0; s < MAX_XLSX_SOURCES; s++) {
+        // The energy source rows: at least 10 pairs, one per source past that
+        // (MIN_SHEET_SOURCE_ROWS). The summary rows below follow the last one.
+        const sourceRows = Math.max(MIN_SHEET_SOURCE_ROWS, (entry.sources || []).length);
+        for (let s = 0; s < sourceRows; s++) {
           const n   = s + 1;
           const src = entry.sources[s] || null;
           const srcH = src ? (map.sourceHs[s] || null) : null;
