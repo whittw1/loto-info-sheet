@@ -479,7 +479,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b127</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b128</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1162,7 +1162,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 127;
+const APP_BUILD = 128;
 
 // ============================================================================
 // DATA
@@ -3478,21 +3478,29 @@ function offeredEnergySources() {
 // names, or null when cancelled. A feeder row left naming no drive of the unit
 // (its drive retagged since) is offered first; a breaker already recorded as a
 // feeder takes the drive into its row ("(VFD-1, VFD-2)") — never a second row
-// for one isolation point.
+// for one isolation point. A drive with no Device ID can be recorded as such
+// ("No ID on the drive", build 128): its feeder names no drive, and it resolves ''.
+// The drive unit "No ID on the drive" records (build 128): the unit being
+// recorded when it has no ID; with none being recorded (the card, every drive of
+// the row with its feeder), the row's first unit with no ID. null: not offered.
+function noIdDriveFor(drive, target) {
+  if (target) return target.tag ? null : target;
+  return unitDrives(sources).find(d => d.src === drive && !d.tag) || null;
+}
 async function addFeederForDrive(index, unit) {
   const drive = sources[index];
   if (!drive) return null;
   const tags = driveUnitTags(drive).filter(Boolean);   // loto-web's unit_ids: a Quantity-1 "VFD-1;2" is one tag (seventh review)
-  const unfed = unitDrives(sources).find(d => d.src === drive && !d.fed);
+  const unfed = unitDrives(sources).find(d => d.src === drive && !d.fed && !d.held);
   // an untagged drive is offered no tag (never another drive's); with every drive fed, the row's first
   const nextTag = unit != null ? (driveUnitTags(drive)[unit] || '') : (unfed ? unfed.tag : (tags[0] || ''));
   const filled = v => !!String(v || '').trim();
   const one = v => String(v || '').replace(/\s+/g, ' ').trim();
-  const done = (row, tag, msg) => {
+  const done = (row, tag, msg, warn) => {
     markSourceEdited(sources.indexOf(row));
     renderSources();
     autoSaveCurrent();
-    showToast(msg);
+    showToast(msg, !!warn);
     return String(tag || '').trim();   // the drive's tag as written (its answer goes to that unit)
   };
   // The drive unit being recorded, when it has no feeder: a Feeder row naming no
@@ -3569,10 +3577,63 @@ async function addFeederForDrive(index, unit) {
     choices: [{ label: 'Next', needsInput: true, primary: true }, { value: '', label: 'No number' }, { value: 'cancel', label: 'Cancel' }] });
   if (bkrAnswer === 'cancel') return null;
   const bkr = typedOf(bkrAnswer) || '';   // No number: ''
-  let tag = typedOf(await askChoice({ id: 'feeder-drive', defaultValue: nextTag || 'cancel', title: 'Feeder: the drive',
-    html: html`The drive this breaker feeds, as tagged.`,
+  // A drive unit with no Device ID can be recorded as it is: HGS never names the
+  // VA's equipment (wilkins 2026-10-27) — loto-web gives it the feeders that name
+  // no drive (build 128). The unit being recorded, else (the card, every drive of
+  // the row with its feeder) the row's first drive with no ID.
+  const noIdFor = noIdDriveFor(drive, target);
+  const noIdOffered = !!noIdFor;
+  const driveAnswer = await askChoice({ id: 'feeder-drive', defaultValue: nextTag || 'cancel', title: 'Feeder: the drive',
+    html: noIdOffered ? html`The drive this breaker feeds, as tagged. No ID on the drive? Tap &ldquo;No ID on the drive&rdquo;: nothing is named for it.`
+                      : html`The drive this breaker feeds, as tagged.`,
     input: { type: 'text', placeholder: 'e.g. VFD-1', value: nextTag, valid: filled },
-    choices: [{ label: 'Add the feeder', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] }));
+    choices: [{ label: 'Add the feeder', needsInput: true, primary: true }]
+      .concat(noIdOffered ? [{ value: 'noid', label: 'No ID on the drive' }] : [])
+      .concat([{ value: 'cancel', label: 'Cancel' }]) });
+  if (noIdOffered && driveAnswer === 'noid') {
+    if (!sources.includes(drive) || !sources.includes(noIdFor.src)) return null;
+    const body = one(panel) + (one(bkr) ? ' bkr ' + one(bkr) : '');
+    const same = one(bkr) && sources.find(s => isFeederRow(s) && feederBreakerKey(s.location) === feederBreakerKey(body));
+    if (same) {
+      // The breaker is recorded already: the drive joins its row by the link alone.
+      // When the row also feeds another drive, its text can't name this one, so
+      // loto-web can't tell — the office gets a Change Later note (loto-web 2026-10-27)
+      addFeederLink(same, noIdFor.src, noIdFor.k);
+      const n = sources.indexOf(same) + 1;
+      // A tag in its "( … )" that is no drive of the unit (an old drive's, or a name
+      // typed for this one before build 128): the tech says whether it goes, as
+      // when an orphan feeder is reused — left in, it prints in Section 1
+      const driveTagKeys = unitDrives(sources).map(x => tagKey(x.tag)).filter(Boolean);
+      for (const old of feederGroupTags(same.location).filter(t => !driveTagKeys.includes(tagKey(t)))) {
+        const drop = await askChoice({ id: 'feeder-orphan-old', defaultValue: 'keep', title: 'Feeder: the old tag',
+          html: html`Source #${n}&rsquo;s Location also names &ldquo;${old}&rdquo;, which is no drive on this unit. Take it out? Left in, it prints with the breaker, and loto-web would read this breaker as feeding any drive tagged &ldquo;${old}&rdquo;.`,
+          choices: [{ value: 'remove', label: 'Take it out', primary: true }, { value: 'keep', label: 'Keep it' }] });
+        if (drop === 'remove' && sources.includes(same)) same.location = feederLocationWithout(same.location, old);
+      }
+      if (!sources.includes(same) || !sources.includes(noIdFor.src)) return null;
+      const others = feederOtherDrives(sources, same, noIdFor).map(x => driveLabel(sources, x));
+      return done(same, '', others.length
+        ? 'Source #' + n + ' (' + feederPanelText(same.location) + ') also feeds ' + others.join(', ')
+          + ': with no ID on this drive, loto-web can’t tell it feeds this one too — a note goes to the office'
+        : 'Source #' + n + ' (' + feederPanelText(same.location) + ') is this drive’s feeder', others.length > 0);
+    }
+    const at = sources.length;
+    delete photos['source_' + at];   // never inherit a stale ref
+    const row = { energySource: drive.energySource || 'Electrical', deviceType: 'Breaker', quantity: 1,
+      location: 'Feeder: ' + body, role: 'feeder',
+      duplicate: 'No', verification: '', detail: '', collapsed: false };
+    addFeederLink(row, noIdFor.src, noIdFor.k);
+    sources.push(row);
+    renderSources();
+    autoSaveCurrent();
+    showToast('Added the feeder for this drive (no ID) — photograph the panel and the breaker');
+    setTimeout(() => {
+      const cards = document.querySelectorAll('.source-card');
+      if (cards[at]) cards[at].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+    return '';
+  }
+  let tag = typedOf(driveAnswer);
   if (!filled(tag) || !sources.includes(drive)) return null;
   tag = cleanTagText(tag);
   if (!tag) { showToast('Not added: the drive\u2019s tag was only ";", "," or brackets \u2014 type its tag', true); return null; }   // build 122 whole review
@@ -3616,7 +3677,12 @@ async function addFeederForDrive(index, unit) {
   if (same) {
     if (!feederNamesTag(same.location, name)) same.location = feederLocationNaming(same.location, feederTagsOf(same.location).concat(name));
     if (linkTo) addFeederLink(same, linkTo.src, linkTo.k);
-    return done(same, name, 'Source #' + (sources.indexOf(same) + 1) + ' (' + body + ') now feeds ' + one(tag) + ' too' + tagNote);
+    // A drive with no ID already on this breaker (build 128): once the row names
+    // this drive, loto-web can't tell it feeds that one too — the office gets a note
+    const noIds = unitDrives(sources).filter(d => !d.tag && feederLinksDrive(sources, same, d)).map(d => driveLabel(sources, d));
+    return done(same, name, 'Source #' + (sources.indexOf(same) + 1) + ' (' + body + ') now feeds ' + one(tag) + ' too' + tagNote
+      + (noIds.length ? '. With no ID on ' + noIds.join(', ') + ', loto-web can’t tell it feeds ' + (noIds.length > 1 ? 'those' : 'that one') + ' too — a note goes to the office' : ''),
+      noIds.length > 0);
   }
   const at = sources.length;
   delete photos['source_' + at];   // never inherit a stale ref
@@ -3870,6 +3936,16 @@ function syncFeederTags(srcList, opts) {
     });
     if (dropped.size) f.feeds = f.feeds.filter((l, x) => !dropped.has(x));
     if (next !== loc) { f.location = next; changed.push(f); }
+    // A drive recorded with "No ID on the drive" that has one now (build 128): the
+    // feeder names it in its closing "( … )", as if it had been typed there, so
+    // loto-web reads the breaker as that drive's — a shared breaker's row too.
+    f.feeds.forEach(l => {
+      if (String(l.tag || '').trim()) return;
+      const c = linkCurrentTag(srcList, l);
+      if (!c || feederNamesTag(f.location, c)) return;
+      f.location = feederLocationNaming(f.location, feederTagsOf(f.location).concat(c));
+      if (!changed.includes(f)) changed.push(f);
+    });
     // a link is named by its tag now once the text has it (renamed here, or typed)
     f.feeds.forEach(l => { const c = linkCurrentTag(srcList, l); if (c && feederNamesTag(f.location, c)) l.tag = c; });
   });
@@ -3900,12 +3976,15 @@ function refreshAfterRetag(changed, driveIndex) {
 }
 // A link the feeder's Location no longer names — neither by the tag it was last
 // named by nor by its drive's tag now — was taken out by the tech: it goes.
-// Committed edits only (syncFeederTags with prune, a pick from the Location list).
+// A link to a drive with no ID names nothing: it stays while its drive row does
+// (build 128). Committed edits only (syncFeederTags with prune, a pick from the
+// Location list).
 function pruneFeederLinks(f, srcList) {
   if (!f || !Array.isArray(f.feeds)) return;
   const list = srcList || sources;
   f.feeds = f.feeds.filter(l => {
-    if (!l.tag || feederNamesTag(f.location, l.tag)) return true;
+    if (!l.tag) return !!driveOfLink(list, l);
+    if (feederNamesTag(f.location, l.tag)) return true;
     const cur = linkCurrentTag(list, l);
     return !!cur && feederNamesTag(f.location, cur);
   });
@@ -3913,33 +3992,55 @@ function pruneFeederLinks(f, srcList) {
 }
 // Feeder rows that name drive tags, none of them a drive of the unit any more.
 // None while another drive of the unit (not `except`, the one being recorded)
-// has no tag: such a feeder may be that drive's own, recorded before its
-// Device ID was typed (build 122 second review).
+// has no tag and no feeder the app linked to it: such a feeder may be that
+// drive's own, recorded before its Device ID was typed (build 122 second
+// review). A drive with no ID whose feeder is linked (build 128) has its own.
 function orphanFeederRows(srcList, except) {
-  const drives = unitDrives(srcList);
-  if (drives.some(d => !d.tag && !(except && d.src === except.src && d.k === except.k))) return [];
+  const list = srcList || [];
+  const drives = unitDrives(list);
+  if (drives.some(d => !d.tag && !(except && d.src === except.src && d.k === except.k)
+    && !list.some(f => isFeederRow(f) && feederLinksDrive(list, f, d)))) return [];
   const tags = drives.map(d => d.tag).filter(Boolean);
-  return (srcList || []).filter(s => isFeederRow(s) && feederGroupTags(s.location).length   // any "( … )" (sixth review)
-    && !tags.some(t => feederNamesTag(s.location, t)));
+  return list.filter(s => isFeederRow(s) && feederGroupTags(s.location).length   // any "( … )" (sixth review)
+    && !tags.some(t => feederNamesTag(s.location, t))
+    && !drives.some(d => !d.tag && feederLinksDrive(list, s, d)));   // a no-ID drive's own feeder is no orphan (build 128)
 }
 // loto-web's drive_isolation.feeders_cover_drives (its Tier 1 rule since its
-// xhigh review, live 2026-10-24 21:59Z): every drive tag — one per drive unit,
-// '' for an untagged one — present, no two alike and named in a feeder's
-// "( … )", or at least as many feeder rows as drive units.
+// xhigh review, live 2026-10-24 21:59Z; drives with no ID since build 128):
+// every drive tag — one per drive unit, '' for an untagged one — that is
+// present is distinct and named in a feeder's "( … )", with a feeder naming no
+// drive for each untagged unit; or at least as many feeder rows as drive units.
 function feedersCoverDrives(feederLocations, driveTags) {
   const locs = (feederLocations || []).map(l => String(l || ''));
-  const tags = (driveTags || []).map(t => String(t || '').trim());
+  const tags = (driveTags || []).map(pySpaces);
   if (!locs.length || !tags.length) return false;
-  const named = new Set(tags.map(tagKey)).size === tags.length
-    && tags.every(t => t && locs.some(l => feederNamesTag(l, t)));
+  const tagged = tags.filter(Boolean);
+  const unnamed = locs.filter(l => !tagged.some(t => feederNamesTag(l, t))).length;
+  const named = new Set(tagged.map(t => t.toLowerCase())).size === tagged.length
+    && tagged.every(t => locs.some(l => feederNamesTag(l, t)))
+    && unnamed >= tags.length - tagged.length;
   return named || locs.length >= tags.length;
 }
+// Does a Feeder row's stored link name this drive unit? (build 128)
+function feederLinksDrive(srcList, f, d) {
+  return !!f && !!d && Array.isArray(f.feeds) && f.feeds.some(l => l.unit === d.k && driveOfLink(srcList, l) === d.src);
+}
 // The unit's drives, one per Quantity unit of each drive row: { src, k, n, tag,
-// fed, answer }. Fed is loto-web's: a drive is fed by a Feeder row that names
-// its tag; Feeder rows that name no drive count, for every drive, only when no
-// Feeder row names any drive and they cover the drives (feedersCoverDrives) —
-// one unnamed feeder for two drives feeds neither, as loto-web reads it since
-// 2026-10-24 21:59Z (its generator's _drive_feeder_ids_for).
+// fed, held, answer }. Fed is loto-web's (its generator's _drive_feeder_ids_for):
+// - a tagged drive is fed by a Feeder row that names its tag; Feeder rows that
+//   name no drive count for it only when no Feeder row names any drive and they
+//   cover the drives (feedersCoverDrives) — one unnamed feeder for two drives
+//   feeds neither (loto-web since 2026-10-24 21:59Z);
+// - a drive with no ID takes the Feeder rows that name no drive, when they cover
+//   the drives (drive_isolation.feeders_for since build 128 — wilkins: HGS never
+//   names the VA's equipment). The app counts such a row only when it is linked
+//   to this drive or names nothing in brackets: a row naming an old tag ("(VFD-7)")
+//   is offered to the drive as its own first ("Is this drive VFD-7?") — stricter
+//   than loto-web, which the contract allows (T290: the app may ask more).
+// Held: a drive with no ID whose feeder the app recorded (its stored link) though
+// loto-web can't tell yet that it's this drive's — another drive's feeder is still
+// to be recorded, or the breaker also feeds another drive (changeLaterAutoNotes).
+// Its feeder isn't asked for again.
 function unitDrives(srcList) {
   const list = srcList || [];
   const drives = [];
@@ -3949,12 +4050,34 @@ function unitDrives(srcList) {
     tags.forEach((tag, k) => drives.push({ src: s, k, n: tags.length, tag, answer: ans[k],
       shared: !!tag && tags.filter(x => tagKey(x) === tagKey(tag)).length > 1 }));
   });
-  const feeders = list.filter(isFeederRow).map(f => String(f.location || ''));
+  const feederRows = list.filter(isFeederRow);
+  const feeders = feederRows.map(f => String(f.location || ''));
   const tagged = [...new Set(drives.map(d => d.tag).filter(Boolean))];
-  const anyNamed = feeders.some(loc => tagged.some(t => feederNamesTag(loc, t)));
-  drives.forEach(d => { d.fed = !!d.tag && feeders.some(loc => feederNamesTag(loc, d.tag)); });
-  if (!anyNamed && feedersCoverDrives(feeders, drives.map(d => d.tag))) drives.forEach(d => { d.fed = true; });
+  const namesADrive = loc => tagged.some(t => feederNamesTag(loc, t));
+  const anyNamed = feeders.some(namesADrive);
+  const tier1 = feedersCoverDrives(feeders, drives.map(d => d.tag));
+  drives.forEach(d => {
+    d.fed = d.tag ? (feeders.some(loc => feederNamesTag(loc, d.tag)) || (!anyNamed && tier1))
+      : (tier1 && feederRows.some((f, x) => !namesADrive(feeders[x]) && (feederLinksDrive(list, f, d) || !feederGroupTags(feeders[x]).length)));
+    d.held = !d.fed && !d.tag && feederRows.some(f => feederLinksDrive(list, f, d));
+  });
   return drives;
+}
+// The other drive units a Feeder row feeds besides `d`: named in its "( … )" or
+// linked to it (build 128).
+function feederOtherDrives(srcList, f, d) {
+  return unitDrives(srcList).filter(x => !(x.src === d.src && x.k === d.k)
+    && ((x.tag && feederNamesTag(f.location, x.tag)) || feederLinksDrive(srcList, f, x)));
+}
+// A drive as the office reads it in a note or a message: its tag, else its row
+// ("the drive on source #4 (unit 2)").
+function driveLabel(srcList, d) {
+  return d.tag ? driveName(d) : 'the drive on source #' + ((srcList || []).indexOf(d.src) + 1) + (d.n > 1 ? ' (unit ' + (d.k + 1) + ')' : '');
+}
+// A feeder's panel and breaker as recorded, without the app's "Feeder:" and its
+// closing drive list: "Feeder: MCC-2A bkr 14 (VFD-1)" → "MCC-2A bkr 14".
+function feederPanelText(loc) {
+  return String(loc || '').replace(/^\s*Feeder\s*:\s*/i, '').replace(/\s*\([^()]*\)\s*$/, '').trim();
 }
 // Every drive fed by its own named feeder, yet loto-web's Tier 1 rule unmet:
 // two drive units share one tag. loto-web then keeps the unit on Tier 2 (no work
@@ -4010,7 +4133,7 @@ async function askDriveIsolates(src, prefer, tag) {
 // unanswered. false = cancelled.
 async function recordDrive(d) {
   let tag = d.tag;
-  if (!d.fed) {
+  if (!d.fed && !d.held) {
     const i = sources.indexOf(d.src);
     if (i < 0) return false;
     const added = await addFeederForDrive(i, d.k);
@@ -4028,17 +4151,19 @@ async function promptDriveFeeder(index) {
   for (let k = 0; k < valveMarkSlots(src); k++) {
     if (!sources.includes(src) || !isDriveRow(src)) return;
     const d = unitDrives(sources).find(x => x.src === src && x.k === k);
-    if (!d || (d.fed && d.answer)) continue;
+    if (!d || ((d.fed || d.held) && d.answer)) continue;
     if (!(await recordDrive(d))) return;
   }
 }
 // The card's "+ Add the breaker that feeds this drive": the feeder, then the
-// question for the drive it names when that one is unanswered.
+// question for the drive it names when that one is unanswered — for a drive
+// recorded with no ID (''), the unit addFeederForDrive recorded (build 128).
 async function addFeederFromCard(index) {
   const src = sources[index];
+  const noId = noIdDriveFor(src, unitDrives(sources).find(d => d.src === src && !d.fed && !d.held));
   const tag = await addFeederForDrive(index);
   if (tag == null || !sources.includes(src) || !isDriveRow(src)) return;
-  const k = driveAnswerPosition(src, tag);
+  const k = (!tag && noId) ? noId.k : driveAnswerPosition(src, tag);
   if (!driveIsolatesForJson(src)[k]) await askDriveIsolates(src, k, tag);
 }
 function updateDriveIsolates(index, unit, value) {
@@ -4389,6 +4514,25 @@ function changeLaterAutoNotes(entryLike) {
     const i = (entryLike.sources || []).indexOf(d.src);
     const who = d.tag ? 'Drive ' + driveName(d) : 'Drive on source #' + (i + 1) + (d.n > 1 ? ' (unit ' + (d.k + 1) + ')' : '');
     notes.push(who + ": can't tell whether its disconnect isolates all incoming power");
+  });
+  // Build 128: a drive with no ID whose recorded feeder loto-web can't tell is
+  // its own (held). On a breaker that also feeds another drive one row can't
+  // name it (loto-web 2026-10-27: no second row for one breaker — the VA would
+  // read two devices); on its own breaker it waits on the other drives' feeders
+  // (Save & New asks for those), and is noted once they're all in. loto-web
+  // keeps work inside such a drive off limits.
+  const srcList = entryLike.sources || [];
+  const drives = unitDrives(srcList), allRecorded = drives.every(d => d.fed || d.held);
+  drives.forEach(d => {
+    if (!d.held) return;
+    const f = srcList.find(r => isFeederRow(r) && feederLinksDrive(srcList, r, d));
+    if (!f) return;
+    const others = feederOtherDrives(srcList, f, d);
+    if (!others.length && !allRecorded) return;
+    const who = 'Drive on source #' + (srcList.indexOf(d.src) + 1) + (d.n > 1 ? ' (unit ' + (d.k + 1) + ')' : '');
+    notes.push(who + ' has no ID; its feeder ' + feederPanelText(f.location) + ' (source #' + (srcList.indexOf(f) + 1) + ')'
+      + (others.length ? ' also feeds ' + others.map(x => driveLabel(srcList, x)).join(', ') + ", so loto-web can't tell it feeds this drive"
+                       : " is recorded, but loto-web can't tell which breaker feeds which drive"));
   });
   // Build 120: a damper actuator nobody could read ("Can't tell"; loto-web's
   // pre-QC blocks it, D4), numbered among the unit's damper actuator rows.
@@ -12222,17 +12366,20 @@ function formHasData() {
 // feeder or its disconnect answer ("Record it now" / "Not now"), then an arc
 // flash label neither photographed nor marked "No label". Resolves false to stay
 // on the form (closed, or "Take the photo").
-function drivesToAskAtSave() { return unitDrives(sources).filter(d => !d.fed || !d.answer); }
+// A drive recorded with no ID whose feeder loto-web can't tell yet (held, build
+// 127) isn't asked for its feeder again.
+function drivesToAskAtSave() { return unitDrives(sources).filter(d => !(d.fed || d.held) || !d.answer); }
 function arcFlashToAskAtSave() {
   return arcFlashAskedFor(getEquipType(), getTemplate()) && !photoSlotTaken('equip_arcflash') && !unitAnswers.arcFlashNone;
 }
 async function askBeforeSave() {
   for (const t of drivesToAskAtSave().map(d => ({ src: d.src, k: d.k }))) {
     const d = unitDrives(sources).find(x => x.src === t.src && x.k === t.k);
-    if (!d || (d.fed && d.answer)) continue;
+    if (!d || ((d.fed || d.held) && d.answer)) continue;
+    const noFeeder = !d.fed && !d.held;
     const v = await askChoice({ id: 'drive-save', defaultValue: 'later', drive: d.tag,
-      title: html`${driveRef(d, true)} ${!d.fed ? 'has no feeder recorded' : 'has no answer about its disconnect'}`,
-      html: !d.fed ? html`Record the breaker that feeds it, then whether its own disconnect isolates all incoming power.`
+      title: html`${driveRef(d, true)} ${noFeeder ? 'has no feeder recorded' : 'has no answer about its disconnect'}`,
+      html: noFeeder ? html`Record the breaker that feeds it, then whether its own disconnect isolates all incoming power.`
                    : html`Does its own disconnect isolate all incoming power? Look for a lockable handle on the drive that switches the incoming line.`,
       choices: [{ value: 'record', label: 'Record it now', primary: true }, { value: 'later', label: 'Not now' }] });
     if (v === 'record') await recordDrive(d);   // a Cancel inside goes on with the save
