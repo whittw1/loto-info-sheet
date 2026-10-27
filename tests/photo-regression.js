@@ -9160,18 +9160,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 128 (was build 122\'s): APP_BUILD and the header label say 128, the service worker\'s cache is loto-collector-v7.124, Xcode\'s CURRENT_PROJECT_VERSION is 128 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
+    const N = 'T268 build 130 (was build 122\'s): APP_BUILD and the header label say 130, the service worker\'s cache is loto-collector-v7.125, Xcode\'s CURRENT_PROJECT_VERSION is 130 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 128 && !!label && +label[1] === 128, 'the build');
+    want(APP_BUILD === 130 && !!label && +label[1] === 130, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.124', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.125', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 128;,CURRENT_PROJECT_VERSION = 128;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 130;,CURRENT_PROJECT_VERSION = 130;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -12359,6 +12359,231 @@
       'an old tag on the breaker: asked, taken out, the drive fed');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+
+  // ==========================================================================
+  // BUILD 130 — what powers each damper actuator (loto-web's
+  // Damper_Actuator_Power_Link_Spec_2026-10-27.md, approved by wilkins the same
+  // day: Q1–Q3 yes). Each of these fails on build 128.
+  // ==========================================================================
+  const DS = (es, extra) => Object.assign(mkSrc(es), { sourceId: genUuid(), collapsed: false }, extra || {});
+  const ACT = (device, loc, extra) => DS('Damper Actuator', Object.assign({ deviceType: device, location: loc, verification: '', springReturn: 'yes' }, extra || {}));
+  const powerChoices = (i) => { const sel = document.getElementById('src_powered_' + i); return sel ? [...sel.options].map(o => o.textContent.trim()) : null; };
+  const powerPicked = (i) => { const sel = document.getElementById('src_powered_' + i); return sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex].textContent.trim() : null; };
+  const UNIT_POWER = 'Unit’s own power (off with the unit’s disconnect)';
+  const anyDialog = { confirm: true, choice: (o) => (o && o.defaultValue) || 'cancel' };
+
+  // T391 — every Damper Actuator row asks what powers it
+  async function t391_aDamperActuatorAsksWhatPowersIt() {
+    const N = 'T391 build 130: every Damper Actuator row, spring return or not, asks "Powered by" (required) — this unit\'s Electrical rows for an Electric Actuator and its compressed air rows for a Pneumatic one (never another actuator), each "#n source — device — location", then "Unit\'s own power (off with the unit\'s disconnect)" and "Can\'t tell", with the hint; unanswered it is marked like Spring return and Save & New lists it (on a linked row too, which never takes its target\'s); a row that can\'t power the actuator is refused; answered, nothing is marked or listed';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withDamperSetting(async () => {
+      setHospitalCode('Atlanta');
+      formOfType('D-391', 'Air Handler', 'AHU - Steam');
+      sources = [DS('Electrical 480V', { deviceType: 'VFD', location: 'On Wall' }),
+                 DS('Electrical 120V', { deviceType: 'Breaker', location: 'Panel LA-1 ckt 3' }),
+                 DS('Compressed Air In', { deviceType: 'Ball Valve', location: 'Control air header' }),
+                 ACT('Electric Actuator', 'Outside Air Damper'),
+                 ACT('Pneumatic Actuator', 'Return Air Damper', { springReturn: 'no' })];
+      renderSources();
+      got.electric = powerChoices(3);
+      got.air = powerChoices(4);
+      want(JSON.stringify(got.electric) === JSON.stringify(['-- Not answered --', '#1 Electrical 480V — VFD — On Wall', '#2 Electrical 120V — Breaker — Panel LA-1 ckt 3', UNIT_POWER, "Can't tell"]), 'an electric actuator: the Electrical rows');
+      want(JSON.stringify(got.air) === JSON.stringify(['-- Not answered --', '#3 Compressed Air In — Ball Valve — Control air header', UNIT_POWER, "Can't tell"]), 'a pneumatic actuator: the air rows');
+      want(powerChoices(0) === null && powerChoices(2) === null, 'asked on actuator rows only');
+      const grp = document.getElementById('poweredByGroup_3');
+      want(!!grp && /Powered by\s*—\s*required/.test(grp.textContent)
+        && grp.textContent.includes('Pick the breaker or disconnect that feeds this actuator (for a 24 V actuator, its transformer). If it isn’t on this unit yet, add it as its own Electrical row first.'), 'the label and the hint');
+      got.marked = document.getElementById('src_powered_3').style.borderColor;
+      want(!!got.marked, 'unanswered: marked');
+      const items = () => collectIncompleteFields().filter(m => /Powered by/.test(m));
+      got.unanswered = items();
+      want(got.unanswered.length === 2 && /^Source #4 \(Damper Actuator\) — /.test(got.unanswered[0]) && /^Source #5 \(Damper Actuator\) — /.test(got.unanswered[1]), 'Save & New lists both, spring return or not');
+      updatePoweredBy(3, 'row:2');
+      want(sources[3].poweredBy === undefined, 'an air row for an electric actuator is refused');
+      updatePoweredBy(3, 'row:1');
+      updatePoweredBy(4, 'cant_tell');
+      got.stored = [!!sources[3].poweredBy && sources[3].poweredBy.source === sources[1].sourceId, sources[4].poweredBy];
+      want(got.stored[0] === true && got.stored[1] === 'cant_tell', 'stored: the row by its id, and Can\'t tell');
+      want(items().length === 0, 'answered: nothing listed');
+      got.unmarked = document.getElementById('src_powered_3').style.borderColor;
+      want(got.unmarked === '', 'answered: not marked');
+      renderSources();
+      got.picked = [powerPicked(3), powerPicked(4)];
+      want(got.picked[0] === '#2 Electrical 120V — Breaker — Panel LA-1 ckt 3' && got.picked[1] === "Can't tell", 'the card shows the answers');
+      // a linked damper row asks it too, and never takes its target's
+      savedEquipment = [Object.assign(mkEntry('D-391-T', { sources: [ACT('Electric Actuator', 'Outside Air Damper', { poweredBy: 'unit' })] }), { hospitalCode: 'Atlanta', equipType: 'Air Handler' })];
+      saveAll();
+      formOfType('D-391-L', 'Air Handler', 'AHU - Steam');
+      sources = [mkSrc('')];
+      renderSources();
+      showLinkDialog(0); applyLink(0, 0); closeLinkDialog();
+      got.linked = [sources[0].energySource, sources[0].poweredBy === undefined, collectIncompleteFields().some(m => /^Source #1 \(linked\) — .*Powered by/.test(m))];
+      want(got.linked.join() === 'Damper Actuator,true,true', 'a linked row: asked, and not its target\'s answer');
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T392 — the link follows the row, not its number
+  async function t392_theLinkFollowsTheRow() {
+    const N = 'T392 build 130: the link follows the row, not its number — moving rows keeps it, and the card and the sheet name the row\'s new number; a typed Location shows in the choice at once; a row that can no longer power the actuator (its source changed, or the actuator became pneumatic) leaves it not answered (blank on the sheet, listed at Save & New) and it counts again once it can; removing the linked row clears the answer';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withDamperSetting(async () => {
+      setHospitalCode('Atlanta');
+      formOfType('D-392', 'Air Handler', 'AHU - Steam');
+      sources = [DS('Electrical 480V', { deviceType: 'VFD', location: 'On Wall' }),
+                 DS('Electrical 120V', { deviceType: 'Breaker', location: 'Panel LA-1 ckt 3' }),
+                 DS('Electrical 120V', { deviceType: 'Breaker', location: 'Panel LA-1 ckt 5' }),
+                 ACT('Electric Actuator', 'Outside Air Damper'),
+                 ACT('Electric Actuator', 'Return Air Damper', { springReturn: 'no' })];
+      renderSources();
+      updatePoweredBy(3, 'row:1');
+      updatePoweredBy(4, 'row:2');
+      const sheet = () => sources.filter(isDamperRow).map(s => poweredBySheetText(s, sources)).join(',');
+      got.linked = sheet();
+      want(got.linked === 'Source #2,Source #3', 'linked');
+      moveSource(2, -1);   // ckt 5 above ckt 3
+      moveSource(0, 1);    // the drive below ckt 5: ckt 5, VFD, ckt 3, OA, RA
+      got.moved = sheet();
+      want(got.moved === 'Source #3,Source #1', 'the numbers follow the rows');
+      got.card = [powerPicked(3), powerPicked(4)];
+      want(got.card[0] === '#3 Electrical 120V — Breaker — Panel LA-1 ckt 3' && got.card[1] === '#1 Electrical 120V — Breaker — Panel LA-1 ckt 5', 'the card too');
+      updateSource(2, 'location', 'Panel LA-1 ckt 3 (24 V transformer)');
+      got.typed = powerPicked(3);
+      want(got.typed === '#3 Electrical 120V — Breaker — Panel LA-1 ckt 3 (24 V transformer)', 'a typed Location shows at once');
+      // the linked row stops being Electrical: not answered, until it is again
+      await withDialogs(anyDialog, async () => { handleEnergySourceChange(2, 'CHW In'); });
+      got.changed = [sheet(), collectIncompleteFields().some(m => /^Source #4 \(Damper Actuator\) — .*Powered by/.test(m))];
+      want(got.changed.join() === ',Source #1,true', 'a row that can\'t power it: not answered');
+      await withDialogs(anyDialog, async () => { handleEnergySourceChange(2, 'Electrical 120V'); });
+      got.back = sheet();
+      want(got.back === 'Source #3,Source #1', 'it counts again once it can');
+      // the actuator becomes pneumatic: its Electrical link doesn't count
+      handleDeviceTypeChange(4, 'Pneumatic Actuator');
+      got.pneumatic = sheet();
+      want(got.pneumatic === 'Source #3,', 'a pneumatic actuator on an Electrical row: not answered');
+      handleDeviceTypeChange(4, 'Electric Actuator');
+      // removing the linked row clears the answer
+      await withDialogs({ confirm: true }, async () => { removeSource(2); });
+      got.removed = [sources.filter(isDamperRow).map(s => s.poweredBy === undefined ? 'none' : (typeof s.poweredBy === 'object' ? 'row' : s.poweredBy)).join(), sheet()];
+      want(got.removed.join('|') === 'none,row|,Source #1', 'removing ckt 3 clears the OA actuator\'s answer; the RA one keeps ckt 5');
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T393 — a copy traces its own power
+  async function t393_aCopyTracesItsOwnPower() {
+    const N = 'T393 build 130: the power link is the actuator\'s own wiring — Duplicate source, a count copy and a Duplicate of the unit start not answered; Copy Source never brings another unit\'s answer onto a row; Split 1 of an actuator row of 2 keeps the row\'s answer on both halves, and Split 1 of the linked breaker row keeps the link on the row it was made to';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withDamperSetting(async () => {
+      setHospitalCode('Atlanta');
+      formOfType('D-393', 'Air Handler', 'AHU - Steam');
+      sources = [DS('Electrical 120V', { deviceType: 'Breaker', location: 'Panel LA-1 ckt 3', quantity: 2 }),
+                 ACT('Electric Actuator', 'Outside Air Damper', { quantity: 2 })];
+      renderSources();
+      updatePoweredBy(1, 'row:0');
+      const states = () => sources.map(s => isDamperRow(s) ? (s.poweredBy === undefined ? 'none' : poweredBySheetText(s, sources)) : '-').join(',');
+      duplicateSource(1);
+      got.dup = states();
+      want(got.dup === '-,Source #1,none', 'Duplicate source');
+      want(countCopyOf(ACT('Electric Actuator', 'X', { poweredBy: 'unit' })).poweredBy === undefined, 'a count copy');
+      // Split 1 of the actuator row of 2: both halves keep the row's answer
+      splitSource(1);
+      got.split = states();
+      want(got.split === '-,Source #1,Source #1,none', 'Split 1 of the actuator row');
+      // Split 1 of the linked breaker row: the link stays on the row it was made to
+      splitSource(0);
+      got.splitBreaker = states();
+      want(got.splitBreaker === '-,-,Source #1,Source #1,none', 'Split 1 of the breaker row');
+      // Copy Source: never another unit's answer
+      const other = Object.assign(mkEntry('D-393-O', { sources: [ACT('Electric Actuator', 'Return Air Damper', { poweredBy: 'unit' })] }), { hospitalCode: 'Atlanta', equipType: 'Air Handler' });
+      savedEquipment = [other]; saveAll();
+      showCopySourceDialog(2); applyCopySource(0, 0);
+      showCopySourceDialog(4); applyCopySource(0, 0);
+      got.copied = states();
+      want(got.copied === '-,-,Source #1,Source #1,none', 'Copy Source keeps the row\'s own answer and brings none');
+      // a Duplicate of the unit
+      const U = Object.assign(mkEntry('D-393-U', { sources: [DS('Electrical 120V', { deviceType: 'Breaker', location: 'Panel LA-1 ckt 7' })] }), { hospitalCode: 'Atlanta', equipType: 'Air Handler' });
+      U.sources.push(ACT('Electric Actuator', 'Outside Air Damper', { poweredBy: { source: U.sources[0].sourceId } }));
+      savedEquipment = [U]; saveAll();
+      await withDialogs({ confirm: true }, async () => { await executeDuplicate(0, false); });
+      got.dupUnit = sources.map(s => isDamperRow(s) ? String(s.poweredBy) : '-').join();
+      want(got.dupUnit === '-,undefined', 'a Duplicate of the unit');
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T394 — Powered By travels in column 22
+  async function t394_poweredByTravelsInColumn22() {
+    const N = 'T394 build 130: the export writes "Powered By" in column 22 on each Damper Actuator row\'s own label row only — "Source #n" (the linked row\'s number in its block, after rows were moved), "Unit power", "Can\'t tell", or blank (not answered) — and nothing in column 22 on any other row; every other cell is what the same unit writes without the answers (columns 1–21 unchanged); a unit past 10 sources numbers the same way ("Source #11"); entries.json carries poweredBy ({ source, slot } / "unit" / "cant_tell" / null) on damper rows and no key on other rows';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withDamperSetting(async () => {
+      setHospitalCode('Marion');
+      const at = (name, srcs) => Object.assign(mkEntry(name, { sources: srcs }), { hospitalCode: 'Atlanta', equipType: 'Air Handler', template: 'AHU - Steam' });
+      const brk3 = DS('Electrical 120V', { deviceType: 'Breaker', location: 'Panel LA-1 ckt 3' });
+      const brk5 = DS('Electrical 120V', { deviceType: 'Breaker', location: 'Panel LA-1 ckt 5' });
+      const vfd = DS('Electrical 480V', { deviceType: 'VFD', location: 'On Wall' });
+      // the order after a move: ckt 5 first, the actuators linked to ckt 3 and ckt 5
+      const A = at('D-394', [brk5, vfd, brk3,
+        ACT('Electric Actuator', 'Outside Air Damper', { poweredBy: { source: brk3.sourceId } }),
+        ACT('Electric Actuator', 'Return Air Damper', { springReturn: 'no', poweredBy: { source: brk5.sourceId } }),
+        ACT('Electric Actuator', 'Mixed Air Damper', { poweredBy: 'unit' }),
+        ACT('Pneumatic Actuator', 'Exhaust / Relief Damper', { poweredBy: 'cant_tell' }),
+        ACT('Electric Actuator', 'Isolation Damper')]);
+      // the same unit without the answers
+      const B = at('D-394-B', A.sources.map(s => { const c = JSON.parse(JSON.stringify(s)); delete c.poweredBy; return c; }));
+      // past 10 sources: the actuator on row 12, powered by row 11
+      const b11 = DS('Electrical 120V', { deviceType: 'Breaker', location: 'Panel LA-2 ckt 9' });
+      const C = at('D-394-C', Array.from({ length: 10 }, (_, k) => DS('Electrical 208V', { deviceType: 'Breaker', location: 'Panel P' + (k + 1) }))
+        .concat([b11, ACT('Electric Actuator', 'Outside Air Damper', { poweredBy: { source: b11.sourceId } })]));
+      savedEquipment = [A, B, C]; saveAll();
+      const { zip, confirms } = await runExport({ confirmResponse: true });
+      if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); return; }
+      const u = await unzipExport(zip.blob);
+      const by = {};
+      for (const xpath of Object.keys(u.files).filter(p => /Information_Sheet_.*\.xlsx$/.test(p))) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        const ws = wb.worksheets[0];
+        let cur = null, inBlock = false;
+        ws.eachRow(row => {
+          const a = String(row.getCell(1).value || '');
+          if (a === 'Equipment ID/Name') { cur = String(ws.getRow(row.number + 1).getCell(1).value || ''); by[cur] = { h22: [], v22: [], cells: [], width: ws.getColumn(22).width }; inBlock = false; }
+          if (!cur) return;
+          if (a === 'Energy Source #1') inBlock = true;
+          if (inBlock) by[cur].cells.push(Array.from({ length: 21 }, (_, k) => String(row.getCell(k + 1).value || '')).join('|'));
+          if (/^Energy Source #\d+$/.test(a)) {
+            by[cur].h22.push(String(row.getCell(22).value || ''));
+            const d = ws.getRow(row.number + 1);
+            if (String(d.getCell(1).value || '')) by[cur].v22.push(String(d.getCell(22).value || ''));
+          }
+          if (a === 'Notes:') inBlock = false;
+        });
+      }
+      const a = by['D-394'] || {}, b = by['D-394-B'] || {}, c = by['D-394-C'] || {};
+      got.a = { h22: a.h22, v22: a.v22 };
+      got.c = { h22: c.h22, v22: c.v22 };
+      const P = 'Powered By';
+      want(JSON.stringify(a.h22) === JSON.stringify(['', '', '', P, P, P, P, P, '', '']), 'the header on the actuators\' own label rows only');
+      want(JSON.stringify(a.v22) === JSON.stringify(['', '', '', 'Source #3', 'Source #1', 'Unit power', "Can't tell", '']), 'the values');
+      want(JSON.stringify(b.v22) === JSON.stringify(['', '', '', '', '', '', '', '']), 'not answered: blank');
+      want((a.cells || []).length > 20 && JSON.stringify(a.cells) === JSON.stringify(b.cells), 'columns 1–21 unchanged');
+      want((c.h22 || []).length === 12 && c.h22.filter(Boolean).length === 1 && c.h22[11] === P && c.v22[11] === 'Source #11', 'past 10 sources');
+      want(a.width === 12, 'column 22 width');
+      const je = {};
+      ((u.entriesJson && u.entriesJson.entries) || []).forEach(e => { je[e.equipName] = (e.sources || []).map(x => ('poweredBy' in x) ? x.poweredBy : 'NO KEY'); });
+      got.json = je['D-394'];
+      want(JSON.stringify(je['D-394']) === JSON.stringify(['NO KEY', 'NO KEY', 'NO KEY', { source: brk3.sourceId, slot: 3 }, { source: brk5.sourceId, slot: 1 }, 'unit', 'cant_tell', null]), 'entries.json');
+      want(JSON.stringify((je['D-394-C'] || []).slice(10)) === JSON.stringify(['NO KEY', { source: b11.sourceId, slot: 11 }]), 'entries.json past 10');
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -12517,7 +12742,9 @@
     t381_aGeothermalLineKeepsItsValveState, t382_aChangeToARowWithNoValveClearsTheAnswers, t383_anUnsentLockOpenHidesNoDrainAnswer,
     t384_aSplitDefaultsNormallyClosedOnlyWhereOffered, t385_aUnitOverTenSourcesGetsATallerBlock,
     t386_noIdOnTheDriveNamesNothing, t387_aNoIdDriveBesideNamedOnesIsFed, t388_aNoIdDriveOnASharedBreaker,
-    t389_aNoIdDriveGivenAnIdIsNamed, t390_twoNoIdDrivesAndOrphans];
+    t389_aNoIdDriveGivenAnIdIsNamed, t390_twoNoIdDrivesAndOrphans,
+    t391_aDamperActuatorAsksWhatPowersIt, t392_theLinkFollowsTheRow, t393_aCopyTracesItsOwnPower,
+    t394_poweredByTravelsInColumn22];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

@@ -479,7 +479,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b128</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b130</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1162,7 +1162,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 128;
+const APP_BUILD = 130;
 
 // ============================================================================
 // DATA
@@ -7216,6 +7216,7 @@ function countCopyOf(base) {
   delete c.deviceId;
   delete c.existingTag;   // another device: not checked yet (build 119)
   delete c.springReturn;  // …nor read from its nameplate (build 120)
+  delete c.poweredBy;     // …nor traced to its power (build 130)
   delete c.labelWait; delete c.dcBusV;   // …nor its label (build 121)
   delete c.driveIsolates;   // …nor its drive's disconnect (build 122)
   return c;
@@ -8040,6 +8041,7 @@ function buildSourceCard(src, i) {
             })()}
             ${existingTagBlock(src, i)}
             ${springReturnBlock(src, i)}
+            ${poweredByBlock(src, i)}
             ${labelWaitBlock(src, i)}
             <div class="form-group">
               <label>Location</label>
@@ -8318,6 +8320,7 @@ function updateSource(index, field, value) {
     renderSources();
     return;
   }
+  refreshPoweredBySelects();   // a damper actuator's choices name this row (build 130)
   autoSaveCurrent();
 }
 
@@ -8439,6 +8442,98 @@ function springReturnBlock(src, i) {
     </select>
     <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Photograph the actuator&rsquo;s nameplate &mdash; the model number shows spring return.</div>
   </div>`;
+}
+// ---- What powers each damper actuator (build 130) ------------------------------
+// loto-web's docs/Damper_Actuator_Power_Link_Spec_2026-10-27.md (wilkins approved
+// it 2026-10-27, Q1–Q3 yes). At Atlanta a 24 V actuator's transformer has its own
+// panel breaker, recorded as its own Electrical row, and loto-web can't tell from
+// the text which actuator a breaker feeds. So every Damper Actuator row, spring
+// return or not, says what powers it: a row on this unit (an Electrical one for
+// an Electric Actuator, a compressed air one for a Pneumatic Actuator), the
+// unit's own power, or Can't tell. The link holds the row's sourceId, so it
+// follows the row when rows move; a row removed, or one that can no longer power
+// the actuator, leaves it not answered. The sheet: column 22 "Powered By" on the
+// actuator's own label row (as 20 and 21) — "Source #n" (the row's number in this
+// block), "Unit power" or "Can't tell"; blank = not answered.
+const POWERED_BY_SHEET = { unit: 'Unit power', cant_tell: "Can't tell" };
+const POWERED_BY_LABEL = { unit: 'Unit’s own power (off with the unit’s disconnect)', cant_tell: "Can't tell" };
+const AIR_POWER_RE = /\b(?:compressed air|pneumatic|control air|instrument air)\b/i;
+function actuatorIsPneumatic(src) { return /pneumatic/i.test(String((src && src.deviceType) || '')); }
+// A row that can power the actuator — never another actuator row.
+function rowCanPowerActuator(row, actuator) {
+  if (!row || row === actuator || isDamperRow(row)) return false;
+  const es = String(row.energySource || '');
+  return actuatorIsPneumatic(actuator) ? AIR_POWER_RE.test(es) : /^Electrical\b/.test(es);
+}
+// The index of the row the actuator's link names, while it is on the unit and can
+// still power it; else -1.
+function poweredByIndex(src, srcList) {
+  const p = src && src.poweredBy;
+  if (!p || typeof p !== 'object' || !p.source) return -1;
+  const list = srcList || [];
+  const i = list.findIndex(s => s && s !== src && (s.sourceId === p.source || (s.priorSourceIds || []).includes(p.source)));
+  return (i >= 0 && rowCanPowerActuator(list[i], src)) ? i : -1;
+}
+function poweredByAnswered(src, srcList) {
+  return !!src && (!!POWERED_BY_SHEET[src.poweredBy] || poweredByIndex(src, srcList) >= 0);
+}
+// Column 22's cell: "Source #n", "Unit power", "Can't tell", or blank (not answered).
+function poweredBySheetText(src, srcList) {
+  if (!isDamperRow(src)) return '';
+  if (POWERED_BY_SHEET[src.poweredBy]) return POWERED_BY_SHEET[src.poweredBy];
+  const i = poweredByIndex(src, srcList);
+  return i >= 0 ? 'Source #' + (i + 1) : '';
+}
+// entries.json (backup only; loto-web reads the sheet): { source, slot } / "unit" / "cant_tell" / null
+function poweredByForJson(src, srcList) {
+  if (POWERED_BY_SHEET[src.poweredBy]) return src.poweredBy;
+  const i = poweredByIndex(src, srcList);
+  return i >= 0 ? { source: srcList[i].sourceId, slot: i + 1 } : null;
+}
+function poweredByOptionLabel(row, j) {
+  return '#' + (j + 1) + ' ' + [row.energySource, row.deviceType, row.location].map(x => String(x || '').trim()).filter(Boolean).join(' — ');
+}
+function poweredByOptionsHtml(src) {
+  const at = poweredByIndex(src, sources);
+  const v = POWERED_BY_SHEET[src.poweredBy] ? src.poweredBy : (at >= 0 ? 'row:' + at : '');
+  const rows = sources.map((s, j) => ({ s, j })).filter(x => rowCanPowerActuator(x.s, src));
+  return html`<option value="">-- Not answered --</option>
+      ${rows.map(x => html`<option value="row:${x.j}" ${v === 'row:' + x.j ? 'selected' : ''}>${poweredByOptionLabel(x.s, x.j)}</option>`)}
+      ${Object.keys(POWERED_BY_LABEL).map(k => html`<option value="${k}" ${v === k ? 'selected' : ''}>${POWERED_BY_LABEL[k]}</option>`)}`;
+}
+function updatePoweredBy(index, value) {
+  const src = sources[index];
+  if (!src) return;
+  markSourceEdited(index);
+  const v = String(value || ''), m = /^row:(\d+)$/.exec(v);
+  if (POWERED_BY_SHEET[v]) src.poweredBy = v;
+  else if (m && rowCanPowerActuator(sources[+m[1]], src)) src.poweredBy = { source: ensureSourceId(sources[+m[1]]).sourceId };
+  else delete src.poweredBy;
+  const sel = document.getElementById('src_powered_' + index);
+  if (sel) sel.style.borderColor = poweredByAnswered(src, sources) ? '' : '#d9a441';
+  autoSaveCurrent();
+}
+// The row's "Powered by" box (required).
+function poweredByBlock(src, i) {
+  if (!isDamperRow(src)) return '';
+  return html`<div class="form-group" id="poweredByGroup_${i}">
+    <label>Powered by <span style="font-weight:400;color:var(--text-dim);">&mdash; required</span></label>
+    <select id="src_powered_${i}" onchange="updatePoweredBy(${i},this.value)" style="${poweredByAnswered(src, sources) ? '' : 'border-color:#d9a441;'}">
+      ${poweredByOptionsHtml(src)}
+    </select>
+    <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Pick the breaker or disconnect that feeds this actuator (for a 24 V actuator, its transformer). If it isn&rsquo;t on this unit yet, add it as its own Electrical row first.</div>
+  </div>`;
+}
+// Each choice names a row's number, device and location: kept current as those
+// are typed, without redrawing the cards (a select the tech has open stays).
+function refreshPoweredBySelects() {
+  sources.forEach((s, i) => {
+    if (!isDamperRow(s)) return;
+    const sel = document.getElementById('src_powered_' + i);
+    if (!sel || sel === document.activeElement) return;
+    sel.innerHTML = poweredByOptionsHtml(s).s;
+    sel.style.borderColor = poweredByAnswered(s, sources) ? '' : '#d9a441';
+  });
 }
 // ---- The label discharge wait (build 121; agreed with loto-web 2026-10-23) --
 // Field_App_Discharge_Wait_Proposal_2026-10-23.md, "Agreed contract" (wilkins):
@@ -8937,6 +9032,7 @@ function updateSourceCustomField(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
   if (field === 'energySource') reconcileSourceMarks(index);
+  refreshPoweredBySelects();   // a typed source or device can change what powers an actuator (build 130)
   autoSaveCurrent();
 }
 
@@ -9012,7 +9108,10 @@ function expandSource(i) { sources[i].collapsed = false; renderSources(); }
 function removeSource(index) {
   if (confirm(`Remove Energy Source #${index + 1}?`)) {
     const prev = sources.slice();
-    sources.splice(index, 1);
+    const gone = sources.splice(index, 1)[0];
+    // A damper actuator powered by the removed row is no longer answered (build 130)
+    const goneIds = gone ? [gone.sourceId].concat(gone.priorSourceIds || []).filter(Boolean) : [];
+    sources.forEach(s => { if (s && s.poweredBy && typeof s.poweredBy === 'object' && goneIds.includes(s.poweredBy.source)) delete s.poweredBy; });
     rebindSourcePhotos(prev);   // the removed source's photo leaves the form (bytes stay on the device)
     renderSources();
     updateIntegrityBadge();
@@ -9167,6 +9266,7 @@ function duplicateSource(index) {
   newSrc.deviceId = '';          // its own device → its own tag (build 93)
   delete newSrc.existingTag;     // …and its own existing tag, not checked yet (build 119)
   delete newSrc.springReturn;    // …and its own nameplate's spring return (build 120)
+  delete newSrc.poweredBy;       // …and its own power, not traced yet (build 130)
   delete newSrc.labelWait; delete newSrc.dcBusV;   // …and its own label's wait (build 121)
   delete newSrc.driveIsolates;   // …and its own drive's disconnect, not checked yet (build 122)
   // A copy of a feeder / secondary main / alternate source row is an ordinary
@@ -12230,6 +12330,7 @@ function collectIncompleteFields(opts) {
       if (!s.energySource) lg.push('Energy Source');
       if (tagGap(s)) lg.push(tagGap(s));
       if (isDamperRow(s) && !s.springReturn) lg.push('Spring return');   // a link never takes it (build 120)
+      if (isDamperRow(s) && !poweredByAnswered(s, sources)) lg.push('Powered by');   // nor its power (build 130)
       if (lg.length) missing.push(`Source #${i + 1} (linked) \u2014 ${lg.join(', ')}`);
       return;
     }
@@ -12245,6 +12346,7 @@ function collectIncompleteFields(opts) {
     // return is what the row needs (build 120).
     if (!s.verification && !ackOnly && !isDamperRow(s)) gaps.push('Verification');
     if (isDamperRow(s) && !s.springReturn) gaps.push('Spring return');
+    if (isDamperRow(s) && !poweredByAnswered(s, sources)) gaps.push('Powered by');   // build 130
     // Build 121: a soft warning for a unit whose label wait nobody checked
     if (formTakesLabelWait(s)) {
       const n = valveMarkSlots(s), inOut = isInOutPair(s), lw = labelWaitEntries(s);
@@ -13292,7 +13394,8 @@ async function executeDuplicate(index, withPhotos) {
   // Build 119: the existing tags too — the copy starts "not checked" (loto-web Q6).
   // Build 120: and the spring return, read from each copy's own nameplate.
   // Build 122: and each drive's disconnect answer, judged on the copy's own drive.
-  sources.forEach(s => { if (s) { delete s.sourceId; delete s.priorSourceIds; s.deviceId = ''; delete s.existingTag; delete s.springReturn; delete s.labelWait; delete s.dcBusV; delete s.driveIsolates; ensureSourceId(s); } });
+  // Build 130: and each damper actuator's power, traced on the copy's own wiring.
+  sources.forEach(s => { if (s) { delete s.sourceId; delete s.priorSourceIds; s.deviceId = ''; delete s.existingTag; delete s.springReturn; delete s.poweredBy; delete s.labelWait; delete s.dcBusV; delete s.driveIsolates; ensureSourceId(s); } });
   const dupSources = sources.slice();   // the source OBJECTS the copies belong to (by the original's index)
   // Build 122 review: the rows that name the ORIGINAL unit's own breakers in
   // their Location — a drive's Feeder, a transformer's Secondary Main and
@@ -14237,6 +14340,8 @@ async function runCombinedExport(opts) {
       if (tagsApply) out.existingTag = existingTagsForJson(src); else delete out.existingTag;
       // Spring return (build 120, backup only): on a Damper Actuator row, else no key.
       if (isDamperRow(src)) out.springReturn = SPRING_RETURN_SHEET[src.springReturn] ? src.springReturn : null; else delete out.springReturn;
+      // What powers it (build 130, backup only): on a Damper Actuator row, else no key.
+      if (isDamperRow(src)) out.poweredBy = poweredByForJson(src, rest.sources); else delete out.poweredBy;
       // The label wait (build 121, backup only): on a row that takes the question, else no keys.
       if (sourceTakesLabelWait(src, entry.equipType, entry.template)) {
         out.labelWait = labelWaitForJson(src);
@@ -14344,7 +14449,8 @@ async function runCombinedExport(opts) {
         { width: 12 },  // 18: Label Wait (build 121)
         { width: 10 },  // 19: DC Bus V (build 121)
         { width: 18 },  // 20: Drains To (build 122)
-        { width: 14 }   // 21: Drive Isolates (build 122)
+        { width: 14 },  // 21: Drive Isolates (build 122)
+        { width: 12 }   // 22: Powered By (build 130)
       ];
 
       // Style definitions matching original info sheet
@@ -14451,7 +14557,9 @@ async function runCombinedExport(opts) {
             // build 122, on the row's own label row only: where a fuel oil or
             // chemical drain discharges, and a drive's own disconnect
             (src && sourceTakesDrainsTo(src, fac)) ? 'Drains To' : '',
-            (src && isDriveRow(src)) ? 'Drive Isolates' : ''
+            (src && isDriveRow(src)) ? 'Drive Isolates' : '',
+            // build 130, on a Damper Actuator's own label row only: what powers it
+            (src && isDamperRow(src)) ? 'Powered By' : ''
           ]);
           applyRow(srcLabelRow, labelFont, labelFill, allBorders);
 
@@ -14500,7 +14608,9 @@ async function runCombinedExport(opts) {
             (src && lwHere && sourceTakesLabelWait(src, entry.equipType, entry.template)) ? dcBusCellText(src) : '',
             // Drains To and Drive Isolates (build 122), under their row's headers
             (src && sourceTakesDrainsTo(src, fac)) ? drainsToSheetText(src, fac) : '',
-            (src && isDriveRow(src)) ? driveIsolatesCellText(src) : ''
+            (src && isDriveRow(src)) ? driveIsolatesCellText(src) : '',
+            // Powered By (build 130): "Source #n" (the linked row's number in this block), "Unit power", "Can't tell"
+            (src && isDamperRow(src)) ? poweredBySheetText(src, entry.sources) : ''
           ]);
           applyRow(srcDataRow, dataFont, null, allBorders);
         }
