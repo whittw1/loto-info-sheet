@@ -9160,18 +9160,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 127 (was build 122\'s): APP_BUILD and the header label say 127, the service worker\'s cache is loto-collector-v7.123, Xcode\'s CURRENT_PROJECT_VERSION is 127 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
+    const N = 'T268 build 128 (was build 122\'s): APP_BUILD and the header label say 128, the service worker\'s cache is loto-collector-v7.124, Xcode\'s CURRENT_PROJECT_VERSION is 128 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 127 && !!label && +label[1] === 127, 'the build');
+    want(APP_BUILD === 128 && !!label && +label[1] === 128, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.123', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.124', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 127;,CURRENT_PROJECT_VERSION = 127;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 128;,CURRENT_PROJECT_VERSION = 128;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -9859,6 +9859,8 @@
       record(N, inApp, inApp ? 'skipped inside the iOS app (the fixture is not bundled)' : 'FAILED: tests/contract/lotoweb-rules.json not served');
       return;
     }
+    // a fixture written with a loto-web change not live yet says so (build 128): shown, not failed — regenerate before a release
+    if (fx._provisional) got.provisional = fx._provisional;
     const R = (x) => ({ energySource: x.energySource, deviceType: x.deviceType, deviceId: x.deviceId, quantity: x.quantity, location: x.location });
     const check = (name, list, fn) => { got.counts[name] = list.length; list.forEach((c, i) => { const r = fn(c); if (!r.ok) fails.push(name + ' #' + (i + 1) + ': ' + r.what); }); };
     check('feeder', fx.feeder, c => ({ ok: isFeederRow(R(c)) === c.isFeeder, what: JSON.stringify([c.deviceType, c.location, c.energySource]) + ' loto-web ' + c.isFeeder }));
@@ -12144,6 +12146,219 @@
     want(!confirms.some(m => /more than 10|10 sources/i.test(m)), 'a 10-source warning: ' + JSON.stringify(confirms));
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.slice(0, 6).join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+
+  // ==========================================================================
+  // BUILD 128 — a drive with no ID (wilkins 2026-10-27: HGS never names the
+  // VA's equipment; loto-web's feeders_for gives such a drive the feeders that
+  // name no drive). T385 is build 127's (more than 10 sources); each of these
+  // fails on build 127 (and on build 126).
+  // ==========================================================================
+  const vfdRow = (id, qty) => Object.assign(mkSrc('Electrical 480V'), { deviceType: 'VFD', deviceId: id || '', quantity: qty || 1, collapsed: false });
+  const feederRow = (loc) => Object.assign(mkSrc('Electrical 480V'), { location: loc, role: 'feeder', collapsed: false });
+  const feederAnswers = (panel, bkr, drive) => ({ 'feeder-panel': panel, 'feeder-breaker': bkr, 'feeder-drive': drive, 'drive-isolates': 'no' });
+
+  // T386 — "No ID on the drive" records the feeder and names nothing
+  async function t386_noIdOnTheDriveNamesNothing() {
+    const N = 'T386 build 128: a drive with no Device ID is recorded as it is — the feeder dialog offers "No ID on the drive" (only for a drive with no ID), which adds "Feeder: MCC-2A bkr 14" with no "( … )", keeps the Device ID blank, links the feeder to the drive, asks the disconnect question, and leaves nothing for Save & New to ask; the sheet writes the Location as recorded; the card offers it again for a second breaker';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const offeredBy = (list, ans) => (o) => { if (o.id === 'feeder-drive') list.push((o.choices || []).map(c => c.value || c.label).join('/')); return ans[o.id] !== undefined ? ans[o.id] : 'cancel'; };
+    fillFormNoSources('AHU-386');
+    sources = [vfdRow('')];
+    sources.forEach(ensureSourceId); renderSources();
+    const offered = [];
+    await withDialogs({ choice: offeredBy(offered, feederAnswers('MCC-2A', '14', 'noid')) }, async () => { await addFeederFromCard(0); });
+    got.offered = offered.join(' | ');
+    got.rows = sources.map(s => [s.deviceType, s.deviceId, s.location].join(':')).join(' | ');
+    got.exported = sources[1] ? sourceLocationForExport(sources[1]) : '';
+    const d = unitDrives(sources)[0] || {};
+    got.drive = [d.fed, d.held, d.answer, feederLinksDrive(sources, sources[1], d)].join('/');
+    got.ask = drivesToAskAtSave().length;
+    want(got.offered === 'Add the feeder/noid/cancel', 'the dialog offers No ID on the drive');
+    want(got.rows === 'VFD::P1 | Breaker::Feeder: MCC-2A bkr 14', 'one feeder naming no drive; the Device ID stays blank');
+    want(got.exported === 'Feeder: MCC-2A bkr 14', 'the sheet writes it as recorded');
+    want(got.drive === 'true/false/no/true', 'the drive is fed, linked and answered');
+    want(got.ask === 0, 'Save & New asks nothing more');
+    // the card again, for a second breaker: still offered, and the answer stays the drive's
+    const offered3 = [];
+    await withDialogs({ choice: offeredBy(offered3, feederAnswers('MCC-2B', '3', 'noid')) }, async () => { await addFeederFromCard(0); });
+    got.again = offered3.join(' | ') + ' | ' + sources.slice(1).map(s => s.location).join(' | ') + ' | ' + unitDrives(sources).map(x => x.fed + '/' + x.answer).join();
+    want(got.again === 'Add the feeder/noid/cancel | Feeder: MCC-2A bkr 14 | Feeder: MCC-2B bkr 3 | true/no', 'offered again from the card');
+    // a drive with an ID is not offered the button
+    fillFormNoSources('AHU-386b');
+    sources = [vfdRow('VFD-7')];
+    sources.forEach(ensureSourceId); renderSources();
+    const offered2 = [];
+    await withDialogs({ choice: offeredBy(offered2, { 'feeder-panel': 'MCC-2A', 'feeder-breaker': '' }) }, async () => { await addFeederFromCard(0); });
+    got.tagged = offered2.join(' | ');
+    want(got.tagged === 'Add the feeder/cancel', 'a drive with an ID is not offered it');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T387 — a no-ID drive beside named ones is fed as loto-web reads it
+  async function t387_aNoIdDriveBesideNamedOnesIsFed() {
+    const N = 'T387 build 128: a drive with no ID takes the feeders that name no drive, as loto-web\'s feeders_for / feeders_cover_drives read them since 2026-10-27 — beside a drive whose feeder names it, and beside one row naming two drives, its own unnamed feeder makes every drive fed and Save & New asks no feeder; with no unnamed feeder left (the only breaker names VFD-1) it is not fed';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const fed = (list) => unitDrives(list).map(d => (d.tag || '-') + ':' + d.fed).join(',');
+    fillFormNoSources('AHU-387');
+    // the hand-entered rows the field advice gave for build 126 (no stored link)
+    sources = [vfdRow('VFD-1'), feederRow('Feeder: MCC-2A bkr 14 (VFD-1)'), vfdRow(''), feederRow('Feeder: MCC-2A bkr 15')];
+    sources.forEach(s => { if (isDriveRow(s)) s.driveIsolates = ['yes']; });
+    renderSources();
+    got.beside = fed(sources);
+    got.ask = drivesToAskAtSave().map(d => d.tag || '-').join(',');
+    want(got.beside === 'VFD-1:true,-:true', 'both fed');
+    want(got.ask === '', 'Save & New asks no feeder');
+    got.shared = fed([vfdRow('VFD-1; VFD-2', 2), feederRow('Feeder: MCC bkr 3 (VFD-1, VFD-2)'), vfdRow(''), feederRow('Feeder: MCC bkr 4')]);
+    want(got.shared === 'VFD-1:true,VFD-2:true,-:true', 'a shared row for two drives and a no-ID drive with its own: all fed (Tier 1)');
+    got.cover = feedersCoverDrives(['Feeder: MCC bkr 3 (VFD-1, VFD-2)', 'Feeder: MCC bkr 4'], ['VFD-1', 'VFD-2', '']);
+    want(got.cover === true, 'Tier 1');
+    got.none = fed([vfdRow('VFD-1'), vfdRow(''), feederRow('Feeder: MCC bkr 3 (VFD-1)')]);
+    want(got.none === 'VFD-1:true,-:false', 'no unnamed feeder: the no-ID drive is not fed');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T388 — a no-ID drive on a breaker that also feeds a named drive
+  async function t388_aNoIdDriveOnASharedBreaker() {
+    const N = 'T388 build 128: a drive with no ID on a breaker already recorded for VFD-1 gets no second row (loto-web: the VA would read two devices) — the row\'s text is kept, the drive is linked to it, a warning says loto-web can\'t tell, Save & New doesn\'t ask its feeder again, and the Change Later note tells the office; recorded the other way round (the no-ID drive first, then VFD-1 typed on the same breaker) it is the same';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const NOTE = "Drive on source #3 has no ID; its feeder MCC-2A bkr 14 (source #2) also feeds VFD-1, so loto-web can't tell it feeds this drive";
+    fillFormNoSources('AHU-388');
+    sources = [vfdRow('VFD-1'), feederRow('Feeder: MCC-2A bkr 14 (VFD-1)'), vfdRow('')];
+    sources.forEach(ensureSourceId);
+    addFeederLink(sources[1], sources[0], 0);
+    sources[0].driveIsolates = ['yes'];
+    renderSources();
+    const toasts = await withToasts(async () => { await withDialogs({ choice: feederAnswers('MCC-2A', '14', 'noid') }, async () => { await addFeederFromCard(2); }); });
+    got.rows = sources.length + ' | ' + sources[1].location;
+    const d = unitDrives(sources)[1] || {};
+    got.drive = [d.fed, d.held, d.answer, feederLinksDrive(sources, sources[1], d)].join('/');
+    got.warned = toasts.some(m => /also feeds VFD-1: with no ID on this drive, loto-web can’t tell/.test(m));
+    got.ask = drivesToAskAtSave().length;
+    got.note = changeLaterAutoNotes(formEntryLike()).join(' | ');
+    got.sheet = changeLaterSheetText(formEntryLike());
+    want(got.rows === '3 | Feeder: MCC-2A bkr 14 (VFD-1)', 'no second row; the text is kept');
+    want(got.drive === 'false/true/no/true', 'linked and held, not fed');
+    want(got.warned, 'the tech is told');
+    want(got.ask === 0, 'Save & New asks nothing more');
+    want(got.note === NOTE && got.sheet.includes(NOTE), 'the office gets the note');
+    // the other way round
+    fillFormNoSources('AHU-388b');
+    sources = [vfdRow('VFD-1'), vfdRow('')];
+    sources.forEach(ensureSourceId);
+    sources.forEach(s => { s.driveIsolates = ['yes']; });
+    renderSources();
+    await withDialogs({ choice: feederAnswers('MCC-2A', '14', 'noid') }, async () => { await addFeederFromCard(1); });
+    got.first = sources.map(s => s.location).join(' | ');
+    const toasts2 = await withToasts(async () => { await withDialogs({ choice: feederAnswers('MCC-2A', '14', 'VFD-1') }, async () => { await addFeederFromCard(0); }); });
+    got.second = sources.map(s => s.location).join(' | ');
+    got.warned2 = toasts2.some(m => /With no ID on the drive on source #2, loto-web can’t tell it feeds that one too/.test(m));
+    got.note2 = changeLaterAutoNotes(formEntryLike()).join(' | ');
+    want(got.first === 'P1 | P1 | Feeder: MCC-2A bkr 14' && got.second === 'P1 | P1 | Feeder: MCC-2A bkr 14 (VFD-1)', 'one row, now naming VFD-1');
+    want(got.warned2, 'the tech is told, the other way round');
+    want(got.note2 === "Drive on source #2 has no ID; its feeder MCC-2A bkr 14 (source #3) also feeds VFD-1, so loto-web can't tell it feeds this drive", 'the note, the other way round');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T389 — a no-ID drive given its ID later is named by its feeder
+  async function t389_aNoIdDriveGivenAnIdIsNamed() {
+    const N = 'T389 build 128: a drive recorded with "No ID on the drive" that is given a Device ID later is named by its feeder — "Feeder: MCC-2A bkr 14 (3-RF-58)", renamed with the ID, its link kept through a committed Location edit before it; on a breaker shared with VFD-1 the ID joins the row ("(VFD-1, 3-RF-58)"), the drive is fed and the note goes';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('AHU-389');
+    sources = [vfdRow('')];
+    sources.forEach(ensureSourceId); renderSources();
+    await withDialogs({ choice: feederAnswers('MCC-2A', '14', 'noid') }, async () => { await addFeederFromCard(0); });
+    syncFeederTags(sources, { prune: true });   // a committed edit of the feeder's Location before the ID
+    got.kept = (sources[1].feeds || []).length;
+    updateSource(0, 'deviceId', '3-RF-58');
+    got.named = sources[1].location;
+    updateSource(0, 'deviceId', '3-RF-59');
+    got.renamed = sources[1].location;
+    want(got.kept === 1, 'the link survives a committed edit');
+    want(got.named === 'Feeder: MCC-2A bkr 14 (3-RF-58)' && got.renamed === 'Feeder: MCC-2A bkr 14 (3-RF-59)', 'named, then renamed');
+    // shared with VFD-1
+    fillFormNoSources('AHU-389b');
+    sources = [vfdRow('VFD-1'), feederRow('Feeder: MCC-2A bkr 14 (VFD-1)'), vfdRow('')];
+    sources.forEach(ensureSourceId);
+    addFeederLink(sources[1], sources[0], 0);
+    sources.forEach(s => { if (isDriveRow(s)) s.driveIsolates = ['yes']; });
+    renderSources();
+    await withDialogs({ choice: feederAnswers('MCC-2A', '14', 'noid') }, async () => { await addFeederFromCard(2); });
+    got.heldNote = changeLaterAutoNotes(formEntryLike()).length;
+    updateSource(2, 'deviceId', '3-RF-58');
+    got.shared = sources[1].location;
+    got.fed = unitDrives(sources).map(d => d.tag + ':' + d.fed).join(',');
+    got.note = changeLaterAutoNotes(formEntryLike()).length;
+    want(got.heldNote === 1 && got.shared === 'Feeder: MCC-2A bkr 14 (VFD-1, 3-RF-58)' && got.fed === 'VFD-1:true,3-RF-58:true' && got.note === 0, 'the shared row names it; fed; the note goes');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T390 — two drives with no ID, and orphans beside them
+  async function t390_twoNoIdDrivesAndOrphans() {
+    const N = 'T390 build 128: two drives with no ID on one row — the first one\'s feeder recorded, Save & New asks only the second\'s (no note yet); on its own breaker both are fed, on the first one\'s breaker both are held and noted. A drive with no ID whose feeder is linked no longer hides an orphan feeder from another drive, and its own feeder is never one; "No ID" on a breaker whose brackets name a tag no drive carries asks whether it goes';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const setUp = async () => {
+      fillFormNoSources('AHU-390');
+      sources = [vfdRow('', 2)];
+      sources.forEach(ensureSourceId);
+      sources[0].driveIsolates = ['yes', 'yes'];
+      renderSources();
+      await withDialogs({ choice: feederAnswers('MCC-2A', '14', 'noid') }, async () => { await addFeederForDrive(0, 0); });
+    };
+    await setUp();
+    got.after1 = unitDrives(sources).map(d => d.fed + '/' + d.held).join(',');
+    got.ask1 = drivesToAskAtSave().map(d => d.k).join(',');
+    got.note1 = changeLaterAutoNotes(formEntryLike()).length;
+    want(got.after1 === 'false/true,false/false' && got.ask1 === '1' && got.note1 === 0, 'only the second is asked; no note yet');
+    await withDialogs({ choice: feederAnswers('MCC-2A', '15', 'noid') }, async () => { await addFeederForDrive(0, 1); });
+    got.own = unitDrives(sources).map(d => d.fed).join(',') + ' | ' + sources.slice(1).map(s => s.location).join(' | ');
+    want(got.own === 'true,true | Feeder: MCC-2A bkr 14 | Feeder: MCC-2A bkr 15', 'each on its own breaker: both fed');
+    await setUp();
+    await withDialogs({ choice: feederAnswers('MCC-2A', '14', 'noid') }, async () => { await addFeederForDrive(0, 1); });
+    got.sameRows = sources.length;
+    got.same = unitDrives(sources).map(d => d.fed + '/' + d.held).join(',');
+    got.notes = changeLaterAutoNotes(formEntryLike()).join(' | ');
+    want(got.sameRows === 2 && got.same === 'false/true,false/true', 'one breaker for both: one row, both held');
+    want(got.notes === "Drive on source #1 (unit 1) has no ID; its feeder MCC-2A bkr 14 (source #2) also feeds the drive on source #1 (unit 2), so loto-web can't tell it feeds this drive"
+      + " | Drive on source #1 (unit 2) has no ID; its feeder MCC-2A bkr 14 (source #2) also feeds the drive on source #1 (unit 1), so loto-web can't tell it feeds this drive", 'both noted');
+    // an orphan beside a linked no-ID drive
+    fillFormNoSources('AHU-390b');
+    sources = [vfdRow(''), feederRow('Feeder: MCC-2A bkr 14'), vfdRow('VFD-2'), feederRow('Feeder: MCC-2A bkr 15 (VFD-9)')];
+    sources.forEach(ensureSourceId);
+    addFeederLink(sources[1], sources[0], 0);
+    renderSources();
+    const vfd2 = unitDrives(sources).find(d => d.tag === 'VFD-2');
+    got.orphans = orphanFeederRows(sources, vfd2).map(s => s.location).join(' | ');
+    want(got.orphans === 'Feeder: MCC-2A bkr 15 (VFD-9)', 'the orphan is offered');
+    // …but a no-ID drive's own feeder, whatever its brackets say, is never another drive's orphan
+    sources[1].location = 'Feeder: MCC-2A bkr 14 (VFD-7)';
+    got.ownNotOrphan = orphanFeederRows(sources, vfd2).map(s => s.location).join(' | ');
+    want(got.ownNotOrphan === 'Feeder: MCC-2A bkr 15 (VFD-9)', 'its own feeder is not offered: ' + got.ownNotOrphan);
+    // "No ID" on a breaker whose brackets name a tag no drive carries (a name typed
+    // before build 128): the tech is asked whether it goes
+    fillFormNoSources('AHU-390c');
+    sources = [vfdRow(''), feederRow('Feeder: MCC-2A bkr 14 (VFD-7)')];
+    sources.forEach(ensureSourceId);
+    sources[0].driveIsolates = ['yes'];
+    renderSources();
+    got.before = unitDrives(sources)[0].fed;
+    const asked = [];
+    await withDialogs({ choice: (o) => { asked.push(o.id); return ({ 'feeder-orphan': 'new', 'feeder-orphan-old': 'remove' })[o.id] || feederAnswers('MCC-2A', '14', 'noid')[o.id] || 'cancel'; } },
+      async () => { await addFeederFromCard(0); });
+    got.oldTag = asked.join(',') + ' | ' + sources.map(s => s.location).join(' | ') + ' | ' + unitDrives(sources)[0].fed;
+    want(got.before === false && got.oldTag === 'feeder-orphan,feeder-panel,feeder-breaker,feeder-drive,feeder-orphan-old | P1 | Feeder: MCC-2A bkr 14 | true',
+      'an old tag on the breaker: asked, taken out, the drive fed');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -12300,7 +12515,9 @@
     t375_aChangeToAValvelessSourceDropsTheValveState, t376_aHydraulicValveKeepsItsValveAnswers, t377_aDroppedValveAnswerSaysSoOnTheCard,
     t378_oneValveStateRuleEverywhere, t379_theOneResetCoversEverySwap, t380_lockOpenGoesWhereTheCardOffersIt,
     t381_aGeothermalLineKeepsItsValveState, t382_aChangeToARowWithNoValveClearsTheAnswers, t383_anUnsentLockOpenHidesNoDrainAnswer,
-    t384_aSplitDefaultsNormallyClosedOnlyWhereOffered, t385_aUnitOverTenSourcesGetsATallerBlock];
+    t384_aSplitDefaultsNormallyClosedOnlyWhereOffered, t385_aUnitOverTenSourcesGetsATallerBlock,
+    t386_noIdOnTheDriveNamesNothing, t387_aNoIdDriveBesideNamedOnesIsFed, t388_aNoIdDriveOnASharedBreaker,
+    t389_aNoIdDriveGivenAnIdIsNamed, t390_twoNoIdDrivesAndOrphans];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

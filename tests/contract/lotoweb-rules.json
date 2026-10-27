@@ -1,5 +1,6 @@
 {
  "_about": "Written by tests/contract/make_lotoweb_rules.py from loto-web's own functions; asserted by the app's T290.",
+ "_provisional": "PROVISIONAL (2026-10-27): loto-web's live functions with its no-ID feeder rule (feeders_for / feeders_cover_drives, built by its deficiencies chat, not live yet) patched in as built. Re-run make_lotoweb_rules.py once that change is live; this key then goes.",
  "lotoWeb": "/Users/whittw/Desktop/Claude Apps/loto-web",
  "feeder": [
   {
@@ -926,7 +927,7 @@
      "row": 2,
      "unit": 0,
      "tag": "",
-     "identified": false
+     "identified": true
     }
    ]
   },
@@ -1243,6 +1244,432 @@
      "identified": true
     }
    ]
+  },
+  {
+   "name": "a no-ID drive beside a named feeder, its own unnamed",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 14 (VFD-1)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 15"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 2,
+     "unit": 0,
+     "tag": "",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a shared feeder for two drives, a no-ID drive with its own",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1; VFD-2",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (VFD-1, VFD-2)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 4"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "VFD-2",
+     "identified": true
+    },
+    {
+     "row": 2,
+     "unit": 0,
+     "tag": "",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a no-ID drive on a breaker that also feeds a named drive",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (VFD-1)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "a no-ID drive, a feeder naming a word",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (north)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 4 (VFD-1)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "",
+     "identified": true
+    },
+    {
+     "row": 2,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a no-ID drive beside a tagged drive with no feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": false
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "two tagged drives sharing a feeder, a no-ID drive without one",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1; VFD-2",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (VFD-1, VFD-2)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "VFD-2",
+     "identified": true
+    },
+    {
+     "row": 2,
+     "unit": 0,
+     "tag": "",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "two no-ID drives beside a named one, two unnamed feeders",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (VFD-1)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 4"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 5"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "",
+     "identified": true
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "",
+     "identified": true
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "two no-ID drives beside a named one, one unnamed feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (VFD-1)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 4"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "",
+     "identified": false
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "",
+     "identified": false
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a half-tagged Qty-2 row, a named and an unnamed feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1;",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (VFD-1)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 4"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "",
+     "identified": true
+    }
+   ]
   }
  ],
  "cover": [
@@ -1371,6 +1798,115 @@
     "AHU  9"
    ],
    "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1)",
+    "Feeder: MCC bkr 4"
+   ],
+   "driveTags": [
+    "VFD-1",
+    ""
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)",
+    "Feeder: MCC bkr 4"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2",
+    ""
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2",
+    ""
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)",
+    "Feeder: MCC bkr 4 (north)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2",
+    ""
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)",
+    "Feeder: MCC bkr 4"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-1",
+    ""
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)",
+    "Feeder: MCC bkr 4"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2",
+    "",
+    ""
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)",
+    "Feeder: MCC bkr 4",
+    "Feeder: MCC bkr 5"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2",
+    "",
+    ""
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)",
+    "Feeder: MCC bkr 4 (VFD-1)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2",
+    ""
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)",
+    "Feeder: MCC bkr 4"
+   ],
+   "driveTags": [
+    " ",
+    "VFD-1",
+    "VFD-2"
+   ],
+   "covers": true
   }
  ],
  "mediumKind": [

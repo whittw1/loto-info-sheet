@@ -137,6 +137,17 @@ COVER = [
     (["Feeder: MCC bkr 3"], []),
     (["Feeder: MCC bkr 3 (AHU  9, VFD-2)"], ["AHU 9", "VFD-2"]),
     (["Feeder: MCC bkr 3 (AHU 9, AHU  9)"], ["AHU 9", "AHU  9"]),
+    # drives with no ID (field app build 128, loto-web 2026-10-27): a feeder naming
+    # no drive for each untagged unit, beside named ones
+    (["Feeder: MCC bkr 3 (VFD-1)", "Feeder: MCC bkr 4"], ["VFD-1", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)", "Feeder: MCC bkr 4"], ["VFD-1", "VFD-2", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)"], ["VFD-1", "VFD-2", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)", "Feeder: MCC bkr 4 (north)"], ["VFD-1", "VFD-2", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)", "Feeder: MCC bkr 4"], ["VFD-1", "VFD-1", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)", "Feeder: MCC bkr 4"], ["VFD-1", "VFD-2", "", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)", "Feeder: MCC bkr 4", "Feeder: MCC bkr 5"], ["VFD-1", "VFD-2", "", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)", "Feeder: MCC bkr 4 (VFD-1)"], ["VFD-1", "VFD-2", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)", "Feeder: MCC bkr 4"], [" ", "VFD-1", "VFD-2"]),
 ]
 # drain_location.medium_kind: which energy sources the release question asks on.
 MEDIA = ["Fuel Oil In", "Fuel Oil Out", "Diesel Fuel", "FO Supply", "Chemical In", "Chem feed", "Geothermal Water In",
@@ -208,6 +219,27 @@ UNITS = {
     "duplicate tags, one named feeder": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-1"), row(loc="Feeder: MCC bkr 3 (VFD-1)")],
     "a tag with two spaces, named with one": [row(dev="VFD", did="AHU  9"), row(dev="VFD", did="VFD-4"),
                                               row(loc="Feeder: MCC-4 bkr 1 (AHU 9)"), row(loc="Feeder: MCC-4 bkr 2 (VFD-4)")],
+    # Drives with no ID (field app build 128, loto-web 2026-10-27): a drive with no
+    # Device ID takes the feeders that name no drive
+    "a no-ID drive beside a named feeder, its own unnamed": [row(dev="VFD", did="VFD-1"), row(loc="Feeder: MCC-2A bkr 14 (VFD-1)"),
+                                                              row(dev="VFD"), row(loc="Feeder: MCC-2A bkr 15")],
+    "a shared feeder for two drives, a no-ID drive with its own": [row(dev="VFD", did="VFD-1; VFD-2", qty=2),
+                                                                   row(loc="Feeder: MCC bkr 3 (VFD-1, VFD-2)"),
+                                                                   row(dev="VFD"), row(loc="Feeder: MCC bkr 4")],
+    "a no-ID drive on a breaker that also feeds a named drive": [row(dev="VFD", did="VFD-1"), row(dev="VFD"),
+                                                                 row(loc="Feeder: MCC bkr 3 (VFD-1)")],
+    "a no-ID drive, a feeder naming a word": [row(dev="VFD"), row(loc="Feeder: MCC bkr 3 (north)"),
+                                              row(dev="VFD", did="VFD-1"), row(loc="Feeder: MCC bkr 4 (VFD-1)")],
+    "a no-ID drive beside a tagged drive with no feeder": [row(dev="VFD", did="VFD-1"), row(dev="VFD"), row(loc="Feeder: MCC bkr 3")],
+    "two tagged drives sharing a feeder, a no-ID drive without one": [row(dev="VFD", did="VFD-1; VFD-2", qty=2),
+                                                                      row(loc="Feeder: MCC bkr 3 (VFD-1, VFD-2)"), row(dev="VFD")],
+    "two no-ID drives beside a named one, two unnamed feeders": [row(dev="VFD", qty=2), row(dev="VFD", did="VFD-1"),
+                                                                 row(loc="Feeder: MCC bkr 3 (VFD-1)"), row(loc="Feeder: MCC bkr 4"),
+                                                                 row(loc="Feeder: MCC bkr 5")],
+    "two no-ID drives beside a named one, one unnamed feeder": [row(dev="VFD", qty=2), row(dev="VFD", did="VFD-1"),
+                                                                row(loc="Feeder: MCC bkr 3 (VFD-1)"), row(loc="Feeder: MCC bkr 4")],
+    "a half-tagged Qty-2 row, a named and an unnamed feeder": [row(dev="VFD", did="VFD-1;", qty=2),
+                                                               row(loc="Feeder: MCC bkr 3 (VFD-1)"), row(loc="Feeder: MCC bkr 4")],
 }
 
 
