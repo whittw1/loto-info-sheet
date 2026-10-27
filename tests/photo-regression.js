@@ -1535,19 +1535,33 @@
     record(N, !carried, carried ? 'blank form\'s autosave still holds the previous unit\'s drawing' : 'clean');
   }
 
-  // T41 — more than 10 sources: the XLSX can't hold them, so say so
-  async function t41_moreThanTenSourcesIsFlagged() {
-    const N = 'T41 more than 10 sources is flagged (XLSX holds 10)';
+  // T41 — more than 10 sources: all of them on the Information Sheet, no
+  // warning (more-than-10-sources spec 2026-10-27; it used to flag 11+ as
+  // CSV / entries.json only)
+  async function t41_moreThanTenSourcesAreAllOnTheSheet() {
+    const N = 'T41 more than 10 sources: no heads-up at the 11th, no export warning, and all 12 on the Information Sheet and in entries.json (more-than-10-sources spec; it used to warn that the XLSX holds 10)';
     await resetAppState();
     fillFormNoSources('Big-41');
-    for (let i = 0; i < 12; i++) sources.push(mkSrc('Electrical 480V'));
+    const prevToast = window.showToast, toasts = [];
+    try {
+      window.showToast = (m) => { toasts.push(String(m)); };
+      for (let i = 0; i < 12; i++) addSource();
+    } finally { window.showToast = prevToast; }
+    sources.forEach((s, i) => Object.assign(s, mkSrc(i % 2 ? 'Kinetic' : 'Electrical 480V')));
     renderSources();
     const A = saveEntry();
     const { zip, confirms } = await runExport({ confirmResponse: true });
-    const warned = confirms.some(c => /\b1[01]\b[^\n]*source|sources? 11|10 sources/i.test(c));
-    let all12 = false;
-    if (zip) { const u = await unzipExport(zip.blob); const ja = jsonEntryFor(u.entriesJson, A); all12 = !!(ja && ja.sources.length === 12); }
-    record(N, warned && all12, 'warned=' + warned + ' entries.json keeps all 12=' + all12);
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const ja = jsonEntryFor(u.entriesJson, A);
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    if (!xpath) return record(N, false, 'no XLSX in the ZIP');
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+    const colA = []; wb.worksheets[0].eachRow(row => colA.push(String(row.getCell(1).value || '')));
+    const at12 = colA.indexOf('Energy Source #12');
+    const warned = toasts.some(t => /Information Sheet holds|#11\+/.test(t)) || confirms.some(c => /more than 10|10 sources/i.test(c));
+    record(N, !warned && !!(ja && ja.sources.length === 12) && at12 >= 0 && colA[at12 + 1] === 'Kinetic',
+      'warned=' + warned + ' entries.json sources=' + (ja && ja.sources.length) + ' sheet source #12=' + (at12 >= 0 ? colA[at12 + 1] : 'no row'));
   }
 
   // T42 — the last saved entry gets ITS diagram, not the open form's
@@ -3985,9 +3999,10 @@
 
   // T140 — Split's "Valve marks cleared" note was replaced in the same tick by
   // the 10-source heads-up, and a toast raised 1.9 s after another was hidden
-  // at 2 s by the first one's timer
+  // at 2 s by the first one's timer. Since the more-than-10-sources spec
+  // (2026-10-27) the 11th source raises no heads-up at all.
   async function t140_noWarningIsHiddenByTheNextMessage() {
-    const N = 'T140 Split\'s "marks cleared" note stays visible with the 10-source heads-up, and a later toast gets its full time';
+    const N = 'T140 Split\'s "marks cleared" note stays visible when the Split makes the 11th source (no 10-source heads-up since the more-than-10-sources spec), and a later toast gets its full time';
     await resetAppState();
     fillFormNoSources('Split-140');
     sources.push(Object.assign(mkSrc('HHW In'), { deviceType: 'Ball Valve', quantity: 2, collapsed: false }));
@@ -4004,7 +4019,7 @@
     showToast('Second toast (test)', true); await sleep(300);
     const el = document.getElementById('toast');
     const secondVisible = !!el && /\bshow\b/.test(el.className) && /Second toast/.test(el.textContent || '');
-    record(N, marksNote && limitNote && secondVisible, 'after Split the toast reads ' + JSON.stringify(shown) + '; a toast raised 1.9 s after another is still visible 0.3 s later=' + secondVisible);
+    record(N, marksNote && !limitNote && secondVisible, 'after Split the toast reads ' + JSON.stringify(shown) + '; a toast raised 1.9 s after another is still visible 0.3 s later=' + secondVisible);
     await sleep(2300);
     clearForm(false);
   }
@@ -6372,7 +6387,7 @@
 
   // T212 — 4.4 d: nothing flagged a photo taken for a slot that stayed empty
   async function t212_anEmptySlotWithAPhotoTakenForItIsFlaggedAtExport() {
-    const N = 'T212 the export warns when a unit\'s empty photo slot has a photo taken for it on the device (it never attached), never for a retaken slot\'s older shot, and Cancel stops it; the 11+ sources warning no longer says nothing is lost';
+    const N = 'T212 the export warns when a unit\'s empty photo slot has a photo taken for it on the device (it never attached), never for a retaken slot\'s older shot, and Cancel stops it; a unit with 11 sources exports with no 10-source warning (more-than-10-sources spec; it used to warn that sources 11+ would not reach loto-web)';
     await resetAppState();
     const A = mkEntry('U-212', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Disconnect' }), Object.assign(mkSrc('DW In'), { sourceId: genUuid(), deviceType: 'Ball Valve' })] });
     await storePhotoBytes(photoStoreKey(A.id, A.sources[1].sourceId), dataUrlFromBytesSeed('t212-lost'));
@@ -6389,10 +6404,10 @@
     const B = mkEntry('Big-212', { sources: Array.from({ length: 11 }, (_, i) => Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), location: 'P' + i })) });
     savedEquipment = [B]; saveAll();
     const big = await runExport({ confirmResponse: true });
-    const bigMsg = big.confirms.find(m => /more than 10 energy sources/i.test(m)) || '';
+    const bigMsg = big.confirms.find(m => /more than 10|10 sources/i.test(m)) || '';
     record(N, !stop.zip && asked.length === 1 && flagged.length === 1 && /^Source #2/.test(flagged[0].slot) && !!go.zip
-      && /will NOT reach loto-web/.test(bigMsg) && !/nothing is lost/i.test(bigMsg),
-      'asked ' + JSON.stringify(asked) + ', zip after Cancel=' + !!stop.zip + '; flagged ' + JSON.stringify(flagged) + '; zip by default=' + !!go.zip + '; 11+ message ' + JSON.stringify(bigMsg.slice(0, 220)));
+      && !!big.zip && !bigMsg,
+      'asked ' + JSON.stringify(asked) + ', zip after Cancel=' + !!stop.zip + '; flagged ' + JSON.stringify(flagged) + '; zip by default=' + !!go.zip + '; 11 sources: zip=' + !!big.zip + ', warning ' + JSON.stringify(bigMsg.slice(0, 220)));
   }
 
   // T213 — 3.4: loto-web compared its lists with an August copy of the app
@@ -9770,10 +9785,10 @@
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const prevCode = getHospitalCode();
-    const prevToast = window.showSourceToast;
+    const prevToast = window.showToast;
     try {
       setHospitalCode('');
-      const toasts = []; window.showSourceToast = (m) => { toasts.push(String(m)); };
+      const toasts = []; window.showToast = (m) => { toasts.push(String(m)); };
       formOfType('XF-287', 'Transformer', 'Standard Electrical');
       sources = [Object.assign(FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), { role: 'feeder', collapsed: false }),
         Object.assign(mkSrc('Electrical 208V'), { location: 'Secondary Main: MDP-2 bkr 1', role: 'secondaryMain', verification: 'Meter', collapsed: false })];
@@ -9783,7 +9798,7 @@
       want(JSON.stringify(got.rows) === JSON.stringify(['Feeder: MCC-2A bkr 14 (VFD-1)|feeder|feeder', 'MCC-2A bkr 14 (VFD-1)|-|-',
         'Secondary Main: MDP-2 bkr 1|secondaryMain|secondaryMain', 'MDP-2 bkr 1|-|-']), 'the rows');
       want(toasts.some(t => /as an ordinary row: one breaker keeps one feeder row/.test(t)) && toasts.some(t => /one secondary main row/.test(t)), 'the message: ' + JSON.stringify(toasts));
-    } finally { window.showSourceToast = prevToast; setHospitalCode(prevCode); }
+    } finally { window.showToast = prevToast; setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -12069,6 +12084,66 @@
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+
+  // T385 — more than 10 sources: the Information Sheet block grows to fit
+  // (loto-web/docs/Field_App_More_Than_10_Sources_Spec_2026-10-27.md §2.1)
+  async function t385_aUnitOverTenSourcesGetsATallerBlock() {
+    const N = 'T385 more-than-10-sources spec: the Information Sheet block grows one row pair per source past 10 (units of 10 / 12 / 7 / 25 sources on one sheet) — Energy Source #k rows, Tied to at H+2N+2, Notes at T+2 / T+3, the unit answers on those rows, the next header at H+2N+7, and the photos of sources 11 and 12 named on their rows';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const unit = (name, n) => mkEntry(name, { sources: Array.from({ length: n }, (_, i) =>
+      Object.assign(mkSrc(i % 2 ? 'Kinetic' : 'Electrical 480V'), { sourceId: genUuid(), location: name + ' P' + (i + 1) })) });
+    const units = [unit('U10-385', 10), unit('U12-385', 12), unit('U7-385', 7), unit('U25-385', 25)];
+    units.forEach(e => { e.hospitalCode = 'Atlanta'; e.notes = 'notes of ' + e.equipName; });
+    const big = units[1];
+    for (const i of [10, 11]) {
+      const du = dataUrlFromBytesSeed('t385-' + i), key = photoStoreKey(big.id, big.sources[i].sourceId);
+      await storePhotoBytes(key, du);
+      big.photos['source_' + i] = { dbKey: key, thumbnail: TINY_THUMB, timestamp: new Date().toISOString(), fileType: 'image/jpeg', sha256: await sha256HexOfDataUrl(du) };
+    }
+    savedEquipment = units; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const xpaths = Object.keys(u.files).filter(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    if (xpaths.length !== 1) return record(N, false, 'want one sheet, got ' + JSON.stringify(xpaths));
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpaths[0]]);
+    const ws = wb.worksheets[0];
+    const cell = (r, c) => { const v = ws.getRow(r).getCell(c).value; return v == null ? '' : String(v); };
+    const heads = [];
+    for (let r = 1; r <= ws.rowCount; r++) if (cell(r, 1) === 'Equipment ID/Name') heads.push(r);
+    got.heads = heads;
+    got.strides = heads.slice(1).map((h, i) => h - heads[i]);
+    want(heads.length === 4, 'four blocks');
+    heads.forEach((H, bi) => {
+      const e = units.find(x => x.equipName === cell(H + 1, 1));
+      if (!e) return want(false, 'the block at row ' + H + ' names no unit: ' + cell(H + 1, 1));
+      const n = e.sources.length, rows = Math.max(10, n), T = H + 2 * rows + 2, tag = e.equipName + ': ';
+      for (let k = 1; k <= rows; k++) {
+        want(cell(H + 2 * k, 1) === 'Energy Source #' + k, tag + 'label row ' + k + ' = ' + cell(H + 2 * k, 1));
+        want(cell(H + 2 * k + 1, 1) === (k <= n ? e.sources[k - 1].energySource : ''), tag + 'data row ' + k + ' = ' + cell(H + 2 * k + 1, 1));
+        if (k <= n) want(cell(H + 2 * k + 1, 5) === e.equipName + ' P' + k, tag + 'location ' + k + ' = ' + cell(H + 2 * k + 1, 5));
+      }
+      want(cell(T, 1) === 'Tied to Equipment' && cell(T, 8) === 'Template', tag + 'Tied to row ' + T + ' = ' + cell(T, 1));
+      want(cell(T + 2, 1) === 'Notes:' && cell(T + 3, 1) === e.notes, tag + 'Notes rows ' + (T + 2) + ' = ' + cell(T + 2, 1) + ' / ' + cell(T + 3, 1));
+      const cells = unitSheetCells(e);
+      Object.keys(cells).forEach(slot => {
+        const [r24, c] = UNIT_SHEET_SLOTS[slot], r = r24 === 24 ? T : T + 2;
+        want(cell(r, c) === cells[slot][0] && cell(r + 1, c) === String(cells[slot][1] || ''), tag + slot + ' at ' + r + ',' + c + ' = ' + cell(r, c) + ' / ' + cell(r + 1, c));
+      });
+      want(cell(T + 4, 1) === '', tag + 'separator row ' + (T + 4) + ' = ' + cell(T + 4, 1));
+      if (bi + 1 < heads.length) want(heads[bi + 1] === H + 2 * rows + 7, tag + 'next header at ' + heads[bi + 1] + ', want ' + (H + 2 * rows + 7));
+    });
+    const jb = jsonEntryFor(u.entriesJson, big) || { sources: [] };
+    const H12 = heads.find(H => cell(H + 1, 1) === big.equipName);
+    for (const i of [10, 11]) {
+      const f = (jb.sources[i] || {}).photoFile || '', onSheet = H12 ? cell(H12 + 2 * (i + 1) + 1, 6) : '';
+      want(!!f && onSheet === f.replace(/^photos\//, '') && !!u.files[f], 'source ' + (i + 1) + ' photo ' + f + ', on the sheet ' + onSheet);
+    }
+    want(!confirms.some(m => /more than 10|10 sources/i.test(m)), 'a 10-source warning: ' + JSON.stringify(confirms));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.slice(0, 6).join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -12087,7 +12162,7 @@
     t34_backupReplaceKeepsDevicePhotoRefs, t35_backupDialogCancelChangesNothing,
     t36_photoOnlyFormIsNotDiscardedSilently, t37_sameTagOnTwoDevicesGivesDistinctFilenames,
     t38_sequenceReservedBeforeHandOff, t39_linkingASourceKeepsItsPhoto,
-    t40_saveAndNewDoesNotCarrySketchForward, t41_moreThanTenSourcesIsFlagged,
+    t40_saveAndNewDoesNotCarrySketchForward, t41_moreThanTenSourcesAreAllOnTheSheet,
     t42_lastEntryGetsItsOwnDiagram, t43_numericIdEntryExportsItsPhotos,
     t44_hashingWorksWithoutWebCrypto, t45_idbSelfTestKeyIsNotAPhoto,
     t46_unreadableFsNeverStrandsLegacyPhotos, t47_concurrentHashRecordsAreNotLost,
@@ -12225,7 +12300,7 @@
     t375_aChangeToAValvelessSourceDropsTheValveState, t376_aHydraulicValveKeepsItsValveAnswers, t377_aDroppedValveAnswerSaysSoOnTheCard,
     t378_oneValveStateRuleEverywhere, t379_theOneResetCoversEverySwap, t380_lockOpenGoesWhereTheCardOffersIt,
     t381_aGeothermalLineKeepsItsValveState, t382_aChangeToARowWithNoValveClearsTheAnswers, t383_anUnsentLockOpenHidesNoDrainAnswer,
-    t384_aSplitDefaultsNormallyClosedOnlyWhereOffered];
+    t384_aSplitDefaultsNormallyClosedOnlyWhereOffered, t385_aUnitOverTenSourcesGetsATallerBlock];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

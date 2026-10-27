@@ -18,7 +18,7 @@ A progressive web app (PWA) for field data collection of Lockout/Tagout (LOTO) i
 ## Features
 
 - **Equipment Documentation** — Log equipment type (28+ presets), name, building, room, and location
-- **Energy Source Tracking** — Up to 10 sources per equipment with 40+ energy types (Electrical 120V–4160V, Steam, Glycol, Hydraulic, etc.), device types, quantities, and verification methods
+- **Energy Source Tracking** — Any number of sources per equipment (the Information Sheet block grows past 10) with 40+ energy types (Electrical 120V–4160V, Steam, Glycol, Hydraulic, etc.), device types, quantities, and verification methods
 - **Photo Capture** — Three equipment photo slots (Main, Data Plate, EE Number) plus per-source photos, with configurable resolution and compression (default 2560 × 1440; the limit turns with the photo, so a portrait shot keeps its long side); each new photo carries the time it was taken inside the JPEG (EXIF — no location); tap existing photo to view before retaking
 - **Templates** — Pre-configured templates (AHU variants, Pumps, Boilers, Chillers, Elevators, ATS models, Water Heater variants, etc.) that auto-populate energy sources; supports custom templates
 - **Conditional Dropdown Filtering** — Device types filter based on selected energy source (e.g., steam shows valves only, electrical shows breakers/disconnects). Verification methods filter based on device type with temperature variants (Hot/CHW) auto-resolved from energy source
