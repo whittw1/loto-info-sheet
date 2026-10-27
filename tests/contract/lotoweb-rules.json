@@ -1,6 +1,5 @@
 {
  "_about": "Written by tests/contract/make_lotoweb_rules.py from loto-web's own functions; asserted by the app's T290.",
- "_provisional": "PROVISIONAL (2026-10-27): loto-web's live functions with its no-ID feeder rule (feeders_for / feeders_cover_drives, built by its deficiencies chat, not live yet) patched in as built. Re-run make_lotoweb_rules.py once that change is live; this key then goes.",
  "lotoWeb": "/Users/whittw/Desktop/Claude Apps/loto-web",
  "feeder": [
   {
