@@ -12584,6 +12584,81 @@
     });
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+
+  // ---- Review of builds 127–130 (2026-10-28): one test per finding fixed ------
+
+  // T395 — column 22 is styled like the rest of the form
+  async function t395_column22IsStyledLikeTheForm() {
+    const N = 'T395 review 2026-10-28: column 22 "Powered By" is styled like column 21 — the label fill and borders on a Damper Actuator\'s label row, borders on its data row and on every other source row (applyRow styled columns 1–21 only)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withDamperSetting(async () => {
+      const brk = DS('Electrical 120V', { deviceType: 'Breaker', location: 'Panel LA-1 ckt 3' });
+      const A = Object.assign(mkEntry('D-395', { sources: [brk, ACT('Electric Actuator', 'Outside Air Damper', { poweredBy: { source: brk.sourceId } })] }),
+        { hospitalCode: 'Atlanta', equipType: 'Air Handler', template: 'AHU - Steam' });
+      savedEquipment = [A]; saveAll();
+      const { zip, confirms } = await runExport({ confirmResponse: true });
+      if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); return; }
+      const u = await unzipExport(zip.blob);
+      const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      const ws = wb.worksheets[0];
+      let lab = null, brkLab = null;
+      ws.eachRow(row => {
+        if (!/^Energy Source #\d+$/.test(String(row.getCell(1).value || ''))) return;
+        const data = String(ws.getRow(row.number + 1).getCell(1).value || '');
+        if (data === 'Damper Actuator') lab = row.number;
+        if (data === 'Electrical 120V') brkLab = row.number;
+      });
+      if (!lab || !brkLab) { fails.push('no actuator / breaker rows'); return; }
+      const fillOf = c => ((c.fill || {}).fgColor || {}).argb || '';
+      const thin = c => !!(c.border && c.border.top && c.border.top.style === 'thin' && c.border.left && c.border.left.style === 'thin');
+      const c21 = ws.getRow(lab).getCell(21), c22 = ws.getRow(lab).getCell(22);
+      got.label = { text: String(c22.value || ''), fill21: fillOf(c21), fill22: fillOf(c22), border22: thin(c22) };
+      want(got.label.text === 'Powered By' && got.label.fill22 === got.label.fill21 && !!got.label.fill22 && got.label.border22, 'the actuator\'s label row');
+      got.data = { text: String(ws.getRow(lab + 1).getCell(22).value || ''), border22: thin(ws.getRow(lab + 1).getCell(22)) };
+      want(got.data.text === 'Source #1' && got.data.border22, 'the actuator\'s data row');
+      got.other = [thin(ws.getRow(brkLab).getCell(22)), thin(ws.getRow(brkLab + 1).getCell(22))];
+      want(got.other.every(Boolean), 'another source\'s rows, as columns 20 and 21');
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T396 — the "Powered by" choices refresh when a row's text is committed
+  async function t396_poweredByChoicesRefreshOnCommitNotKeystroke() {
+    const N = 'T396 review 2026-10-28: a damper actuator\'s "Powered by" choices are rebuilt when a source, device or Location is committed — a Location typed in the box shows once it is left (commitSourceLocation never refreshed them), a typed energy source or device once its box is left — and never by a Device ID keystroke or a keystroke in those boxes';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withDamperSetting(async () => {
+      setHospitalCode('Atlanta');
+      formOfType('D-396', 'Air Handler', 'AHU - Steam');
+      sources = [DS('Electrical 120V', { deviceType: 'Breaker', location: 'Panel LA-1 ckt 3' }),
+                 DS('CHW In', { deviceType: 'Ball Valve', location: 'Coil supply' }),
+                 ACT('Electric Actuator', 'Outside Air Damper')];
+      renderSources();
+      const sel = () => document.getElementById('src_powered_2');
+      const node = sel() && sel().options[1];
+      // keystrokes rebuild nothing
+      updateSource(0, 'deviceId', 'B-3');
+      updateSourceCustomLoc(0, 'Panel LA-1 ckt 3 (24 V');
+      updateSourceCustomField(1, 'energySource', 'Electrical 277');
+      got.kept = !!node && sel().options[1] === node;
+      want(got.kept, 'a keystroke rebuilt the choices');
+      // a committed Location shows
+      updateSourceCustomLoc(0, 'Panel LA-1 ckt 3 (24 V transformer)');
+      commitSourceLocation(0);
+      got.location = powerChoices(2);
+      want((got.location || []).includes('#1 Electrical 120V — Breaker — Panel LA-1 ckt 3 (24 V transformer)'), 'the committed Location');
+      // a committed energy source that makes a row able to power the actuator
+      updateSourceCustomField(1, 'energySource', 'Electrical 277V');
+      refreshSourceDependents(1);
+      got.source = powerChoices(2);
+      want((got.source || []).includes('#2 Electrical 277V — Ball Valve — Coil supply'), 'the committed energy source');
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -12744,7 +12819,7 @@
     t386_noIdOnTheDriveNamesNothing, t387_aNoIdDriveBesideNamedOnesIsFed, t388_aNoIdDriveOnASharedBreaker,
     t389_aNoIdDriveGivenAnIdIsNamed, t390_twoNoIdDrivesAndOrphans,
     t391_aDamperActuatorAsksWhatPowersIt, t392_theLinkFollowsTheRow, t393_aCopyTracesItsOwnPower,
-    t394_poweredByTravelsInColumn22];
+    t394_poweredByTravelsInColumn22, t395_column22IsStyledLikeTheForm, t396_poweredByChoicesRefreshOnCommitNotKeystroke];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
