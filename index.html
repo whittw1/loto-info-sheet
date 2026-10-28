@@ -479,7 +479,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b131</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b132</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1162,7 +1162,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 131;
+const APP_BUILD = 132;
 
 // ============================================================================
 // DATA
@@ -2184,7 +2184,8 @@ function typedOf(r) { return (r && typeof r === 'object' && typeof r.typed === '
 // The test hook answers with plain strings. On a dialog with a field, one that is
 // neither a button's value nor 'cancel' (closed) is what was typed, and comes back
 // as the real field answers it (build 123 review: each caller used to keep its own
-// list of button values).
+// list of button values). An object ({ typed, value }) is a text-box button's own
+// answer, as the real dialog gives it (build 132), and passes as it is.
 function hookTyped(opts, v) {
   if (!opts.input || typeof v !== 'string' || v === 'cancel') return v;
   return (opts.choices || []).some(c => !c.needsInput && c.value === v) ? v : { typed: v };
@@ -2254,7 +2255,8 @@ function askChoice(opts) {
       b.textContent = c.label;
       if (c.needsInput && input) {
         b.disabled = !inputOk(); gated.push(b);
-        b.onclick = () => { if (inputOk()) done({ typed: input.value }); };
+        // a text-box button with its own value says which one it was (build 132: Breaker / Bucket / Other)
+        b.onclick = () => { if (inputOk()) done(c.value !== undefined ? { typed: input.value, value: c.value } : { typed: input.value }); };
       } else {
         if (c.needsCheck) { b.disabled = !anyTicked(); checkGated.push(b); }
         b.onclick = () => { if (!c.needsCheck || anyTicked()) done(answer(c.value)); };
@@ -3566,17 +3568,37 @@ async function addFeederForDrive(index, unit) {
   }
   // Each answer is the typed text (typedOf), so a panel, breaker or tag typed as
   // "cancel" is that text, never the Cancel button (build 123)
-  const panel = typedOf(await askChoice({ id: 'feeder-panel', defaultValue: 'cancel', title: 'Feeder: the panel',
-    html: html`The panel or MCC that feeds this drive, as labelled.`,
+  // After the panel is typed, the tech says what the feeder is in it (wilkins
+  // 2026-10-28): Breaker ("bkr", Device Breaker), Bucket ("bucket", Device
+  // Disconnect, an MCC bucket's handle) or Other (the tech's own word, Device
+  // Breaker to change on the card). loto-web reads a drive feeder by its
+  // "Feeder:" prefix and its "( … )", never by that word (build 132).
+  const panelAnswer = await askChoice({ id: 'feeder-panel', defaultValue: 'cancel', title: 'Feeder: the panel',
+    html: html`The panel or MCC that feeds this drive, as labelled. Then tap what the feeder is in it.`,
     input: { type: 'text', placeholder: 'e.g. MCC-2A', valid: filled },
-    choices: [{ label: 'Next', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] }));
+    choices: FEEDER_KINDS.map((k, x) => ({ label: k.label, value: k.value, needsInput: true, primary: x === 0 }))
+      .concat([{ value: 'cancel', label: 'Cancel' }]) });
+  const panel = typedOf(panelAnswer);
   if (!filled(panel)) return null;
-  const bkrAnswer = await askChoice({ id: 'feeder-breaker', defaultValue: '', title: 'Feeder: the breaker',
-    html: html`Its breaker or bucket number in ${panel.trim()}.`,
+  // the button tapped; the test hook's typed text (no button) is the first, Breaker
+  let kind = FEEDER_KINDS.find(k => k.value === (panelAnswer && panelAnswer.value)) || FEEDER_KINDS[0];
+  if (kind.value === 'other') {
+    const word = typedOf(await askChoice({ id: 'feeder-kind-other', defaultValue: 'cancel', title: 'Feeder: what it is',
+      html: html`What the feeder is in ${panel.trim()}, in one word or two (e.g. switch, disconnect, fused switch).`,
+      input: { type: 'text', placeholder: 'e.g. switch', valid: filled },
+      choices: [{ label: 'Next', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] }));
+    if (!filled(word) || !sources.includes(drive)) return null;
+    kind = { value: 'other', word: cleanTagText(word).toLowerCase(), noun: cleanTagText(word).toLowerCase(), device: 'Breaker' };
+    if (!kind.word) return null;
+  }
+  const bkrAnswer = await askChoice({ id: 'feeder-breaker', defaultValue: '', title: 'Feeder: the ' + kind.noun,
+    html: html`Its ${kind.noun} number in ${panel.trim()}.`,
     input: { type: 'text', placeholder: 'e.g. 14', valid: filled },
     choices: [{ label: 'Next', needsInput: true, primary: true }, { value: '', label: 'No number' }, { value: 'cancel', label: 'Cancel' }] });
   if (bkrAnswer === 'cancel') return null;
   const bkr = typedOf(bkrAnswer) || '';   // No number: ''
+  // "MCC 9 bucket 7"; with no number, the panel alone (as before)
+  const body = one(panel) + (one(bkr) ? ' ' + kind.word + ' ' + one(bkr) : '');
   // A drive unit with no Device ID can be recorded as it is: HGS never names the
   // VA's equipment (wilkins 2026-10-27) — loto-web gives it the feeders that name
   // no drive (build 128). The unit being recorded, else (the card, every drive of
@@ -3592,7 +3614,6 @@ async function addFeederForDrive(index, unit) {
       .concat([{ value: 'cancel', label: 'Cancel' }]) });
   if (noIdOffered && driveAnswer === 'noid') {
     if (!sources.includes(drive) || !sources.includes(noIdFor.src)) return null;
-    const body = one(panel) + (one(bkr) ? ' bkr ' + one(bkr) : '');
     const same = one(bkr) && sources.find(s => isFeederRow(s) && feederBreakerKey(s.location) === feederBreakerKey(body));
     if (same) {
       // The breaker is recorded already: the drive joins its row by the link alone.
@@ -3619,7 +3640,7 @@ async function addFeederForDrive(index, unit) {
     }
     const at = sources.length;
     delete photos['source_' + at];   // never inherit a stale ref
-    const row = { energySource: drive.energySource || 'Electrical', deviceType: 'Breaker', quantity: 1,
+    const row = { energySource: drive.energySource || 'Electrical', deviceType: kind.device, quantity: 1,
       location: 'Feeder: ' + body, role: 'feeder',
       duplicate: 'No', verification: '', detail: '', collapsed: false };
     addFeederLink(row, noIdFor.src, noIdFor.k);
@@ -3665,7 +3686,6 @@ async function addFeederForDrive(index, unit) {
     markSourceEdited(sources.indexOf(drive));
     tagNote = ' — and tagged the drive ' + one(tag);
   }
-  const body = one(panel) + (one(bkr) ? ' bkr ' + one(bkr) : '');
   // The drive unit the feeder is linked to: the one carrying the tag typed, else the one being recorded
   const namedDrive = unitDrives(sources).find(d => sameTag(d.tag, tag));
   const linkTo = namedDrive || target;
@@ -3686,7 +3706,7 @@ async function addFeederForDrive(index, unit) {
   }
   const at = sources.length;
   delete photos['source_' + at];   // never inherit a stale ref
-  const row = { energySource: drive.energySource || 'Electrical', deviceType: 'Breaker', quantity: 1,
+  const row = { energySource: drive.energySource || 'Electrical', deviceType: kind.device, quantity: 1,
     location: 'Feeder: ' + body + ' (' + name + ')', role: 'feeder',
     duplicate: 'No', verification: '', detail: '', collapsed: false };
   if (linkTo) addFeederLink(row, linkTo.src, linkTo.k);
@@ -3839,8 +3859,16 @@ function feederLocationNaming(loc, tags) {
 // "Feeder:" prefix the app writes goes (with its colon), so a panel whose name
 // starts with "Feeder" keys the same typed or recorded (build 122 whole review).
 function feederBreakerKey(loc) {
-  return String(loc || '').replace(/^\s*Feeder\s*:\s*/i, '').replace(/\([^()]*\)\s*$/, '').replace(/\s+/g, ' ').trim().toUpperCase();
+  return String(loc || '').replace(/^\s*Feeder\s*:\s*/i, '').replace(/\([^()]*\)\s*$/, '').replace(/\s+/g, ' ').trim().toUpperCase()
+    .replace(/ (BKR|BREAKER|BUCKET|BKT) (\S+)$/, ' # $2');   // "bkr 7" and "bucket 7" on one panel are one point (build 132)
 }
+// What a drive's feeder is in its panel (build 132, wilkins 2026-10-28): the word
+// the Location gives it, and the Device the new row takes. "Other" asks the word.
+const FEEDER_KINDS = [
+  { value: 'bkr', label: 'Breaker', word: 'bkr', noun: 'breaker', device: 'Breaker' },
+  { value: 'bucket', label: 'Bucket', word: 'bucket', noun: 'bucket', device: 'Disconnect' },
+  { value: 'other', label: 'Other', word: '', noun: '', device: 'Breaker' },
+];
 // One unit's tag replaced, with the tech's say-so (addFeederForDrive): every
 // unit carrying the old tag on a one-tag row, else that unit's box.
 function renameDriveUnitTag(src, k, tag) {

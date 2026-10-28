@@ -9160,18 +9160,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 131 (was build 122\'s): APP_BUILD and the header label say 131, the service worker\'s cache is loto-collector-v7.126, Xcode\'s CURRENT_PROJECT_VERSION is 131 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
+    const N = 'T268 build 132 (was build 122\'s): APP_BUILD and the header label say 132, the service worker\'s cache is loto-collector-v7.127, Xcode\'s CURRENT_PROJECT_VERSION is 132 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 131 && !!label && +label[1] === 131, 'the build');
+    want(APP_BUILD === 132 && !!label && +label[1] === 132, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.126', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.127', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 131;,CURRENT_PROJECT_VERSION = 131;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 132;,CURRENT_PROJECT_VERSION = 132;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -11055,7 +11055,8 @@
       sources = [DRIVE({ deviceId: 'VFD-1' })]; sources.forEach(ensureSourceId); renderSources();
       window.__askChoiceAuto = undefined;
       const p1 = addFeederFromCard(0);
-      got.f = [await step('cancel', 'Next'), await step('cancel', 'Next'), await step(null, 'Add the feeder'), await step(null, 'Cancel')].join();
+      // the panel step's first button is Breaker since build 132 (the old Next)
+      got.f = [await step('cancel', 'Breaker'), await step('cancel', 'Next'), await step(null, 'Add the feeder'), await step(null, 'Cancel')].join();
       await Promise.race([p1, sleep(2000)]);
       got.feeder = (sources.find(isFeederRow) || {}).location;
       formOfType('XF-338', 'Transformer', 'Standard Electrical');
@@ -12659,6 +12660,107 @@
     });
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+
+  // ==========================================================================
+  // BUILD 132 — what a drive's feeder is in its panel: Breaker / Bucket / Other
+  // (wilkins 2026-10-28: "if its on an MCC, its a Bucket"; Bucket sets the Device
+  // to Disconnect; drive feeders only). Each fails on build 131.
+  // ==========================================================================
+  // A text-box button's answer as the real dialog gives it
+  const tapped = (typed, value) => ({ typed, value });
+
+  // T397 — the panel step offers Breaker / Bucket / Other
+  async function t397_theFeedersKindFollowsThePanel() {
+    const N = 'T397 build 132: after the feeder\'s panel is typed, the step offers Breaker / Bucket / Other (Breaker first); Bucket writes "Feeder: MCC 9 bucket 7 (3-RF-50)" with Device Disconnect and asks "Its bucket number in MCC 9."; Breaker writes "bkr" with Device Breaker; Other asks the word ("switch": "Feeder: DP-1 switch 3 (VFD-2)", Device Breaker); No number leaves the word out; a typed panel with no button (the test hook) is Breaker';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const record1 = async (tag, answers) => {
+      fillFormNoSources('AHU-397');
+      sources = [vfdRow(tag)];
+      sources.forEach(ensureSourceId); sources[0].driveIsolates = ['yes']; renderSources();
+      const seen = {};
+      await withDialogs({ choice: (o) => { seen[o.id] = o; return answers[o.id] !== undefined ? answers[o.id] : 'cancel'; } }, async () => { await addFeederFromCard(0); });
+      const f = sources[1] || {};
+      return { seen, row: [f.deviceType, f.location].join(' | ') };
+    };
+    const b = await record1('3-RF-50', { 'feeder-panel': tapped('MCC 9', 'bucket'), 'feeder-breaker': '7', 'feeder-drive': '3-RF-50' });
+    const p = b.seen['feeder-panel'] || {};
+    got.panelButtons = (p.choices || []).map(c => c.label + (c.needsInput ? '*' : '') + (c.primary ? '!' : '')).join('/');
+    got.bucketAsk = unq((b.seen['feeder-breaker'] || {}).html || '') + ' | ' + ((b.seen['feeder-breaker'] || {}).title || '');
+    got.bucket = b.row;
+    want(got.panelButtons === 'Breaker*!/Bucket*/Other*/Cancel', 'the panel step\'s buttons: ' + got.panelButtons);
+    want(got.bucket === 'Disconnect | Feeder: MCC 9 bucket 7 (3-RF-50)', 'Bucket');
+    want(/Its bucket number in MCC 9\./.test(got.bucketAsk) && /Feeder: the bucket/.test(got.bucketAsk), 'the number step names the bucket');
+    got.breaker = (await record1('3-RF-50', { 'feeder-panel': tapped('MCC 9', 'bkr'), 'feeder-breaker': '7', 'feeder-drive': '3-RF-50' })).row;
+    want(got.breaker === 'Breaker | Feeder: MCC 9 bkr 7 (3-RF-50)', 'Breaker');
+    const o = await record1('VFD-2', { 'feeder-panel': tapped('DP-1', 'other'), 'feeder-kind-other': 'Switch', 'feeder-breaker': '3', 'feeder-drive': 'VFD-2' });
+    got.other = o.row + ' | ' + unq((o.seen['feeder-breaker'] || {}).html || '');
+    want(got.other === 'Breaker | Feeder: DP-1 switch 3 (VFD-2) | Its switch number in DP-1.', 'Other');
+    got.noNumber = (await record1('3-RF-50', { 'feeder-panel': tapped('MCC 9', 'bucket'), 'feeder-breaker': '', 'feeder-drive': '3-RF-50' })).row;
+    want(got.noNumber === 'Disconnect | Feeder: MCC 9 (3-RF-50)', 'No number');
+    got.hook = (await record1('3-RF-50', feederAnswers('MCC 9', '7', '3-RF-50'))).row;
+    want(got.hook === 'Breaker | Feeder: MCC 9 bkr 7 (3-RF-50)', 'typed with no button: Breaker');
+    got.otherCancel = (await record1('VFD-2', { 'feeder-panel': tapped('DP-1', 'other') })).row;
+    want(got.otherCancel === ' | ', 'Other then Cancel adds nothing');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T398 — a bucket and a breaker of one number on one panel are one point
+  async function t398_aBucketIsOnePointWithItsBreakerNumber() {
+    const N = 'T398 build 132: "bucket 7" and "bkr 7" on one panel are one isolation point — a second drive\'s feeder typed as Breaker 7 on "mcc 9" joins the bucket row ("(3-RF-50, 3-RF-51)", Device still Disconnect), never a second row; both drives are fed as loto-web reads them; a drive with no ID on a bucket gets "Feeder: MCC 9 bucket 7" with Device Disconnect';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('AHU-398');
+    sources = [vfdRow('3-RF-50'), vfdRow('3-RF-51')];
+    sources.forEach(ensureSourceId); sources.forEach(s => { s.driveIsolates = ['yes']; }); renderSources();
+    await withDialogs({ choice: { 'feeder-panel': tapped('MCC 9', 'bucket'), 'feeder-breaker': '7', 'feeder-drive': '3-RF-50' } }, async () => { await addFeederFromCard(0); });
+    await withDialogs({ choice: { 'feeder-panel': tapped('mcc  9', 'bkr'), 'feeder-breaker': '7', 'feeder-drive': '3-RF-51' } }, async () => { await addFeederFromCard(1); });
+    got.rows = sources.slice(2).map(s => s.deviceType + ' | ' + s.location).join(' / ');
+    got.fed = unitDrives(sources).map(d => d.tag + ':' + d.fed).join(',');
+    got.loto = [isFeederRow(sources[2]), feederNamesTag(sources[2].location, '3-RF-50'), feederNamesTag(sources[2].location, '3-RF-51')].join('/');
+    want(got.rows === 'Disconnect | Feeder: MCC 9 bucket 7 (3-RF-50, 3-RF-51)', 'one row: ' + got.rows);
+    want(got.fed === '3-RF-50:true,3-RF-51:true' && got.loto === 'true/true/true', 'both fed, read as loto-web reads it');
+    fillFormNoSources('AHU-398b');
+    sources = [vfdRow('')];
+    sources.forEach(ensureSourceId); sources[0].driveIsolates = ['yes']; renderSources();
+    await withDialogs({ choice: { 'feeder-panel': tapped('MCC 9', 'bucket'), 'feeder-breaker': '7', 'feeder-drive': 'noid' } }, async () => { await addFeederFromCard(0); });
+    got.noId = sources.slice(1).map(s => s.deviceType + ' | ' + s.location).join(' / ') + ' | ' + unitDrives(sources)[0].fed;
+    want(got.noId === 'Disconnect | Feeder: MCC 9 bucket 7 | true', 'no ID on a bucket');
+    got.key = [feederBreakerKey('Feeder: MCC 9 bucket 7 (3-RF-50)'), feederBreakerKey('Feeder: mcc 9 BKR 7'), feederBreakerKey('Feeder: MCC 9 switch 7')].join(' / ');
+    want(got.key === 'MCC 9 # 7 / MCC 9 # 7 / MCC 9 SWITCH 7', 'the breaker key');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T399 — the real dialog says which text-box button was tapped
+  async function t399_theDialogSaysWhichTextButton() {
+    const N = 'T399 build 132: the real dialog (not the test hook) answers a text-box button that has its own value with { typed, value } — "MCC 9" and Bucket give { typed: "MCC 9", value: "bucket" } — and one without a value with { typed } as before';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const hook = window.__askChoiceAuto;
+    const run = async (labelToTap, withValues) => {
+      const p = askChoice({ id: 't399', title: 'T399', input: { type: 'text', valid: v => !!String(v || '').trim() },
+        choices: withValues ? [{ label: 'Breaker', value: 'bkr', needsInput: true, primary: true }, { label: 'Bucket', value: 'bucket', needsInput: true }, { value: 'cancel', label: 'Cancel' }]
+                            : [{ label: 'Next', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] });
+      await new Promise(r => setTimeout(r, 30));
+      const ov = document.getElementById('choiceDialogOverlay');
+      const input = ov && ov.querySelector('input');
+      if (input) { input.value = 'MCC 9'; input.dispatchEvent(new Event('input', { bubbles: true })); }
+      const b = ov && [...ov.querySelectorAll('button')].find(x => x.textContent === labelToTap);
+      if (b) b.click(); else if (ov) ov.remove();
+      return JSON.stringify(await Promise.race([p, new Promise(r => setTimeout(() => r('timeout'), 500))]));
+    };
+    try {
+      window.__askChoiceAuto = undefined;
+      got.bucket = await run('Bucket', true);
+      got.next = await run('Next', false);
+    } finally { window.__askChoiceAuto = hook; const ov = document.getElementById('choiceDialogOverlay'); if (ov) ov.remove(); }
+    want(got.bucket === JSON.stringify({ typed: 'MCC 9', value: 'bucket' }), 'Bucket: ' + got.bucket);
+    want(got.next === JSON.stringify({ typed: 'MCC 9' }), 'no value: ' + got.next);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -12819,7 +12921,8 @@
     t386_noIdOnTheDriveNamesNothing, t387_aNoIdDriveBesideNamedOnesIsFed, t388_aNoIdDriveOnASharedBreaker,
     t389_aNoIdDriveGivenAnIdIsNamed, t390_twoNoIdDrivesAndOrphans,
     t391_aDamperActuatorAsksWhatPowersIt, t392_theLinkFollowsTheRow, t393_aCopyTracesItsOwnPower,
-    t394_poweredByTravelsInColumn22, t395_column22IsStyledLikeTheForm, t396_poweredByChoicesRefreshOnCommitNotKeystroke];
+    t394_poweredByTravelsInColumn22, t395_column22IsStyledLikeTheForm, t396_poweredByChoicesRefreshOnCommitNotKeystroke,
+    t397_theFeedersKindFollowsThePanel, t398_aBucketIsOnePointWithItsBreakerNumber, t399_theDialogSaysWhichTextButton];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
