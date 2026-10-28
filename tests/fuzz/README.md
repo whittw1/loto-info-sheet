@@ -64,6 +64,14 @@ export oracle looks for it there by its bytes: `export-photo-dropped` when it
 isn't there, `export-retake-as-row-photo` when it ships as the row's photo. Until
 2026-10-28 the oracle counted it as dropped (seed 6: a custom energy still being
 typed, committed by Save & New, cleared a Gate Valve on a photographed row).
+A row's valve state goes out only where loto-web's `takes_valve_state` lets the
+row carry one (build 125 review / 126): the stored answer stays, the card says
+"Not on the sheet", and the export writes Normal. The oracle's own copy of that
+rule (`lwTakesValveState`) is written from loto-web's `app/services/valve_state.py`
+and matches its 59 cases in `tests/contract/lotoweb-rules.json`. Until 2026-10-28
+the oracle expected the stored state, so `export-valvestate-json` and
+`export-xlsx-mismatch` fired wherever `editField` (or a Device change) left
+Normally Closed on a Kinetic, Electrical or other non-valve row.
 
 Backup mode (build 101, `BACKUP=1` / `"backup":true`): after each sequence and
 after its relaunch, with faults off, one clean pass must leave SharePoint holding

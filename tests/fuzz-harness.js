@@ -359,6 +359,20 @@
     return ok.map(m => ({ x: +m.x, y: +m.y }));
   };
   const ownMarksText = (marks) => marks.map(m => m.x.toFixed(3) + ',' + m.y.toFixed(3)).join('; ');
+  // build 125 review / 126 contract: a row's valve state goes out only where
+  // loto-web's valve_state.takes_valve_state (no ID prefix) lets the row carry
+  // one — the stored answer stays and the card says "Not on the sheet". Written
+  // from loto-web's app/services/valve_state.py, not from the app's copy.
+  const LW_VALVE_DEVICE = /\bvalve\b|\bbutterfly\b|\bckt\s*setter\b|\bcircuit\s*setter\b/i;
+  const LW_NON_VALVE_NAME = /(?<![a-z])(?:electric|eletrical|kinetic|gravity|potential|thermal|capacitor|mechanical)|\bbreaker\b|\bdisconnect\b|\bvfd\b|\bbattery\b|\bups\b|\b\d+(?:\.\d+)?\s*v(?:ac|dc)?\b|\bspring\b|damper\s*actuator/i;
+  const LW_NON_VALVE_DEVICE = /^\s*(?:breaker|disconnect|switch|vfd|fuse|plug|bag|capacitor|rotating|potential|hydraulic|electric\s+actuator|pneumatic\s+actuator)\b/i;
+  const lwTakesValveState = (source, device) => {
+    const name = String(source || ''), dev = String(device || '');
+    if (/hydraulic/i.test(name)) return LW_VALVE_DEVICE.test(dev);
+    if (LW_NON_VALVE_NAME.test(name)) return false;
+    return LW_VALVE_DEVICE.test(dev) || !LW_NON_VALVE_DEVICE.test(dev);
+  };
+  const ownValveState = (src) => (src && src.valveState && lwTakesValveState(src.energySource, src.deviceType)) ? src.valveState : 'normal';
 
   async function exportOracle() {
     await waitIdle();
@@ -458,10 +472,11 @@
         }
         const wantMarks = pf && r ? ownMarks(r, s) : [];
         if (JSON.stringify((js.photoMarks || []).map(m => [m.x, m.y])) !== JSON.stringify(wantMarks.map(m => [m.x, m.y]))) viol('export-marks-json', '"' + t.name + '" source ' + (i + 1) + ': ' + JSON.stringify(js.photoMarks) + ' vs ' + JSON.stringify(wantMarks));
-        if ((js.valveState || 'normal') !== (s.valveState || 'normal')) viol('export-valvestate-json', '"' + t.name + '" source ' + (i + 1));
+        const wantVs = ownValveState(s);
+        if ((js.valveState || 'normal') !== wantVs) viol('export-valvestate-json', '"' + t.name + '" source ' + (i + 1) + ': ' + (js.valveState || 'normal') + ' vs ' + wantVs + ' (stored ' + (s.valveState || 'normal') + ' on "' + (s.energySource || '') + '" / "' + (s.deviceType || '') + '")');
         // build 94: col 7 = the source's detail ONLY; the link has its own col 13
         const linkTxt = s.linkedTo ? (s.linkedTo.equipName || '(unnamed)') + ' / Source #' + ((s.linkedTo.sourceIndex || 0) + 1) + (s.linkedTo.sourceLabel ? ' (' + s.linkedTo.sourceLabel + ')' : '') : '';
-        if (i < 10) rows.push([String(s.energySource || '').trim() || 'Unknown', s.deviceType || '', s.deviceId || '', String(s.quantity || ''), s.location || '', pf.replace(/^photos\//, ''), s.detail || '', '', s.verification || '', '', VS_TEXT[s.valveState] || '', pf ? ownMarksText(wantMarks) : '', linkTxt]);
+        if (i < 10) rows.push([String(s.energySource || '').trim() || 'Unknown', s.deviceType || '', s.deviceId || '', String(s.quantity || ''), s.location || '', pf.replace(/^photos\//, ''), s.detail || '', '', s.verification || '', '', VS_TEXT[wantVs] || '', pf ? ownMarksText(wantMarks) : '', linkTxt]);
       }
       totalRows += t.sources.length;
       expectedBlocks.push({ name: je.equipName || '', rows });
