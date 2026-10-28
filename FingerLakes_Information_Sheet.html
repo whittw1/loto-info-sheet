@@ -479,7 +479,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b130</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b131</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1162,7 +1162,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 130;
+const APP_BUILD = 131;
 
 // ============================================================================
 // DATA
@@ -8230,6 +8230,9 @@ function commitCustomEnergy(index) {
   refreshSourceDependents(index);
 }
 function refreshSourceDependents(index) {
+  // A typed source or device can change what powers a damper actuator and how
+  // its choices read (build 130): settled when the box is left, not per keystroke
+  refreshPoweredBySelects();
   const src = sources[index];
   const live = document.querySelectorAll('#sourcesContainer > .source-card')[index];
   if (!src || src.collapsed || !live) return;
@@ -8320,7 +8323,9 @@ function updateSource(index, field, value) {
     renderSources();
     return;
   }
-  refreshPoweredBySelects();   // a damper actuator's choices name this row (build 130)
+  // A damper actuator's choices name each row's source, device and location
+  // (build 130) — only those fields change them, not a Device ID keystroke
+  if (field === 'energySource' || field === 'deviceType' || field === 'location') refreshPoweredBySelects();
   autoSaveCurrent();
 }
 
@@ -9032,7 +9037,6 @@ function updateSourceCustomField(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
   if (field === 'energySource') reconcileSourceMarks(index);
-  refreshPoweredBySelects();   // a typed source or device can change what powers an actuator (build 130)
   autoSaveCurrent();
 }
 
@@ -9094,10 +9098,13 @@ function updateSourceCustomLoc(index, value) {
 }
 // The Location box's change (left, Done): a feeder's link follows the committed
 // text — a tag taken out takes its link (build 122 review of the link; a
-// keystroke never does, so retyping a ")" can't lose it).
+// keystroke never does, so retyping a ")" can't lose it) — and a damper
+// actuator's "Powered by" choices show the new location (review 2026-10-28).
 function commitSourceLocation(index) {
   const src = sources[index];
-  if (!src || !Array.isArray(src.feeds)) return;
+  if (!src) return;
+  refreshPoweredBySelects();
+  if (!Array.isArray(src.feeds)) return;
   syncFeederTags(sources, { prune: true });
   autoSaveCurrent();
 }
@@ -14464,9 +14471,11 @@ async function runCombinedExport(opts) {
       const allBorders = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
 
       const VALVE_STATE_SHEET_TEXT = { normally_closed: 'Normally Closed', normally_open: 'Normally Open' };
+      // Every column the sheet defines above is styled: a fixed 21 left build
+      // 130's column 22 bare (review 2026-10-28).
       function applyRow(row, font, fill, borders) {
         row.eachCell({ includeEmpty: true }, (cell, colNum) => {
-          if (colNum <= 21) {
+          if (colNum <= ws.columns.length) {
             cell.font = font;
             if (fill) cell.fill = fill;
             if (borders) cell.border = borders;
