@@ -9177,23 +9177,25 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 133 (was build 122\'s): APP_BUILD and the header label say 133, the service worker\'s cache is loto-collector-v7.128, Xcode\'s CURRENT_PROJECT_VERSION is 133 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
+    const N = 'T268 build 134 (was build 122\'s): APP_BUILD and the header label say 134, the service worker\'s cache is loto-collector-v7.129, Xcode\'s CURRENT_PROJECT_VERSION is 134 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 133 && !!label && +label[1] === 133, 'the build');
+    want(APP_BUILD === 134 && !!label && +label[1] === 134, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.128', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.129', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 133;,CURRENT_PROJECT_VERSION = 133;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 134;,CURRENT_PROJECT_VERSION = 134;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
       && lists.groundingChoices.join() === "Ground bus,Ground studs,None,Can't tell", 'app-lists');
-    const page = await fetchText('index.html'), fl = await fetchText('FingerLakes_Information_Sheet.html');
+    // run-sim-suite.sh adds the suite's two <script> lines to the bundled index.html (build 134)
+    const unharnessed = t => t && t.replace(/<script src="tests\/(photo-regression|sim-harness)\.js"><\/script>\n/g, '');
+    const page = unharnessed(await fetchText('index.html')), fl = await fetchText('FingerLakes_Information_Sheet.html');
     got.copy = (page === null || fl === null) ? 'not served' : (page === fl ? 'same' : 'DIFFERENT');
     want(got.copy !== 'DIFFERENT', 'the Finger Lakes copy');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
