@@ -9160,18 +9160,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 132 (was build 122\'s): APP_BUILD and the header label say 132, the service worker\'s cache is loto-collector-v7.127, Xcode\'s CURRENT_PROJECT_VERSION is 132 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
+    const N = 'T268 build 133 (was build 122\'s): APP_BUILD and the header label say 133, the service worker\'s cache is loto-collector-v7.128, Xcode\'s CURRENT_PROJECT_VERSION is 133 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 132 && !!label && +label[1] === 132, 'the build');
+    want(APP_BUILD === 133 && !!label && +label[1] === 133, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.127', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.128', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 132;,CURRENT_PROJECT_VERSION = 132;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 133;,CURRENT_PROJECT_VERSION = 133;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -12671,7 +12671,7 @@
 
   // T397 — the panel step offers Breaker / Bucket / Other
   async function t397_theFeedersKindFollowsThePanel() {
-    const N = 'T397 build 132: after the feeder\'s panel is typed, the step offers Breaker / Bucket / Other (Breaker first); Bucket writes "Feeder: MCC 9 bucket 7 (3-RF-50)" with Device Disconnect and asks "Its bucket number in MCC 9."; Breaker writes "bkr" with Device Breaker; Other asks the word ("switch": "Feeder: DP-1 switch 3 (VFD-2)", Device Breaker); No number leaves the word out; a typed panel with no button (the test hook) is Breaker';
+    const N = 'T397 build 132: after the feeder\'s panel is typed, the step offers Breaker / Bucket / Other (Breaker first); Bucket writes "Feeder: MCC 9 bucket 7 (3-RF-50)" with Device Disconnect and asks "Its bucket number in MCC 9."; Breaker writes "bkr" with Device Breaker; Other asks the word ("switch": "Feeder: DP-1 switch 3 (VFD-2)", Device Switch since build 133, T400); No number leaves the word out; a typed panel with no button (the test hook) is Breaker';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -12696,7 +12696,7 @@
     want(got.breaker === 'Breaker | Feeder: MCC 9 bkr 7 (3-RF-50)', 'Breaker');
     const o = await record1('VFD-2', { 'feeder-panel': tapped('DP-1', 'other'), 'feeder-kind-other': 'Switch', 'feeder-breaker': '3', 'feeder-drive': 'VFD-2' });
     got.other = o.row + ' | ' + unq((o.seen['feeder-breaker'] || {}).html || '');
-    want(got.other === 'Breaker | Feeder: DP-1 switch 3 (VFD-2) | Its switch number in DP-1.', 'Other');
+    want(got.other === 'Switch | Feeder: DP-1 switch 3 (VFD-2) | Its switch number in DP-1.', 'Other');
     got.noNumber = (await record1('3-RF-50', { 'feeder-panel': tapped('MCC 9', 'bucket'), 'feeder-breaker': '', 'feeder-drive': '3-RF-50' })).row;
     want(got.noNumber === 'Disconnect | Feeder: MCC 9 (3-RF-50)', 'No number');
     got.hook = (await record1('3-RF-50', feederAnswers('MCC 9', '7', '3-RF-50'))).row;
@@ -12759,6 +12759,28 @@
     } finally { window.__askChoiceAuto = hook; const ov = document.getElementById('choiceDialogOverlay'); if (ov) ov.remove(); }
     want(got.bucket === JSON.stringify({ typed: 'MCC 9', value: 'bucket' }), 'Bucket: ' + got.bucket);
     want(got.next === JSON.stringify({ typed: 'MCC 9' }), 'no value: ' + got.next);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  // T400 — an "Other" word sets the Device it names
+  async function t400_anOtherWordSetsItsDevice() {
+    const N = 'T400 build 133: a drive feeder\'s "Other" word sets the Device it names, so loto-web prints that wording — "switch" Switch, "Fused Switch" Switch (its last word), "disconnect" Disconnect, "fuse" Fuse, "bucket" Disconnect, "bkr" Breaker; a word naming none ("transfer") keeps Breaker, and "VFD" never makes the feeder a drive (Breaker); every row stays a feeder';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const words = ['switch', 'Fused Switch', 'disconnect', 'fuse', 'bucket', 'bkr', 'transfer', 'VFD'];
+    const rows = [];
+    for (const w of words) {
+      fillFormNoSources('AHU-400');
+      sources = [vfdRow('VFD-2')];
+      sources.forEach(ensureSourceId); sources[0].driveIsolates = ['yes']; renderSources();
+      await withDialogs({ choice: { 'feeder-panel': tapped('DP-1', 'other'), 'feeder-kind-other': w, 'feeder-breaker': '3', 'feeder-drive': 'VFD-2' } }, async () => { await addFeederFromCard(0); });
+      const f = sources[1] || {};
+      rows.push(w + '=' + f.deviceType + (isFeederRow(f) ? '' : ' (NOT A FEEDER)') + (unitDrives(sources).length === 1 ? '' : ' (A DRIVE)'));
+    }
+    got.rows = rows.join(', ');
+    want(got.rows === 'switch=Switch, Fused Switch=Switch, disconnect=Disconnect, fuse=Fuse, bucket=Disconnect, bkr=Breaker, transfer=Breaker, VFD=Breaker', got.rows);
+    got.loc = (sources[1] || {}).location;
+    want(got.loc === 'Feeder: DP-1 vfd 3 (VFD-2)', 'the Location keeps the word: ' + got.loc);
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
   // ---------- runner --------------------------------------------------------
@@ -12922,7 +12944,8 @@
     t389_aNoIdDriveGivenAnIdIsNamed, t390_twoNoIdDrivesAndOrphans,
     t391_aDamperActuatorAsksWhatPowersIt, t392_theLinkFollowsTheRow, t393_aCopyTracesItsOwnPower,
     t394_poweredByTravelsInColumn22, t395_column22IsStyledLikeTheForm, t396_poweredByChoicesRefreshOnCommitNotKeystroke,
-    t397_theFeedersKindFollowsThePanel, t398_aBucketIsOnePointWithItsBreakerNumber, t399_theDialogSaysWhichTextButton];
+    t397_theFeedersKindFollowsThePanel, t398_aBucketIsOnePointWithItsBreakerNumber, t399_theDialogSaysWhichTextButton,
+    t400_anOtherWordSetsItsDevice];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

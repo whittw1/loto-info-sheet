@@ -479,7 +479,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b132</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b133</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1162,7 +1162,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 132;
+const APP_BUILD = 133;
 
 // ============================================================================
 // DATA
@@ -3570,8 +3570,8 @@ async function addFeederForDrive(index, unit) {
   // "cancel" is that text, never the Cancel button (build 123)
   // After the panel is typed, the tech says what the feeder is in it (wilkins
   // 2026-10-28): Breaker ("bkr", Device Breaker), Bucket ("bucket", Device
-  // Disconnect, an MCC bucket's handle) or Other (the tech's own word, Device
-  // Breaker to change on the card). loto-web reads a drive feeder by its
+  // Disconnect, an MCC bucket's handle) or Other (the tech's own word; the Device
+  // it names, else Breaker — feederDeviceForWord, build 133). loto-web reads a drive feeder by its
   // "Feeder:" prefix and its "( … )", never by that word (build 132).
   const panelAnswer = await askChoice({ id: 'feeder-panel', defaultValue: 'cancel', title: 'Feeder: the panel',
     html: html`The panel or MCC that feeds this drive, as labelled. Then tap what the feeder is in it.`,
@@ -3588,7 +3588,8 @@ async function addFeederForDrive(index, unit) {
       input: { type: 'text', placeholder: 'e.g. switch', valid: filled },
       choices: [{ label: 'Next', needsInput: true, primary: true }, { value: 'cancel', label: 'Cancel' }] }));
     if (!filled(word) || !sources.includes(drive)) return null;
-    kind = { value: 'other', word: cleanTagText(word).toLowerCase(), noun: cleanTagText(word).toLowerCase(), device: 'Breaker' };
+    const typed = cleanTagText(word).toLowerCase();
+    kind = { value: 'other', word: typed, noun: typed, device: feederDeviceForWord(typed) };
     if (!kind.word) return null;
   }
   const bkrAnswer = await askChoice({ id: 'feeder-breaker', defaultValue: '', title: 'Feeder: the ' + kind.noun,
@@ -3869,6 +3870,18 @@ const FEEDER_KINDS = [
   { value: 'bucket', label: 'Bucket', word: 'bucket', noun: 'bucket', device: 'Disconnect' },
   { value: 'other', label: 'Other', word: '', noun: '', device: 'Breaker' },
 ];
+// The Device an "Other" word names (build 133, wilkins 2026-10-28: "switch" should
+// print switch wording, not breaker): the whole word, else its last word ("fused
+// switch" → Switch), against the Electrical devices and the kinds' own words; never
+// a VFD, which would make the feeder a drive. No match: Breaker, as before.
+function feederDeviceForWord(text) {
+  const t = pySpaces(text).toLowerCase();
+  if (!t) return 'Breaker';
+  const devices = ELECTRICAL_DEVICES.filter(d => !isDriveDevice(d));
+  const alias = { bkr: 'Breaker', bucket: 'Disconnect', bkt: 'Disconnect' };
+  const find = w => alias[w] || devices.find(d => d.toLowerCase() === w);
+  return find(t) || find(t.split(' ').pop()) || 'Breaker';
+}
 // One unit's tag replaced, with the tech's say-so (addFeederForDrive): every
 // unit carrying the old tag on a one-tag row, else that unit's box.
 function renameDriveUnitTag(src, k, tag) {
