@@ -1253,7 +1253,7 @@ unit in it whose delete is no later than the list's stamp had been re-saved by t
 
 ---
 
-### Build 134 — the iPad app's Export ZIP is written as it goes (2026-10-28; branch `export-stream-134`, NOT released)
+### Build 134 — the iPad app's Export ZIP is written as it goes (2026-10-28)
 
 wilkins, 2026-10-28, in the field: photo resolution set high, 360 MB of photos for one day of 12 units, and the
 "A big export" warning: "am I going to lose information from today, and can we address this?". Nothing was at risk:
@@ -1326,7 +1326,7 @@ The written-as-it-goes cost stays flat whatever the export's size; the in-memory
 - Both harnesses fail an export that threw. Since the wrapper, a throw is a toast in the app, and a crash would
   otherwise pass as "no ZIP".
 
-**Checks (on `bb9c38a`, which includes the review fixes):**
+**Checks (on `bb9c38a`, which includes the review fixes; `c7bfd54` after the rebase onto build 133):**
 - Suite **414 / 414** in the web and in native-mock.
 - **414 / 415** inside the iOS app on the Simulator, scale test included. T268's Finger Lakes check cannot pass
   there: `run-sim-suite.sh` injects the harness into the bundled `index.html`. The bundled Finger Lakes copy is
@@ -1347,14 +1347,18 @@ The written-as-it-goes cost stays flat whatever the export's size; the in-memory
 - It reproduces exactly, twice each, on build 132 (`e54d880`) and on build 134, so it predates this change. It is
   left for its own look.
 
-**Not done yet:** the bump. Build 133 (a feeder's Other word, `feederDeviceForWord`, T400) was still uncommitted in
-the main clone. Build 134 goes on top of it:
-- rebase `export-stream-134`;
-- APP_BUILD 134, header "b134", `sw.js` v7.129, CURRENT_PROJECT_VERSION 134 in both entries, `app-lists.json`, the
-  Finger Lakes copy;
-- T268 for 134, with its copy check made to ignore the Simulator's injected harness lines;
-- the suites again;
-- wilkins' OK to push and archive.
+**On build 133, and the bump** (2026-10-28). wilkins asked the Template choices chat to coordinate one release of
+every finished field-app build; that chat pushes, syncs and opens Xcode.
+- `export-stream-134` was rebased onto build 133 (`203124c`, rev 102 `bc1f268`). Both builds' tests and doc
+  sections are kept.
+- The bump: APP_BUILD 134, the header "b134", `sw.js` v7.129, Xcode's CURRENT_PROJECT_VERSION 134 in both entries,
+  `app-lists.json` build 134, and the Finger Lakes copy.
+- T268 checks build 134. Its Finger Lakes check now drops the two `<script src="tests/…">` lines `run-sim-suite.sh`
+  adds to the bundled page, so it also passes inside the Simulator.
+- Suite: **415 / 415** in the web and in native-mock, and **416 / 416 inside the iOS app on the Simulator**
+  (scale test included).
+- `ios-testflight-scaffold` in the main clone was fast-forwarded to the result, committed only. The push, sync and
+  archive are the coordinating chat's.
 
 ### Build 133 — an "Other" feeder word sets its Device (2026-10-28)
 
@@ -5598,7 +5602,7 @@ Approximate line numbers (they drift as edits accumulate) — every row refreshe
 | `loadAll()` — merges every stored copy, resolves the unit in progress, saves once (§6 "The launch") | 11366 |
 | `mergeEntryCopies` (every stored copy; deleted ids dropped) / `keepWipAsRecoveredEntry` (a unit in progress becomes a recovered draft) | 10988 / 11339 |
 | `saveOrShare()` — unified file save helper (chunked native write, build 89) | 12623 |
-| **Build 134** (line numbers on `export-stream-134`, before the bump): `EXPORT_BIG_BYTES` / `FS_WRITE_CHUNK` + `blobToBase64` / `crc32` / `makeCacheZipWriter` / `EXPORT_RUN_KEY` / `runCombinedExport` (the wrapper: one at a time, discard, record) / `reportUnfinishedExport` / `buildAndSendExport` (the export itself) / `saveOrShare` / `shareExportFile` / `shareCacheFile` | 13978 / 13983 / 13999 / 14023 / 14134 / 14139 / 14158 / 14177 / 17476 / 17517 / 17526 |
+| **Build 134**: `EXPORT_BIG_BYTES` / `FS_WRITE_CHUNK` + `blobToBase64` / `crc32` / `makeCacheZipWriter` / `EXPORT_RUN_KEY` / `runCombinedExport` (the wrapper: one at a time, discard, record) / `reportUnfinishedExport` / `buildAndSendExport` (the export itself) / `saveOrShare` / `shareExportFile` / `shareCacheFile` | 13991 / 13996 / 14012 / 14036 / 14147 / 14152 / 14171 / 14190 / 17489 / 17530 / 17539 |
 | **Form sessions + in-flight photo writes (build 89):** `formSession` / `beginNewFormSession` / `startPhotoWrite` / `photoWritesBusy` / `refuseIfPhotoWritesBusy` | 1812 / 1813 / 1817 / 1822 / 1827 |
 | `askChoice()` — promise-based multi-choice dialog (tests answer via `window.__askChoiceAuto`) / `escHtml` | 1880 / 1847 |
 | `isValidEntryId` / `ENTRY_ID_PATTERN` — UUID or numeric pre-UUID owner ids | 1793 / 1791 |
