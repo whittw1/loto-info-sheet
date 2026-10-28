@@ -428,6 +428,16 @@
     for (const id of gotIds) if (!truth.has(id)) viol('export-extra-entry', 'filter ' + df + ': unexpected entry ' + id);
     const expectedBlocks = [];
     let totalRows = 0;
+    // A source photo flagged for a retake (build 125: the app swapped its row's
+    // Device away from the valve it shows) ships with the unit's misc photos,
+    // never as the row's — found there by its bytes
+    const miscShas = new Map();
+    for (const je of ej.entries) {
+      const set = new Set();
+      for (const m of ((je.photoFiles || {}).misc || [])) if (files[m]) set.add(await sha(files[m]));
+      miscShas.set(String(je.id), set);
+    }
+    const shippedRetake = (je, r) => !!(r && r.retakeFor && stored[r.dbKey]) && miscShas.get(String(je.id)).has(stored[r.dbKey]);
     for (const je of ej.entries) {
       const t = truth.get(String(je.id)); if (!t) continue;
       if (je.sources.length !== t.sources.length) viol('export-source-count', '"' + t.name + '": json ' + je.sources.length + ' vs ' + t.sources.length);
@@ -438,7 +448,8 @@
         const slotLabel = 'Source ' + (i + 1);
         const shouldShip = !!(r && r.dbKey && stored[r.dbKey] && !r.unsaved);
         const pf = js.photoFile || '';
-        if (shouldShip && !pf && ![...unsafe].some(u => u.startsWith(String(je.id) + '|'))) viol('export-photo-dropped', '"' + t.name + '" source ' + (i + 1) + ' has stored bytes but no photoFile');
+        if (shouldShip && pf && r.retakeFor) viol('export-retake-as-row-photo', '"' + t.name + '" source ' + (i + 1) + ' shows the old ' + r.retakeFor + ' (flagged for a retake) but ships as the row\'s photo ' + pf);
+        if (shouldShip && !pf && !shippedRetake(je, r) && ![...unsafe].some(u => u.startsWith(String(je.id) + '|'))) viol('export-photo-dropped', '"' + t.name + '" source ' + (i + 1) + ' has stored bytes but no photoFile' + (r.retakeFor ? ', and is not among its misc photos (flagged for a retake)' : ''));
         if (pf) {
           const bytes = files[pf];
           if (!bytes) viol('export-photo-file-missing', pf);
@@ -513,7 +524,7 @@
     for (const je of ej.entries) {
       const e = savedEquipment.find(x => sameEntryId(x.id, je.id)); const t = truth.get(String(je.id));
       if (!e || !t || t.form) continue;
-      const dropped = t.sources.some((s, i) => { const r = t.photos['source_' + i]; return r && r.dbKey && stored[r.dbKey] && !(je.sources[i] || {}).photoFile; });
+      const dropped = t.sources.some((s, i) => { const r = t.photos['source_' + i]; return r && r.dbKey && stored[r.dbKey] && !(je.sources[i] || {}).photoFile && !shippedRetake(je, r); });
       if (dropped && entryExportState(e) === 'exported') viol('export-stamped-despite-missing-photo', '"' + e.equipName + '"');
     }
     return 'export ' + df + ' (' + ej.entries.length + ' entries, ' + sheetPaths.length + ' sheet' + (sheetPaths.length === 1 ? '' : 's') + ')';

@@ -57,7 +57,13 @@ info. Only a STORAGE warning counts (build 99: any warning did, so "Enter
 equipment name first" or "Valve marks cleared" turned a silent loss into
 info); those warnings go into the trace. A unit or form that changed across a relaunch is reported field by field,
 from the first differing character (build 99: the whole before/after ran past
-the 700-character detail and cut the difference off).
+the 700-character detail and cut the difference off). A source photo flagged for
+a retake (build 125, `ref.retakeFor`: the app swapped its row's Device away from
+the valve it shows) ships with the unit's misc photos, never as the row's — the
+export oracle looks for it there by its bytes: `export-photo-dropped` when it
+isn't there, `export-retake-as-row-photo` when it ships as the row's photo. Until
+2026-10-28 the oracle counted it as dropped (seed 6: a custom energy still being
+typed, committed by Save & New, cleared a Gate Valve on a photographed row).
 
 Backup mode (build 101, `BACKUP=1` / `"backup":true`): after each sequence and
 after its relaunch, with faults off, one clean pass must leave SharePoint holding
