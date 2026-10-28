@@ -472,6 +472,14 @@
       if (opts.onShare) opts.onShare(blob, filename);
       captured = { blob, filename }; return { saved: true };
     };
+    // The iPad app's ZIP is a file in the Cache already (build 134): read it back
+    const realShareFile = window.shareExportFile;
+    window.shareExportFile = async (file, filename) => {
+      const r = await window.Capacitor.Plugins.Filesystem.readFile({ path: file.path, directory: 'CACHE' });
+      const blob = new Blob([b64dec(r.data)], { type: 'application/zip' });
+      if (opts.onShare) opts.onShare(blob, filename);
+      captured = { blob, filename, streamed: true, file }; return { saved: true, native: true };
+    };
     window.confirm = (msg) => { confirms.push(String(msg)); return ('confirmResponse' in opts) ? opts.confirmResponse : false; };
     const realAlert = window.alert;
     window.alert = (msg) => { confirms.push('[ALERT] ' + String(msg)); };
@@ -488,10 +496,13 @@
       document.getElementById('exportFacilityFilter').value = 'all';
       document.getElementById('photoSeqStart').value = String(opts.start || 1);
       await runCombinedExport();
+      // an export that threw is a toast in the app since build 134 — here it fails the test
+      if (window.__lastExportError) throw new Error('the export threw: ' + (window.__lastExportError.message || window.__lastExportError));
       // export has async tail work; give the zip a moment if not yet captured
       if (!captured) await sleep(300);
     } finally {
       window.saveOrShare = realSaveOrShare;
+      window.shareExportFile = realShareFile;
       window.confirm = realConfirm;
       window.alert = realAlert;
       window.__askChoiceAuto = realChoice;
@@ -6609,6 +6620,12 @@
     const A = saveEntry();
     const was = EXPORT_BIG_BYTES;
     let stop, go, small;
+    // The question belongs to an export packed in memory (build 134): the iPad
+    // app's Export ZIP is written as it goes and never asks (T401), so on the
+    // native app this runs with the Share plugin hidden — the in-memory path.
+    const cap = window.Capacitor, native = !!(cap && cap.isNativePlatform && cap.isNativePlatform() && cap.Plugins);
+    const savedShare = native ? cap.Plugins.Share : null;
+    if (native) cap.Plugins.Share = undefined;
     try {
       EXPORT_BIG_BYTES = 1000;
       stop = await runExport({ confirmResponse: true, choice: { 'export-big': 'cancel' } });
@@ -6618,7 +6635,7 @@
       small = await runExport({ confirmResponse: true });
       record(N, !stop.zip && stop.confirms.some(m => /CHOICE export-big/.test(m)) && !stampedAfterCancel && !!go.zip && !!small.zip && !small.confirms.some(m => /CHOICE export-big/.test(m)),
         'asked ' + JSON.stringify(stop.confirms.filter(m => /export-big/.test(m))) + ', zip after Cancel=' + !!stop.zip + ', stamped=' + stampedAfterCancel + '; zip on Export=' + !!(go && go.zip) + '; small export asked=' + small.confirms.some(m => /export-big/.test(m)));
-    } finally { EXPORT_BIG_BYTES = was; }
+    } finally { EXPORT_BIG_BYTES = was; if (native) cap.Plugins.Share = savedShare; }
   }
 
   // T220 — review #5: Skip on the "which photo" question left no way back; it opened on no-photo rows
@@ -12783,6 +12800,261 @@
     want(got.loc === 'Feeder: DP-1 vfd 3 (VFD-2)', 'the Location keeps the word: ' + got.loc);
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+
+  // ---------- build 134: the iPad app's Export ZIP is written as it goes ----------
+  function randomBytes(n) {
+    const u = new Uint8Array(n);
+    for (let i = 0; i < n; i += 65536) crypto.getRandomValues(u.subarray(i, Math.min(n, i + 65536)));
+    return u;
+  }
+  // A saved unit whose photos are `count` random files of `size` bytes, stored as
+  // the app stores them. Returns { entry, bytes: { slot: Uint8Array } }.
+  async function seedUnitWithBigPhotos(name, count, size, fs) {
+    const e = mkEntry(name, { sources: Array.from({ length: Math.max(3, count - 3) }, (_, i) => mkSrc(['LPS 10 PSI', 'DW In', 'Electrical'][i % 3])) });
+    e.sources.forEach(s => { s.sourceId = genUuid(); });
+    const slots = [['equip_main', 'main'], ['equip_dataplate', 'dataplate'], ['equip_ee', 'ee']]
+      .concat(e.sources.map((s, i) => ['source_' + i, s.sourceId])).slice(0, count);
+    const bytes = {};
+    for (const [slot, keySlot] of slots) {
+      const b = randomBytes(size);
+      const k = photoStoreKey(e.id, keySlot);
+      await storePhotoBytes(k, 'data:image/jpeg;base64,' + fs.enc(b));
+      e.photos[slot] = { dbKey: k, thumbnail: TINY_THUMB, timestamp: e.savedAt, fileType: 'image/jpeg' };
+      bytes[slot] = b;
+    }
+    return { entry: e, bytes };
+  }
+  const sameBytes = (a, b) => !!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]);
+
+  // T401 — a big day's export ran the iPad out of memory (wilkins, 2026-10-28)
+  async function t401_theIpadExportIsWrittenAsItGoes() {
+    const N = 'T401 build 134: the iPad app writes its Export ZIP into the Cache while it still reads photos — no piece over 3 MB, no "big export" question however big — and the ZIP opens with every CRC right and every photo byte-identical; an export underway is recorded, and the record goes when it ends';
+    await resetAppState();
+    const fs = installMockFS();
+    const was = EXPORT_BIG_BYTES;
+    const fails = [], info = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    try {
+      const { entry, bytes } = await seedUnitWithBigPhotos('Big-401', 5, 1200 * 1024, fs);
+      savedEquipment = [entry]; saveAll();
+      EXPORT_BIG_BYTES = 1000;
+      const from = fs.calls.length;
+      let during = null;
+      const { zip, confirms } = await runExport({ confirmResponse: true, onShare: () => { during = readLsJson(EXPORT_RUN_KEY); } });
+      want(zip && zip.streamed, 'not written to a file (streamed=' + !!(zip && zip.streamed) + ')');
+      want(!confirms.some(m => /export-big/.test(m)), 'asked the big-export question');
+      if (zip && zip.streamed) {
+        const calls = fs.calls.slice(from);
+        const isZip = c => (c.op === 'writeFile' || c.op === 'appendFile') && c.path === zip.file.path;
+        const zipWrites = calls.map((c, i) => isZip(c) ? i : -1).filter(i => i >= 0);
+        const photoReads = calls.map((c, i) => (c.op === 'readFile' && c.path !== zip.file.path) ? i : -1).filter(i => i >= 0);
+        info.writes = zipWrites.length;
+        info.largestMB = +(Math.max(0, ...zipWrites.map(i => calls[i].len)) * 3 / 4 / 1048576).toFixed(2);
+        want(zipWrites.length >= 2 && zipWrites[0] < photoReads[photoReads.length - 1], 'the ZIP was not written while photos were still being read (first write #' + zipWrites[0] + ', last photo read #' + photoReads[photoReads.length - 1] + ')');
+        want(info.largestMB <= 3, 'a write of ' + info.largestMB + ' MB');
+        let z = null;
+        try { z = await JSZip.loadAsync(zip.blob, { checkCRC32: true }); } catch (e) { want(false, 'JSZip: ' + e.message); }
+        if (z) {
+          const u = await unzipExport(zip.blob);
+          info.files = Object.keys(z.files).length;
+          for (const d of ['photos/', 'diagrams/', 'info_sheets/']) want(z.files[d] && z.files[d].dir, 'no folder entry ' + d);
+          want(!!u.manifest && u.manifest.counts.photos === 5, 'manifest photos = ' + (u.manifest && u.manifest.counts.photos));
+          const shipped = Object.keys(u.files).filter(p => p.startsWith('photos/')).map(p => u.files[p]);
+          const missing = Object.keys(bytes).filter(slot => !shipped.some(b => sameBytes(b, bytes[slot])));
+          want(!missing.length, 'photos not byte-identical in the ZIP: ' + missing.join(', '));
+          want(Object.keys(u.files).some(p => /^info_sheets\/Information_Sheet_.*\.xlsx$/.test(p)) && !!u.entriesJson, 'no Information Sheet / entries.json');
+        }
+        want(!!during && during.units === 1 && during.file === zip.file.path, 'record during the export: ' + JSON.stringify(during));
+        want(!readLsJson(EXPORT_RUN_KEY), 'the record outlived the export');
+        want(!!entry.exportedAt, 'not marked exported');
+        // The same export packed in memory (JSZip, the Share plugin hidden) holds
+        // the same entries in the same order, and the same photo files
+        const cap = window.Capacitor, share = cap.Plugins.Share;
+        let mem = null;
+        cap.Plugins.Share = undefined;
+        try { mem = (await runExport({ confirmResponse: true, choice: { 'seq-reuse': 'keep', 'export-big': 'export' } })).zip; }
+        finally { cap.Plugins.Share = share; }
+        if (z && mem && !mem.streamed) {
+          const m = await JSZip.loadAsync(mem.blob);
+          const a = Object.keys(z.files), b = Object.keys(m.files);
+          want(JSON.stringify(a) === JSON.stringify(b), 'entries differ from JSZip\'s: ' + JSON.stringify(a.filter((n, i) => n !== b[i]).slice(0, 4)) + ' vs ' + JSON.stringify(b.filter((n, i) => n !== a[i]).slice(0, 4)));
+          for (const n of a.filter(n => n.startsWith('photos/') && !z.files[n].dir)) {
+            if (!m.files[n] || !sameBytes(await z.files[n].async('uint8array'), await m.files[n].async('uint8array'))) want(false, n + ' differs from JSZip\'s');
+          }
+        } else want(false, 'no in-memory export to compare (' + (mem ? 'streamed' : 'none') + ')');
+      }
+    } finally { EXPORT_BIG_BYTES = was; fs.restore(); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(info));
+  }
+
+  // T402 — a Cancel after photos went into the file leaves no half-written ZIP
+  async function t402_aCancelledExportLeavesNoFile() {
+    const N = 'T402 build 134: an iPad export stopped after its photos were written (Cancel on "photos missing") removes its half-written ZIP from the Cache and its record, and marks nothing exported';
+    await resetAppState();
+    const fs = installMockFS();
+    const fails = [];
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    try {
+      const { entry } = await seedUnitWithBigPhotos('Stop-402', 4, 1200 * 1024, fs);
+      entry.miscPhotos = [{ dbKey: photoStoreKey(entry.id, 'misc-gone'), thumbnail: TINY_THUMB, timestamp: entry.savedAt, fileType: 'image/jpeg' }];
+      savedEquipment = [entry]; saveAll();
+      const from = fs.calls.length;
+      const { zip, confirms } = await runExport({ confirmResponse: false });
+      const calls = fs.calls.slice(from);
+      const w = calls.find(c => c.op === 'writeFile' && /^FieldExport_.*\.zip$/.test(c.path));
+      want(!zip, 'a file was shared');
+      want(confirms.some(m => /could NOT be found/.test(m)), 'no missing-photo question: ' + JSON.stringify(confirms));
+      want(!!w, 'nothing was written before the Cancel (the test needs a started file)');
+      if (w) {
+        want(!(await fs.has(w.path, 'CACHE')), w.path + ' is still in the Cache');
+        want(calls.some(c => c.op === 'deleteFile' && c.path === w.path), 'never deleted');
+      }
+      want(!readLsJson(EXPORT_RUN_KEY), 'the record outlived the export');
+      want(!entry.exportedAt && !entry.exportIncompleteAt, 'marked exported');
+    } finally { fs.restore(); }
+    record(N, !fails.length, fails.length ? 'FAILED: ' + fails.join('; ') : 'file removed, nothing marked');
+  }
+
+  // T403 — an export the app never finished is said at the next launch
+  async function t403_anUnfinishedExportIsSaidAtLaunch() {
+    const N = 'T403 build 134: a launch after an export that never finished (its record still there) says so once — the units, nothing lost, export again — and removes the half-written ZIP; a launch with no record says nothing';
+    await resetAppState();
+    const fs = installMockFS();
+    const fails = [];
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    let shown = null;
+    try {
+      localStorage.setItem(EXPORT_RUN_KEY, JSON.stringify({ at: new Date().toISOString(), units: 12, file: 'FieldExport_T403.zip' }));
+      await fs.set('FieldExport_T403.zip', randomBytes(5000), 'CACHE');
+      const first = await withDialogs({ choice: o => { shown = o; return 'ok'; } }, () => reportUnfinishedExport());
+      const second = await withDialogs({ choice: () => 'ok' }, () => reportUnfinishedExport());
+      want(first.log.some(m => /CHOICE export-unfinished/.test(m)), 'not said: ' + JSON.stringify(first.log));
+      const text = shown ? String(shown.html).replace(/<[^>]+>/g, ' ') : '';
+      want(/12 units/.test(text) && /Nothing is lost/.test(text) && /none was marked exported/.test(text) && /Export again/.test(text), 'says: ' + text);
+      want(!second.log.length, 'said twice: ' + JSON.stringify(second.log));
+      want(!readLsJson(EXPORT_RUN_KEY), 'record not removed');
+      want(!(await fs.has('FieldExport_T403.zip', 'CACHE')), 'half-written ZIP not removed');
+    } finally { try { localStorage.removeItem(EXPORT_RUN_KEY); } catch (e) {} fs.restore(); }
+    record(N, !fails.length, fails.length ? 'FAILED: ' + fails.join('; ') : 'said once, file removed');
+  }
+
+  // T404 — the writer never replaces a file
+  async function t404_theZipWriterNeverReplacesAFile() {
+    const N = 'T404 build 134: the export ZIP writer stops with an error, and writes nothing, when a file of its name is already in the Cache';
+    await resetAppState();
+    const fs = installMockFS();
+    let err = null, after = null;
+    const old = randomBytes(4000);
+    try {
+      await fs.set('T404_existing.zip', old, 'CACHE');
+      const w = makeCacheZipWriter(window.Capacitor.Plugins.Filesystem, 'T404_existing.zip');
+      try { await w.file('a.txt', 'x'.repeat(100)); await w.finish(); } catch (e) { err = e; }
+      await w.discard();
+      after = await fs.get('T404_existing.zip', 'CACHE');
+    } finally { await fs.del('T404_existing.zip', 'CACHE'); fs.restore(); }
+    record(N, !!err && sameBytes(after, old), 'error=' + (err && err.message) + ', old file intact=' + sameBytes(after, old));
+  }
+
+  // T405 — the writer's ZIP, edge by edge
+  async function t405_theZipWriterMakesAValidZip() {
+    const N = 'T405 build 134: the export ZIP writer\'s file opens in JSZip with every CRC checked — an empty file, a UTF-8 name, nested folders, files that end exactly on and across a 3 MB piece, 300 small files — byte for byte, and finish() gives its true size';
+    await resetAppState();
+    const fs = installMockFS();
+    const fails = [];
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const path = 'T405_' + genUuid().slice(0, 8) + '.zip';
+    const enc = new TextEncoder(), hdr = n => 30 + enc.encode(n).length;
+    const uName = 'café/naïve — 1.txt', n1 = 'a/b/c/edge.bin';
+    const files = { 'empty.txt': new Uint8Array(0), [uName]: enc.encode('héllo') };
+    // everything up to the end of edge.bin's bytes fills exactly one 3 MB piece
+    const before = hdr('empty.txt') + hdr('café/') + hdr(uName) + files[uName].length + hdr('a/') + hdr('a/b/') + hdr('a/b/c/') + hdr(n1);
+    files[n1] = randomBytes(FS_WRITE_CHUNK - before);
+    files['across.bin'] = randomBytes(FS_WRITE_CHUNK + 12345);
+    for (let i = 0; i < 300; i++) files['small/' + i + '.txt'] = new TextEncoder().encode('file ' + i);
+    let res = null;
+    try {
+      const w = makeCacheZipWriter(window.Capacitor.Plugins.Filesystem, path);
+      for (const name of Object.keys(files)) await w.file(name, files[name]);
+      res = await w.finish();
+      const bytes = await fs.get(path, 'CACHE');
+      want(!!bytes && res.size === bytes.length, 'size ' + (res && res.size) + ' vs file ' + (bytes && bytes.length));
+      let z = null;
+      try { z = await JSZip.loadAsync(bytes, { checkCRC32: true }); } catch (e) { want(false, 'JSZip: ' + e.message); }
+      if (z) {
+        for (const name of Object.keys(files)) {
+          const f = z.files[name];
+          if (!f) { want(false, 'missing ' + name); continue; }
+          const got = await f.async('uint8array');
+          if (!sameBytes(got, files[name]) && !(got.length === 0 && files[name].length === 0)) want(false, name + ' differs');
+        }
+        for (const d of ['a/', 'a/b/', 'a/b/c/', 'small/', 'café/']) want(z.files[d] && z.files[d].dir, 'no folder entry ' + d);
+        const fileCount = Object.values(z.files).filter(f => !f.dir).length;
+        want(fileCount === Object.keys(files).length, fileCount + ' files, want ' + Object.keys(files).length);
+      }
+    } catch (e) { want(false, 'EXCEPTION ' + e.message); }
+    finally { await fs.del(path, 'CACHE'); fs.restore(); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.slice(0, 6).join('; ') : 'ok') + ' (' + (res ? res.size : '?') + ' bytes)');
+  }
+
+  // Opt-in, never in the regular run (opts.bigExportMB): a field day's export —
+  // 12 units, bigExportMB of photos — first through the iPad app's Export ZIP
+  // (written as it goes), then the way build 133 and before packed it (JSZip in
+  // memory, then saveOrShare). The detail gives each run's start and end, so a
+  // runner sampling the WebView's memory can tell the two apart (build 134).
+  let BIG_EXPORT_MB = 0;
+  async function tBig_exportMemoryTwoWays() {
+    const N = 'TBIG ' + BIG_EXPORT_MB + ' MB of photos on 12 units: written as it goes, then packed in memory';
+    await resetAppState();
+    const fs = installMockFS();
+    const cap = window.Capacitor, out = {};
+    const units = 12, per = 10, size = Math.round(BIG_EXPORT_MB * 1048576 / (units * per));
+    const share = cap.Plugins.Share;
+    try {
+      const t = Date.now(), list = [];
+      for (let u = 0; u < units; u++) list.push((await seedUnitWithBigPhotos('Big-' + (u + 1), per, size, fs)).entry);
+      savedEquipment = list; saveAll();
+      out.seedSecs = (Date.now() - t) / 1000;
+      const run = async (label, onAsk) => {
+        showExportDialog();
+        document.getElementById('exportDateFilter').value = 'all';
+        populateExportFacilityFilter();
+        document.getElementById('exportFacilityFilter').value = 'all';
+        const from = fs.calls.length, t0 = Date.now();
+        const r = await withDialogs({ confirm: true, choice: o => { if (onAsk) onAsk(o); return o.id === 'seq-reuse' ? 'next' : (o.defaultValue || 'export'); } }, () => runCombinedExport());
+        const t1 = Date.now();
+        const w = fs.calls.slice(from).filter(c => (c.op === 'writeFile' || c.op === 'appendFile') && /^FieldExport_/.test(c.path));
+        const path = w.length ? w[0].path : '';
+        let bytes = 0;
+        try { bytes = (await cap.Plugins.Filesystem.stat({ path, directory: 'CACHE' })).size; } catch (e) {}
+        if (path) await fs.del(path, 'CACHE');
+        out[label] = { t0, t1, secs: (t1 - t0) / 1000, mb: Math.round(bytes / 1048576), writes: w.length, asked: r.log.filter(m => /CHOICE/.test(m)).map(m => m.slice(0, 30)) };
+      };
+      await run('streamed');
+      // build 133's way: the Share plugin hidden until the big-export question,
+      // so the export packs in memory, then saves through saveOrShare
+      cap.Plugins.Share = undefined;
+      await run('inMemory', o => { if (o.id === 'export-big') cap.Plugins.Share = share; });
+    } finally { cap.Plugins.Share = share; fs.restore(); }
+    record(N, !!(out.streamed && out.streamed.mb && out.inMemory && out.inMemory.mb), JSON.stringify(out));
+  }
+
+  // T406 — the review of build 134: two exports at once shared one record and one run of photo numbers
+  async function t406_oneExportAtATime() {
+    const N = 'T406 build 134: an export started while another is still being built is refused with a word (no second ZIP); the first finishes as usual, and the next one runs';
+    await resetAppState();
+    const e = mkEntry('One-406', { sources: [mkSrc('')] });   // a blank Energy Source: the first export waits on its question
+    savedEquipment = [e]; saveAll();
+    let release;
+    const held = new Promise(r => { release = r; });
+    const first = runExport({ confirmResponse: true, choice: { 'export-blank-energy': held } });
+    await sleep(50);
+    const toasts = await withToasts(async () => { await runCombinedExport(); });
+    release('export');
+    const r1 = await first;
+    const r2 = await runExport({ confirmResponse: true, choice: { 'export-blank-energy': 'export', 'seq-reuse': 'keep' } });
+    const refused = toasts.some(t => /already being built/.test(t));
+    record(N, refused && !!r1.zip && !!r2.zip, 'second refused=' + refused + ' ' + JSON.stringify(toasts.slice(0, 2)) + ', first zip=' + !!r1.zip + ', next zip=' + !!r2.zip);
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -12945,7 +13217,9 @@
     t391_aDamperActuatorAsksWhatPowersIt, t392_theLinkFollowsTheRow, t393_aCopyTracesItsOwnPower,
     t394_poweredByTravelsInColumn22, t395_column22IsStyledLikeTheForm, t396_poweredByChoicesRefreshOnCommitNotKeystroke,
     t397_theFeedersKindFollowsThePanel, t398_aBucketIsOnePointWithItsBreakerNumber, t399_theDialogSaysWhichTextButton,
-    t400_anOtherWordSetsItsDevice];
+    t400_anOtherWordSetsItsDevice,
+    t401_theIpadExportIsWrittenAsItGoes, t402_aCancelledExportLeavesNoFile, t403_anUnfinishedExportIsSaidAtLaunch,
+    t404_theZipWriterNeverReplacesAFile, t405_theZipWriterMakesAValidZip, t406_oneExportAtATime];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
@@ -12991,6 +13265,7 @@
     window.__PHOTO_TEST_RESULTS = null;
     let tests = ALL_TESTS.slice();
     if (!opts.skipScale) tests.push(t7_scale);
+    if (opts.bigExportMB) { BIG_EXPORT_MB = +opts.bigExportMB; tests.push(tBig_exportMemoryTwoWays); }
     if (opts.only) tests = tests.filter(t => opts.only.some(p => t.name.indexOf(p) === 0));
     // nativeMock: run EVERY test with the in-memory Filesystem plugin installed,
     // so capture / export / migration go through the native photo store the

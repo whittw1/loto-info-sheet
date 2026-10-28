@@ -2735,6 +2735,7 @@ function init() {
     // the Photo Store Report screen. A tab another tab took over during the
     // launch changes nothing (build 95).
     if (!tabMayWrite()) return;
+    reportUnfinishedExport().catch(e => console.error('unfinished-export notice failed', e));   // build 134
     migratePhotosToFS()
       .then(() => cleanupFsTempFiles())
       .then(() => runPhotoKeyMigration().catch(e => console.error('photo key migration failed', e)))
@@ -13981,15 +13982,212 @@ function reservePhotoSeq(datePrefix, next) {
   if (inp) inp.value = next;
 }
 
-// The photo total past which an export asks first (build 110). The whole ZIP
-// is built in the WebView's memory — the photos, then the ZIP made of them —
-// and a WebView out of memory just stops: build 85's quarantine export died
-// that way at ~350 MB. Since build 109 a photo is 2-3x bigger (2560 x 1440,
-// turned for portrait shots). A `let` so the suite can lower it.
+// The photo total past which an export asks first (build 110) — an export
+// packed in memory only (build 134: the web app, and Export to SharePoint).
+// Such a ZIP is built in the WebView's memory — the photos, then the ZIP made
+// of them — and a WebView out of memory just stops: build 85's quarantine
+// export died that way at ~350 MB. Since build 109 a photo is 2-3x bigger
+// (2560 x 1440, turned for portrait shots). A `let` so the suite can lower it.
 let EXPORT_BIG_BYTES = 250 * 1024 * 1024;
 
+// Writes to the Filesystem plugin go in 3 MB pieces (build 89): one giant
+// base64 string is the likeliest way a big file dies inside the WebView. 3 MB
+// is a multiple of 3, so every piece is independent, padding-free base64.
+const FS_WRITE_CHUNK = 3 * 1024 * 1024;
+function blobToBase64(part) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = () => reject(r.error || new Error('FileReader failed'));
+    r.onloadend = () => {
+      const s = String(r.result || '');
+      const idx = s.indexOf(',');
+      resolve(idx >= 0 ? s.slice(idx + 1) : s);
+    };
+    r.readAsDataURL(part);
+  });
+}
+
+// CRC-32, the checksum every ZIP entry carries.
+let _crc32Table = null;
+function crc32(bytes) {
+  if (!_crc32Table) {
+    _crc32Table = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      _crc32Table[n] = c >>> 0;
+    }
+  }
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) crc = _crc32Table[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+// The iPad app's export ZIP (build 134): written into the app's Cache while it
+// is built, a file at a time, so the WebView never holds more than one photo
+// and a 3 MB piece. Packed in memory, a big day (wilkins, 2026-10-28: 360 MB
+// of photos for 12 units) ran it out of memory, and the app just restarted
+// with no file. The same ZIP JSZip makes: stored entries (the photos are
+// JPEGs already), each folder's entry before its first file. No ZIP64: past
+// 4 GB or 65,535 files it stops with an error. Never replaces a file — the
+// name holds the export's own id, and one already there stops it.
+// Mirrors the JSZip calls the export makes: await folder(name).file(n, data),
+// await file(path, data); then finish() → { path, uri, size }, or discard().
+function makeCacheZipWriter(FS, path) {
+  const enc = new TextEncoder();
+  const records = [];          // one per entry, for the central directory
+  const folders = new Set();
+  let pending = [], pendingSize = 0, offset = 0, written = 0, touched = false, uri = '';
+  const now = new Date();
+  const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  const tooBig = () => new Error('the export is too big for one ZIP (over 4 GB or 65,535 files) — export one day at a time');
+
+  async function put(piece) {
+    const data = await blobToBase64(piece);
+    if (!touched) {
+      let there = false;
+      try { await FS.stat({ path, directory: 'CACHE' }); there = true; } catch (e) {}
+      if (there) throw new Error(path + ' is already on this device');
+      touched = true;
+      const r = await FS.writeFile({ path, data, directory: 'CACHE', recursive: true });
+      uri = (r && r.uri) || '';
+    } else await FS.appendFile({ path, data, directory: 'CACHE' });
+    written += piece.size;
+  }
+  // Writes whole 3 MB pieces; the rest waits for more (or, at the end, goes too).
+  async function flush(all) {
+    const blob = new Blob(pending);
+    pending = []; pendingSize = 0;
+    let off = 0;
+    while (off < blob.size && (all || blob.size - off >= FS_WRITE_CHUNK)) {
+      const end = Math.min(off + FS_WRITE_CHUNK, blob.size);
+      await put(blob.slice(off, end));
+      off = end;
+    }
+    if (off < blob.size) { pending = [blob.slice(off)]; pendingSize = blob.size - off; }
+  }
+  async function push(parts) {
+    for (const p of parts) { pending.push(p); pendingSize += p.byteLength; }
+    if (pendingSize >= FS_WRITE_CHUNK) await flush(false);
+  }
+  async function add(name, data, isDir) {
+    if (writer.finished) throw new Error('the export ZIP is already finished');
+    const nameBytes = enc.encode(name);
+    const bytes = isDir ? new Uint8Array(0) : (typeof data === 'string' ? enc.encode(data) : (data instanceof Uint8Array ? data : new Uint8Array(data)));
+    if (records.length >= 0xFFFE || offset + 30 + nameBytes.length + bytes.length >= 0xFFFFFFFF) throw tooBig();   // 0xFFFF / 0xFFFFFFFF mean ZIP64
+    const flags = /[^\x00-\x7f]/.test(name) ? 0x0800 : 0;   // a UTF-8 name
+    const crc = isDir ? 0 : crc32(bytes);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, isDir ? 20 : 10, true); h.setUint16(6, flags, true);
+    h.setUint16(8, 0, true); h.setUint16(10, dosTime, true); h.setUint16(12, dosDate, true);
+    h.setUint32(14, crc, true); h.setUint32(18, bytes.length, true); h.setUint32(22, bytes.length, true);
+    h.setUint16(26, nameBytes.length, true); h.setUint16(28, 0, true);
+    records.push({ nameBytes, flags, crc, size: bytes.length, offset, isDir });
+    offset += 30 + nameBytes.length + bytes.length;
+    await push([new Uint8Array(h.buffer), nameBytes, bytes]);
+  }
+  async function addFolders(path) {
+    const parts = path.split('/');
+    for (let i = 1; i < parts.length; i++) {
+      const dir = parts.slice(0, i).join('/') + '/';
+      if (!folders.has(dir)) { folders.add(dir); await add(dir, null, true); }
+    }
+  }
+  const writer = {
+    finished: false,
+    async file(name, data) { await addFolders(name); await add(name, data, false); return writer; },
+    async folder(name) {
+      const dir = String(name).replace(/\/+$/, '');
+      await addFolders(dir + '/');
+      return { file: (n, data) => writer.file(dir + '/' + n, data) };
+    },
+    async finish() {
+      const parts = [];
+      let cdSize = 0;
+      for (const r of records) {
+        const c = new DataView(new ArrayBuffer(46));
+        c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, r.isDir ? 20 : 10, true);
+        c.setUint16(8, r.flags, true); c.setUint16(10, 0, true); c.setUint16(12, dosTime, true); c.setUint16(14, dosDate, true);
+        c.setUint32(16, r.crc, true); c.setUint32(20, r.size, true); c.setUint32(24, r.size, true);
+        c.setUint16(28, r.nameBytes.length, true); c.setUint16(30, 0, true); c.setUint16(32, 0, true);
+        c.setUint16(34, 0, true); c.setUint16(36, 0, true); c.setUint32(38, r.isDir ? 0x10 : 0, true);
+        c.setUint32(42, r.offset, true);
+        parts.push(new Uint8Array(c.buffer), r.nameBytes);
+        cdSize += 46 + r.nameBytes.length;
+      }
+      if (offset + cdSize + 22 >= 0xFFFFFFFF) throw tooBig();
+      const e = new DataView(new ArrayBuffer(22));
+      e.setUint32(0, 0x06054b50, true); e.setUint16(4, 0, true); e.setUint16(6, 0, true);
+      e.setUint16(8, records.length, true); e.setUint16(10, records.length, true);
+      e.setUint32(12, cdSize, true); e.setUint32(16, offset, true); e.setUint16(20, 0, true);
+      parts.push(new Uint8Array(e.buffer));
+      const total = offset + cdSize + 22;
+      await push(parts);
+      await flush(true);
+      // The whole file landed before it is offered
+      const st = await FS.stat({ path, directory: 'CACHE' });
+      if (written !== total || !st || Number(st.size) !== total) throw new Error('the export file is ' + (st ? st.size : written) + ' of ' + total + ' bytes');
+      writer.finished = true;
+      return { path, uri: uri || st.uri || '', size: total };
+    },
+    // A ZIP that never finished (a Cancel, an error) leaves nothing behind
+    async discard() {
+      pending = []; pendingSize = 0;
+      if (touched) { try { await FS.deleteFile({ path, directory: 'CACHE' }); } catch (e) {} }
+    }
+  };
+  return writer;
+}
+
+// An export building its ZIP in the iPad app (build 134): set as it starts
+// packing photos and removed however it ends. Still there at launch = the app
+// restarted mid-export (out of memory, or closed), which until now went unsaid.
+// { at, units, file }
+const EXPORT_RUN_KEY = 'loto_export_running';
+
+// One export at a time: a second one started while the first builds would
+// hand the same photo numbers to different photos, and take its record.
+let _exportRunning = false;
 async function runCombinedExport(opts) {
-  opts = opts || {};
+  if (_exportRunning) { showToast('An export is already being built \u2014 wait for it to finish', true); return; }
+  _exportRunning = true;
+  window.__lastExportError = null;   // the suites fail an export that threw
+  const run = { zip: null, marked: false };
+  try {
+    await buildAndSendExport(opts || {}, run);
+  } catch (e) {
+    console.error('Export error:', e);
+    window.__lastExportError = e;
+    showToast('⚠ Export error: ' + ((e && e.message) || e) + '. Nothing was marked exported — everything is still on this device. Try again.', true);
+  } finally {
+    if (run.zip && !run.zip.finished) await run.zip.discard();
+    if (run.marked) { try { localStorage.removeItem(EXPORT_RUN_KEY); } catch (e) {} }
+    _exportRunning = false;
+  }
+}
+
+// Said once at launch: the last export never finished. Its half-written ZIP goes.
+async function reportUnfinishedExport() {
+  const r = readLsJson(EXPORT_RUN_KEY);
+  if (!r) return;
+  try { localStorage.removeItem(EXPORT_RUN_KEY); } catch (e) {}
+  const FS = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
+  if (r.file && FS) { try { await FS.deleteFile({ path: r.file, directory: 'CACHE' }); } catch (e) {} }
+  const at = new Date(r.at);
+  const when = isNaN(at) ? '' : ' (started ' + (localDateStr(at) === localDateStr(new Date())
+    ? at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : at.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + ')';
+  const units = r.units ? r.units + ' unit' + (r.units === 1 ? '' : 's') : '';
+  await askChoice({
+    id: 'export-unfinished', defaultValue: 'ok',
+    title: '&#9888; The last export did not finish',
+    html: html`The export of ${units || 'your units'}${when} never finished: the app restarted while it was being built or saved &mdash; most likely the device ran out of memory, or the app was closed.<br><br>Nothing is lost. Every unit and photo is still on this device, and none was marked exported. Export again.`,
+    choices: [{ value: 'ok', label: 'OK', primary: true }]
+  });
+}
+
+async function buildAndSendExport(opts, run) {
   if (refuseIfPhotoWritesBusy('export')) return;
   let startNum = parseInt(document.getElementById('photoSeqStart').value, 10);
   if (isNaN(startNum) || startNum < 0 || startNum > 99999) {
@@ -14119,12 +14317,35 @@ async function runCombinedExport(opts) {
   const exportId = genUuid();
   const exportDeviceId = ensureDeviceId();
 
+  // FieldExport_{code}_{MMDDYY}_{deviceShort}_{exportShort}.zip — facility +
+  // date + a short per-device id so same-day exports from two iPads don't
+  // collide, and (build 118) the export's own id, so two same-day exports from
+  // ONE iPad don't either — saving the second could replace the first. The
+  // SharePoint backup already named its copy so. Date filter / full ids live in
+  // manifest.json. Facility falls back to "NoFacility" when unset; the code is
+  // sanitised to filename-safe chars.
+  const dateStamp = getDateStamp(exportDate);
+  const codeSan = (effectiveFacilityCode || 'NoFacility').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'NoFacility';
+  const deviceShort = (exportDeviceId || '').replace(/-/g, '').slice(0, 8) || 'device';
+  const exportShort = String(exportId || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8);
+  const exportFilename = 'FieldExport_' + codeSan + '_' + dateStamp + '_' + deviceShort + (exportShort ? '_' + exportShort : '') + '.zip';
+
+  // The iPad app writes the ZIP into its Cache as it goes (build 134 — see
+  // makeCacheZipWriter); the web app and Export to SharePoint pack it in memory.
+  const cap = window.Capacitor;
+  const nativeApp = !!(cap && cap.isNativePlatform && cap.isNativePlatform());
+  const streamFS = (nativeApp && !opts.toSharePoint && cap.Plugins && cap.Plugins.Filesystem && cap.Plugins.Share) ? cap.Plugins.Filesystem : null;
+  // The record only in the iPad app, one window: a web tab opened during another
+  // tab's export would take that live export for one that died.
+  if (nativeApp) { try { localStorage.setItem(EXPORT_RUN_KEY, JSON.stringify({ at: new Date().toISOString(), units: allEntries.length, file: streamFS ? exportFilename : '' })); run.marked = true; } catch (e) {} }
+
   // let, not const: both are dropped once the ZIP is packed (build 110), so the
   // photo bytes they hold can be freed before the file is written / shared
-  let zip = new JSZip();
-  let photosFolder = zip.folder('photos');
+  let zip = streamFS ? (run.zip = makeCacheZipWriter(streamFS, exportFilename)) : new JSZip();
+  let photosFolder = await zip.folder('photos');
   let photoCount = 0;
   let photoBytes = 0;   // the photo files' total size — see EXPORT_BIG_BYTES
+  let progressAt = Date.now();
   let misses = 0;
   const missedKeys = [];
   const hashMismatches = [];   // { entryName, slot }
@@ -14193,9 +14414,10 @@ async function runCombinedExport(opts) {
     }
     const ext = pd.type.includes('png') ? '.png' : '.jpg';
     const filename = opts.fileName ? uniqueName(opts.fileName(ext)) : uniqueName(nextH() + ext);
-    photosFolder.file(filename, pd.bytes);
+    await photosFolder.file(filename, pd.bytes);
     photoCount++;
     photoBytes += pd.bytes.length;
+    if (Date.now() - progressAt > 1500) { progressAt = Date.now(); showToast('Building export… ' + photoCount + ' photos'); }
     const rec = { filename: filename, sha256: hash || '', entries: [entryRef] };
     // when the photo was taken (build 109) — also inside the JPEG's EXIF
     if (ref.capturedAt) { rec.capturedAt = ref.capturedAt; rec.capturedFrom = ref.capturedFrom || ''; }
@@ -14252,7 +14474,7 @@ async function runCombinedExport(opts) {
     .filter(Boolean).join('_').replace(/[^a-zA-Z0-9_-]/g, '_') + '_' + (String(entry.id || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8) || 'noid');
 
   // ---- PASS 1B: export sketch diagrams ----
-  let diagramsFolder = zip.folder('diagrams');
+  let diagramsFolder = await zip.folder('diagrams');
   const diagramFiles = []; // one per entry: filename or ''
   const diagramFailures = [];
 
@@ -14271,7 +14493,7 @@ async function runCombinedExport(opts) {
       catch (e) { console.error('diagram render failed', entry.equipName, e); diagramFailures.push(entry.equipName || '(unnamed)'); }
       if (pngDataUrl && pngDataUrl.length > 200) {
         diagramFile = uniqueName(entryFileStem(entry) + '_diagram.png');
-        diagramsFolder.file(diagramFile, dataUrlToUint8Array(pngDataUrl));
+        await diagramsFolder.file(diagramFile, dataUrlToUint8Array(pngDataUrl));
       }
     }
     diagramFiles.push(diagramFile);
@@ -14308,15 +14530,20 @@ async function runCombinedExport(opts) {
     miscCaptured.push(caps);
   }
 
-  // A big export is packed in the iPad's memory — every photo, then the ZIP
-  // made of them (build 110: photos are 2-3x bigger since build 109). Past the
-  // safe size, ask first: a WebView out of memory just stops, and no file appears.
-  if (photoBytes > EXPORT_BIG_BYTES) {
+  // An export packed in memory holds every photo, then the ZIP made of them
+  // (build 110: photos are 2-3x bigger since build 109). Past the safe size,
+  // ask first: a WebView out of memory just stops, and no file appears. The
+  // iPad app's Export ZIP is written as it goes (build 134) and never asks.
+  if (!streamFS && photoBytes > EXPORT_BIG_BYTES) {
     const mb = Math.round(photoBytes / 1048576);
+    const narrower = [dateFilter === 'all' ? 'one day' : '', facilityFilter === 'all' ? 'one facility' : ''].filter(Boolean);
+    const safer = nativeApp ? 'Safer: Export ZIP instead — on the iPad it is written a photo at a time, with no size limit.'
+      : narrower.length ? 'Safer: export ' + narrower.join(' and ') + ' at a time (Date Filter / Facility).'
+      : 'Safer: Export ZIP in the iPad app — it is written a photo at a time, with no size limit.';
     const go = await askChoice({
       id: 'export-big', defaultValue: 'export',
       title: '&#9888; A big export &mdash; ' + mb + ' MB of photos',
-      html: html`This export packs ${photoCount} photos (${mb} MB) in the iPad&rsquo;s memory. An export this big can run it out of memory &mdash; then no file appears. Nothing is lost either way, but nothing is exported.<br><br>Safer: export one day at a time (Date Filter), or one facility at a time.`,
+      html: html`This export packs ${photoCount} photos (${mb} MB) in this device&rsquo;s memory. An export this big can run it out of memory &mdash; then no file appears. Nothing is lost either way, but nothing is exported.<br><br>${safer}`,
       choices: [{ value: 'export', label: 'Export anyway', primary: true }, { value: 'cancel', label: 'Cancel' }]
     });
     if (go !== 'export') { showToast('Export cancelled', true); return; }
@@ -14435,7 +14662,7 @@ async function runCombinedExport(opts) {
       }
     };
   });
-  zip.file('entries.json', JSON.stringify({
+  await zip.file('entries.json', JSON.stringify({
     version: 2,
     exportId: exportId,
     exported: new Date().toISOString(),
@@ -14708,19 +14935,18 @@ async function runCombinedExport(opts) {
 
       // Generate xlsx bytes
       const xlsxBuffer = await ewb.xlsx.writeBuffer();
-      zip.file('info_sheets/' + sheetGroup.name, xlsxBuffer);
+      await zip.file('info_sheets/' + sheetGroup.name, xlsxBuffer);
       cloudSheets.push({ name: sheetGroup.name, day: sheetGroup.day || '', bytes: xlsxBuffer });   // Export to SharePoint files each in its day's folder
    }
   }
 
   // ---- Add CSV + manifest, then download ZIP ----
-  const dateStamp = getDateStamp(exportDate);
-  zip.file('info_sheets/LOTO_FieldData_' + dateStamp + '.csv', csv);
+  await zip.file('info_sheets/LOTO_FieldData_' + dateStamp + '.csv', csv);
 
   // Bundle index — a lightweight manifest an ingester reads first to discover
   // the bundle's shape, facility/device, and where each part lives.
   const diagramCount = diagramFiles.filter(Boolean).length;
-  zip.file('manifest.json', JSON.stringify({
+  await zip.file('manifest.json', JSON.stringify({
     schema: 'loto-field-export',
     version: 1,
     appBuild: APP_BUILD,   // which build wrote this export (build 118)
@@ -14830,20 +15056,11 @@ async function runCombinedExport(opts) {
 
   try {
     // Photos are already-compressed JPEGs: STORE avoids burning CPU (and time
-    // in memory) re-deflating them.
-    const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+    // in memory) re-deflating them. The iPad app's ZIP is on disk already: it
+    // gets its central directory and its size check.
+    const zipFile = streamFS ? await zip.finish() : null;
+    const zipBlob = streamFS ? null : await zip.generateAsync({ type: 'blob', compression: 'STORE' });
     zip = photosFolder = diagramsFolder = null;   // the photos' bytes are in the ZIP now — let them go (build 110)
-    // FieldExport_{code}_{MMDDYY}_{deviceShort}_{exportShort}.zip — facility +
-    // date + a short per-device id so same-day exports from two iPads don't
-    // collide, and (build 118) the export's own id, so two same-day exports from
-    // ONE iPad don't either — saving the second could replace the first. The
-    // SharePoint backup already named its copy so. Date filter / full ids live in
-    // manifest.json. Facility falls back to "NoFacility" when unset; the code is
-    // sanitised to filename-safe chars.
-    const codeSan = (effectiveFacilityCode || 'NoFacility').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'NoFacility';
-    const deviceShort = (exportDeviceId || '').replace(/-/g, '').slice(0, 8) || 'device';
-    const exportShort = String(exportId || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8);
-    const exportFilename = 'FieldExport_' + codeSan + '_' + dateStamp + '_' + deviceShort + (exportShort ? '_' + exportShort : '') + '.zip';
     // Reserve these photo numbers BEFORE the ZIP leaves the device.
     if (seqCounter > startNum) reservePhotoSeq(datePrefix, seqCounter);
     // Export to SharePoint files the ZIP by the data: the facility every unit in
@@ -14855,7 +15072,8 @@ async function runCombinedExport(opts) {
         facility: facs.size === 1 ? Array.from(facs)[0] : (effectiveFacilityCode || ''),
         day: /^\d{4}-\d{2}-\d{2}$/.test(dateFilter) ? dateFilter : localDateStr(new Date()),
         sheets: cloudSheets, exportId });
-    } else saveResult = await saveOrShare(zipBlob, exportFilename, 'application/zip');
+    } else if (zipFile) saveResult = await shareExportFile(zipFile, exportFilename);
+    else saveResult = await saveOrShare(zipBlob, exportFilename, 'application/zip');
     const firstName = formatPhotoName(datePrefix, startNum);
     const lastName = formatPhotoName(datePrefix, seqCounter - 1);
     if (saveResult && saveResult.cancelled) {
@@ -14913,7 +15131,7 @@ async function runCombinedExport(opts) {
     }
   } catch(e) {
     console.error('Export error:', e);
-    showToast('Export error - try again', true);
+    showToast('Export error: ' + ((e && e.message) || e) + ' — try again', true);
   }
 }
 
@@ -17281,35 +17499,20 @@ async function saveOrShare(blob, filename, _mimeType) {
     return { saved: false, native: true, error: 'plugins-missing' };
   }
 
-  // Write the blob to Cache in 3 MB pieces (build 89). Encoding a whole
-  // several-hundred-MB export into one base64 string at once — on top of the
-  // ZIP itself — is the likeliest way a big export dies inside the WebView.
-  // 3 MB is a multiple of 3, so every piece is independent, padding-free base64.
-  const blobPartToBase64 = (part) => new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onerror = () => reject(r.error || new Error('FileReader failed'));
-    r.onloadend = () => {
-      const s = String(r.result || '');
-      const idx = s.indexOf(',');
-      resolve(idx >= 0 ? s.slice(idx + 1) : s);
-    };
-    r.readAsDataURL(part);
-  });
-  const CHUNK = 3 * 1024 * 1024;
-
+  // Write the blob to Cache in 3 MB pieces (build 89 — see FS_WRITE_CHUNK).
   // Write to Cache (iOS auto-cleans this) and open share sheet
   let fileUri;
   try {
     let off = 0;
     do {
-      const b64 = await blobPartToBase64(blob.slice(off, Math.min(off + CHUNK, blob.size)));
+      const b64 = await blobToBase64(blob.slice(off, Math.min(off + FS_WRITE_CHUNK, blob.size)));
       if (off === 0) {
         const writeResult = await FS.writeFile({ path: filename, data: b64, directory: 'CACHE', recursive: true });
         fileUri = writeResult && writeResult.uri;
       } else {
         await FS.appendFile({ path: filename, data: b64, directory: 'CACHE' });
       }
-      off += CHUNK;
+      off += FS_WRITE_CHUNK;
     } while (off < blob.size);
     // Verify the whole file landed before offering it
     const st = await FS.stat({ path: filename, directory: 'CACHE' });
@@ -17319,7 +17522,21 @@ async function saveOrShare(blob, filename, _mimeType) {
     showToast('Could not write file: ' + (err && err.message ? err.message : err), true);
     return { saved: false, native: true, error: err };
   }
+  return shareCacheFile(SH, fileUri, filename);
+}
 
+// The iPad app's export ZIP, already written into the Cache (build 134 — see
+// makeCacheZipWriter): offered as saveOrShare offers the file it writes.
+async function shareExportFile(file, filename) {
+  const SH = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share;
+  if (!SH) {
+    showToast('Share unavailable — file not saved.', true);
+    return { saved: false, native: true, error: 'plugins-missing' };
+  }
+  return shareCacheFile(SH, file.uri, filename);
+}
+
+async function shareCacheFile(SH, fileUri, filename) {
   try {
     await SH.share({
       title: filename,

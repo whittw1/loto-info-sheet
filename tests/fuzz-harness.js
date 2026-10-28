@@ -393,10 +393,22 @@
     const realSave = window.saveOrShare;
     const realC = window.confirm;
     window.saveOrShare = async (blob, filename) => { captured = { blob, filename }; return { saved: true }; };
+    // the iPad app's ZIP is a file in the Cache already (build 134): read it back
+    const realShareFile = window.shareExportFile;
+    window.shareExportFile = async (file, filename) => {
+      const r = await window.Capacitor.Plugins.Filesystem.readFile({ path: file.path, directory: 'CACHE' });
+      const bin = atob(r.data || ''), u = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      captured = { blob: new Blob([u], { type: 'application/zip' }), filename }; return { saved: true, native: true };
+    };
     window.confirm = () => true;
-    try { await runCombinedExport(); if (!captured) await sleep(300); }
+    try {
+      await runCombinedExport();
+      if (window.__lastExportError) viol('exception', 'export: ' + ((window.__lastExportError.stack) || window.__lastExportError));   // a toast in the app since build 134
+      if (!captured) await sleep(300);
+    }
     catch (e) { viol('exception', 'export: ' + ((e && e.stack) || e)); }
-    finally { window.saveOrShare = realSave; window.confirm = realC; closeExportDialog(); }
+    finally { window.saveOrShare = realSave; window.shareExportFile = realShareFile; window.confirm = realC; closeExportDialog(); }
     if (!captured) { if (truth.size) info('export produced no file (' + truth.size + ' expected)'); return 'export (no file)'; }
     if (uploadTo) { try { await fetch(uploadTo + '/s' + seedNow + '_t' + stepNow + '_' + (df === 'all' ? 'all' : df) + '.zip', { method: 'POST', body: captured.blob }); } catch (e) { info('upload failed ' + e.message); } }
     const z = await JSZip.loadAsync(captured.blob);
@@ -468,14 +480,16 @@
     if (missingB.length || extraB.length) viol('export-xlsx-mismatch', 'expected-not-found: ' + missingB.slice(0, 2).join(' || ') + ' ;; found-not-expected: ' + extraB.slice(0, 2).join(' || '));
     // Which sheet each unit is on: its survey date (the filtered day for a
     // date-filtered export). The open form is TODAY's work — the export
-    // filter treats it as today — so it belongs on today's sheet.
+    // filter treats it as today — so it belongs on today's sheet. And one sheet
+    // per facility since build 118: the code, filename-safe, after the date.
     {
       const today = localDateStr(new Date());
       const fixed = /^\d{4}-\d{2}-\d{2}$/.test(df) ? df : null;
       const sheetFor = (je) => {
         const isForm = !!(truth.get(String(je.id)) || {}).form && !savedEquipment.some(x => sameEntryId(x.id, je.id));
         const d = fixed || getEntryDate(je) || (isForm ? today : null);
-        return { want: d ? 'Information_Sheet_' + getDateStamp(exportDateFrom(d)) + '.xlsx' : 'Information_Sheet_undated.xlsx', isForm };
+        const fac = String(je.hospitalCode || getHospitalCode() || '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+        return { want: (d ? 'Information_Sheet_' + getDateStamp(exportDateFrom(d)) : 'Information_Sheet_undated') + (fac ? '_' + fac : '') + '.xlsx', isForm };
       };
       for (const b of gotBlocks) {
         const cands = ej.entries.filter(e => (e.equipName || '') === b.name).map(sheetFor);
