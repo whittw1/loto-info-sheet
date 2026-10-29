@@ -103,6 +103,7 @@
 //             can't name, a held answer on a pump's exhaust
 //   T407–T411 build 135: boxes the tech places in the valve-mark dialog (they stay put, export in
 //             column 23 / photoMarks[k].layout, older marks unchanged); the source card's columns
+//   T412–T414 its xhigh review: an older mark goes around a placed box, a tap on a circle, the loupe
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -13269,6 +13270,82 @@
     });
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // ---------- build 135: the xhigh review (2026-10-29) ----------
+  const vmRects = o => {
+    const vert = o.arrow_dir === 'up' || o.arrow_dir === 'down';
+    return [[o.box_x, o.box_y, 0.32, 0.13], [o.arrow_x, o.arrow_y, vert ? 0.11 : o.arrow_len, vert ? o.arrow_len : 0.11]];
+  };
+  const vmOverlap = (a, b) => a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];
+  const vmCovers = (r, p) => p[0] > r[0] && p[0] < r[0] + r[2] && p[1] > r[1] && p[1] < r[1] + r[3];
+
+  // T412 — an older mark on a photo shared with a placed box
+  async function t412_unplacedMarksGoAroundPlacedBoxes() {
+    const N = 'T412 build 135 review: a mark with no placed box (saved before 135) on a photo it shares with a placed box is laid out around that box and off its valve — it was laid out as if the placed box were not there, and landed on it — in the layout and in the dialog\'s group; with no placed box the rule is unchanged';
+    await resetAppState();
+    if (typeof valveMarkLayoutFor !== 'function') return record(N, false, 'this build has no placed boxes');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const old = { x: 0.3, y: 0.5 }, placed = { x: 0.8, y: 0.2, dir: 'up', len: 0.25, off: 0 };
+    const clear = (lay) => {
+      const a = vmRects(lay[0]), b = vmRects(lay[1]);
+      return !a.some(r => b.some(q => vmOverlap(r, q))) && !a.some(r => vmCovers(r, [placed.x, placed.y]));
+    };
+    const lay = valveMarkLayoutFor([old, placed]);
+    got.lay = lay;
+    want(clear(lay), 'the older box lands on the placed box or its valve');
+    want(JSON.stringify(lay[1]) === JSON.stringify(valveMarkOverride(placed)), 'the placed box moved');
+    const plain = [{ x: 0.3, y: 0.5 }, { x: 0.7, y: 0.5 }];
+    want(JSON.stringify(valveMarkLayoutFor(plain)) === JSON.stringify(layoutValveMarks(plain)), 'no placed box: not the rule');
+    // the same through the form: source 1's old mark, source 2 (the same photo) placed
+    fillFormNoSources('VM-412');
+    sources.push(Object.assign(mkSrc('HHW Supply'), { deviceType: 'Ball Valve', collapsed: false }));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('vm412'));
+    duplicateSource(0);
+    sources[1].energySource = 'HHW Return';
+    photos.source_0 = Object.assign({}, photos.source_0, { marks: [old], marksFor: marksShapeOf(sources[0]) });
+    photos.source_1 = Object.assign({}, photos.source_1, { marks: [placed], marksFor: marksShapeOf(sources[1]) });
+    const g = valveMarkGroupFor(photos.source_1);
+    got.group = g && g.layout;
+    want(!!g && g.layout.length === 2 && clear(g.layout), 'the dialog\'s group');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T413 — a tap on a circle once all are marked
+  async function t413_aTapOnACircleDoesNothing() {
+    const N = 'T413 build 135 review: once every device is marked, a tap on a red circle (10 px off its centre — a grab let go without moving) leaves the mark where it was; it used to move the mark to the tap';
+    await resetAppState();
+    if (typeof valveMarkOverride !== 'function') return record(N, false, 'this build has no placed boxes');
+    const before = await markTwoValves('VM-413', [[0.3, 0.5], [0.7, 0.5]]);
+    openValveMarkDialog('source_0'); const w = await markDialogReady();
+    const W = w.getBoundingClientRect().width;
+    tapMark(before[0].x + 10 / W, before[0].y);
+    clickById('valveMarkSave');
+    const after = photos.source_0.marks;
+    record(N, JSON.stringify(after) === JSON.stringify(before), 'before ' + JSON.stringify(before) + ' after ' + JSON.stringify(after));
+  }
+
+  // T414 — the loupe near the photo's sides
+  async function t414_theLoupeStaysOverThePhoto() {
+    const N = 'T414 build 135 review: while a red circle at the photo\'s left or right edge is dragged, the loupe stays within the photo\'s width (6 px either side) — it stuck out past the dialog, which clipped it or scrolled sideways';
+    await resetAppState();
+    if (typeof valveMarkOverride !== 'function') return record(N, false, 'this build has no placed boxes');
+    await markTwoValves('VM-414', [[0.015, 0.5], [0.985, 0.5]]);
+    openValveMarkDialog('source_0'); const w = await markDialogReady();
+    const r = w.getBoundingClientRect(), got = {}, bad = [];
+    const ev = (type, fx, fy) => w.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 44, pointerType: 'touch', isPrimary: true,
+      clientX: r.left + fx * r.width, clientY: r.top + fy * r.height }));
+    for (const [fx, to] of [[0.015, 0.005], [0.985, 0.995]]) {
+      ev('pointerdown', fx, 0.5); ev('pointermove', fx, 0.53); ev('pointermove', to, 0.56);
+      const l = document.getElementById('valveMarkLoupe');
+      const left = parseFloat(l.style.left), shown = l.style.display === 'block';
+      got[fx] = { left, shown };
+      if (!shown || left < -6.01 || left + 120 > r.width + 6.01) bad.push(fx);
+      ev('pointerup', to, 0.56);
+    }
+    closeValveMarkDialog();
+    record(N, !bad.length, (bad.length ? 'FAILED at ' + bad.join() + ' — ' : '') + 'photo ' + Math.round(r.width) + ' px: ' + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -13435,7 +13512,8 @@
     t401_theIpadExportIsWrittenAsItGoes, t402_aCancelledExportLeavesNoFile, t403_anUnfinishedExportIsSaidAtLaunch,
     t404_theZipWriterNeverReplacesAFile, t405_theZipWriterMakesAValidZip, t406_oneExportAtATime,
     t407_aDraggedBoxStaysAndIsExported, t408_aBoxNeverMovesByItself, t409_placedBoxesAlwaysFitAndTouchTheirArrow,
-    t410_olderMarksExportAsBefore, t411_theSourceCardsColumnsStayOnTheCard];
+    t410_olderMarksExportAsBefore, t411_theSourceCardsColumnsStayOnTheCard,
+    t412_unplacedMarksGoAroundPlacedBoxes, t413_aTapOnACircleDoesNothing, t414_theLoupeStaysOverThePhoto];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

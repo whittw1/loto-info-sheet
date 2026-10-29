@@ -10084,11 +10084,15 @@ function _vmOverride(p) {
     arrow_dir: p.dir, arrow_len: _vmRound(p.len)
   };
 }
-function layoutValveMarks(marks) {
+// `fixed` (build 135): {rects, tips} — boxes + arrows already on the photo and
+// their valves, which these boxes go around. Without it: loto-web's rule as
+// it always was (T84).
+function layoutValveMarks(marks, fixed) {
   const pts = (marks || []).map(m => [_vmClamp(Number(m.x), 0, 1), _vmClamp(Number(m.y), 0, 1)]);
-  const placed = [];
+  const placed = fixed ? fixed.rects.slice() : [];
+  const fixedTips = fixed ? fixed.tips : [];
   return pts.map((pt, i) => {
-    const pick = _vmPick(pt[0], pt[1], placed, pts.filter((q, j) => j !== i));
+    const pick = _vmPick(pt[0], pt[1], placed, pts.filter((q, j) => j !== i).concat(fixedTips));
     placed.push(pick.box, pick.arrow);
     return _vmOverride(pick);
   });
@@ -10100,13 +10104,19 @@ function layoutValveMarks(marks) {
 // `off` across it — box centre minus shaft centre, held to where the shaft
 // still meets the box. null when that side has no room. With _vmPlace's own
 // len and off it gives _vmPlace's box back exactly.
+// Where the arrow's shaft runs across its own direction: the centre line of
+// an arrow held on the photo (a sideways arrow's y, an up / down one's x).
+function _vmShaftCentre(x, y, d) {
+  const G = VALVE_MARK_GEOM, v = (d === 'right' || d === 'left') ? y : x;
+  return _vmClamp(v - G.THICK / 2, 0, 1 - G.THICK) + G.THICK / 2;
+}
 function _vmPlaceAt(x, y, d, len, off) {
   const G = VALVE_MARK_GEOM, q = G.THICK / 4;
   if (d === 'right' || d === 'left') {
     const room = d === 'right' ? x - G.BOX_W : 1 - x - G.BOX_W;
     if (room < G.MIN_LEN) return null;
     const ln = _vmClamp(len, G.MIN_LEN, room);
-    const ay = _vmClamp(y - G.THICK / 2, 0, 1 - G.THICK), ac = ay + G.THICK / 2;
+    const ac = _vmShaftCentre(x, y, d), ay = ac - G.THICK / 2;
     const by = _vmClamp(_vmClamp(ac + off - G.BOX_H / 2, ac - G.BOX_H + q, ac - q), 0, 1 - G.BOX_H);
     return d === 'right'
       ? { dir: d, len: ln, arrow: [x - ln, ay, ln, G.THICK], box: [x - ln - G.BOX_W, by, G.BOX_W, G.BOX_H] }
@@ -10115,7 +10125,7 @@ function _vmPlaceAt(x, y, d, len, off) {
   const room = d === 'down' ? y - G.BOX_H : 1 - y - G.BOX_H;
   if (room < G.MIN_LEN) return null;
   const ln = _vmClamp(len, G.MIN_LEN, room);
-  const ax = _vmClamp(x - G.THICK / 2, 0, 1 - G.THICK), ac = ax + G.THICK / 2;
+  const ac = _vmShaftCentre(x, y, d), ax = ac - G.THICK / 2;
   const bx = _vmClamp(_vmClamp(ac + off - G.BOX_W / 2, ac - G.BOX_W + q, ac - q), 0, 1 - G.BOX_W);
   return d === 'down'
     ? { dir: d, len: ln, arrow: [ax, y - ln, G.THICK, ln], box: [bx, y - ln - G.BOX_H, G.BOX_W, G.BOX_H] }
@@ -10158,12 +10168,20 @@ function valveMarkOverride(m) {
   return p ? _vmOverride(p) : null;
 }
 // The boxes of one image's marks, in order: a placed mark keeps its box, the
-// rest are laid out together by loto-web's rule (as before build 135).
+// rest are laid out together by loto-web's rule AROUND the placed boxes and
+// off their valves (an older mark on a photo shared with a placed one used to
+// be laid out as if the placed box weren't there, and could land on it).
 function valveMarkLayoutFor(marks) {
-  const loose = [];
-  marks.forEach((m, k) => { if (!valveMarkPlacement(m)) loose.push(k); });
-  const auto = layoutValveMarks(loose.map(k => marks[k]));
-  return marks.map((m, k) => valveMarkOverride(m) || auto[loose.indexOf(k)]);
+  const ovs = marks.map(valveMarkOverride);
+  const loose = [], fixed = { rects: [], tips: [] };
+  ovs.forEach((ov, k) => {
+    if (!ov) { loose.push(k); return; }
+    const p = _vmPlacementOf(ov);
+    fixed.rects.push(p.box, p.arrow);
+    fixed.tips.push([_vmClamp(Number(marks[k].x), 0, 1), _vmClamp(Number(marks[k].y), 0, 1)]);
+  });
+  const auto = loose.length ? layoutValveMarks(loose.map(k => marks[k]), fixed) : [];
+  return ovs.map((ov, k) => ov || auto[loose.indexOf(k)]);
 }
 // Marks as the exports ship them: {x, y}, and the placed box's `layout`.
 function valveMarksForJson(marks) {
@@ -10257,7 +10275,8 @@ function valveMarkShapeSvg(ov, w, h, label, color, opacity) {
 // ---- the dialog ------------------------------------------------------------
 // Tap the photo where the valve is (one tap per device for a quantity-N
 // source; once all are placed a tap moves the nearest). The preview draws the
-// boxes + arrows exactly as loto-web will print them, other sources on the
+// boxes + arrows where loto-web will print them (it prints each box narrowed
+// to its ID inside the box drawn here), other sources on the
 // same shared photo dimmed. Bound to the photo REFERENCE shown: if that photo
 // is retaken / removed meanwhile, the mark is not saved.
 // Build 135: every box of this source is a placed one (opening the dialog
@@ -10272,9 +10291,7 @@ function _vmBoxRelAt(m, d, cx, cy) {   // the box of mark m on side d, centred a
   const G = VALVE_MARK_GEOM;
   const horiz = d === 'right' || d === 'left';
   const len = horiz ? Math.abs(cx - m.x) - G.BOX_W / 2 : Math.abs(cy - m.y) - G.BOX_H / 2;
-  const ac = horiz ? _vmClamp(m.y - G.THICK / 2, 0, 1 - G.THICK) + G.THICK / 2
-                   : _vmClamp(m.x - G.THICK / 2, 0, 1 - G.THICK) + G.THICK / 2;
-  return _vmPlaceAt(m.x, m.y, d, len, (horiz ? cy : cx) - ac);
+  return _vmPlaceAt(m.x, m.y, d, len, (horiz ? cy : cx) - _vmShaftCentre(m.x, m.y, d));
 }
 // Where a box dragged to centre (cx, cy) goes, in the photo box's w x h
 // pixels: the side whose gap between valve and box edge is the wider on screen,
@@ -10462,7 +10479,7 @@ function openValveMarkDialog(slotId, opts) {
       autoBox.add(marks.length - 1);
       relayout(autoBox);
     } else {
-      if (hit && hit.kind === 'box') return;
+      if (hit) return;   // a circle or a box: those are dragged
       let j = 0, best = Infinity;
       marks.forEach((m, k) => { const d = (m.x - p.x) * (m.x - p.x) + (m.y - p.y) * (m.y - p.y); if (d < best) { best = d; j = k; } });
       marks = marks.map((m, k) => (k === j ? moveTip(m, p) : m));
@@ -10480,7 +10497,7 @@ function openValveMarkDialog(slotId, opts) {
       loupe.style.display = 'block';
     }
     loupe.style.backgroundPosition = (S / 2 - px * Z) + 'px ' + (S / 2 - py * Z) + 'px';
-    loupe.style.left = (px - S / 2) + 'px';
+    loupe.style.left = Math.max(-6, Math.min(W - S + 6, px - S / 2)) + 'px';   // never past the dialog's sides
     loupe.style.top = (py - S - 44 < -10 ? py + 44 : py - S - 44) + 'px';   // above the finger, below it at the top edge
   };
   // Dragging a circle or a box (Pointer Events: finger, Pencil or mouse).
