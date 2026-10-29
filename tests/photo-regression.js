@@ -13354,7 +13354,7 @@
   // ==========================================================================
   // T415 — the AHU's common-note menu
   async function t415_anAhuOffersItsCommonNotes() {
-    const N = 'T415 build 136: Notes shows a "+ Common note…" menu only on an AHU (the Air Handler type or an AHU template; never a pump, a chiller, a transformer or no type); a pick adds the duct smoke damper text as its own "NOTE: " line after what is typed and the menu goes back to its prompt; the same line is not added twice; reworded in Notes it stays as typed, and the menu adds the original again (a second damper); the unit saves and exports the reworded text to entries.json and the sheet\'s Notes row';
+    const N = 'T415 build 136: Notes shows a "+ Common note…" menu only on an AHU (the Air Handler type or an AHU template; never a pump, a chiller, a transformer or no type); a pick adds the duct smoke damper text as its own "NOTE: " line after what is typed and the menu goes back to its prompt; the same line is not added twice; reworded in Notes it stays as typed, and the menu adds the original again (a second damper); the unit saves and exports the reworded text to entries.json and the sheet\'s Notes row. Review: an AHU template with no type shows it on the form; a pick leaves Notes unfocused (no iPad keyboard) and says it was added, while + NOTE still focuses; Edit and a relaunch bring the menu back with the unit';
     await resetAppState();
     if (typeof addCommonNote !== 'function') return record(N, false, 'this build has no common notes');
     const fails = [], got = {};
@@ -13374,10 +13374,19 @@
     got.kinds = [['', 'AHU - Steam'], ['Chiller', 'Chiller'], ['Transformer', 'AHU - Steam'], ['Air Handler', '']]
       .map(([t, tm]) => commonNotesFor(unitKinds(t, tm, [])).length).join();
     want(got.kinds === '1,0,0,1', 'an AHU template alone counts; a chiller or a transformer gets none');
-    ta.value = 'Shares a header';
-    sel.value = 'ahu-duct-smoke-damper'; sel.dispatchEvent(new Event('change'));
-    got.first = ta.value; got.reset = sel.value;
+    document.getElementById('equipType').value = ''; filterTemplateDropdown('');
+    document.getElementById('equipTemplate').value = 'AHU - Steam'; renderUnitQuestions(false);
+    got.tmplOnly = shown() && getTemplate() === 'AHU - Steam';
+    want(got.tmplOnly, 'an AHU template with no type shows it on the form');
+    document.getElementById('equipTemplate').value = ''; setType('Air Handler');
+    ta.value = 'Shares a header'; ta.blur();
+    const added = await withToasts(async () => { sel.value = 'ahu-duct-smoke-damper'; sel.dispatchEvent(new Event('change')); });
+    got.first = ta.value; got.reset = sel.value; got.focused = document.activeElement === ta;
     want(got.first === 'Shares a header\nNOTE: ' + TEXT && got.reset === '', 'a NOTE: line after the typed text; the menu back to its prompt');
+    want(!got.focused && added.some(m => /^Added to Notes/.test(m)), 'Notes not focused; the pick is confirmed (' + added.join(' | ') + ')');
+    addNoteLine('NOTE'); got.noteFocus = document.activeElement === ta;
+    ta.value = got.first; ta.blur(); autoSaveCurrent();
+    want(got.noteFocus, '+ NOTE still focuses Notes');
     const toasts = await withToasts(async () => { addCommonNote('ahu-duct-smoke-damper'); });
     want(ta.value === got.first && toasts.some(m => /already in Notes/.test(m)), 'not added twice (' + toasts.join(' | ') + ')');
     ta.value = ta.value.replace('(supply side)', '(return side)'); autoSaveCurrent();
@@ -13405,6 +13414,20 @@
       got.sheet = val ? val.cells[0] : null;
       want(got.sheet === notes, 'the sheet\'s Notes row');
     }
+    // Edit brings the menu back with the unit; so does a relaunch with it in progress (as T20 reloads)
+    got.cleared = shown();
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(saved)); });
+    await sleep(300);
+    got.edit = shown() && ta.value === notes;
+    want(!got.cleared && got.edit, 'hidden on the new form; back on Edit with the notes');
+    autoSaveCurrent(); await sleep(300);
+    editingEntry = null; savedEquipment = []; sources = []; photos = {}; miscPhotos = [];   // what a reload loses
+    document.getElementById('equipType').value = ''; filterTemplateDropdown(''); renderUnitQuestions(false);
+    got.blanked = shown();
+    await loadAll(); await sleep(200);
+    got.relaunch = shown() && getEquipType() === 'Air Handler' && ta.value === notes;
+    want(!got.blanked && got.relaunch, 'back after a relaunch with the unit in progress');
+    dropLoadBanners();
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
   // ---------- runner --------------------------------------------------------

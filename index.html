@@ -4658,11 +4658,11 @@ function sheetFacilityPart(code) { return String(code || '').replace(/[^a-zA-Z0-
 // being typed in keeps its focus and caret through a rebuild.
 let _unitQKey = null;
 function renderUnitQuestions(force) {
-  syncCommonNotes();   // the Notes menu follows the unit's kind too (build 136)
-  const box = document.getElementById('unitQuestions');
-  if (!box) return;
   const el = formEntryLike();
   const k = unitKinds(el.equipType, el.template, el.sources);
+  syncCommonNotes(k);   // the Notes menu follows the unit's kind too (build 136)
+  const box = document.getElementById('unitQuestions');
+  if (!box) return;
   const auto = changeLaterAutoNotes(el);
   // build 122: a transformer's section also follows its Secondary Main and Alternate Source rows
   const xfmrRows = k.xfmr ? [(el.sources || []).filter(isSecondaryMainRow).map(s => s.location), xfmrAltKindsRecorded(el.sources)] : null;
@@ -4856,13 +4856,19 @@ function loadUnitAnswers(a) {
 
 // "+ NOTE" / "+ CAUTION" under Notes (build 118): a new line that loto-web
 // prints as a Section 2 band, word for word. The rest of Notes stays free text.
-function addNoteLine(kind) {
+function addNoteLine(kind) { appendNotesLine(kind + ': ', true); }
+// A new last line in Notes, then the autosave. `edit` puts the caret at its end
+// for typing (+ NOTE); a common note (build 136) is only scrolled into sight, so
+// a pick that needs no change doesn't bring up the iPad's keyboard.
+function appendNotesLine(text, edit) {
   const ta = document.getElementById('equipNotes');
   if (!ta) return;
   const v = ta.value;
-  ta.value = v + (v && !/\n$/.test(v) ? '\n' : '') + kind + ': ';
-  ta.focus();
-  try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) {}
+  ta.value = v + (v && !/\n$/.test(v) ? '\n' : '') + text;
+  if (edit) {
+    ta.focus();
+    try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) {}
+  } else ta.scrollTop = ta.scrollHeight;
   autoSaveCurrent();
 }
 
@@ -4886,10 +4892,10 @@ function formCommonNotes() {
 }
 // Shown only when the unit's kind has notes; rebuilt only when the list changes.
 let _commonNotesKey = null;
-function syncCommonNotes() {
+function syncCommonNotes(k) {
   const row = document.getElementById('commonNotesRow'), sel = document.getElementById('commonNoteSelect');
   if (!row || !sel) return;
-  const list = formCommonNotes();
+  const list = commonNotesFor(k);
   const key = list.map(n => n.id).join('|');
   if (key === _commonNotesKey) return;
   _commonNotesKey = key;
@@ -4904,11 +4910,8 @@ function addCommonNote(id) {
   if (!n || !ta) return;
   const line = 'NOTE: ' + n.text;
   if (ta.value.split('\n').some(l => l.trim() === line)) { showToast('That note is already in Notes'); return; }
-  const v = ta.value;
-  ta.value = v + (v && !/\n$/.test(v) ? '\n' : '') + line;
-  ta.focus();
-  try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) {}
-  autoSaveCurrent();
+  appendNotesLine(line, false);
+  showToast('Added to Notes — tap Notes to change the wording');
 }
 
 // ---- Medical vacuum pump: its exhaust and the inlet union / flange ----------
