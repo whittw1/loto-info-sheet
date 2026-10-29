@@ -106,6 +106,8 @@
 //   T412–T414 its xhigh review: an older mark goes around a placed box, a tap on a circle, the loupe
 //   T415      build 136: the Notes menu of common notes (AHUs only): a pick adds a NOTE: line the tech can reword
 //   T416      build 137: 30 misc photos a unit (was 10), all 30 exported; the 31st is refused
+//   T417–T419 build 138: the source card in sections (What it is / Where / the kind's band / Photo, More menu);
+//             a feeder under its drive, Fed by / Feeder for / list chips; the drive's answer as tap buttons
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8648,7 +8650,7 @@
     want(got.pos === '1,1,1,1', 'answer positions');
     // the card: one answer per drive, changed by hand
     renderSources();
-    got.boxes = [0, 1].map(k => (document.getElementById('src_driveiso_0_' + k) || {}).value);
+    got.boxes = [0, 1].map(k => { const el = document.getElementById('src_driveiso_0_' + k); return el ? el.dataset.value : undefined; });   // tap buttons since build 138
     updateDriveIsolates(0, 1, 'cant_tell'); updateDriveIsolates(0, 0, '');
     got.byHand = JSON.stringify(sources[0].driveIsolates);
     want(got.boxes.join() === 'no,yes' && got.byHand === '[null,"cant_tell"]', 'the card');
@@ -9182,18 +9184,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 137 (was build 122\'s): APP_BUILD and the header label say 137, the service worker\'s cache is loto-collector-v7.132, Xcode\'s CURRENT_PROJECT_VERSION is 137 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 138 (was build 122\'s): APP_BUILD and the header label say 138, the service worker\'s cache is loto-collector-v7.133, Xcode\'s CURRENT_PROJECT_VERSION is 138 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 137 && !!label && +label[1] === 137, 'the build');
+    want(APP_BUILD === 138 && !!label && +label[1] === 138, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.132', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.133', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 137;,CURRENT_PROJECT_VERSION = 137;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 138;,CURRENT_PROJECT_VERSION = 138;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -9635,9 +9637,10 @@
       want(got.second === 'VFD-2|true,true|true', 'the second drive: ' + got.second);
       // a tag the other drive carries: not written into the blank box
       form([DRIVE({ deviceId: 'VFD-1' }), Object.assign(FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), { role: 'feeder' }), DRIVE({ deviceId: '' })]);
+      const blank = sources[2];   // a feeder naming VFD-1 goes under VFD-1 (build 138): the blank drive moves down
       await withDialogs({ choice: (o) => ({ 'feeder-panel': 'MCC-3', 'feeder-breaker': '1', 'feeder-drive': 'vfd-1' })[o.id] || 'cancel' },
         async () => { await promptDriveFeeder(2); });
-      want(sources[2].deviceId === '', 'another drive\'s tag stays out: ' + JSON.stringify(sources[2].deviceId));
+      want(blank.deviceId === '', 'another drive\'s tag stays out: ' + JSON.stringify(blank.deviceId));
     } finally { window.showToast = prevToast; setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -10902,7 +10905,7 @@
 
   // T332 — the answer block is not swapped while the tech is in it
   async function t332_theAnswerBlockIsNotSwappedWhileFocused() {
-    const N = 'T332 build 122 tenth review: with focus in a Quantity-2 drive\'s answer select, a Device ID input (a scan or paste) leaves that block in place — the tech\'s open select is never swapped out from under them; the next render brings the new names';
+    const N = 'T332 build 122 tenth review: with focus in a Quantity-2 drive\'s answer (a select until build 137, tap buttons since 138), a Device ID input (a scan or paste) leaves that block in place — what the tech is touching is never swapped out from under them; the next render brings the new names';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -10911,7 +10914,7 @@
       setHospitalCode('');
       formOfType('AHU-332', 'Air Handler', 'AHU - Steam');
       sources = [DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2 })]; sources.forEach(ensureSourceId); renderSources();
-      const sel = document.getElementById('src_driveiso_0_1');
+      const sel = document.querySelector('#src_driveiso_0_1 button') || document.getElementById('src_driveiso_0_1');
       if (sel) sel.focus();
       const before = document.getElementById('driveIsoGroup_0');
       updateUnitDeviceId(0, 0, 'AHU-1-SF');
@@ -12740,10 +12743,12 @@
     sources = [vfdRow('3-RF-50'), vfdRow('3-RF-51')];
     sources.forEach(ensureSourceId); sources.forEach(s => { s.driveIsolates = ['yes']; }); renderSources();
     await withDialogs({ choice: { 'feeder-panel': tapped('MCC 9', 'bucket'), 'feeder-breaker': '7', 'feeder-drive': '3-RF-50' } }, async () => { await addFeederFromCard(0); });
-    await withDialogs({ choice: { 'feeder-panel': tapped('mcc  9', 'bkr'), 'feeder-breaker': '7', 'feeder-drive': '3-RF-51' } }, async () => { await addFeederFromCard(1); });
-    got.rows = sources.slice(2).map(s => s.deviceType + ' | ' + s.location).join(' / ');
+    const rf51 = sources[1];   // build 138: the first feeder goes under 3-RF-50, so 3-RF-51 moves down
+    await withDialogs({ choice: { 'feeder-panel': tapped('mcc  9', 'bkr'), 'feeder-breaker': '7', 'feeder-drive': '3-RF-51' } }, async () => { await addFeederFromCard(sources.indexOf(rf51)); });
+    got.rows = sources.filter(isFeederRow).map(s => s.deviceType + ' | ' + s.location).join(' / ');
     got.fed = unitDrives(sources).map(d => d.tag + ':' + d.fed).join(',');
-    got.loto = [isFeederRow(sources[2]), feederNamesTag(sources[2].location, '3-RF-50'), feederNamesTag(sources[2].location, '3-RF-51')].join('/');
+    const fr = sources.find(isFeederRow) || {};
+    got.loto = [sources.indexOf(fr) === 1, feederNamesTag(fr.location, '3-RF-50'), feederNamesTag(fr.location, '3-RF-51')].join('/');
     want(got.rows === 'Disconnect | Feeder: MCC 9 bucket 7 (3-RF-50, 3-RF-51)', 'one row: ' + got.rows);
     want(got.fed === '3-RF-50:true,3-RF-51:true' && got.loto === 'true/true/true', 'both fed, read as loto-web reads it');
     fillFormNoSources('AHU-398b');
@@ -13258,12 +13263,15 @@
         const card = document.querySelector('.source-card');
         for (const width of [700, 560]) {
           card.style.width = width + 'px';
-          const grid = card.querySelector('.form-grid');
-          const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').map(parseFloat);
-          const right = grid.getBoundingClientRect().right;
-          const past = Array.from(grid.querySelectorAll('*')).filter(el => el.offsetParent && el.getBoundingClientRect().right > right + 0.5).map(el => el.tagName + (el.id ? '#' + el.id : ''));
-          got['w' + width] = { cols, scroll: grid.scrollWidth, client: grid.clientWidth, past: past.slice(0, 4) };
-          want(cols.length === 2 && Math.abs(cols[0] - cols[1]) < 0.5 && grid.scrollWidth <= grid.clientWidth && !past.length, 'at ' + width + ' px');
+          // every grid of the card (build 138: it is in sections; "What it is" has three columns)
+          const grids = Array.from(card.querySelectorAll('.form-grid')).filter(g => g.offsetParent);
+          got['w' + width] = grids.map(grid => {
+            const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').map(parseFloat);
+            const right = grid.getBoundingClientRect().right;
+            const past = Array.from(grid.querySelectorAll('*')).filter(el => el.offsetParent && el.getBoundingClientRect().right > right + 0.5).map(el => el.tagName + (el.id ? '#' + el.id : ''));
+            return { cols, scroll: grid.scrollWidth, client: grid.clientWidth, past: past.slice(0, 4) };
+          });
+          want(got['w' + width].some(g => g.cols.length === 2) && got['w' + width].every(g => g.cols.length >= 2 && g.cols.every(c => Math.abs(c - g.cols[0]) < 0.5) && g.scroll <= g.client && !g.past.length), 'at ' + width + ' px');
         }
         card.style.width = '';
       } finally {
@@ -13493,6 +13501,126 @@
     } finally { inp.click = realClick; }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // ==========================================================================
+  // BUILD 138 — the source card in sections, and the feeder beside its drive
+  // (wilkins 2026-10-29: the card "seems like its very disjointed"; a feeder
+  // "just appears in the energy source list, and its hard to tell what source
+  // VFD it is linked to"). Each fails on 137.
+  // ==========================================================================
+  // T417 — the card in sections
+  async function t417_theCardIsInSections() {
+    const N = 'T417 build 138: an open source card is in sections — "What it is" (Energy Source, Device Type, Quantity, Device ID), "Where it\'s isolated and verified" (Location, Verification), the kind\'s own band (Drive on a VFD row: the discharge wait, Fed by, the drive\'s disconnect; Valve on a gate valve; Damper on a damper actuator; none on a plain breaker), then "Photo" (the slot, Detail, Duplicate as No / Yes buttons); the header says what the row is ("Electrical 480V · VFD", "Energy Source #1" under it) with ▲ ▼, More and Done — Link, Copy, Duplicate and Remove are in More, never beside Done; a Device typed by hand that makes a valve brings the Valve band without a re-render';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-417', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-1' }), Object.assign(mkSrc('LPS 10 PSI'), { deviceType: 'Gate Valve', collapsed: false }),
+        Object.assign(mkSrc('Damper Actuator'), { deviceType: 'Actuator', location: '', collapsed: false }), Object.assign(mkSrc('Electrical 480V'), { collapsed: false }),
+        Object.assign(mkSrc('LPS 10 PSI'), { deviceType: 'Steam trap', _customDevice: true, collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      const cards = () => [...document.querySelectorAll('#sourcesContainer > .source-card')];
+      const shown = c => [...c.querySelectorAll('.src-sec')].filter(s => s.style.display !== 'none');
+      const titles = c => shown(c).map(s => (s.querySelector('.src-sec-title') || {}).textContent).join(' / ');
+      got.secs = cards().map(titles);
+      want(/^What it is \/ Where it.s isolated and verified \/ Drive \/ Photo$/.test(got.secs[0]), 'the drive card');
+      want(/verified \/ Valve \/ Photo$/.test(got.secs[1]) && /verified \/ Damper \/ Photo$/.test(got.secs[2]) && /verified \/ Photo$/.test(got.secs[3]) && /verified \/ Photo$/.test(got.secs[4]),
+        'one band per kind: ' + JSON.stringify(got.secs));
+      const c0 = cards()[0], s0 = shown(c0);
+      const has = (k, sel) => !!(s0[k] && s0[k].querySelector(sel));
+      got.where = [has(0, '#src_energy_0'), has(0, '#src_device_0'), has(0, '#src_deviceId_0'),
+        [...s0[0].querySelectorAll('label')].some(l => /^Quantity$/i.test(l.textContent.trim())),
+        has(1, '#src_loc_0'), has(1, '#src_ver_0'), has(2, '#lwGroup_0'), has(2, '#feederGroup_0'), has(2, '#driveIsoGroup_0'),
+        has(3, '#photo_source_0'), has(3, '#src_detail_0'), has(3, '#src_dup_0')].join();
+      want(!got.where.includes('false'), 'each field in its section: ' + got.where);
+      const head = c0.querySelector('.source-card-header');
+      got.title = head.querySelector('.src-head-title').textContent;
+      got.sub = head.querySelector('.src-head-sub').textContent.replace(/\s+/g, ' ').trim();
+      got.buttons = [...head.querySelectorAll('.src-head-btns > button')].map(b => b.textContent.trim());
+      got.menu = [...head.querySelectorAll('.src-more-menu button')].map(b => b.textContent.trim());
+      want(got.title === 'Electrical 480V · VFD' && /^Energy Source #1$/.test(got.sub), 'the title: ' + got.title + ' / ' + got.sub);
+      want(JSON.stringify(got.buttons) === JSON.stringify(['▲', '▼', 'Done']) && got.menu.length === 4 && /Link/.test(got.menu[0])
+        && /Copy/.test(got.menu[1]) && /Duplicate/.test(got.menu[2]) && /Remove/.test(got.menu[3]), 'the header and More');
+      got.dup = [...document.querySelectorAll('#src_dup_3 button')].map(b => b.textContent + ':' + b.classList.contains('on') + ':' + /updateSource\(3,'duplicate','(No|Yes)'\)/.test(b.getAttribute('onclick'))).join(' ');
+      want(got.dup === 'No:true:true Yes:false:true', 'Duplicate buttons: ' + got.dup);
+      // a Device typed by hand: the band follows when the box is left (refreshSourceDependents), the card is not rebuilt
+      const live = cards()[4];
+      sources[4].deviceType = 'Trap valve';
+      refreshSourceDependents(4);
+      got.typed = [cards()[4] === live, titles(live)].join(' | ');
+      want(cards()[4] === live && /verified \/ Valve \/ Photo$/.test(titles(live)) && !!live.querySelector('#valveStateGroup_4.form-group'), 'a typed valve: ' + got.typed);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T418 — the feeder under its drive, and both cards say so
+  async function t418_aFeederSitsUnderItsDriveAndBothSayIt() {
+    const N = 'T418 build 138: a feeder added from a drive\'s card goes right under that drive — the rows after it move down one, each with its photo — never to the bottom; the drive\'s card says "Fed by #n" with the breaker and Go to (its button then offers another feeder), the feeder\'s card "Feeder for #n · Electrical 480V VFD (VFD-1)" with Go to drive; in the list the drive carries "Fed by #n", the feeder "Feeds #n VFD-1" and sits indented under it, and a drive with none "No feeder yet"; Go to opens that row\'s card';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-418', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-1', driveIsolates: ['yes'] }), Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Disconnect', location: 'At Unit' }),
+        DRIVE({ deviceId: '', collapsed: true, driveIsolates: ['yes'] })];
+      sources.forEach(ensureSourceId);
+      const disc = sources[1], d2 = sources[2];
+      const key = photoStoreKey(ensureCurrentEntryId(), disc.sourceId);
+      await storePhotoBytes(key, dataUrlFromBytesSeed('t418'));
+      photos.source_1 = { dbKey: key, thumbnail: TINY_THUMB, timestamp: new Date().toISOString(), fileType: 'image/jpeg' };
+      renderSources();
+      await withDialogs({ choice: { 'feeder-panel': tapped('MCC-2A', 'bkr'), 'feeder-breaker': '14', 'feeder-drive': 'VFD-1' } }, async () => { await addFeederFromCard(0); });
+      got.order = sources.map(s => s === disc ? 'disc' : s === d2 ? 'd2' : isFeederRow(s) ? 'feeder' : isDriveRow(s) ? 'drive' : '?').join();
+      want(got.order === 'drive,feeder,disc,d2', 'under its drive: ' + got.order);
+      want(!!(photos.source_2 && photos.source_2.dbKey === key) && !(photos.source_1 && photos.source_1.dbKey), 'the disconnect\'s photo moved with it');
+      const text = id => { const el = document.getElementById(id); return el ? el.textContent.replace(/\s+/g, ' ').trim() : ''; };
+      got.fedBy = text('feederGroup_0');
+      want(/^Fed by\s*#2\s*Breaker · MCC-2A bkr 14\s*Go to\s*\+ Another feeder$/.test(got.fedBy), 'the drive card');
+      got.banner = text('feederFor_1');
+      want(/Feeder for #1 · Electrical 480V VFD \(VFD-1\)\s*Go to drive$/.test(got.banner), 'the feeder card');
+      sources.forEach(s => { s.collapsed = true; }); renderSources();
+      const cards = [...document.querySelectorAll('#sourcesContainer > .source-card')];
+      got.chips = cards.map(c => [...c.querySelectorAll('.src-chip')].map(x => x.textContent.trim()).join('+'));
+      got.under = cards.map(c => c.classList.contains('src-under')).join();
+      want(JSON.stringify(got.chips) === JSON.stringify(['Fed by #2', 'Feeds #1 VFD-1', '', 'No feeder yet']), 'the list\'s chips');
+      want(got.under === 'false,true,false,false', 'the feeder indented under its drive');
+      goToSource(3);
+      got.goTo = [sources[3].collapsed, !!document.getElementById('feederGroup_3')].join();
+      want(got.goTo === 'false,true', 'Go to opens the card');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T419 — the drive's answer as tap buttons
+  async function t419_theDrivesAnswerIsTapButtons() {
+    const N = 'T419 build 138: the drive\'s "own disconnect isolates all incoming power?" is Yes / No / Can\'t tell buttons, a row per drive; a tap answers (driveIsolates, in Device ID order), a second tap on the same answer takes it back, and the buttons follow in place (no re-render)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-419', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-1; VFD-2', quantity: 2 })]; sources.forEach(ensureSourceId); renderSources();
+      const btn = (k, v) => document.querySelector('#src_driveiso_0_' + k + ' button[data-v="' + v + '"]');
+      const ans = () => JSON.stringify(driveIsolatesForJson(sources[0]));
+      const before = document.getElementById('driveIsoGroup_0');
+      got.labels = [...document.querySelectorAll('#src_driveiso_0_0 button')].map(b => b.textContent).join(' / ');
+      want(got.labels === "Yes / No / Can't tell", 'the buttons: ' + got.labels);
+      btn(1, 'no').click(); got.a = ans();
+      btn(0, 'cant_tell').click(); got.b = ans();
+      btn(1, 'no').click(); got.c = ans();
+      got.on = [0, 1].map(k => [...document.querySelectorAll('#src_driveiso_0_' + k + ' button.on')].map(b => b.dataset.v).join('')).join('|');
+      got.same = document.getElementById('driveIsoGroup_0') === before;
+      want(got.a === '[null,"no"]' && got.b === '["cant_tell","no"]' && got.c === '["cant_tell",null]', 'the answers');
+      want(got.on === 'cant_tell|' && got.same, 'the buttons follow in place');
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -13661,7 +13789,8 @@
     t407_aDraggedBoxStaysAndIsExported, t408_aBoxNeverMovesByItself, t409_placedBoxesAlwaysFitAndTouchTheirArrow,
     t410_olderMarksExportAsBefore, t411_theSourceCardsColumnsStayOnTheCard,
     t412_unplacedMarksGoAroundPlacedBoxes, t413_aTapOnACircleDoesNothing, t414_theLoupeStaysOverThePhoto,
-    t415_anAhuOffersItsCommonNotes, t416_aUnitTakesThirtyMiscPhotos];
+    t415_anAhuOffersItsCommonNotes, t416_aUnitTakesThirtyMiscPhotos,
+    t417_theCardIsInSections, t418_aFeederSitsUnderItsDriveAndBothSayIt, t419_theDrivesAnswerIsTapButtons];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
