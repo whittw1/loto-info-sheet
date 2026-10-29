@@ -171,7 +171,9 @@ Form Inputs ──► localStorage (auto-saved as JSON)
   Save Entry ──► Saved Equipment list (localStorage)
        │    (or replace-in-place if editingEntry is set)
        ▼
-  Export (filtered by date) ──► ZIP blob (JSZip) ──► Browser download
+  Export (filtered by date) ──► iOS app: ZIP written into the app's Cache a file at a time
+                            │     (makeCacheZipWriter, build 134) ──► share sheet
+                            ──► web / Export to SharePoint: ZIP blob (JSZip) ──► download / upload
                             ──► XLSX (ExcelJS)  ──► Embedded in ZIP
 ```
 
