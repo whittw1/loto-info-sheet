@@ -1,6 +1,6 @@
 # LOTO Field Collector — Architecture Reference
 
-**Date:** 2026-10-29 (rev 114 — **build 136, committed on branch `canned-notes-136` (worktree `loto-notes-136`) as `80fd4fe`, NOT pushed or released**: a "+ Common note…" menu under Notes, on AHUs only (wilkins: "a note dropdown with certain text that will be used over and over again … Allow me to customize the text in the field as well"). A pick adds its text as a `NOTE:` line, which loto-web prints in Section 2 word for word, and the tech rewords it there for the unit. Nothing new is stored or exported, and loto-web needs no change. Suite 425 / 425 native-mock, 424 / 425 web (T157, a timing test, failed once and passed in another full run and 3 of 3 alone); not run in the Simulator (§6 "Build 136"). Prior: rev 113 — **loto-web reads column 23 since 2026-10-29**, by its own record (loto-web Status.md): shipped 10:52Z; the fix that lays older marks out around placed boxes went in at 10:57:44Z, fresh boot 10:59:52Z. Procedures now print each box where the tech put it, and the editor opens with it there (§6 "Build 135", §7, §10). Not checked against a live procedure here. Prior: rev 112 — **build 135 on TestFlight as 1.4 (135)**: wilkins' archive (10:57:02Z) was "Uploaded to Apple" at 10:59:44Z, `uploadedBuildNumber` 135. The archive's page, Finger Lakes copy and `sw.js` are byte-identical to `470c015`, with no test harness (§2; §6 "Build 135" → "The release"). Prior: rev 111 — **web = b135 LIVE**: wilkins pushed `main` `3295bcd..cc594ea`; by 11:05:20Z Azure and GitHub Pages served `index.html`, the Finger Lakes alias and `sw.js` (v7.130) byte-identical to `cc594ea` (§2; §6 "Build 135" → "The release"). Prior: rev 110 — **build 135 RELEASED** (wilkins: "release build 135"):
+**Date:** 2026-10-29 (rev 115 — **build 136's xhigh code review: 5 of 8 findings FIXED** (`9de86e5`). One helper adds a Notes line (`appendNotesLine`); the unit's kind is computed once per redraw; a pick no longer focuses Notes, so the iPad keyboard stays down when the stock text is right; T415 covers the form's template-only case, Edit and a relaunch; the suite totals corrected. Left as they are: loto-web takes a unit's Notes only while its stored notes are empty, and prints the office's editor notes instead when it has any — so the note reaches a new unit, not one already pulled with notes (loto-web's rule, wilkins' call); the notes are hard-coded, not a list edited on the device (wilkins' call); a custom-typed AHU follows `unitKinds`, as the AHU questions do. Suite **425 / 425** web and native-mock, the scale test included in both (§6 "Build 136" → "The code review"). Prior: rev 114 — **build 136, committed on branch `canned-notes-136` (worktree `loto-notes-136`) as `80fd4fe`, NOT pushed or released**: a "+ Common note…" menu under Notes, on AHUs only (wilkins: "a note dropdown with certain text that will be used over and over again … Allow me to customize the text in the field as well"). A pick adds its text as a `NOTE:` line, which loto-web prints in Section 2 word for word, and the tech rewords it there for the unit. Nothing new is stored or exported, and loto-web needs no change. Suite 424 / 424 native-mock (scale test skipped), 424 / 425 web (T157, a timing test, failed once and passed in another full run and 3 of 3 alone), T7 passing alone in web mode; not run in the Simulator (§6 "Build 136"). Prior: rev 113 — **loto-web reads column 23 since 2026-10-29**, by its own record (loto-web Status.md): shipped 10:52Z; the fix that lays older marks out around placed boxes went in at 10:57:44Z, fresh boot 10:59:52Z. Procedures now print each box where the tech put it, and the editor opens with it there (§6 "Build 135", §7, §10). Not checked against a live procedure here. Prior: rev 112 — **build 135 on TestFlight as 1.4 (135)**: wilkins' archive (10:57:02Z) was "Uploaded to Apple" at 10:59:44Z, `uploadedBuildNumber` 135. The archive's page, Finger Lakes copy and `sw.js` are byte-identical to `470c015`, with no test harness (§2; §6 "Build 135" → "The release"). Prior: rev 111 — **web = b135 LIVE**: wilkins pushed `main` `3295bcd..cc594ea`; by 11:05:20Z Azure and GitHub Pages served `index.html`, the Finger Lakes alias and `sw.js` (v7.130) byte-identical to `cc594ea` (§2; §6 "Build 135" → "The release"). Prior: rev 110 — **build 135 RELEASED** (wilkins: "release build 135"):
 - rebased onto rev 107 `0d78b83`, giving code `1eb6f80` + `84afc26`;
 - `ios-testflight-scaffold` PUSHED `0d78b83..470c015`;
 - the iOS bundle synced and checked identical, and Xcode opened for wilkins' archive;
@@ -1273,23 +1273,33 @@ to Notes as a NOTE: line — change the wording there for this unit."
 - **The one note so far**, "Duct smoke damper (fire alarm controlled)": *Duct smoke damper downstream of the duct smoke
   detector (supply side), spring-return actuator, fire-alarm controlled. Not part of this procedure; any work on it goes
   through the fire alarm impairment process.*
-- **A pick** adds the text to Notes as its own line, `NOTE: <text>`, after anything typed. The caret goes to its end, and
-  the menu goes back to its prompt.
+- **A pick** adds the text to Notes as its own line, `NOTE: <text>`, after anything typed. The menu goes back to its
+  prompt, the box scrolls to the new line, and a message says "Added to Notes — tap Notes to change the wording". Notes
+  is not focused (since the code review), so the iPad keyboard stays down when the stock text is right.
 - **Customizing:** the tech rewords the line in Notes for that unit (say, "return side"). Picking the same note again adds
   the original once more (a second damper), but never a line already there word for word ("That note is already in
   Notes").
 
 **Why a `NOTE:` line.** loto-web prints a Notes line that starts `NOTE:` as one Section 2 band, word for word (build 118's
 + NOTE; loto-web `_parse_user_note_bands`). Run on the lines T415 exports (one reworded), loto-web's own function returned
-both as NOTE bands, verbatim, and left the plain line above them as informational text. **loto-web needs no change.**
+both as NOTE bands, verbatim, and left the plain line above them as informational text. **loto-web needs no change** for
+a new unit.
+- **But only while loto-web takes the unit's Notes** (found in the code review): its XLSX import fills a unit's notes only
+  while its stored notes are empty (`import_data.py`, `not equip.notes` — a note the newest sheet deleted stays deleted).
+- And once the office has attached procedure notes to the unit in loto-web's editor, the generator prints those instead of
+  the Notes' NOTE lines.
+- So the note reaches a new unit, or one loto-web holds no notes for. On an AHU already pulled with notes, the office adds
+  it in loto-web. Changing that is loto-web's rule and wilkins' call.
 
 **Data.** Nothing new is stored or exported: Notes stays free text (`entries.json` `notes`, the sheet's Notes row, the
 CSV). Which note was picked is not recorded.
 
 **Code.** `COMMON_NOTES` is keyed by `unitKinds()`' keys (`ahu` only for now): another kind of unit gets its own list
-with one more key, and a new note is one more `{id, label, text}`. `syncCommonNotes` shows or hides the menu and rebuilds
-its options only when the list changes; `renderUnitQuestions` calls it first, so the menu follows the type, template and
-rows as the "For loto-web" questions do. `addCommonNote` adds the line and autosaves.
+with one more key, and a new note is one more `{id, label, text}`. `syncCommonNotes(k)` shows or hides the menu and
+rebuilds its options only when the list changes; `renderUnitQuestions` hands it the unit's kind it has just computed, so
+the menu follows the type, template and rows as the "For loto-web" questions do. `addCommonNote` adds the line through
+`appendNotesLine(text, edit)`, the one way a line is added to Notes: build 118's + NOTE / + CAUTION pass `edit` (focus,
+caret at the end), a common note doesn't.
 
 **The bump:** `APP_BUILD` 136, the header "b136", `sw.js` `loto-collector-v7.131`, Xcode's `CURRENT_PROJECT_VERSION` 136
 in both entries, `app-lists.json` regenerated (build 136; its lists unchanged), T268 pinned to 136 / v7.131.
@@ -1301,17 +1311,39 @@ in both entries, `app-lists.json` regenerated (build 136; its lists unchanged), 
 - no second identical line; a reworded line is kept, and the original is added again;
 - the unit's saved `notes`, `entries.json` and the sheet's Notes row carry the reworded text.
 
-Suite at 1180 × 820: **425 / 425** native-mock (the T7 scale test run on its own), and web **424 / 425** in one full
-run. T157 (a build-94 tab's release; it never touches Notes) failed once, then passed in another full run and 3 of 3
-alone.
+Suite at 1180 × 820, before the review: native-mock **424 / 424** (scale test skipped), and web **424 / 425** in one
+full run, with T7 passing on its own in web mode. T157 (a build-94 tab's release; it never touches Notes) failed once,
+then passed in another full run and 3 of 3 alone. After the review: see "The code review".
 - In a hidden Browser pane the page lays out at zero size, and T71, T79b, T91, T411 and T414 fail on any build. All pass
   once the pane is shown at 1180 × 820.
 - Not run inside the iOS app on the Simulator: the change is page-only, with no storage, photo or native path.
 - Checked by hand in the browser: Air Handler → AHU - HHW → 480V → 1 fan; the menu under Notes; a pick added the line
   with the caret at its end; no console errors.
 
+#### The code review (xhigh, 2026-10-29)
+
+wilkins: "Run a code review on the code revisions before you release". Eight findings; five FIXED in `9de86e5`:
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | loto-web takes a unit's Notes only while its stored notes are empty, and prints editor notes instead when the office attached any, so the note never reaches an AHU already pulled with notes. The docs said it always prints. | Docs corrected (above). The rule is loto-web's: wilkins' call. |
+| 2 | The suite totals said 425 / 425 native-mock with the scale test; T7 had run only in web mode. | Corrected; both modes re-run with T7. |
+| 3 | The notes are hard-coded: each new one needs a build, an archive and a web promotion, and the tech can't keep a reworded note as a menu choice. | Left: a device-edited list is wilkins' call. |
+| 4 | `addCommonNote` copied `addNoteLine`'s append, focus, caret and autosave. | `appendNotesLine(text, edit)`, used by both. |
+| 5 | `syncCommonNotes` recomputed `formEntryLike` + `unitKinds` on every autosave, right before `renderUnitQuestions` did. | `renderUnitQuestions` passes its `k`. |
+| 6 | A pick focused Notes, which can bring up the iPad keyboard over Save & New when no edit is needed. | No focus; the box scrolls to the line; a message says it was added. + NOTE still focuses. |
+| 7 | T415 didn't cover Edit, a relaunch, or an AHU template with no type on the form. | Added to T415. |
+| 8 | A custom-typed AHU (e.g. "Air Handling Unit") with no AHU template gets no menu. | Left: it follows `unitKinds`, as the AHU questions do. |
+
+Also checked and found sound: the launch restore sets the type before the menu is drawn (relaunch tried by hand, then in
+T415); loto-web's field-app sheet path keeps the Notes cell's line breaks (only its transcribed-paper path joins lines
+with " | "); the paused-tab overlay covers the menu.
+
+The new T415 checks fail on `80fd4fe` (Notes was focused). Suite at 1180 × 820: **425 / 425** web and **425 / 425**
+native-mock, the T7 scale test included in both. Not run inside the iOS app on the Simulator (page-only change).
+
 **Branch.** Worktree `loto-notes-136`, branch `canned-notes-136`, cut from rev 112 `7498d94` and rebased onto rev 113
-`a5c183b` (another chat's, pushed meanwhile); code `80fd4fe`. **Not pushed or released:** the push, the iOS sync and
+`a5c183b` (another chat's, pushed meanwhile); code `80fd4fe`, review fixes `9de86e5`. **Not pushed or released:** the push, the iOS sync and
 archive, and the web promotion wait for wilkins.
 
 ### Build 135 — valve-mark boxes the tech places; the source card's columns (2026-10-29)
@@ -5914,7 +5946,7 @@ Approximate line numbers (they drift as edits accumulate) — every row refreshe
 | Badge + Settings: `paintBackupBadge` / `openBackupSettings` · `paintBackupSettings` / `setBackupOn` / `testBackup` / `backupEverythingAgain` / `startBackup` / markup `#backupBadge` · `#backupSettings` · `#exportCloudBtn` | 12385 / 12404 · 12409 / 12441 / 12456 / 12481 / 12493 / 485 · 856 · 730 |
 | `qxhCreate` — QuickXorHash, the same as `api/shared/qxh.js` | 12507 |
 | **Build 110:** `effectiveDuplicate` · `settleAutoDuplicates` (an automatic Duplicate = Yes needs its borrowed photo) / `sourceKindTakesPhoto` · `pickSharedPhoto` (markup `#dupPhotoBtn_<i>`, line 5364) / `askChoice` (`opts.input`) · `askSurveyDate` / `refreshSourceDependents` (runs `applySimpleVerifDefaults`) / `updateUnitDeviceId` (a `;` never replaces a later tag) · `splitSource` (keeps extra tags) / `collectTodaysPhotos` (taken today) / `deviceCameraCapture` · `inputIsCamera` / `UNATTACHED_OK_KEY` · `markUnattachedOk` · `emptySlotsWithUnattachedShots` (misc + "don't warn again") / `removeMiscPhoto` / `isSurveyedOn` (Today / Yesterday) / `executeDuplicate` (the copy counts as running before its first render) / `EXPORT_BIG_BYTES` · `runCombinedExport` | 1611 · 1619 / 1631 · 1634 / 1979 · 2031 / 5588 / 5688 · 5731 / 6419 / 8487 · 8492 / 8787 · 8792 · 8800 / 9004 / 9372 / 9945 / 10546 · 10548 |
-| **Build 136:** `COMMON_NOTES` · `commonNotesFor` · `formCommonNotes` / `syncCommonNotes` (called first in `renderUnitQuestions`, line 4660) / `addCommonNote` (markup `#commonNotesRow`, line 716); build 118's `addNoteLine` | 4874 / 4889 / 4899; 4859 |
+| **Build 136:** `COMMON_NOTES` · `commonNotesFor` · `formCommonNotes` / `syncCommonNotes(k)` (from `renderUnitQuestions`, line 4660) / `addCommonNote` (markup `#commonNotesRow`, line 716); `addNoteLine` (build 118) / `appendNotesLine` | 4880 / 4895 / 4905; 4859 / 4863 |
 | **Build 135:** `.form-grid` (`minmax(0, 1fr)` columns) / `cleanValveMarks` (keeps `dir` · `len` · `off`) · `_vmPick` · `layoutValveMarks(marks, fixed)` / `_vmShaftCentre` · `_vmPlaceAt` · `_vmRelOf` · `valveMarkPlacement` · `valveMarkOverride` · `valveMarkLayoutFor` · `valveMarksForJson` · `valveMarkLayoutText` / `valveMarkBoxDraggedTo` · `openValveMarkDialog` (drags, loupe, Auto-place) / the sheet's `markLayoutCell` (col 23) | 257 / 9928 · 10071 · 10090 / 10109 · 10113 · 10135 · 10153 · 10166 · 10174 · 10187 · 10196 / 10299 · 10309 / 15122 |
 | **Build 133:** `feederDeviceForWord` (an Other word's Device) | 3877 |
 | **Build 132:** `FEEDER_KINDS` · `feederBreakerKey` (bkr / bucket as one point) / `addFeederForDrive` (the panel step's Breaker / Bucket / Other, `feeder-kind-other`) / `askChoice` (`{ typed, value }`) · `hookTyped` | 3867 · 3861 / 3492 / 2193 · 2189 |
