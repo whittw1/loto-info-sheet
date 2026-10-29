@@ -250,8 +250,12 @@ if ('serviceWorker' in navigator) {
     margin-bottom: 16px;
   }
 
-  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  .form-grid.three-col { grid-template-columns: 1fr 1fr 1fr; }
+  /* minmax(0, 1fr), not 1fr (build 135): a 1fr column grows to its widest
+     content (a long dropdown option, a tag row with its scan button and "No
+     tag"), and on the iPad the two columns together ran past the source card,
+     which clipped the right one. Each column is now exactly its share. */
+  .form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+  .form-grid.three-col { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .form-group { display: flex; flex-direction: column; gap: 5px; }
   .form-group.full-width { grid-column: 1 / -1; }
   .form-group label {
@@ -463,8 +467,8 @@ if ('serviceWorker' in navigator) {
     .header { position: static; padding: 10px 12px; }
     .header-actions { justify-content: flex-start; gap: 6px; }
     .header-actions .btn-sm { padding: 6px 10px; font-size: 12px; }
-    .form-grid { grid-template-columns: 1fr; }
-    .form-grid.three-col { grid-template-columns: 1fr 1fr; }
+    .form-grid { grid-template-columns: minmax(0, 1fr); }
+    .form-grid.three-col { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
     .photo-row { flex-wrap: wrap; }
     .photo-slot { min-width: 45%; }
   }
@@ -479,7 +483,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b134</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b135</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1162,7 +1166,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 134;
+const APP_BUILD = 135;
 
 // ============================================================================
 // DATA
@@ -9909,9 +9913,17 @@ function retakePhoto(slotId) {
 // layoutValveMarks() is loto-web's placement rule, number for number — KEEP
 // IDENTICAL to app/services/valve_marks.py and _layoutValveMarks in its
 // frontend_dist/index.html (suite T84 pins golden values).
+// PLACED BOXES (build 135): the tech can drag each ID box where it reads best.
+// A mark then also carries {dir, len, off} — the arrow's direction from box
+// to valve, its length, and how far the box slides across the arrow — all
+// relative to the mark, so the box follows when the valve mark is moved. A
+// box stays where it was put; only marks without one are laid out by the rule
+// above. Exported as the absolute box + arrow (valveMarkOverride): entries.json
+// photoMarks[k].layout and the sheet's column 23 "Mark Layout".
 // ============================================================================
 const VALVE_MARK_GEOM = { BOX_W: 0.32, BOX_H: 0.13, LEN: 0.25, THICK: 0.11, MIN_LEN: 0.08 };
 const VALVE_MARK_MAX = 10;
+const VALVE_MARK_DIRS = ['right', 'left', 'down', 'up'];
 
 function cleanValveMarks(marks) {
   if (!Array.isArray(marks)) return [];
@@ -9920,7 +9932,13 @@ function cleanValveMarks(marks) {
     if (!m || typeof m !== 'object') continue;
     const x = Number(m.x), y = Number(m.y);
     if (!isFinite(x) || !isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) continue;
-    out.push({ x: x, y: y });
+    const c = { x: x, y: y };
+    // a placed box (build 135) is kept only whole and in range
+    const len = Number(m.len), off = Number(m.off);
+    if (VALVE_MARK_DIRS.includes(m.dir) && isFinite(len) && len > 0 && len <= 1 && isFinite(off) && Math.abs(off) <= 1) {
+      c.dir = m.dir; c.len = len; c.off = off;
+    }
+    out.push(c);
     if (out.length >= VALVE_MARK_MAX) break;
   }
   return out;
@@ -10048,26 +10066,121 @@ function _vmPlace(x, y, d) {
 }
 function _vmOverlap(a, b) { return a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]; }
 function _vmCovers(r, p) { return p[0] > r[0] && p[0] < r[0] + r[2] && p[1] > r[1] && p[1] < r[1] + r[3]; }
+// One mark's box: the first side with room that overlaps no box / arrow in
+// `placed` and covers none of the valves in `others`.
+function _vmPick(x, y, placed, others) {
+  const h1 = x >= 0.5 ? 'right' : 'left';
+  const v1 = y >= 0.5 ? 'down' : 'up';
+  const order = [h1, h1 === 'right' ? 'left' : 'right', v1, v1 === 'down' ? 'up' : 'down'];
+  const cands = order.map(d => _vmPlace(x, y, d)).filter(Boolean);
+  const fits = c => !placed.some(r => _vmOverlap(c.box, r) || _vmOverlap(c.arrow, r)) &&
+    !others.some(q => _vmCovers(c.box, q) || _vmCovers(c.arrow, q));
+  return cands.find(fits) || cands[0];
+}
+function _vmOverride(p) {
+  return {
+    box_x: _vmRound(p.box[0]), box_y: _vmRound(p.box[1]),
+    arrow_x: _vmRound(p.arrow[0]), arrow_y: _vmRound(p.arrow[1]),
+    arrow_dir: p.dir, arrow_len: _vmRound(p.len)
+  };
+}
 function layoutValveMarks(marks) {
   const pts = (marks || []).map(m => [_vmClamp(Number(m.x), 0, 1), _vmClamp(Number(m.y), 0, 1)]);
   const placed = [];
   return pts.map((pt, i) => {
-    const x = pt[0], y = pt[1];
-    const h1 = x >= 0.5 ? 'right' : 'left';
-    const v1 = y >= 0.5 ? 'down' : 'up';
-    const order = [h1, h1 === 'right' ? 'left' : 'right', v1, v1 === 'down' ? 'up' : 'down'];
-    const cands = order.map(d => _vmPlace(x, y, d)).filter(Boolean);
-    const others = pts.filter((q, j) => j !== i);
-    const fits = c => !placed.some(r => _vmOverlap(c.box, r) || _vmOverlap(c.arrow, r)) &&
-      !others.some(q => _vmCovers(c.box, q) || _vmCovers(c.arrow, q));
-    const pick = cands.find(fits) || cands[0];
+    const pick = _vmPick(pt[0], pt[1], placed, pts.filter((q, j) => j !== i));
     placed.push(pick.box, pick.arrow);
-    return {
-      box_x: _vmRound(pick.box[0]), box_y: _vmRound(pick.box[1]),
-      arrow_x: _vmRound(pick.arrow[0]), arrow_y: _vmRound(pick.arrow[1]),
-      arrow_dir: pick.dir, arrow_len: _vmRound(pick.len)
-    };
+    return _vmOverride(pick);
   });
+}
+
+// ---- placed boxes (build 135) ------------------------------------------------
+// The box + arrow for a valve at (x, y) with the arrow pointing `d`, `len`
+// long (at least MIN_LEN, at most the room on that side) and the box slid
+// `off` across it — box centre minus shaft centre, held to where the shaft
+// still meets the box. null when that side has no room. With _vmPlace's own
+// len and off it gives _vmPlace's box back exactly.
+function _vmPlaceAt(x, y, d, len, off) {
+  const G = VALVE_MARK_GEOM, q = G.THICK / 4;
+  if (d === 'right' || d === 'left') {
+    const room = d === 'right' ? x - G.BOX_W : 1 - x - G.BOX_W;
+    if (room < G.MIN_LEN) return null;
+    const ln = _vmClamp(len, G.MIN_LEN, room);
+    const ay = _vmClamp(y - G.THICK / 2, 0, 1 - G.THICK), ac = ay + G.THICK / 2;
+    const by = _vmClamp(_vmClamp(ac + off - G.BOX_H / 2, ac - G.BOX_H + q, ac - q), 0, 1 - G.BOX_H);
+    return d === 'right'
+      ? { dir: d, len: ln, arrow: [x - ln, ay, ln, G.THICK], box: [x - ln - G.BOX_W, by, G.BOX_W, G.BOX_H] }
+      : { dir: d, len: ln, arrow: [x, ay, ln, G.THICK], box: [x + ln, by, G.BOX_W, G.BOX_H] };
+  }
+  const room = d === 'down' ? y - G.BOX_H : 1 - y - G.BOX_H;
+  if (room < G.MIN_LEN) return null;
+  const ln = _vmClamp(len, G.MIN_LEN, room);
+  const ax = _vmClamp(x - G.THICK / 2, 0, 1 - G.THICK), ac = ax + G.THICK / 2;
+  const bx = _vmClamp(_vmClamp(ac + off - G.BOX_W / 2, ac - G.BOX_W + q, ac - q), 0, 1 - G.BOX_W);
+  return d === 'down'
+    ? { dir: d, len: ln, arrow: [ax, y - ln, G.THICK, ln], box: [bx, y - ln - G.BOX_H, G.BOX_W, G.BOX_H] }
+    : { dir: d, len: ln, arrow: [ax, y, G.THICK, ln], box: [bx, y + ln, G.BOX_W, G.BOX_H] };
+}
+// What a mark stores for a box + arrow: {dir, len, off} (4 decimals).
+function _vmRelOf(p) {
+  const G = VALVE_MARK_GEOM;
+  const off = (p.dir === 'right' || p.dir === 'left')
+    ? (p.box[1] + G.BOX_H / 2) - (p.arrow[1] + G.THICK / 2)
+    : (p.box[0] + G.BOX_W / 2) - (p.arrow[0] + G.THICK / 2);
+  return { dir: p.dir, len: _vmRound(p.len), off: _vmRound(off) };
+}
+function _vmPlacementOf(ov) {
+  const G = VALVE_MARK_GEOM, vert = ov.arrow_dir === 'up' || ov.arrow_dir === 'down';
+  return {
+    dir: ov.arrow_dir, len: ov.arrow_len,
+    arrow: [ov.arrow_x, ov.arrow_y, vert ? G.THICK : ov.arrow_len, vert ? ov.arrow_len : G.THICK],
+    box: [ov.box_x, ov.box_y, G.BOX_W, G.BOX_H]
+  };
+}
+// A placed mark's box + arrow. When its side has no room any more (the valve
+// mark moved to the edge) the box goes to the opposite side, then above or
+// below — one of left / right always has room.
+function valveMarkPlacement(m) {
+  if (!m || !VALVE_MARK_DIRS.includes(m.dir)) return null;
+  const x = _vmClamp(Number(m.x), 0, 1), y = _vmClamp(Number(m.y), 0, 1);
+  const opp = { right: 'left', left: 'right', down: 'up', up: 'down' };
+  const order = [m.dir, opp[m.dir]].concat(VALVE_MARK_DIRS.filter(d => d !== m.dir && d !== opp[m.dir]));
+  for (const d of order) {
+    const p = _vmPlaceAt(x, y, d, d === m.dir ? Number(m.len) : VALVE_MARK_GEOM.LEN, d === m.dir ? Number(m.off) : 0);
+    if (p) return p;
+  }
+  return null;
+}
+// The box + arrow loto-web prints for a placed mark, in its override keys;
+// null for a mark without a placed box (loto-web lays that one out).
+function valveMarkOverride(m) {
+  const p = valveMarkPlacement(m);
+  return p ? _vmOverride(p) : null;
+}
+// The boxes of one image's marks, in order: a placed mark keeps its box, the
+// rest are laid out together by loto-web's rule (as before build 135).
+function valveMarkLayoutFor(marks) {
+  const loose = [];
+  marks.forEach((m, k) => { if (!valveMarkPlacement(m)) loose.push(k); });
+  const auto = layoutValveMarks(loose.map(k => marks[k]));
+  return marks.map((m, k) => valveMarkOverride(m) || auto[loose.indexOf(k)]);
+}
+// Marks as the exports ship them: {x, y}, and the placed box's `layout`.
+function valveMarksForJson(marks) {
+  return (marks || []).map(m => {
+    const ov = valveMarkOverride(m);
+    return ov ? { x: m.x, y: m.y, layout: ov } : { x: m.x, y: m.y };
+  });
+}
+// The sheet's column 23 "Mark Layout": per mark "box_x,box_y,arrow_x,arrow_y,
+// arrow_dir,arrow_len", "; " between marks, nothing for a mark without a
+// placed box. Blank when no mark has one.
+function valveMarkLayoutText(marks) {
+  const parts = (marks || []).map(m => {
+    const ov = valveMarkOverride(m);
+    return ov ? [ov.box_x, ov.box_y, ov.arrow_x, ov.arrow_y].map(v => v.toFixed(4)).concat([ov.arrow_dir, ov.arrow_len.toFixed(4)]).join(',') : '';
+  });
+  return parts.some(Boolean) ? parts.join('; ') : '';
 }
 // Every source photo on the open form that shows the SAME image as `ref` (a
 // reused or duplicated shot: the export writes it once and loto-web puts all
@@ -10083,7 +10196,7 @@ function valveMarkGroupFor(ref, draft) {
     const marks = (draft && r === draft.ref) ? draft.marks : fittingMarks(r, src);
     marks.forEach((m, k) => items.push({ srcIndex: i, sub: k, mine: r === ref, mark: m, qty: valveMarkSlots(src) }));
   });
-  return { items: items, layout: layoutValveMarks(items.map(t => t.mark)) };
+  return { items: items, layout: valveMarkLayoutFor(items.map(t => t.mark)) };
 }
 
 // ---- the prompt ------------------------------------------------------------
@@ -10144,9 +10257,38 @@ function valveMarkShapeSvg(ov, w, h, label, color, opacity) {
 // ---- the dialog ------------------------------------------------------------
 // Tap the photo where the valve is (one tap per device for a quantity-N
 // source; once all are placed a tap moves the nearest). The preview draws the
-// boxes + arrows exactly as loto-web will lay them out, other sources on the
+// boxes + arrows exactly as loto-web will print them, other sources on the
 // same shared photo dimmed. Bound to the photo REFERENCE shown: if that photo
 // is retaken / removed meanwhile, the mark is not saved.
+// Build 135: every box of this source is a placed one (opening the dialog
+// places any older mark's box where the rule put it). Drag a box to move it —
+// it goes to the side of the valve it is dragged to, its arrow as long as the
+// gap; drag a red circle to move the valve mark, its box follows. A box never
+// moves by itself once it is dragged or was saved, so marking a second valve
+// no longer rearranges the first one's box. Boxes placed by the rule in this
+// session (never dragged) are laid out again together when a valve is added,
+// as before; "Auto-place" lays out every box of this source again.
+function _vmBoxRelAt(m, d, cx, cy) {   // the box of mark m on side d, centred as near (cx, cy) as it can be
+  const G = VALVE_MARK_GEOM;
+  const horiz = d === 'right' || d === 'left';
+  const len = horiz ? Math.abs(cx - m.x) - G.BOX_W / 2 : Math.abs(cy - m.y) - G.BOX_H / 2;
+  const ac = horiz ? _vmClamp(m.y - G.THICK / 2, 0, 1 - G.THICK) + G.THICK / 2
+                   : _vmClamp(m.x - G.THICK / 2, 0, 1 - G.THICK) + G.THICK / 2;
+  return _vmPlaceAt(m.x, m.y, d, len, (horiz ? cy : cx) - ac);
+}
+// Where a box dragged to centre (cx, cy) goes, in the photo box's w x h
+// pixels: the side whose gap between valve and box edge is the wider on screen,
+// else the next side with room.
+function valveMarkBoxDraggedTo(m, cx, cy, w, h) {
+  const G = VALVE_MARK_GEOM;
+  const dx = cx - m.x, dy = cy - m.y;
+  const horiz = Math.abs(dx) * w - G.BOX_W * w / 2 >= Math.abs(dy) * h - G.BOX_H * h / 2;
+  const hd = dx < 0 ? 'right' : 'left', vd = dy < 0 ? 'down' : 'up';
+  const order = horiz ? [hd, vd, vd === 'down' ? 'up' : 'down', hd === 'right' ? 'left' : 'right']
+                      : [vd, hd, hd === 'right' ? 'left' : 'right', vd === 'down' ? 'up' : 'down'];
+  for (const d of order) { const p = _vmBoxRelAt(m, d, cx, cy); if (p) return Object.assign({}, m, _vmRelOf(p)); }
+  return m;
+}
 function openValveMarkDialog(slotId, opts) {
   opts = opts || {};
   const sm = /^source_(\d+)$/.exec(slotId || '');
@@ -10161,6 +10303,13 @@ function openValveMarkDialog(slotId, opts) {
   const slots = valveMarkSlots(src);
   const openShape = marksShapeOf(src);   // what these marks are placed for (build 102)
   let marks = fittingMarks(ref, src);
+  // Older marks get the box the rule gave them, as placed boxes (build 135)
+  if (marks.some(m => !m.dir)) {
+    const g0 = valveMarkGroupFor(ref, { ref: ref, marks: marks });
+    const mine = g0.items.map((it, k) => k).filter(k => g0.items[k].mine);
+    marks = marks.map((m, k) => m.dir ? m : Object.assign({}, m, _vmRelOf(_vmPlacementOf(g0.layout[mine[k]]))));
+  }
+  let autoBox = new Set();   // marks added this session whose box was never dragged
   const what = src.deviceType || 'valve / device';
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
@@ -10168,18 +10317,25 @@ function openValveMarkDialog(slotId, opts) {
   overlay.style.padding = '10px';
   let objUrl = null;
   overlay.innerHTML = html`
-    <div class="dialog" style="max-width:min(96vw,760px);padding:14px 14px 12px;max-height:96vh;overflow-y:auto;">
+    <div class="dialog" style="max-width:min(96vw,1000px);padding:14px 14px 12px;max-height:96vh;overflow-y:auto;">
       <h3 style="margin:0 0 4px;font-size:17px;">&#128205; Where is the ${what}?</h3>
       <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;line-height:1.4;">
         Source #${idx + 1} &mdash; ${src.energySource || 'energy source'}. ${isInOutPair(src) ? raw('<b>Tap the IN valve first, then the OUT valve.</b>') : slots > 1 ? 'Tap each of the ' + slots + ' devices in the photo.' : 'Tap it in the photo.'}
         The arrow on the LOTO procedure will point there.
       </div>
-      <div id="valveMarkWrap" style="position:relative;margin:0 auto;cursor:crosshair;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;">
+      <div id="valveMarkWrap" style="position:relative;margin:0 auto;cursor:crosshair;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;">
         <img id="valveMarkImg" src="${ref.thumbnail || ''}" draggable="false" alt="" style="display:block;width:100%;height:100%;border-radius:6px;background:#000;pointer-events:none;">
         <svg id="valveMarkSvg" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible;"></svg>
+        <div id="valveMarkLoupe" style="display:none;position:absolute;width:120px;height:120px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.55);background-color:#000;background-repeat:no-repeat;pointer-events:none;">
+          <div style="position:absolute;left:50%;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;border:2.5px solid #e02020;border-radius:50%;box-shadow:0 0 0 1.5px #fff;"></div>
+        </div>
       </div>
       <div id="valveMarkNote" style="font-size:11px;color:var(--text-dim);margin-top:6px;text-align:center;">Loading full resolution\u2026</div>
       <div id="valveMarkCount" style="font-size:13px;font-weight:600;text-align:center;margin-top:2px;"></div>
+      <div id="valveMarkHint" style="display:flex;visibility:hidden;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--text-dim);margin-top:4px;text-align:center;">
+        <span>Drag a box to move it &middot; drag a red circle to move its arrow tip</span>
+        <button type="button" id="valveMarkAuto" class="btn btn-sm" style="padding:4px 10px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">&#8634; Auto-place boxes</button>
+      </div>
       <div style="display:flex;gap:8px;margin-top:10px;">
         <button id="valveMarkSave" class="btn btn-primary" style="flex:2;padding:12px;font-size:15px;">Save</button>
         <button id="valveMarkClear" class="btn btn-outline" style="flex:1;padding:12px;font-size:14px;">Clear</button>
@@ -10195,13 +10351,42 @@ function openValveMarkDialog(slotId, opts) {
   const img = overlay.querySelector('#valveMarkImg');
   const svg = overlay.querySelector('#valveMarkSvg');
   const count = overlay.querySelector('#valveMarkCount');
+  const hint = overlay.querySelector('#valveMarkHint');
   const color = VALVE_MARK_COLORS[getSourceColorClass(src.energySource)] || '#ffff00';
+  // The other sources' boxes + arrows on this photo, which this one's avoid.
+  const fixedRects = (skip) => {
+    const out = [];
+    valveMarkGroupFor(ref, { ref: ref, marks: marks.filter((m, k) => !skip.has(k)) }).layout.forEach(ov => {
+      const p = _vmPlacementOf(ov);
+      out.push(p.box, p.arrow);
+    });
+    return out;
+  };
+  // Lay out the boxes in `which` again by the rule, in order, around every
+  // other box on the photo (no other box: exactly loto-web's joint layout).
+  const relayout = (which) => {
+    const placed = fixedRects(which);
+    const items = valveMarkGroupFor(ref, { ref: ref, marks: marks }).items;
+    const tips = items.map(it => [it.mark.x, it.mark.y]);
+    const mineAt = items.map((it, j) => it.mine ? j : -1).filter(j => j >= 0);
+    marks = marks.map((m, k) => {
+      if (!which.has(k)) return m;
+      const pick = _vmPick(m.x, m.y, placed, tips.filter((q, j) => j !== mineAt[k]));
+      placed.push(pick.box, pick.arrow);
+      return Object.assign({ x: m.x, y: m.y }, _vmRelOf(pick));
+    });
+  };
+  // A valve mark moved to p: its box keeps its place relative to the mark —
+  // held in by the photo's edge, or on the other side where there is no room,
+  // and back where it was if the mark moves back (valveMarkPlacement).
+  const moveTip = (base, p) => Object.assign({}, base, p);
   const draw = () => {
     const w = wrap.clientWidth, h = wrap.clientHeight;
     count.textContent = isInOutPair(src)
-      ? (marks.length === 0 ? 'Tap the IN valve' : marks.length === 1 ? 'IN marked \u2014 now tap the OUT valve' : 'IN + OUT marked \u2014 tap again to move the nearest')
+      ? (marks.length === 0 ? 'Tap the IN valve' : marks.length === 1 ? 'IN marked \u2014 now tap the OUT valve' : 'IN + OUT marked')
       : slots > 1 ? (marks.length + ' of ' + slots + ' marked')
-      : (marks.length ? 'Marked \u2014 tap again to move it' : 'Not marked yet');
+      : (marks.length ? 'Marked' : 'Not marked yet');
+    hint.style.visibility = marks.length ? 'visible' : 'hidden';   // its line is always there: the photo never shifts under the next tap
     if (!w || !h) return;
     svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
     const g = valveMarkGroupFor(ref, { ref: ref, marks: marks });
@@ -10225,30 +10410,123 @@ function openValveMarkDialog(slotId, opts) {
     const iw = img.naturalWidth, ih = img.naturalHeight;
     if (!iw || !ih) return;
     const dlg = overlay.querySelector('.dialog');
-    const maxW = Math.max(120, Math.min(dlg.clientWidth - 28, 732));
-    const maxH = Math.max(140, window.innerHeight * 0.6);
+    const maxW = Math.max(120, Math.min(dlg.clientWidth - 28, 972));
+    const maxH = Math.max(140, Math.min(window.innerHeight * 0.72, window.innerHeight - 290));
     let w = maxW, h = w * ih / iw;
     if (h > maxH) { h = maxH; w = h * iw / ih; }
     wrap.style.width = Math.round(w) + 'px';
     wrap.style.height = Math.round(h) + 'px';
     draw();
   };
-  wrap.addEventListener('click', (e) => {
+  const pointAt = (e) => {
     const r = wrap.getBoundingClientRect();
-    if (!r.width || !r.height) return;
-    const p = {
+    if (!r.width || !r.height) return null;
+    return { r: r, px: e.clientX - r.left, py: e.clientY - r.top,
       x: Math.round(_vmClamp((e.clientX - r.left) / r.width, 0, 1) * 1000) / 1000,
-      y: Math.round(_vmClamp((e.clientY - r.top) / r.height, 0, 1) * 1000) / 1000
-    };
-    if (marks.length < slots) marks = marks.concat([p]);
-    else {
+      y: Math.round(_vmClamp((e.clientY - r.top) / r.height, 0, 1) * 1000) / 1000 };
+  };
+  // What a finger at pt is on: a red circle of this source (within 22 px),
+  // else one of its boxes (the last drawn is on top).
+  const hitAt = (pt) => {
+    const W = pt.r.width, H = pt.r.height;
+    let best = null, bd = 22 * 22;
+    marks.forEach((m, k) => {
+      const d = (m.x * W - pt.px) * (m.x * W - pt.px) + (m.y * H - pt.py) * (m.y * H - pt.py);
+      if (d <= bd) { bd = d; best = { kind: 'tip', k: k }; }
+    });
+    if (best) return best;
+    for (let k = marks.length - 1; k >= 0; k--) {
+      const p = valveMarkPlacement(marks[k]);
+      if (!p) continue;
+      const b = p.box, x0 = b[0] * W, y0 = b[1] * H, x1 = (b[0] + b[2]) * W, y1 = (b[1] + b[3]) * H;
+      if (pt.px >= x0 - 6 && pt.px <= x1 + 6 && pt.py >= y0 - 6 && pt.py <= y1 + 6) {
+        return { kind: 'box', k: k, gx: pt.px - (x0 + x1) / 2, gy: pt.py - (y0 + y1) / 2 };
+      }
+    }
+    return null;
+  };
+  // A tap: the next valve while there are devices left to mark, else it moves
+  // the nearest valve mark (its box goes with it). A tap on one of this
+  // source's circles, or on a box once all are marked, does nothing — those
+  // are dragged.
+  let noClickUntil = 0;
+  wrap.addEventListener('click', (e) => {
+    if (Date.now() < noClickUntil) return;
+    const pt = pointAt(e);
+    if (!pt) return;
+    const hit = hitAt(pt);
+    const p = { x: pt.x, y: pt.y };
+    if (marks.length < slots) {
+      if (hit && hit.kind === 'tip' && Math.hypot(marks[hit.k].x * pt.r.width - pt.px, marks[hit.k].y * pt.r.height - pt.py) < 12) return;
+      marks = marks.concat([p]);
+      autoBox.add(marks.length - 1);
+      relayout(autoBox);
+    } else {
+      if (hit && hit.kind === 'box') return;
       let j = 0, best = Infinity;
       marks.forEach((m, k) => { const d = (m.x - p.x) * (m.x - p.x) + (m.y - p.y) * (m.y - p.y); if (d < best) { best = d; j = k; } });
-      marks = marks.map((m, k) => (k === j ? p : m));
+      marks = marks.map((m, k) => (k === j ? moveTip(m, p) : m));
     }
     draw();
   });
-  overlay.querySelector('#valveMarkClear').onclick = () => { marks = []; draw(); };
+  // While a red circle is dragged, a loupe above the finger shows the photo
+  // under it at 2.5x — the finger hides the valve it is lining up on.
+  const loupe = overlay.querySelector('#valveMarkLoupe');
+  const showLoupe = (px, py) => {
+    const W = wrap.clientWidth, H = wrap.clientHeight, Z = 2.5, S = 120;
+    if (loupe.style.display !== 'block') {
+      loupe.style.backgroundImage = 'url("' + String(img.currentSrc || img.src).replace(/"/g, '%22') + '")';
+      loupe.style.backgroundSize = (W * Z) + 'px ' + (H * Z) + 'px';
+      loupe.style.display = 'block';
+    }
+    loupe.style.backgroundPosition = (S / 2 - px * Z) + 'px ' + (S / 2 - py * Z) + 'px';
+    loupe.style.left = (px - S / 2) + 'px';
+    loupe.style.top = (py - S - 44 < -10 ? py + 44 : py - S - 44) + 'px';   // above the finger, below it at the top edge
+  };
+  // Dragging a circle or a box (Pointer Events: finger, Pencil or mouse).
+  let drag = null;
+  wrap.addEventListener('pointerdown', (e) => {
+    const pt = pointAt(e);
+    const hit = pt && hitAt(pt);
+    if (!hit) return;
+    drag = Object.assign({ id: e.pointerId, sx: e.clientX, sy: e.clientY, base: marks[hit.k], moved: false }, hit);
+    try { wrap.setPointerCapture(e.pointerId); } catch (x) {}
+  });
+  wrap.addEventListener('pointermove', (e) => {
+    if (!drag) {
+      if (e.pointerType === 'mouse') { const pt = pointAt(e); wrap.style.cursor = pt && hitAt(pt) ? 'move' : 'crosshair'; }
+      return;
+    }
+    if (e.pointerId !== drag.id) return;
+    if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 6) return;
+    drag.moved = true;
+    e.preventDefault();
+    const pt = pointAt(e);
+    if (!pt) return;
+    if (drag.kind === 'tip') {
+      marks = marks.map((m, k) => (k === drag.k ? moveTip(drag.base, { x: pt.x, y: pt.y }) : m));
+      showLoupe(_vmClamp(pt.px, 0, pt.r.width), _vmClamp(pt.py, 0, pt.r.height));
+    } else {
+      const cx = _vmClamp((pt.px - drag.gx) / pt.r.width, 0, 1), cy = _vmClamp((pt.py - drag.gy) / pt.r.height, 0, 1);
+      marks = marks.map((m, k) => (k === drag.k ? valveMarkBoxDraggedTo(drag.base, cx, cy, pt.r.width, pt.r.height) : m));
+      autoBox.delete(drag.k);
+    }
+    draw();
+  });
+  const endDrag = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    if (drag.moved) noClickUntil = Date.now() + 400;   // the drag's own click is not a tap
+    drag = null;
+    loupe.style.display = 'none';
+  };
+  wrap.addEventListener('pointerup', endDrag);
+  wrap.addEventListener('pointercancel', endDrag);
+  overlay.querySelector('#valveMarkAuto').onclick = () => {
+    autoBox = new Set(marks.map((m, k) => k));
+    relayout(autoBox);
+    draw();
+  };
+  overlay.querySelector('#valveMarkClear').onclick = () => { marks = []; autoBox = new Set(); draw(); };
   overlay.querySelector('#valveMarkSkip').onclick = () => closeValveMarkDialog();
   overlay.querySelector('#valveMarkSave').onclick = () => { closeValveMarkDialog(); saveValveMarks(ref, marks, session, openShape); };
   const ask = overlay.querySelector('#valveMarkAsk');
@@ -14606,8 +14884,9 @@ async function buildAndSendExport(opts, run) {
         // when its photo was taken (build 109), as in the JPEG's EXIF
         photoCapturedAt: cap.capturedAt || '',
         photoCapturedFrom: cap.capturedFrom || '',
-        // Valve marks (build 92): [{x, y}] fractions of photoFile, one per device
-        photoMarks: map.sourceHs[i] ? sourceMarksForExport(entry, i) : []
+        // Valve marks (build 92): [{x, y}] fractions of photoFile, one per device;
+        // a placed box adds `layout`, loto-web's box + arrow override (build 135)
+        photoMarks: map.sourceHs[i] ? valveMarksForJson(sourceMarksForExport(entry, i)) : []
       };
       if (out.duplicate !== src.duplicate) delete out.dupAuto;
       // Existing tags (build 119, backup only): one entry per unit where the
@@ -14725,7 +15004,8 @@ async function buildAndSendExport(opts, run) {
         { width: 10 },  // 19: DC Bus V (build 121)
         { width: 18 },  // 20: Drains To (build 122)
         { width: 14 },  // 21: Drive Isolates (build 122)
-        { width: 12 }   // 22: Powered By (build 130)
+        { width: 12 },  // 22: Powered By (build 130)
+        { width: 30 }   // 23: Mark Layout (build 135)
       ];
 
       // Style definitions matching original info sheet
@@ -14820,6 +15100,9 @@ async function buildAndSendExport(opts, run) {
           const n   = s + 1;
           const src = entry.sources[s] || null;
           const srcH = src ? (map.sourceHs[s] || null) : null;
+          // Where the tech put each box (build 135): "box_x,box_y,arrow_x,arrow_y,
+          // arrow_dir,arrow_len" per mark — loto-web prints the box there
+          const markLayoutCell = srcH ? valveMarkLayoutText(sourceMarksForExport(entry, s)) : '';
 
           // Source label row (light fill)
           const srcLabelRow = ws.addRow([
@@ -14836,7 +15119,9 @@ async function buildAndSendExport(opts, run) {
             (src && sourceTakesDrainsTo(src, fac)) ? 'Drains To' : '',
             (src && isDriveRow(src)) ? 'Drive Isolates' : '',
             // build 130, on a Damper Actuator's own label row only: what powers it
-            (src && isDamperRow(src)) ? 'Powered By' : ''
+            (src && isDamperRow(src)) ? 'Powered By' : '',
+            // build 135, on a row whose photo has a box the tech placed
+            markLayoutCell ? 'Mark Layout' : ''
           ]);
           applyRow(srcLabelRow, labelFont, labelFill, allBorders);
 
@@ -14887,7 +15172,9 @@ async function buildAndSendExport(opts, run) {
             (src && sourceTakesDrainsTo(src, fac)) ? drainsToSheetText(src, fac) : '',
             (src && isDriveRow(src)) ? driveIsolatesCellText(src) : '',
             // Powered By (build 130): "Source #n" (the linked row's number in this block), "Unit power", "Can't tell"
-            (src && isDamperRow(src)) ? poweredBySheetText(src, entry.sources) : ''
+            (src && isDamperRow(src)) ? poweredBySheetText(src, entry.sources) : '',
+            // Mark Layout (build 135): the placed box + arrow of each valve mark
+            markLayoutCell
           ]);
           applyRow(srcDataRow, dataFont, null, allBorders);
         }

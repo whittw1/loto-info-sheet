@@ -101,6 +101,8 @@
 //             named "Feeder …", a tag that cleans to nothing; T296 loto-web's Tier 1 cover rule
 //   T297–T300 the review of the feeder link: a colliding retag, an edit typed key by key, a tag a feeder
 //             can't name, a held answer on a pump's exhaust
+//   T407–T411 build 135: boxes the tech places in the valve-mark dialog (they stay put, export in
+//             column 23 / photoMarks[k].layout, older marks unchanged); the source card's columns
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -9177,18 +9179,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 134 (was build 122\'s): APP_BUILD and the header label say 134, the service worker\'s cache is loto-collector-v7.129, Xcode\'s CURRENT_PROJECT_VERSION is 134 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 135 (was build 122\'s): APP_BUILD and the header label say 135, the service worker\'s cache is loto-collector-v7.130, Xcode\'s CURRENT_PROJECT_VERSION is 135 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 134 && !!label && +label[1] === 134, 'the build');
+    want(APP_BUILD === 135 && !!label && +label[1] === 135, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.129', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.130', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 134;,CURRENT_PROJECT_VERSION = 134;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 135;,CURRENT_PROJECT_VERSION = 135;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -13057,6 +13059,216 @@
     const refused = toasts.some(t => /already being built/.test(t));
     record(N, refused && !!r1.zip && !!r2.zip, 'second refused=' + refused + ' ' + JSON.stringify(toasts.slice(0, 2)) + ', first zip=' + !!r1.zip + ', next zip=' + !!r2.zip);
   }
+  // ---------- build 135: boxes the tech places; the source card's columns ----------
+  // wilkins, 2026-10-29 (iPad, b132): "with 2 or more valves, getting them both
+  // to line up is extremely difficult as they each seem to have a mind of their
+  // own" — and the source card's right column ran off the card.
+  // A drag on the mark dialog's photo the way a finger does it (Pointer
+  // Events), ending with the click a real drag ends with — which is no tap.
+  function dragMark(fromX, fromY, toX, toY) {
+    const w = document.getElementById('valveMarkWrap');
+    const r = w.getBoundingClientRect();
+    const at = (fx, fy) => ({ clientX: r.left + fx * r.width, clientY: r.top + fy * r.height });
+    const ev = (type, p) => w.dispatchEvent(new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 41, pointerType: 'touch', isPrimary: true }, p)));
+    ev('pointerdown', at(fromX, fromY));
+    for (let i = 1; i <= 4; i++) ev('pointermove', at(fromX + (toX - fromX) * i / 4, fromY + (toY - fromY) * i / 4));
+    ev('pointerup', at(toX, toY));
+    w.dispatchEvent(new MouseEvent('click', Object.assign({ bubbles: true, cancelable: true }, at(toX, toY))));
+  }
+  const boxCentre = m => { const o = valveMarkOverride(m); return o ? { x: o.box_x + 0.16, y: o.box_y + 0.065 } : null; };
+  async function markTwoValves(name, taps) {
+    fillFormNoSources(name);
+    sources.push(Object.assign(mkSrc('LPS 10 PSI'), { deviceType: 'Gate Valve', quantity: 2, collapsed: false }));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile(name));
+    openValveMarkDialog('source_0'); await markDialogReady();
+    taps.forEach(t => tapMark(t[0], t[1]));
+    clickById('valveMarkSave');
+    return photos.source_0.marks;
+  }
+
+  // T407 — a dragged box stays where it was put and goes out as placed
+  async function t407_aDraggedBoxStaysAndIsExported() {
+    const N = 'T407 build 135: a box dragged above its valve stays there (the arrow points down to the valve, the box centred where it was dropped); the other valve\'s box does not move; the drag is no tap; the export carries each placed box — entries.json photoMarks[k].layout and the sheet\'s column 23 "Mark Layout" — with column 12 as before';
+    await resetAppState();
+    if (typeof valveMarkOverride !== 'function') return record(N, false, 'this build has no placed boxes');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const before = await markTwoValves('VM-407', [[0.3, 0.5], [0.7, 0.5]]);
+    want(before.length === 2 && before.every(m => m.dir), 'both boxes placed on save: ' + JSON.stringify(before));
+    const c0 = boxCentre(before[0]);
+    openValveMarkDialog('source_0'); await markDialogReady();
+    dragMark(c0.x, c0.y, 0.3, 0.15);
+    clickById('valveMarkSave');
+    const after = photos.source_0.marks;
+    got.after = after;
+    const ov0 = valveMarkOverride(after[0]), c1 = boxCentre(after[0]);
+    want(after.length === 2 && nearMark(after[0], 0.3, 0.5) && nearMark(after[1], 0.7, 0.5), 'the drag moved or added a valve mark');
+    want(ov0 && ov0.arrow_dir === 'down' && Math.abs(c1.x - 0.3) < 0.01 && Math.abs(c1.y - 0.15) < 0.01, 'box 1 where it was dropped: ' + JSON.stringify(ov0));
+    want(JSON.stringify(after[1]) === JSON.stringify(before[1]), 'box 2 moved: ' + JSON.stringify(after[1]));
+    const A = saveEntry();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const je = jsonEntryFor(u.entriesJson, A);
+    const pm = je && je.sources[0] && je.sources[0].photoMarks;
+    got.json = pm;
+    want(Array.isArray(pm) && pm.length === 2 && JSON.stringify(pm[0].layout) === JSON.stringify(valveMarkOverride(after[0]))
+      && JSON.stringify(pm[1].layout) === JSON.stringify(valveMarkOverride(after[1])) && marksText(pm) === marksText(after), 'entries.json');
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      wb.worksheets[0].eachRow(row => {
+        const a = String(row.getCell(1).value || '');
+        if (a === 'Energy Source #1') got.head23 = String(row.getCell(23).value || '');
+        if (a === 'LPS 10 PSI') { got.col12 = String(row.getCell(12).value || ''); got.col23 = String(row.getCell(23).value || ''); }
+      });
+    }
+    want(got.head23 === 'Mark Layout' && got.col23 === valveMarkLayoutText(after) && /^(\d\.\d{4},){4}down,\d\.\d{4}; (\d\.\d{4},){4}[a-z]+,\d\.\d{4}$/.test(got.col23 || ''), 'column 23');
+    want(got.col12 === marksText(after), 'column 12');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T408 — a box never moves by itself
+  async function t408_aBoxNeverMovesByItself() {
+    const N = 'T408 build 135: moving one valve mark leaves the other valve\'s box where it was (build 134 laid both out again, and box 1 jumped from below its valve to its right); the moved mark\'s box goes with it; a tap on a box once all are marked does nothing; the dialog draws each box where the export puts it';
+    await resetAppState();
+    if (typeof valveMarkOverride !== 'function') return record(N, false, 'this build has no placed boxes');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const before = await markTwoValves('VM-408', [[0.3, 0.5], [0.7, 0.5]]);
+    const b0 = JSON.stringify(valveMarkOverride(before[0]) || layoutValveMarks(before)[0]);
+    openValveMarkDialog('source_0'); await markDialogReady();
+    tapMark(0.85, 0.3);                                   // all marked: moves the nearest (valve 2), clear of every box
+    const c0 = boxCentre(cleanValveMarks(before)[0]);
+    if (c0) tapMark(c0.x, c0.y);                          // a tap on box 1: nothing
+    // what the dialog draws, against what the export will say
+    const wrap = document.getElementById('valveMarkWrap');
+    const W = wrap.clientWidth, H = wrap.clientHeight;
+    const rects = Array.from(document.querySelectorAll('#valveMarkSvg rect')).map(r => [+r.getAttribute('x') / W, +r.getAttribute('y') / H]);
+    clickById('valveMarkSave');
+    const after = photos.source_0.marks;
+    got.after = after;
+    want(JSON.stringify(valveMarkOverride(after[0])) === b0, 'box 1 moved: ' + b0 + ' -> ' + JSON.stringify(valveMarkOverride(after[0])));
+    want(nearMark(after[0], 0.3, 0.5) && nearMark(after[1], 0.85, 0.3), 'the valve marks: ' + JSON.stringify(after));
+    want(after[1].dir === before[1].dir && after[1].len === before[1].len && after[1].off === before[1].off, 'box 2 kept its place by its valve');
+    const ovs = after.map(valveMarkOverride);
+    got.rects = rects;
+    want(rects.length === 2 && rects.every((r, k) => ovs[k] && Math.abs(r[0] - ovs[k].box_x) < 0.004 && Math.abs(r[1] - ovs[k].box_y) < 0.004), 'the dialog drew the boxes elsewhere');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T409 — the placement rules, checked over many marks
+  async function t409_placedBoxesAlwaysFitAndTouchTheirArrow() {
+    const N = 'T409 build 135: a placed box is loto-web\'s box when placed by the rule; every placed box lies on the photo with its arrow\'s tip on the valve and its shaft meeting the box, wherever the box is dragged and however the mark moves; a broken placement is dropped (the mark kept)';
+    if (typeof _vmPlaceAt !== 'function') return record(N, false, 'this build has no placed boxes');
+    const G = VALVE_MARK_GEOM, eps = 1e-9, bad = [];
+    for (let x = 0; x <= 1.0001; x += 0.05) for (let y = 0; y <= 1.0001; y += 0.05) for (const d of VALVE_MARK_DIRS) {
+      const p = _vmPlace(x, y, d);
+      if (!p) continue;
+      const rel = _vmRelOf(p), q = _vmPlaceAt(x, y, d, rel.len, rel.off);
+      if (!q || JSON.stringify(_vmOverride(p)) !== JSON.stringify(_vmOverride(q))) bad.push('rule ' + [x, y, d].join());
+    }
+    let seed = 135;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+    const check = (m, p, what) => {
+      if (!p) { bad.push(what + ' none'); return; }
+      const [ax, ay, aw, ah] = p.arrow, [bx, by, bw, bh] = p.box;
+      const onPhoto = bx >= -eps && by >= -eps && bx + bw <= 1 + eps && by + bh <= 1 + eps && ax >= -eps && ay >= -eps && ax + aw <= 1 + eps && ay + ah <= 1 + eps;
+      const tip = p.dir === 'right' ? Math.abs(ax + aw - m.x) < eps : p.dir === 'left' ? Math.abs(ax - m.x) < eps : p.dir === 'down' ? Math.abs(ay + ah - m.y) < eps : Math.abs(ay - m.y) < eps;
+      const shaft = (p.dir === 'right' || p.dir === 'left') ? ay + ah / 2 : ax + aw / 2;
+      const meets = p.dir === 'right' ? Math.abs(bx + bw - ax) < eps && shaft >= by + G.THICK / 4 - eps && shaft <= by + bh - G.THICK / 4 + eps
+        : p.dir === 'left' ? Math.abs(ax + aw - bx) < eps && shaft >= by + G.THICK / 4 - eps && shaft <= by + bh - G.THICK / 4 + eps
+        : p.dir === 'down' ? Math.abs(by + bh - ay) < eps && shaft >= bx + G.THICK / 4 - eps && shaft <= bx + bw - G.THICK / 4 + eps
+        : Math.abs(ay + ah - by) < eps && shaft >= bx + G.THICK / 4 - eps && shaft <= bx + bw - G.THICK / 4 + eps;
+      if (!onPhoto || !tip || !meets || p.len < G.MIN_LEN - eps) bad.push(what + ' ' + JSON.stringify({ m, p, onPhoto, tip, meets }));
+    };
+    for (let i = 0; i < 3000; i++) {
+      const m = { x: Math.round(rnd() * 1000) / 1000, y: Math.round(rnd() * 1000) / 1000 };
+      const dragged = valveMarkBoxDraggedTo(m, rnd() * 1.2 - 0.1, rnd() * 1.2 - 0.1, 700, 525);
+      check(dragged, valveMarkPlacement(dragged), 'drag');
+      const moved = Object.assign({}, dragged, { x: Math.round(rnd() * 1000) / 1000, y: Math.round(rnd() * 1000) / 1000 });
+      check(moved, valveMarkPlacement(moved), 'move');
+      const raw = { x: m.x, y: m.y, dir: VALVE_MARK_DIRS[i % 4], len: rnd(), off: rnd() - 0.5 };
+      check(raw, valveMarkPlacement(cleanValveMarks([raw])[0]), 'stored');
+    }
+    const cleaned = cleanValveMarks([{ x: 0.5, y: 0.5, dir: 'diagonal', len: 0.2, off: 0 }, { x: 0.4, y: 0.4, dir: 'up', len: NaN, off: 0 }, { x: 0.3, y: 0.3, dir: 'up', len: 0.2, off: 0.01 }]);
+    if (JSON.stringify(cleaned) !== JSON.stringify([{ x: 0.5, y: 0.5 }, { x: 0.4, y: 0.4 }, { x: 0.3, y: 0.3, dir: 'up', len: 0.2, off: 0.01 }])) bad.push('clean ' + JSON.stringify(cleaned));
+    if (valveMarkLayoutText([{ x: 0.5, y: 0.5 }]) !== '' || !/^; (\d\.\d{4},){4}up,\d\.\d{4}$/.test(valveMarkLayoutText(cleaned.slice(1)))) bad.push('text ' + valveMarkLayoutText(cleaned.slice(1)));
+    record(N, !bad.length, bad.length ? bad.length + ' bad: ' + bad.slice(0, 4).join(' | ') : 'grid + 9000 random placements fine');
+  }
+
+  // T410 — marks saved before build 135 travel as they did
+  async function t410_olderMarksExportAsBefore() {
+    const N = 'T410 build 135: a mark saved before build 135 (no placed box) exports as it did — column 12 only, no column 23, no layout in entries.json — and opening the dialog shows its box where loto-web lays it out; Save then places it there';
+    await resetAppState();
+    if (typeof valveMarkOverride !== 'function') return record(N, false, 'this build has no placed boxes');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('VM-410');
+    sources.push(Object.assign(mkSrc('LPS 10 PSI'), { deviceType: 'Gate Valve', quantity: 2, collapsed: false }));
+    renderSources();
+    await captureInto('source_0', await makePhotoFile('vm410'));
+    const old = [{ x: 0.3, y: 0.5 }, { x: 0.7, y: 0.5 }];
+    photos.source_0 = Object.assign({}, photos.source_0, { marks: old, marksFor: marksShapeOf(sources[0]) });
+    const A = saveEntry();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const je = jsonEntryFor(u.entriesJson, A);
+    got.json = je && je.sources[0] && je.sources[0].photoMarks;
+    want(JSON.stringify(got.json) === JSON.stringify(old), 'entries.json');
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      wb.worksheets[0].eachRow(row => {
+        const a = String(row.getCell(1).value || '');
+        if (a === 'Energy Source #1') got.head23 = String(row.getCell(23).value || '');
+        if (a === 'LPS 10 PSI') { got.col12 = String(row.getCell(12).value || ''); got.col23 = String(row.getCell(23).value || ''); }
+      });
+    }
+    want(got.head23 === '' && got.col23 === '' && got.col12 === marksText(old), 'the sheet');
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(savedEquipment.find(e => e.id === A.id))); });
+    const rule = layoutValveMarks(old);
+    openValveMarkDialog('source_0'); await markDialogReady();
+    clickById('valveMarkSave');
+    got.placed = (photos.source_0.marks || []).map(valveMarkOverride);
+    want(JSON.stringify(got.placed) === JSON.stringify(rule), 'placed where the rule put them: ' + JSON.stringify(rule));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T411 — the source card's two columns stay on the card
+  async function t411_theSourceCardsColumnsStayOnTheCard() {
+    const N = 'T411 build 135: on a narrow card (an iPad) with the scan buttons shown, a quantity-2 source\'s two columns are equal and nothing runs past the card — build 134\'s columns grew to their widest content (the per-unit tag rows with "No tag", long dropdowns) and the right one was clipped';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const web = document.body.classList.contains('web-platform');
+    await withTagSetting(async () => {
+      try {
+        setHospitalCode('Atlanta');
+        document.body.classList.remove('web-platform');   // the iPad's scan buttons
+        fillFormNoSources('VM-411');
+        sources.push(Object.assign(mkSrc('Medium Pressure Steam Supply 125 PSI'), { deviceType: 'Gate Valve', quantity: 2, collapsed: false,
+          existingTag: [{ none: true }, { none: true }], location: 'Mechanical Room Ceiling Above Door 3 (custom, long)' }));
+        renderSources();
+        const card = document.querySelector('.source-card');
+        for (const width of [700, 560]) {
+          card.style.width = width + 'px';
+          const grid = card.querySelector('.form-grid');
+          const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').map(parseFloat);
+          const right = grid.getBoundingClientRect().right;
+          const past = Array.from(grid.querySelectorAll('*')).filter(el => el.offsetParent && el.getBoundingClientRect().right > right + 0.5).map(el => el.tagName + (el.id ? '#' + el.id : ''));
+          got['w' + width] = { cols, scroll: grid.scrollWidth, client: grid.clientWidth, past: past.slice(0, 4) };
+          want(cols.length === 2 && Math.abs(cols[0] - cols[1]) < 0.5 && grid.scrollWidth <= grid.clientWidth && !past.length, 'at ' + width + ' px');
+        }
+        card.style.width = '';
+      } finally {
+        if (web) document.body.classList.add('web-platform');
+      }
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -13221,7 +13433,9 @@
     t397_theFeedersKindFollowsThePanel, t398_aBucketIsOnePointWithItsBreakerNumber, t399_theDialogSaysWhichTextButton,
     t400_anOtherWordSetsItsDevice,
     t401_theIpadExportIsWrittenAsItGoes, t402_aCancelledExportLeavesNoFile, t403_anUnfinishedExportIsSaidAtLaunch,
-    t404_theZipWriterNeverReplacesAFile, t405_theZipWriterMakesAValidZip, t406_oneExportAtATime];
+    t404_theZipWriterNeverReplacesAFile, t405_theZipWriterMakesAValidZip, t406_oneExportAtATime,
+    t407_aDraggedBoxStaysAndIsExported, t408_aBoxNeverMovesByItself, t409_placedBoxesAlwaysFitAndTouchTheirArrow,
+    t410_olderMarksExportAsBefore, t411_theSourceCardsColumnsStayOnTheCard];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
