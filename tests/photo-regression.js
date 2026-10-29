@@ -105,6 +105,7 @@
 //             column 23 / photoMarks[k].layout, older marks unchanged); the source card's columns
 //   T412–T414 its xhigh review: an older mark goes around a placed box, a tap on a circle, the loupe
 //   T415      build 136: the Notes menu of common notes (AHUs only): a pick adds a NOTE: line the tech can reword
+//   T416      build 137: 30 misc photos a unit (was 10), all 30 exported; the 31st is refused
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -9181,18 +9182,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 136 (was build 122\'s): APP_BUILD and the header label say 136, the service worker\'s cache is loto-collector-v7.131, Xcode\'s CURRENT_PROJECT_VERSION is 136 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 137 (was build 122\'s): APP_BUILD and the header label say 137, the service worker\'s cache is loto-collector-v7.132, Xcode\'s CURRENT_PROJECT_VERSION is 137 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 136 && !!label && +label[1] === 136, 'the build');
+    want(APP_BUILD === 137 && !!label && +label[1] === 137, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.131', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.132', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 136;,CURRENT_PROJECT_VERSION = 136;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 137;,CURRENT_PROJECT_VERSION = 137;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -13430,6 +13431,68 @@
     dropLoadBanners();
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+
+  // ==========================================================================
+  // BUILD 137 — 30 misc photos a unit (wilkins 2026-10-29: "Lets raise it to
+  // 30"; it was 10). Fails on 136.
+  // ==========================================================================
+  // T416 — 30 misc photos a unit
+  async function t416_aUnitTakesThirtyMiscPhotos() {
+    const N = 'T416 build 137: a unit takes 30 misc photos (it was 10; the section says "max 30"); the add button hides at 30, + Add Misc Photo and Browse then refuse with "Maximum 30" and open no picker, and a 31st photo that arrives anyway is not attached; all 30 save and export: 30 files Misc1–Misc30 in the ZIP, 30 names in entries.json\'s photoFiles.misc with a capture time each, and the sheet\'s Misc Photo Files cell names all 30';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const inp = document.getElementById('file_misc_photo');
+    const realClick = inp.click;
+    let clicks = 0;
+    inp.click = () => { clicks++; };
+    try {
+      got.max = MAX_MISC_PHOTOS;
+      got.text = /\(max (\d+)\)/.exec(document.getElementById('miscPhotoSection').textContent || '');
+      want(MAX_MISC_PHOTOS === 30 && !!got.text && got.text[1] === '30', 'the limit and its text');
+      fillForm('M-416');
+      for (let k = 0; k < 30; k++) {
+        handleMiscPhoto({ files: [await makePhotoFile('m416-' + k)], value: '' });
+        await waitFor(() => miscPhotos.length === k + 1 && miscPhotos[k].unsaved === false, 15000, 'misc photo ' + (k + 1));
+        await waitForPhotoWritesIdle(15000);
+      }
+      got.count = miscPhotos.length;
+      got.btnHidden = document.getElementById('addMiscPhotoBtn').style.display === 'none';
+      want(got.count === 30 && got.btnHidden, '30 attached, the add button hidden');
+      const toasts = await withToasts(async () => { addMiscPhoto(); browseMiscPhoto(); });
+      got.refused = toasts;
+      want(clicks === 0 && toasts.filter(m => /Maximum 30 misc photos/.test(m)).length === 2, 'add and Browse refuse at 30');
+      handleMiscPhoto({ files: [await makePhotoFile('m416-31')], value: '' });
+      await sleep(400); await waitForPhotoWritesIdle(15000);
+      want(miscPhotos.length === 30, 'a 31st is not attached');
+      await withDialogs({ confirm: true }, async () => { performSaveAndNew(); });
+      const saved = savedEquipment.find(e => e.equipName === 'M-416') || {};
+      got.saved = (saved.miscPhotos || []).filter(m => m && m.dbKey).length;
+      want(got.saved === 30, 'saved with 30');
+      const { zip, confirms } = await runExport({ confirmResponse: true });
+      if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); }
+      else {
+        const u = await unzipExport(zip.blob);
+        const je = ((u.entriesJson && u.entriesJson.entries) || []).find(e => e.equipName === 'M-416') || {};
+        const names = (je.photoFiles || {}).misc || [], caps = (je.photoCaptured || {}).misc || [];
+        got.json = names.length; got.caps = caps.length;
+        got.files = names.filter(n => !!u.files[n]).length;   // names carry their folder, photos/
+        got.numbered = names.every((n, k) => new RegExp('_Misc' + (k + 1) + '\\.jpg$').test(n));
+        want(names.length === 30 && caps.length === 30 && got.files === 30 && got.numbered, 'entries.json and the ZIP');
+        let cell = null;
+        for (const xpath of Object.keys(u.files).filter(p => /Information_Sheet_.*\.xlsx$/.test(p))) {
+          const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+          wb.worksheets[0].eachRow(row => {
+            if (String(row.getCell(1).value || '') === 'Equipment ID/Name' && String(wb.worksheets[0].getRow(row.number + 1).getCell(1).value || '') === 'M-416')
+              cell = String(wb.worksheets[0].getRow(row.number + 1).getCell(12).value || '');
+          });
+        }
+        got.cell = cell === null ? null : cell.split(/,\s*/).filter(Boolean).length;
+        want(got.cell === 30 && names.every(n => cell.includes(n.split('/').pop())), 'the sheet\'s Misc Photo Files cell');
+      }
+    } finally { inp.click = realClick; }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -13598,7 +13661,7 @@
     t407_aDraggedBoxStaysAndIsExported, t408_aBoxNeverMovesByItself, t409_placedBoxesAlwaysFitAndTouchTheirArrow,
     t410_olderMarksExportAsBefore, t411_theSourceCardsColumnsStayOnTheCard,
     t412_unplacedMarksGoAroundPlacedBoxes, t413_aTapOnACircleDoesNothing, t414_theLoupeStaysOverThePhoto,
-    t415_anAhuOffersItsCommonNotes];
+    t415_anAhuOffersItsCommonNotes, t416_aUnitTakesThirtyMiscPhotos];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

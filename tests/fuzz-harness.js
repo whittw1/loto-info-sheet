@@ -814,7 +814,7 @@
       const slot = 'source_' + srcIdx(); const i = randInt(0, cands.length - 1);
       await reusePhotoInto(slot, i); return 'reuse ' + slot + ' ← #' + i;
     }],
-    ['misc', 2, () => miscPhotos.length < 10, async () => { const f = await makePhoto(); handleMiscPhoto({ files: [f] }); if (chance(0.8)) await waitIdle(); return 'misc+'; }],
+    ['misc', 2, () => miscPhotos.length < MAX_MISC_PHOTOS, async () => { const f = await makePhoto(); handleMiscPhoto({ files: [f] }); if (chance(0.8)) await waitIdle(); return 'misc+'; }],
     ['miscRemove', 1, () => miscPhotos.length > 0, async () => { const i = randInt(0, miscPhotos.length - 1); removeMiscPhoto(i); return 'misc- ' + i; }],
     ['mark', 6, () => sources.some((s, i) => photos['source_' + i] && photos['source_' + i].dbKey), async () => {
       const idx = sources.map((s, i) => photos['source_' + i] && photos['source_' + i].dbKey ? i : -1).filter(i => i >= 0);
