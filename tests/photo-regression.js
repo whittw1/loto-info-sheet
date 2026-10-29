@@ -104,6 +104,7 @@
 //   T407–T411 build 135: boxes the tech places in the valve-mark dialog (they stay put, export in
 //             column 23 / photoMarks[k].layout, older marks unchanged); the source card's columns
 //   T412–T414 its xhigh review: an older mark goes around a placed box, a tap on a circle, the loupe
+//   T415      build 136: the Notes menu of common notes (AHUs only): a pick adds a NOTE: line the tech can reword
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -9180,18 +9181,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 135 (was build 122\'s): APP_BUILD and the header label say 135, the service worker\'s cache is loto-collector-v7.130, Xcode\'s CURRENT_PROJECT_VERSION is 135 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 136 (was build 122\'s): APP_BUILD and the header label say 136, the service worker\'s cache is loto-collector-v7.131, Xcode\'s CURRENT_PROJECT_VERSION is 136 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 135 && !!label && +label[1] === 135, 'the build');
+    want(APP_BUILD === 136 && !!label && +label[1] === 136, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.130', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.131', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 135;,CURRENT_PROJECT_VERSION = 135;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 136;,CURRENT_PROJECT_VERSION = 136;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -13346,6 +13347,66 @@
     closeValveMarkDialog();
     record(N, !bad.length, (bad.length ? 'FAILED at ' + bad.join() + ' — ' : '') + 'photo ' + Math.round(r.width) + ' px: ' + JSON.stringify(got));
   }
+
+  // ==========================================================================
+  // BUILD 136 — common notes (wilkins 2026-10-29: a Notes menu of text used
+  // over and over, AHUs only for now, that the tech can reword). Fails on 135.
+  // ==========================================================================
+  // T415 — the AHU's common-note menu
+  async function t415_anAhuOffersItsCommonNotes() {
+    const N = 'T415 build 136: Notes shows a "+ Common note…" menu only on an AHU (the Air Handler type or an AHU template; never a pump, a chiller, a transformer or no type); a pick adds the duct smoke damper text as its own "NOTE: " line after what is typed and the menu goes back to its prompt; the same line is not added twice; reworded in Notes it stays as typed, and the menu adds the original again (a second damper); the unit saves and exports the reworded text to entries.json and the sheet\'s Notes row';
+    await resetAppState();
+    if (typeof addCommonNote !== 'function') return record(N, false, 'this build has no common notes');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const TEXT = 'Duct smoke damper downstream of the duct smoke detector (supply side), spring-return actuator, fire-alarm controlled. Not part of this procedure; any work on it goes through the fire alarm impairment process.';
+    const ta = document.getElementById('equipNotes'), sel = document.getElementById('commonNoteSelect');
+    const shown = () => document.getElementById('commonNotesRow').style.display !== 'none';
+    const setType = (t) => { document.getElementById('equipType').value = t; filterTemplateDropdown(t); renderUnitQuestions(false); };
+    fillFormNoSources('AHU-415');
+    renderUnitQuestions(false);
+    got.none = shown();
+    setType('Chiller'); got.chiller = shown();
+    setType('Air Handler'); got.ahu = shown();
+    got.options = Array.from(sel.options).map(o => o.textContent);
+    want(!got.none && !got.chiller && got.ahu, 'shown on the Air Handler only');
+    want(JSON.stringify(got.options) === JSON.stringify(['+ Common note…', 'Duct smoke damper (fire alarm controlled)']), 'its prompt and one note');
+    got.kinds = [['', 'AHU - Steam'], ['Chiller', 'Chiller'], ['Transformer', 'AHU - Steam'], ['Air Handler', '']]
+      .map(([t, tm]) => commonNotesFor(unitKinds(t, tm, [])).length).join();
+    want(got.kinds === '1,0,0,1', 'an AHU template alone counts; a chiller or a transformer gets none');
+    ta.value = 'Shares a header';
+    sel.value = 'ahu-duct-smoke-damper'; sel.dispatchEvent(new Event('change'));
+    got.first = ta.value; got.reset = sel.value;
+    want(got.first === 'Shares a header\nNOTE: ' + TEXT && got.reset === '', 'a NOTE: line after the typed text; the menu back to its prompt');
+    const toasts = await withToasts(async () => { addCommonNote('ahu-duct-smoke-damper'); });
+    want(ta.value === got.first && toasts.some(m => /already in Notes/.test(m)), 'not added twice (' + toasts.join(' | ') + ')');
+    ta.value = ta.value.replace('(supply side)', '(return side)'); autoSaveCurrent();
+    addCommonNote('ahu-duct-smoke-damper');
+    const lines = ta.value.split('\n');
+    got.lines = lines.length;
+    want(lines.length === 3 && lines[1] === 'NOTE: ' + TEXT.replace('(supply side)', '(return side)') && lines[2] === 'NOTE: ' + TEXT,
+      'the reworded line stays; the original again for a second damper');
+    const notes = ta.value;
+    setType('Chiller');
+    want(!shown() && ta.value === notes, 'off an AHU the menu hides; what Notes holds stays');
+    setType('Air Handler');
+    await withDialogs({ confirm: true }, async () => { performSaveAndNew(); });
+    const saved = savedEquipment.find(e => e.equipName === 'AHU-415') || {};
+    want(saved.notes === notes, 'saved as typed');
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); }
+    else {
+      const u = await unzipExport(zip.blob);
+      const je = ((u.entriesJson && u.entriesJson.entries) || []).find(e => e.equipName === 'AHU-415') || {};
+      want(je.notes === notes, 'entries.json');
+      const rows = await sheetRowsOf(u);
+      const lab = rows.find(r => r.cells[0] === 'Notes:');
+      const val = lab && rows.find(r => r.sheet === lab.sheet && r.n === lab.n + 1);
+      got.sheet = val ? val.cells[0] : null;
+      want(got.sheet === notes, 'the sheet\'s Notes row');
+    }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -13513,7 +13574,8 @@
     t404_theZipWriterNeverReplacesAFile, t405_theZipWriterMakesAValidZip, t406_oneExportAtATime,
     t407_aDraggedBoxStaysAndIsExported, t408_aBoxNeverMovesByItself, t409_placedBoxesAlwaysFitAndTouchTheirArrow,
     t410_olderMarksExportAsBefore, t411_theSourceCardsColumnsStayOnTheCard,
-    t412_unplacedMarksGoAroundPlacedBoxes, t413_aTapOnACircleDoesNothing, t414_theLoupeStaysOverThePhoto];
+    t412_unplacedMarksGoAroundPlacedBoxes, t413_aTapOnACircleDoesNothing, t414_theLoupeStaysOverThePhoto,
+    t415_anAhuOffersItsCommonNotes];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

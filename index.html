@@ -483,7 +483,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b135</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b136</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -711,6 +711,11 @@ if ('serviceWorker' in navigator) {
       <button type="button" class="btn btn-sm" id="addNoteLineBtn" onclick="addNoteLine('NOTE')" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);">+ NOTE</button>
       <button type="button" class="btn btn-sm" id="addCautionLineBtn" onclick="addNoteLine('CAUTION')" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);">+ CAUTION</button>
       <span style="font-size:11px;color:var(--text-dim);">Each NOTE: or CAUTION: line prints in Section 2 as written.</span>
+    </div>
+    <!-- build 136: notes used over and over, for the kinds of unit that have them (AHUs first) -->
+    <div class="form-group" id="commonNotesRow" style="display:none;margin-top:10px;">
+      <select id="commonNoteSelect" onchange="addCommonNote(this.value)" aria-label="Add a common note"></select>
+      <span style="font-size:11px;color:var(--text-dim);">Adds it to Notes as a NOTE: line &mdash; change the wording there for this unit.</span>
     </div>
   </div>
 
@@ -1166,7 +1171,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 135;
+const APP_BUILD = 136;
 
 // ============================================================================
 // DATA
@@ -4653,6 +4658,7 @@ function sheetFacilityPart(code) { return String(code || '').replace(/[^a-zA-Z0-
 // being typed in keeps its focus and caret through a rebuild.
 let _unitQKey = null;
 function renderUnitQuestions(force) {
+  syncCommonNotes();   // the Notes menu follows the unit's kind too (build 136)
   const box = document.getElementById('unitQuestions');
   if (!box) return;
   const el = formEntryLike();
@@ -4855,6 +4861,51 @@ function addNoteLine(kind) {
   if (!ta) return;
   const v = ta.value;
   ta.value = v + (v && !/\n$/.test(v) ? '\n' : '') + kind + ': ';
+  ta.focus();
+  try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) {}
+  autoSaveCurrent();
+}
+
+// ---- Common notes (build 136) -----------------------------------------------
+// Notes a tech writes over and over, by unit kind (unitKinds' keys; wilkins
+// 2026-10-29: AHUs only for now). A pick adds the text to Notes as its own
+// "NOTE:" line, which loto-web prints in Section 2 as written; the tech changes
+// the wording there for the unit. Notes stays free text: nothing else is stored.
+const COMMON_NOTES = {
+  ahu: [
+    { id: 'ahu-duct-smoke-damper', label: 'Duct smoke damper (fire alarm controlled)',
+      text: 'Duct smoke damper downstream of the duct smoke detector (supply side), spring-return actuator, fire-alarm controlled. Not part of this procedure; any work on it goes through the fire alarm impairment process.' }
+  ]
+};
+function commonNotesFor(k) {
+  return Object.keys(COMMON_NOTES).filter(kind => k && k[kind]).reduce((all, kind) => all.concat(COMMON_NOTES[kind]), []);
+}
+function formCommonNotes() {
+  const el = formEntryLike();
+  return commonNotesFor(unitKinds(el.equipType, el.template, el.sources));
+}
+// Shown only when the unit's kind has notes; rebuilt only when the list changes.
+let _commonNotesKey = null;
+function syncCommonNotes() {
+  const row = document.getElementById('commonNotesRow'), sel = document.getElementById('commonNoteSelect');
+  if (!row || !sel) return;
+  const list = formCommonNotes();
+  const key = list.map(n => n.id).join('|');
+  if (key === _commonNotesKey) return;
+  _commonNotesKey = key;
+  row.style.display = list.length ? '' : 'none';
+  sel.innerHTML = html`<option value="">+ Common note&hellip;</option>${list.map(n => html`<option value="${n.id}">${n.label}</option>`)}`;
+}
+function addCommonNote(id) {
+  const sel = document.getElementById('commonNoteSelect');
+  if (sel) sel.value = '';   // the menu goes back to its prompt, so the same note can be picked again
+  const n = formCommonNotes().find(x => x.id === id);
+  const ta = document.getElementById('equipNotes');
+  if (!n || !ta) return;
+  const line = 'NOTE: ' + n.text;
+  if (ta.value.split('\n').some(l => l.trim() === line)) { showToast('That note is already in Notes'); return; }
+  const v = ta.value;
+  ta.value = v + (v && !/\n$/.test(v) ? '\n' : '') + line;
   ta.focus();
   try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) {}
   autoSaveCurrent();
