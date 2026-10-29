@@ -1,6 +1,6 @@
 # LOTO Field Collector — Architecture Reference
 
-**Date:** 2026-10-29 (rev 112 — **build 135 on TestFlight as 1.4 (135)**: wilkins' archive (10:57:02Z) was "Uploaded to Apple" at 10:59:44Z, `uploadedBuildNumber` 135. The archive's page, Finger Lakes copy and `sw.js` are byte-identical to `470c015`, with no test harness (§2; §6 "Build 135" → "The release"). Prior: rev 111 — **web = b135 LIVE**: wilkins pushed `main` `3295bcd..cc594ea`; by 11:05:20Z Azure and GitHub Pages served `index.html`, the Finger Lakes alias and `sw.js` (v7.130) byte-identical to `cc594ea` (§2; §6 "Build 135" → "The release"). Prior: rev 110 — **build 135 RELEASED** (wilkins: "release build 135"):
+**Date:** 2026-10-29 (rev 113 — **loto-web reads column 23 since 2026-10-29**, by its own record (loto-web Status.md): shipped 10:52Z; the fix that lays older marks out around placed boxes went in at 10:57:44Z, fresh boot 10:59:52Z. Procedures now print each box where the tech put it, and the editor opens with it there (§6 "Build 135", §7, §10). Not checked against a live procedure here. Prior: rev 112 — **build 135 on TestFlight as 1.4 (135)**: wilkins' archive (10:57:02Z) was "Uploaded to Apple" at 10:59:44Z, `uploadedBuildNumber` 135. The archive's page, Finger Lakes copy and `sw.js` are byte-identical to `470c015`, with no test harness (§2; §6 "Build 135" → "The release"). Prior: rev 111 — **web = b135 LIVE**: wilkins pushed `main` `3295bcd..cc594ea`; by 11:05:20Z Azure and GitHub Pages served `index.html`, the Finger Lakes alias and `sw.js` (v7.130) byte-identical to `cc594ea` (§2; §6 "Build 135" → "The release"). Prior: rev 110 — **build 135 RELEASED** (wilkins: "release build 135"):
 - rebased onto rev 107 `0d78b83`, giving code `1eb6f80` + `84afc26`;
 - `ios-testflight-scaffold` PUSHED `0d78b83..470c015`;
 - the iOS bundle synced and checked identical, and Xcode opened for wilkins' archive;
@@ -1322,8 +1322,9 @@ bottom). The dialog never shows a placement the procedure can't print.
   placed box. One `box_x,box_y,arrow_x,arrow_y,arrow_dir,arrow_len` (4 decimals) per mark, in column 12's order, joined
   by `; `.
 - **Unchanged:** column 12 and the CSV. Marks saved before build 135 export exactly as before (T410).
-- **loto-web doesn't read column 23 or `layout` yet:** until it does, it prints its own layout, as now. The spec for
-  its side is `loto-web/docs/Field_App_Placed_Mark_Boxes_Spec_2026-10-29.md`:
+- **loto-web reads column 23 and `layout` since 2026-10-29** (shipped 10:52Z; the around-placed-boxes rule 10:57:44Z;
+  its Status.md). Before that it printed its own layout and ignored both. Its side follows
+  `loto-web/docs/Field_App_Placed_Mark_Boxes_Spec_2026-10-29.md`:
   - import and validate the column;
   - use a placed box as the copy's override (`fit_box`);
   - lay out the rest together, around the placed boxes;
@@ -1401,8 +1402,13 @@ wilkins: "And yes, release build 135".
   Finger Lakes alias and `sw.js` (v7.130). Loaded locally at 1180 × 820, it showed b135, the form's two columns 402 / 402 px
   and no console errors. **wilkins pushed `main`** (`3295bcd..cc594ea`); by 11:05:20Z Azure and GitHub Pages served
   `index.html`, the Finger Lakes alias and `sw.js` byte-identical to `cc594ea` — **web = b135 LIVE**.
-- **loto-web** reads column 23 only once its chat's change is deployed (wilkins' call). Until then procedures keep its own
-  layout. The review's layout rule (older marks around placed boxes) was sent to that chat as a follow-up note.
+- **loto-web** shipped its side the same morning (its own chat; 10:52Z, with the review's rule — older marks around placed
+  boxes — at 10:57:44Z, fresh boot 10:59:52Z). Per its Status.md:
+  - it stores the placed box on the mark, prints it there, and opens its editor with it there;
+  - a bad part is dropped and its mark kept;
+  - a placement saved in its editor still wins;
+  - a re-pull adds boxes to stored marks with the same points, but never over a stored box, a person's mark edit or an editor placement;
+  - `scripts/smoke_valve_marks.py`: 70 checks, 72 with this suite's real T407 / T410 exports.
 
 ---
 
@@ -5290,9 +5296,9 @@ quantity-2 row), blank without a mark or without a photo. loto-web reads it as
 only when one of its exported marks has a box the tech placed. Per mark, in column 12's
 order and joined by `; `: `box_x,box_y,arrow_x,arrow_y,arrow_dir,arrow_len` (4 decimals;
 `arrow_dir` = right / left / up / down, from the box to the valve), an empty part for a
-mark without one. These are loto-web's own override keys. loto-web does NOT read it yet
-(§10); never parse it with `parse_marks_text`, whose pair regex would take the box
-numbers for marks.
+mark without one. These are loto-web's own override keys. loto-web reads it since
+2026-10-29 as `col_mark_layout` and prints each box there (§10). Never parse it with
+`parse_marks_text`, whose pair regex would take the box numbers for marks.
 
 **Valve State (build 91):** column 11 of every source row — header `Valve State`,
 value `Normally Closed` (blank = normal). This sheet is what the office actually
@@ -5719,10 +5725,11 @@ forms; verified against `loto-web/app/routers/import_data.py`.
   location (loto-web `_loc_matches`, 2026-09-27 — it used to be unmatchable next
   to a same-named located unit).
 - **Column 23 `Mark Layout` (build 135)** — and `photoMarks[k].layout` on the ZIP
-  path — is where the tech placed each ID box (§7). **Not read by loto-web yet**: it
-  ignores the header and the key and prints its own joint layout from column 12,
-  so nothing breaks, but the tech's placement is not used. The spec for loto-web's
-  side, written 2026-10-29: `loto-web/docs/Field_App_Placed_Mark_Boxes_Spec_2026-10-29.md`
+  path — is where the tech placed each ID box (§7). **Read since 2026-10-29**
+  (loto-web shipped 10:52Z, the around-placed-boxes rule 10:57:44Z, by its Status.md).
+  A placed box prints where the tech put it; an editor placement still wins. Earlier
+  loto-web ignored the header and the key and printed its own joint layout from
+  column 12. The spec: `loto-web/docs/Field_App_Placed_Mark_Boxes_Spec_2026-10-29.md`
   (`LAYOUT_FIELDAPP["col_mark_layout"] = (23, "Mark Layout")`; a placed box becomes
   that copy's override with `fit_box`; the marks without one are laid out together
   around the placed boxes and off their valves (revised after the review); the
