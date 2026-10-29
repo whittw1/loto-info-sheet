@@ -186,7 +186,7 @@ Form Inputs ──► localStorage (auto-saved as JSON)
 - **Energy Sources** — Dynamic collapsible cards with add/remove/duplicate/reorder/link controls; conditional device and verification dropdowns
 - **Overhead Sketch** — Collapsible section with SVG diagram + canvas drawing layer + draggable energy labels
 - **Misc Photos** — Additional photos beyond the standard equipment/source slots
-- **Notes Section** — Free-text area per equipment entry
+- **Notes Section** — Free-text area per equipment entry. **+ NOTE** / **+ CAUTION** start a line that loto-web prints in the procedure's Section 2 as written; on an AHU, a **+ Common note…** menu adds a stock NOTE line (the duct smoke damper, build 136) to reword for the unit
 - **Bottom Bar** — Source counter, storage usage indicator, Save & New / Export buttons
 
 ## Getting Started
