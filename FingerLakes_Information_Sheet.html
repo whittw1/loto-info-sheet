@@ -526,7 +526,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b141</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b142</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -870,7 +870,7 @@ if ('serviceWorker' in navigator) {
         <option value="">&mdash; Not set &mdash;</option>
         <option value="__custom__">Custom&hellip;</option>
       </select>
-      <input type="text" id="settingsHospitalCustom" placeholder="Hospital key (must match loto-web exactly)" style="display:none;margin-top:8px;width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
+      <input type="text" id="settingsHospitalCustom" oninput="paintBuildingListSettings()" placeholder="Hospital key (must match loto-web exactly)" style="display:none;margin-top:8px;width:100%;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
       <div style="font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.4;">Stamped on every saved entry and on every export so loto-web files the data under the right facility.</div>
       <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;cursor:pointer;">
         <input type="checkbox" id="settingsSketchShow" style="width:18px;height:18px;">
@@ -892,6 +892,16 @@ if ('serviceWorker' in navigator) {
         Ask where fuel, chemical, geothermal, gas, vacuum and refrigerant lines drain or vent
       </label>
       <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">On by default for the three Atlanta facilities, off elsewhere. Rows that already hold an answer still show it.</div>
+      <div id="settingsBuildingsBox" style="margin-top:12px;padding:10px;border:1px solid var(--border);border-radius:8px;">
+        <div style="font-size:13px;font-weight:600;">&#127970; Buildings at this facility</div>
+        <div id="settingsBuildingsSummary" style="font-size:12px;color:var(--text-dim);margin-top:4px;line-height:1.4;"></div>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+          <button type="button" id="settingsBuildingsImport" onclick="pickBuildingListFile()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--input-bg);color:var(--text);font-size:13px;cursor:pointer;">Import from Excel&hellip;</button>
+          <button type="button" id="settingsBuildingsRemove" onclick="removeBuildingListForSettingsFacility()" style="display:none;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text-dim);font-size:13px;cursor:pointer;">Remove list</button>
+        </div>
+        <input type="file" id="buildingListFile" accept=".xlsx,.csv,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" style="display:none;" onchange="importBuildingListFile(this)">
+        <div style="font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.4;">An .xlsx or .csv: the column headed Building or Bldg (else the first column); a Name or Description column shows beside each. The Building menu then lists them, with Enter Building for one not listed. Kept on this device only &mdash; import it on each iPad.</div>
+      </div>
     </div>
     <div style="border-top:1px solid var(--border);margin:0 0 16px;"></div>
     <div style="margin-bottom:16px;">
@@ -1051,6 +1061,7 @@ function onHospitalSelectChange() {
   if (damperChk && sel.value !== '__custom__') damperChk.checked = damperPromptOn(sel.value);
   const relChk = document.getElementById('settingsRelease');
   if (relChk && sel.value !== '__custom__') relChk.checked = releasePromptOn(sel.value);
+  paintBuildingListSettings();   // the picked facility's buildings (build 142)
 }
 
 // Small header chip showing the active facility (or a warning when unset, so a
@@ -1105,6 +1116,7 @@ function showSettings() {
   if (damperChk) damperChk.checked = damperPromptOn(hc);
   const relChk = document.getElementById('settingsRelease');
   if (relChk) relChk.checked = releasePromptOn(hc);
+  paintBuildingListSettings();
   document.getElementById('photoPreset').value = s.preset || PHOTO_DEFAULTS.preset;
   document.getElementById('photoMaxW').value = s.maxWidth;
   document.getElementById('photoMaxH').value = s.maxHeight;
@@ -1188,6 +1200,7 @@ function savePhotoSettings() {
   if (hc === '__custom__') hc = document.getElementById('settingsHospitalCustom').value.trim();
   setHospitalCode(hc);
   updateFacilityBadge();
+  renderBuildingOptions();   // a new facility's buildings (build 142)
   const sketchChk = document.getElementById('settingsSketchShow');
   if (sketchChk) setSketchPrefForFacility(hc, sketchChk.checked);
   applySketchVisibility();
@@ -1219,7 +1232,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 141;
+const APP_BUILD = 142;
 
 // ============================================================================
 // DATA
@@ -2464,6 +2477,7 @@ const HOSPITALS = [
   { code: 'Atlanta',                 name: 'Atlanta VA Medical Center' },
   { code: 'Atlanta - Fort McPherson', name: 'Atlanta VAMC - Fort McPherson VA Clinic' },
   { code: 'Atlanta - Trinka Davis',  name: 'Atlanta VAMC - Trinka Davis Veterans Village' },
+  { code: 'Palo Alto',               name: 'Palo Alto VAMC' },   // build 142 — loto-web's key, 2026-10-30
 ];
 
 // Currently-selected facility code (a loto-web Hospital.key or a custom string),
@@ -2733,6 +2747,7 @@ function init() {
   populateDropdown(document.getElementById('equipType'), DATA.equipmentTypes, 'Select Type');
   populateDropdown(document.getElementById('equipTemplate'), DATA.templates, 'Select Template');
   populateDropdown(document.getElementById('equipTiedTo'), DATA.tiedToOptions, 'Select');
+  renderBuildingOptions();   // the facility's buildings (build 142); a restored unit re-renders for its own
 
   // Open IndexedDB for photo storage (with iOS Safari diagnostics)
   openPhotoDB().then(() => {
@@ -8014,6 +8029,9 @@ function getBuilding() {
 }
 
 function setBuilding(value) {
+  renderBuildingOptions(value);   // the menu of the form's facility (build 142), showing `value`
+}
+function showBuildingValue(value) {
   const sel = document.getElementById('equipBuilding');
   const customGroup = document.getElementById('customBuildingGroup');
   // Check if value matches one of the preset options
@@ -8031,6 +8049,214 @@ function setBuilding(value) {
     customGroup.style.display = 'none';
     document.getElementById('equipBuildingCustom').value = '';
   }
+}
+
+// ---- Building lists, per facility (build 142) ---------------------------------
+// wilkins 2026-10-30, a new site (Palo Alto): "can I pre-load a list of
+// buildings for a specific site … I have an excel file", loaded in the app,
+// not built in. Settings imports an .xlsx or .csv for the facility it shows;
+// the list lives on THIS device (localStorage — not in the JSON backup, not
+// synced), so each iPad imports it once. The Building menu offers the list of
+// the form's facility, then "Enter Building…" for one not on it. A unit saves
+// the list's VALUE — the text the inventory uses, which loto-web matches on —
+// never the name shown beside it. A saved building not on the list still shows,
+// as typed. No list: the menu is as before (Select / Enter Building…).
+const BUILDING_LISTS_KEY = 'loto_building_lists';
+const BUILDING_LIST_MAX = 2000;
+const BUILDING_CUSTOM_VALUE = '** Custom Building **';
+// Parsed once per stored value (review): setBuilding runs on every Save & New,
+// edit and clear. Callers never change what it returns.
+let _buildingListsCache = { raw: undefined, lists: {} };
+function getBuildingLists() {
+  let raw = null;
+  try { raw = localStorage.getItem(BUILDING_LISTS_KEY); } catch (e) {}
+  if (raw !== _buildingListsCache.raw) {
+    let v = null;
+    try { v = raw ? JSON.parse(raw) : null; } catch (e) {}
+    _buildingListsCache = { raw: raw, lists: (v && typeof v === 'object' && !Array.isArray(v)) ? v : {} };
+  }
+  return _buildingListsCache.lists;
+}
+function buildingListFor(code) {
+  const l = getBuildingLists()[code || ''];
+  return (l && Array.isArray(l.items)) ? l.items.filter(it => it && typeof it.v === 'string' && it.v) : [];
+}
+function setBuildingListFor(code, list) {
+  const all = Object.assign({}, getBuildingLists());
+  if (list) all[code] = list; else delete all[code];
+  try { localStorage.setItem(BUILDING_LISTS_KEY, JSON.stringify(all)); return true; } catch (e) { return false; }
+}
+function buildingOptionText(it) { return it.label ? it.v + ' — ' + it.label : it.v; }
+// Rebuilds the menu when the form's facility's list differs from what it
+// shows, then shows `value` — or, called with none, the form's building.
+function renderBuildingOptions(value) {
+  const sel = document.getElementById('equipBuilding');
+  if (!sel) return;
+  const show = arguments.length ? value : getBuilding();   // read before a rebuild empties the menu
+  const code = formFacilityCode(), items = buildingListFor(code);
+  const sig = items.length ? code + '\u0001' + (getBuildingLists()[code].at || '') + '\u0001' + items.length : '';
+  if (sel.dataset.listSig !== sig) {
+    sel.dataset.listSig = sig;
+    sel.textContent = '';
+    const add = (v, t) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); };
+    add('', '-- Select --');
+    items.forEach(it => add(it.v, buildingOptionText(it)));
+    add(BUILDING_CUSTOM_VALUE, items.length ? 'Enter Building (not listed)...' : 'Enter Building...');
+  }
+  showBuildingValue(show);
+}
+
+// The rows of a picked file as text cells: an .xlsx (its first sheet with any
+// text) or a .csv. An old .xls is refused with what to do.
+function readFileAs(file, how) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error || new Error('the file could not be read'));
+    if (how === 'text') r.readAsText(file); else r.readAsArrayBuffer(file);
+  });
+}
+function parseCsvRows(text) {
+  const rows = [];
+  let row = [], cell = '', quoted = false;
+  text = String(text || '').replace(/^﻿/, '');
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch !== '"') cell += ch;
+      else if (text[i + 1] === '"') { cell += '"'; i++; }
+      else quoted = false;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',') { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell); rows.push(row); row = []; cell = '';
+    } else cell += ch;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+// A cell as Excel shows it. ExcelJS's text ignores a number's format, so a
+// building kept as the number 45 formatted 0000 ("0045") keeps its zeros here.
+function sheetCellText(c) {
+  const v = c.value, fmt = String(c.numFmt || '');
+  if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && /^0+$/.test(fmt)) return String(v).padStart(fmt.length, '0');
+  return c.text == null ? '' : String(c.text);
+}
+async function readBuildingFileRows(file) {
+  const name = String(file.name || '').toLowerCase();
+  if (/\.(csv|txt)$/.test(name)) return parseCsvRows(await readFileAs(file, 'text'));
+  if (/\.xls$/.test(name)) throw new Error('it is an old .xls file — save it in Excel as .xlsx (Excel Workbook) and import that');
+  if (!/\.xls[xm]$/.test(name)) throw new Error('it is not an .xlsx or .csv file — save or export the list as one of those and import that');
+  if (typeof ExcelJS === 'undefined') throw new Error('the Excel library is not loaded — restart the app');
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(await readFileAs(file, 'buffer'));
+  for (const ws of wb.worksheets) {
+    const rows = [];
+    ws.eachRow({ includeEmpty: true }, (row, r) => {
+      const cells = [];
+      row.eachCell({ includeEmpty: true }, (c, k) => { cells[k - 1] = sheetCellText(c); });
+      rows[r - 1] = Array.from(cells, x => x || '');
+    });
+    const dense = Array.from(rows, r => r || []);
+    if (dense.some(r => r.some(x => String(x).trim()))) return dense;
+  }
+  return [];
+}
+// Which column holds the buildings: the first headed Building / Bldg (in the
+// first 10 rows) that isn't a name column ("Building Name" counts only when it
+// is the one there); a column headed Name / Description / Use beside it is
+// shown with each. No such heading: the first column with any text, every row.
+// A heading is the whole cell — "Bldg #", "Building No.", "BLDG_NO", "Building
+// Name" — so a title row ("Building List") or a value ("Bldg 100") never is one.
+const BUILDING_HEAD = /^(bldg|building)s?\.?[\s_#-]*(no|num|number|id|code|name|names|description)?\.?$/i;
+const BUILDING_NAME_HEAD = /(^|[^a-z])(name|description|desc|use|function|title)([^a-z]|$)/i;
+function buildingListFromRows(rows) {
+  const clean = x => String(x == null ? '' : x).replace(/\s+/g, ' ').trim();
+  let head = -1, vCol = -1, lCol = -1;
+  for (let r = 0; r < Math.min(rows.length, 10) && head < 0; r++) {
+    const cells = (rows[r] || []).map(clean);
+    const cols = cells.map((t, k) => BUILDING_HEAD.test(t) ? k : -1).filter(k => k >= 0);
+    if (!cols.length) continue;
+    head = r;
+    vCol = cols.find(k => !BUILDING_NAME_HEAD.test(cells[k]));
+    if (vCol === undefined) vCol = cols[0];
+    lCol = cells.findIndex((t, k) => k !== vCol && BUILDING_NAME_HEAD.test(t));
+  }
+  if (head < 0) {
+    let width = 0;
+    for (const r of rows) width = Math.max(width, (r || []).length);
+    for (let k = 0; k < width && vCol < 0; k++) if (rows.some(r => clean((r || [])[k]))) vCol = k;
+  }
+  const items = [], seen = new Set();
+  if (vCol >= 0) for (let r = head + 1; r < rows.length; r++) {
+    const v = clean((rows[r] || [])[vCol]);
+    if (!v || v === BUILDING_CUSTOM_VALUE || seen.has(v)) continue;
+    seen.add(v);
+    const label = lCol >= 0 ? clean(rows[r][lCol]) : '';
+    items.push(label && label !== v ? { v: v, label: label } : { v: v });
+  }
+  return { items: items, column: head >= 0 ? clean(rows[head][vCol]) : '', labelColumn: (head >= 0 && lCol >= 0) ? clean(rows[head][lCol]) : '' };
+}
+
+// Settings: the list belongs to the facility the picker shows (saved or not).
+function settingsFacilityPick() {
+  const sel = document.getElementById('settingsHospital');
+  if (!sel) return getHospitalCode();
+  return sel.value === '__custom__' ? ((document.getElementById('settingsHospitalCustom') || {}).value || '').trim() : sel.value;
+}
+function paintBuildingListSettings() {
+  const el = document.getElementById('settingsBuildingsSummary');
+  if (!el) return;
+  const code = settingsFacilityPick(), n = buildingListFor(code).length, l = getBuildingLists()[code];
+  el.textContent = !code ? 'Pick the facility first — each facility has its own list.'
+    : n ? n + ' building' + (n === 1 ? '' : 's') + ' for ' + hospitalName(code) + (l && l.file ? ' (from ' + l.file + ')' : '') + '.'
+    : 'No list for ' + hospitalName(code) + ' — Building is typed for each unit.';
+  const rm = document.getElementById('settingsBuildingsRemove');
+  if (rm) rm.style.display = n ? '' : 'none';
+}
+function pickBuildingListFile() {
+  if (!settingsFacilityPick()) { showToast('Pick the facility first — each facility has its own building list', true); return; }
+  const input = document.getElementById('buildingListFile');
+  if (input) { input.value = ''; input.click(); }
+}
+async function importBuildingListFile(input) {
+  const file = input && input.files && input.files[0];
+  if (input) input.value = '';
+  if (!file) return;
+  const code = settingsFacilityPick();
+  if (!code) { showToast('Pick the facility first — each facility has its own building list', true); return; }
+  let parsed;
+  try { parsed = buildingListFromRows(await readBuildingFileRows(file)); }
+  catch (e) { showToast('⚠ Could not read ' + file.name + ': ' + ((e && e.message) || e), true); return; }
+  const items = parsed.items, n = items.length;
+  if (!n) { showToast('⚠ No buildings found in ' + file.name, true); return; }
+  if (n > BUILDING_LIST_MAX) { showToast('⚠ ' + file.name + ' lists ' + n + ' buildings — more than ' + BUILDING_LIST_MAX + '. Is it the right column?', true); return; }
+  const old = buildingListFor(code).length;
+  const shown = items.slice(0, 12);
+  const go = await askChoice({
+    id: 'building-import', defaultValue: 'use',
+    title: '&#127970; ' + n + ' building' + (n === 1 ? '' : 's') + ' for ' + escHtml(hospitalName(code)),
+    html: html`From <b>${file.name}</b>${parsed.column ? html`, column <b>${parsed.column}</b>` : raw(' &mdash; the first column (no Building heading found)')}${parsed.labelColumn ? html`, names from <b>${parsed.labelColumn}</b>` : ''}:<br>${shown.map((it, k) => html`${k ? raw('<br>') : ''}&bull; ${buildingOptionText(it)}`)}${n > shown.length ? html`<br>&hellip; and ${n - shown.length} more` : ''}<br><br>A unit saves its building as listed${parsed.labelColumn ? ' (not the name beside it)' : ''}: write it the way the loto-web inventory does. Units already saved keep their building.${old ? html` This replaces the current list of ${old}.` : ''} The list stays on this device &mdash; import it on each iPad.`,
+    choices: [{ value: 'use', label: 'Use these ' + n + ' buildings', primary: true }, { value: 'cancel', label: 'Cancel' }]
+  });
+  if (go !== 'use') { showToast('Building list not changed'); return; }
+  if (!setBuildingListFor(code, { items: items, file: String(file.name || ''), at: new Date().toISOString() })) {
+    showToast('⚠ The list could not be stored — this device’s storage is full', true);
+    return;
+  }
+  paintBuildingListSettings();
+  renderBuildingOptions();
+  showToast('✔ ' + n + ' building' + (n === 1 ? '' : 's') + ' for ' + hospitalName(code));
+}
+function removeBuildingListForSettingsFacility() {
+  const code = settingsFacilityPick(), n = buildingListFor(code).length;
+  if (!code || !n) return;
+  if (!confirm('Remove the ' + n + ' buildings for ' + hospitalName(code) + ' from this device?\n\nSaved units keep their buildings; Building is typed for new ones.')) return;
+  setBuildingListFor(code, null);
+  paintBuildingListSettings();
+  renderBuildingOptions();
+  showToast('Building list removed');
 }
 
 function getTemplate() {
@@ -9457,8 +9683,37 @@ function commitSourceLocation(index) {
   autoSaveCurrent();
 }
 
-function collapseSource(i) { sources[i].collapsed = true; renderSources(); }
-function expandSource(i) { sources[i].collapsed = false; renderSources(); }
+// A card opened or closed stays where the tech's finger is (build 142).
+// wilkins 2026-10-30: "When I enter sources, then scroll back up to the top
+// and click on a source, sometimes it brings me all the way back to the
+// bottom." On the iPad a box still being typed in keeps its focus when the
+// page is scrolled and a card's title (or Done) is tapped — iOS moves focus
+// only to another box — and the list's redraw then removed that box from under
+// the keyboard, and iOS scrolled back down to where it was. The box is let go
+// first (its own change runs, the keyboard closes on our terms), and the card
+// is held at the same height through the redraw and the keyboard closing.
+function redrawKeepingCard(i, change) {
+  const cardAt = () => document.querySelectorAll('#sourcesContainer > .source-card')[i];
+  const before = cardAt();
+  const top = before ? before.getBoundingClientRect().top : null;
+  const a = document.activeElement;
+  const typing = !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+  if (typing) a.blur();
+  change();
+  if (top == null) return;
+  const hold = () => {
+    const c = cardAt();
+    if (!c) return;
+    // a card that started above the screen (Done at the foot of a long card) comes into view instead
+    if (top < 0) { c.scrollIntoView({ block: 'nearest' }); return; }
+    const d = c.getBoundingClientRect().top - top;
+    if (Math.abs(d) > 1) window.scrollBy(0, d);
+  };
+  hold();
+  if (typing) { requestAnimationFrame(hold); setTimeout(hold, 400); }   // iOS scrolls again as its keyboard closes
+}
+function collapseSource(i) { redrawKeepingCard(i, () => { sources[i].collapsed = true; renderSources(); }); }
+function expandSource(i) { redrawKeepingCard(i, () => { sources[i].collapsed = false; renderSources(); }); }
 
 function removeSource(index) {
   if (confirm(`Remove Energy Source #${index + 1}?`)) {
