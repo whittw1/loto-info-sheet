@@ -72,6 +72,13 @@ and matches its 59 cases in `tests/contract/lotoweb-rules.json`. Until 2026-10-2
 the oracle expected the stored state, so `export-valvestate-json` and
 `export-xlsx-mismatch` fired wherever `editField` (or a Device change) left
 Normally Closed on a Kinetic, Electrical or other non-valve row.
+The sheet check expects every source row of a unit: since build 127 the block
+grows a row pair per source past ten. Until 2026-10-29 it expected only the first
+ten (build 126's fixed block), so `export-xlsx-mismatch` fired on any unit of 11+
+sources (seeds 58 and 155: add, split, duplicate).
+A relaunch must bring the form back as it was (`relaunch-changed-form`), except
+since build 139 a form that equals its saved unit by the harness's own signatures
+(an edit only looked at): that one comes back as a new unit, its room kept.
 
 Backup mode (build 101, `BACKUP=1` / `"backup":true`): after each sequence and
 after its relaunch, with faults off, one clean pass must leave SharePoint holding
