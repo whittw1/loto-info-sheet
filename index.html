@@ -526,7 +526,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b140</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b141</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1219,7 +1219,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 140;
+const APP_BUILD = 141;
 
 // ============================================================================
 // DATA
@@ -14561,7 +14561,7 @@ function updateExportDateSummary() {
     : `${n} entr${n === 1 ? 'y' : 'ies'} will be exported` + (editingSaved ? ' (the one open for edit goes out with its unsaved changes)' : '');
   if (dateSel && dateSel.value === 'unexported') {
     const pend = unexportedSelection();
-    text += `\n${pend.pending.length} not yet exported, on ${pend.days.size} date${pend.days.size === 1 ? '' : 's'} — each of those dates goes out as its whole sheet.`;
+    text += `\nOnly the ${pend.pending.length} not yet exported go, on ${pend.days.size} date${pend.days.size === 1 ? '' : 's'} — units already exported stay out, with their photos.`;
   }
   // A change to a unit loto-web may already hold doesn't reach it by any
   // export (build 109; loto-web keeps what it pulled — gap 3.6). Say so.
@@ -14574,17 +14574,29 @@ function updateExportDateSummary() {
 // starts on today, so a unit first saved on an earlier day but changed today
 // was left out unless the tech picked its day. Every unit not in a complete
 // export — new, edited since, or exported without some of its photos — goes,
-// and so does the REST of its survey date: a sheet is always the whole day,
-// because it carries the same name as that day's earlier sheet. (loto-web
-// keeps the earlier one and files this one beside it — it never replaces a
-// sheet — and a part-day under the day's name would read as the whole day.)
+// and ONLY those (build 141). Builds 109–140 sent the rest of each such
+// unit's day too, so one edit to yesterday's unit re-sent all of yesterday's
+// units and photos (wilkins 2026-10-30: 7 new units + 1 edit, 250+ photos).
+// A day already exported gets a sheet of just these units, under the day's
+// name: loto-web files it beside the earlier sheet as …_<exportId8>.xlsx and
+// takes each unit on its own (a unit not on it is left alone; a link to one
+// not on it finds the unit loto-web already holds).
 function unexportedSelection() {
-  const pending = savedEquipment.filter(e => entryExportState(e) !== 'exported');
+  // …and a saved unit open with the tech's changes on it: it goes as the form
+  // has it (build 141 — before, only when another unit of its day was pending)
+  const open = openChangedEdit();
+  const pending = savedEquipment.filter(e => e === open || entryExportState(e) !== 'exported');
   const days = new Set(pending.map(e => getEntryDate(e) || 'undated'));
-  const formDay = openNewUnitDay();   // a new unit on the form goes too — with the rest of its day
+  const formDay = openNewUnitDay();   // a new unit on the form goes too
   if (formDay) days.add(formDay);
-  const entries = savedEquipment.filter(e => days.has(getEntryDate(e) || 'undated'));
-  return { pending, days, entries };
+  return { pending, days, entries: pending };
+}
+// The saved unit open on the form when the tech has changed it, or null.
+function openChangedEdit() {
+  const name = ((document.getElementById('equipName') || {}).value || '').trim();
+  if (!name || !sources.length) return null;
+  const t = formEditTarget();
+  return (t && savedEquipment.includes(t) && !formIsUnchangedEdit(t)) ? t : null;
 }
 // The day of a NEW (never saved) unit on the form, or null (none, or an edit).
 function openNewUnitDay() {
