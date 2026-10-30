@@ -79,6 +79,10 @@ sources (seeds 58 and 155: add, split, duplicate).
 A relaunch must bring the form back as it was (`relaunch-changed-form`), except
 since build 139 a form that equals its saved unit by the harness's own signatures
 (an edit only looked at): that one comes back as a new unit, its room kept.
+Since build 140 "equals" is also "equals the form as the harness's last `edit`
+opened it" (`openedSnap`, the harness's own record — the app now measures against
+the form as opened), and the comparison covers notes, type, template, LOTO ID and
+the unit's answers too (`formExtraSig` / `entryExtraSig`), not only the signatures.
 
 Backup mode (build 101, `BACKUP=1` / `"backup":true`): after each sequence and
 after its relaunch, with faults off, one clean pass must leave SharePoint holding
