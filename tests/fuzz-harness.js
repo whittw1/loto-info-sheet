@@ -603,7 +603,15 @@
         faultsOn = fo2;
         if (!slots.some(w => w && sameEntryId(w.entryId, draftId))) bad('late-launch-lost-unit', JSON.stringify(before.form).slice(0, 200));
       }
-    } else if (formHasContent(before.form) && JSON.stringify(before.form) !== JSON.stringify(after.form)) bad('relaunch-changed-form', sigDiff(before.form, after.form));
+    } else if (formHasContent(before.form) && JSON.stringify(before.form) !== JSON.stringify(after.form)) {
+      // Build 139: a form that is exactly its saved unit (an edit only looked at) comes back as a new unit, its room
+      // kept. Judged by the harness's own signatures, never the app's check: a form that differs from its saved unit
+      // in anything the signatures read must still come back as it was.
+      const saved = before.form.id ? before.entries.find(e => e.id === before.form.id) : null;
+      const same = !!saved && ['name', 'room', 'src', 'photos', 'misc', 'sketch'].every(k => JSON.stringify(saved[k]) === JSON.stringify(before.form[k]));
+      const fresh = !after.form.name && !after.form.src.length && !after.form.photos && !after.form.misc && after.form.room === before.form.room;
+      if (!(same && fresh)) bad('relaunch-changed-form', sigDiff(before.form, after.form));
+    }
     warnedSinceRelaunch = false;
     document.querySelectorAll('.container > div[style*="rgba(200,40,40"], .sticky-banner').forEach(x => x.remove());   // load banners (b95: .sticky-banner)
     return 'relaunch';
