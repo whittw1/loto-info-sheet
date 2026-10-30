@@ -31,6 +31,7 @@ A progressive web app (PWA) for field data collection of Lockout/Tagout (LOTO) i
 - **Reuse a Photo / Duplicate** — Reusing a photo on a source sets its Duplicate to Yes and the card says whose photo it is; setting Duplicate = Yes by hand on a source with no photo asks which photo shows it (Skip keeps it as is)
 - **Reorder Energy Sources** — ▲/▼ arrows on each source card (both collapsed and expanded views) to nudge sources into the right order; photos move with their source
 - **Link Shared Sources** — Link a source to another equipment's source (for shared valves, breakers, etc.). Room/building/all scope filter. Linked source hides its photo slot (photo lives on the referenced source) and inherits the diagram label
+- **Looking vs editing** (build 139) — a saved unit opened only to look at says so ("Looking at saved unit … nothing changed") and closes without being saved again — by Save & New, Cancel edit or a relaunch — so its export stamp stays
 - **Preserved Edit State** — Editing a saved entry no longer removes it from the saved list. The entry shows an **EDITING** badge and the original is preserved until Save & New replaces it in place; **✕ Cancel edit** drops the changes and leaves the saved entry exactly as it was, and **✕ Discard** clears a new, unsaved unit
 - **Offline Support** — Service Worker with network-first caching strategy; works without internet after first load
 - **Installable** — PWA manifest allows "Add to Home Screen" on mobile devices
