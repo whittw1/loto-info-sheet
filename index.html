@@ -349,6 +349,48 @@ if ('serviceWorker' in navigator) {
   .source-card-body { padding: 16px 20px; }
   .source-card .photo-section { display: flex; gap: 12px; align-items: flex-start; margin-top: 14px; }
   .source-card .photo-section .photo-capture { width: 140px; min-width: 140px; aspect-ratio: 4/3; }
+  /* Build 138: the card in sections (wilkins 2026-10-29: "very disjointed") —
+     what it is; where it's isolated and verified; the kind's own questions
+     (drive, valve, damper) on a tinted band; the photo. A kind's band shows
+     only while it holds a question (syncKindSections). */
+  .src-sec { padding: 14px 0; border-top: 1px solid var(--border); }
+  .src-sec.src-sec-top { border-top: none; padding-top: 0; }
+  .src-sec-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 10px; }
+  .src-sec .form-grid + .form-grid { margin-top: 14px; }
+  .src-sec .form-grid + .form-group { margin-top: 12px; }
+  .src-sec .photo-section { margin-top: 0; }
+  .src-sec.src-kind { background: var(--card-alt); margin: 0 -20px; padding: 14px 20px; }
+  .src-head { display: flex; align-items: center; min-width: 0; }
+  .src-head-title { display: block; }
+  .src-head-sub { display: block; font-size: 12px; font-weight: 500; color: var(--text-dim); margin-top: 2px; }
+  .src-head-btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .src-head-btns .src-move { background: var(--card); border: 1px solid var(--border); color: var(--text-dim); padding: 6px 10px; }
+  .src-head-btns .src-move:disabled { color: #555; }
+  .src-more { position: relative; }
+  .src-more > summary { list-style: none; cursor: pointer; }
+  .src-more > summary::-webkit-details-marker { display: none; }
+  .src-more-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 240px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+  .src-more-menu button { text-align: left; background: none; border: none; padding: 11px 12px; font-size: 14px; color: var(--text); border-radius: 6px; cursor: pointer; }
+  .src-more-menu button:hover { background: var(--card-alt); }
+  .src-more-menu button.danger { color: var(--danger); border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; margin-top: 4px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; align-self: flex-start; }
+  .seg button { background: var(--input-bg); color: var(--text); border: none; border-right: 1px solid var(--border); padding: 10px 16px; font-size: 14px; font-weight: 500; cursor: pointer; }
+  .seg button:last-child { border-right: none; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .src-chip { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; margin-left: 6px; white-space: nowrap; }
+  .src-chip.link { background: rgba(74,144,217,0.16); color: var(--accent); }
+  .src-chip.warn { background: rgba(217,138,74,0.20); color: #b5451b; }
+  .src-link-chip { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); font-size: 14px; margin-bottom: 6px; }
+  .src-link-chip .src-chip { margin-left: 0; }
+  .src-link-chip > span:nth-child(2) { flex: 1; min-width: 0; }
+  .src-link-note { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+  .src-link-note.warn { color: #b5451b; }
+  .src-add-feeder { padding: 10px 12px; font-size: 13px; background: var(--card); border: 1px solid var(--border); color: var(--text-dim); }
+  .src-banner { background: rgba(74,144,217,0.15); border: 1px solid var(--accent); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; }
+  .src-banner-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--text); padding: 2px 0; }
+  .src-banner-row.warn { color: #b5451b; }
+  .source-card.src-under { margin-left: 28px; margin-top: -8px; }
 
   .source-summary {
     padding: 14px 20px; display: flex; align-items: center; gap: 14px; cursor: pointer;
@@ -469,6 +511,7 @@ if ('serviceWorker' in navigator) {
     .header-actions .btn-sm { padding: 6px 10px; font-size: 12px; }
     .form-grid { grid-template-columns: minmax(0, 1fr); }
     .form-grid.three-col { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .source-card.src-under { margin-left: 14px; }
     .photo-row { flex-wrap: wrap; }
     .photo-slot { min-width: 45%; }
   }
@@ -483,7 +526,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b136</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b138</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -655,7 +698,7 @@ if ('serviceWorker' in navigator) {
   <!-- Misc Photos Section -->
   <div class="equipment-section" id="miscPhotoSection" style="margin-bottom:20px;">
     <h2>&#128247; Miscellaneous Photos</h2>
-    <p style="font-size:12px;color:#aaa;margin:0 0 10px;">Capture additional photos not tied to a specific energy source (max 10)</p>
+    <p style="font-size:12px;color:#aaa;margin:0 0 10px;">Capture additional photos not tied to a specific energy source (max 30)</p>
     <div id="miscPhotoGrid" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;"></div>
     <button class="add-source-btn" onclick="addMiscPhoto()" id="addMiscPhotoBtn">+ Add Misc Photo</button>
     <button class="add-source-btn" onclick="browseMiscPhoto()" id="browseMiscPhotoBtn" style="margin-top:8px;">&#128194; Browse for Misc Photo</button>
@@ -1171,7 +1214,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 136;
+const APP_BUILD = 138;
 
 // ============================================================================
 // DATA
@@ -3649,13 +3692,11 @@ async function addFeederForDrive(index, unit) {
           + ': with no ID on this drive, loto-web can’t tell it feeds this one too — a note goes to the office'
         : 'Source #' + n + ' (' + feederPanelText(same.location) + ') is this drive’s feeder', others.length > 0);
     }
-    const at = sources.length;
-    delete photos['source_' + at];   // never inherit a stale ref
     const row = { energySource: drive.energySource || 'Electrical', deviceType: kind.device, quantity: 1,
       location: 'Feeder: ' + body, role: 'feeder',
       duplicate: 'No', verification: '', detail: '', collapsed: false };
     addFeederLink(row, noIdFor.src, noIdFor.k);
-    sources.push(row);
+    const at = insertFeederRow(noIdFor.src, row);
     renderSources();
     autoSaveCurrent();
     showToast('Added the feeder for this drive (no ID) — photograph the panel and the breaker');
@@ -3715,13 +3756,11 @@ async function addFeederForDrive(index, unit) {
       + (noIds.length ? '. With no ID on ' + noIds.join(', ') + ', loto-web can’t tell it feeds ' + (noIds.length > 1 ? 'those' : 'that one') + ' too — a note goes to the office' : ''),
       noIds.length > 0);
   }
-  const at = sources.length;
-  delete photos['source_' + at];   // never inherit a stale ref
   const row = { energySource: drive.energySource || 'Electrical', deviceType: kind.device, quantity: 1,
     location: 'Feeder: ' + body + ' (' + name + ')', role: 'feeder',
     duplicate: 'No', verification: '', detail: '', collapsed: false };
   if (linkTo) addFeederLink(row, linkTo.src, linkTo.k);
-  sources.push(row);
+  const at = insertFeederRow(linkTo ? linkTo.src : drive, row);
   renderSources();
   autoSaveCurrent();
   showToast('Added the feeder for ' + one(tag) + tagNote + ' — photograph the panel and the breaker');
@@ -4217,6 +4256,16 @@ async function addFeederFromCard(index) {
   const k = (!tag && noId) ? noId.k : driveAnswerPosition(src, tag);
   if (!driveIsolatesForJson(src)[k]) await askDriveIsolates(src, k, tag);
 }
+// The card's tap buttons (build 138): a tap answers, a second tap on the same
+// answer takes it back (Not answered); the buttons follow in place.
+function setDriveIsolates(index, unit, value, btn) {
+  const src = sources[index];
+  if (!src) return;
+  const v = driveIsolatesForJson(src)[unit] === value ? '' : value;
+  updateDriveIsolates(index, unit, v);
+  const seg = btn && btn.parentElement;
+  if (seg) { seg.dataset.value = v; seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); }
+}
 function updateDriveIsolates(index, unit, value) {
   const src = sources[index];
   if (!src) return;
@@ -4230,13 +4279,11 @@ function driveIsolatesBlock(src, i) {
   const n = valveMarkSlots(src), list = driveIsolatesForJson(src);
   const drives = unitDrives([src]);   // a row's own drives: their names (a shared tag says its unit)
   return html`<div class="form-group" id="driveIsoGroup_${i}">
-    <label>Drive disconnect isolates all incoming power?${n > 1 ? raw(' <span style="font-weight:400;color:var(--text-dim);">&mdash; one per drive</span>') : ''}</label>
+    <label>Drive&rsquo;s own disconnect isolates all incoming power?${n > 1 ? raw(' <span style="font-weight:400;color:var(--text-dim);">&mdash; one per drive</span>') : ''}</label>
     ${Array.from({ length: n }, (_, k) => html`<div class="scan-input-row" style="margin-bottom:6px;align-items:center;">
       ${n > 1 ? html`<span style="min-width:64px;font-size:12px;color:var(--text-dim);">${(drives[k] && driveName(drives[k])) || 'Unit ' + (k + 1)}</span>` : ''}
-      <select id="src_driveiso_${i}_${k}" onchange="updateDriveIsolates(${i},${k},this.value)">
-        <option value="">-- Not answered --</option>
-        ${Object.keys(DRIVE_ISOLATES_SHEET).map(v => html`<option value="${v}" ${list[k] === v ? 'selected' : ''}>${DRIVE_ISOLATES_SHEET[v]}</option>`)}
-      </select>
+      <div class="seg" id="src_driveiso_${i}_${k}" data-value="${list[k] || ''}">${Object.keys(DRIVE_ISOLATES_SHEET).map(v =>
+        html`<button type="button" data-v="${v}" class="${list[k] === v ? 'on' : ''}" onclick="setDriveIsolates(${i},${k},'${v}',this)">${DRIVE_ISOLATES_SHEET[v]}</button>`)}</div>
     </div>`)}
     <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">A lockable handle on the drive that switches the incoming line. No or Can&rsquo;t tell: the feeder is locked out before the drive is opened.</div>
   </div>`;
@@ -4361,6 +4408,147 @@ function clearSourceRoleAt(index) {
   autoSaveCurrent();
   showToast('Source #' + (index + 1) + ' is an ordinary isolation point now');
 }
+// ---- The feeder and its drive on the cards (build 138) ------------------------
+// wilkins 2026-10-29: once a feeder is added "it just appears in the energy
+// source list, and it's hard to tell what source VFD it is linked to". The link
+// was kept (the "( … )" tag and the row's feeds) but never shown. Now the drive's
+// card says which row feeds it, the feeder's card which drive it feeds, each with
+// Go to; the list carries the same as chips, with each feeder under its drive;
+// and a new feeder is added right under its drive, not at the bottom.
+// The feeder rows of one drive unit, as unitDrives counts them: naming its tag, or
+// linked to it (a drive with no ID).
+function feedersOfDrive(srcList, d) {
+  return (srcList || []).filter(f => isFeederRow(f) && ((d.tag && feederNamesTag(f.location, d.tag)) || feederLinksDrive(srcList, f, d)));
+}
+// The drive units one feeder row feeds.
+function feederDrivesOf(srcList, f) {
+  return unitDrives(srcList).filter(d => (d.tag && feederNamesTag(f.location, d.tag)) || feederLinksDrive(srcList, f, d));
+}
+// …and, for a feeder that names none of them, the drives loto-web's rule still
+// counts as fed by the unit's unnamed feeders (unitDrives' fed with no feeder row
+// naming or linking them) — never "names no drive" for those (build 138 review).
+function feederDrivesByRule(srcList, f) {
+  return feederDrivesOf(srcList, f).length ? [] : unitDrives(srcList).filter(d => d.fed && !feedersOfDrive(srcList, d).length);
+}
+// Does feeder row f feed this drive row — by name, link or that rule?
+function feederFeedsDriveRow(srcList, f, drive) {
+  return feederDrivesOf(srcList, f).concat(feederDrivesByRule(srcList, f)).some(d => d.src === drive);
+}
+// "MCC-2A bkr 14" with what it is: "Breaker · MCC-2A bkr 14".
+function feederRowText(f) {
+  const where = feederPanelText(f.location) || String(f.location || '').replace(/^\s*Feeder\s*:\s*/i, '');
+  return (f.deviceType || 'Feeder') + ' · ' + where;
+}
+// A drive unit as the cards name it: "Electrical 480V VFD (VFD-1)".
+function driveCardLabel(d) {
+  const kind = [d.src.energySource, d.src.deviceType].filter(Boolean).join(' ') || 'Drive';
+  return kind + (d.tag ? ' (' + d.tag + ')' : (d.n > 1 ? ' (unit ' + (d.k + 1) + ', no ID)' : ' (no ID)'));
+}
+// The drive card's "Fed by": each unit's feeder rows by number, with Go to; the
+// add button stays (for a unit with none, else for another breaker).
+function feederGroupBlock(src, i) {
+  if (!isDriveDevice(src.deviceType)) return html`<div id="feederGroup_${i}" style="display:none;"></div>`;
+  const drives = unitDrives(sources).filter(d => d.src === src);
+  const n = drives.length;
+  const unitName = d => n > 1 ? (driveName(d) || 'Unit ' + (d.k + 1)) + ': ' : '';
+  const lines = drives.map(d => {
+    const fs = feedersOfDrive(sources, d);
+    if (fs.length) return fs.map(f => {
+      const j = sources.indexOf(f);
+      return html`<div class="src-link-chip" id="src_fedby_${i}_${d.k}_${j}"><span class="src-chip link">#${j + 1}</span><span>${unitName(d)}${feederRowText(f)}</span><button type="button" class="btn btn-sm btn-outline" onclick="goToSource(${j})">Go to</button></div>`;
+    });
+    if (d.fed) return html`<div class="src-link-note">${unitName(d)}fed by a feeder row on this unit that names no drive</div>`;
+    return n > 1 ? html`<div class="src-link-note warn">${unitName(d)}no feeder yet</div>` : '';
+  });
+  const open = !n || drives.some(d => !d.fed && !d.held && !feedersOfDrive(sources, d).length);
+  return html`<div class="form-group" id="feederGroup_${i}">
+    <label>Fed by${n > 1 ? raw(' <span style="font-weight:400;color:var(--text-dim);">&mdash; one per drive</span>') : ''}</label>
+    ${lines}
+    <button type="button" class="btn btn-sm src-add-feeder" id="src_addfeeder_${i}" onclick="addFeederFromCard(${i})">${open ? '+ Add the breaker that feeds this drive' : '+ Another feeder'}</button>
+  </div>`;
+}
+// The feeder's card: the drives it feeds, each with Go to — or that it names none.
+function feederForBanner(src, i) {
+  if (sourceRoleOf(src) !== 'feeder') return '';
+  const named = feederDrivesOf(sources, src), ds = named.length ? named : feederDrivesByRule(sources, src);
+  return html`<div class="src-banner" id="feederFor_${i}">
+    ${ds.length ? ds.map(d => {
+      const j = sources.indexOf(d.src);
+      return html`<div class="src-banner-row"><span>&#128268; Feeder for <strong>#${j + 1}</strong> &middot; ${driveCardLabel(d)}${named.length ? '' : ' \u2014 it names no drive; loto-web gives it to the unit\u2019s drives'}</span><button type="button" class="btn btn-sm btn-outline" onclick="goToSource(${j})">Go to drive</button></div>`;
+    }) : html`<div class="src-banner-row warn"><span>This feeder names no drive on this unit. On the drive&rsquo;s card, + Add the breaker offers it to the drive.</span></div>`}
+  </div>`;
+}
+// The list's chips: a drive's feeders (or that it has none yet), a feeder's drives.
+function summaryLinkChips(src) {
+  if (isDriveRow(src)) {
+    const drives = unitDrives(sources).filter(d => d.src === src);
+    const nums = [...new Set([].concat(...drives.map(d => feedersOfDrive(sources, d))).map(f => sources.indexOf(f) + 1))];
+    const unfed = drives.filter(d => !d.fed && !d.held && !feedersOfDrive(sources, d).length).length;
+    return html`${nums.length ? html`<span class="src-chip link">Fed by #${nums.join(', #')}</span>` : ''}${unfed
+      ? html`<span class="src-chip warn">${nums.length ? unfed + ' without a feeder' : 'No feeder yet'}</span>` : ''}`;
+  }
+  if (sourceRoleOf(src) !== 'feeder') return '';
+  const named = feederDrivesOf(sources, src), ds = named.length ? named : feederDrivesByRule(sources, src);
+  return ds.length ? html`<span class="src-chip link">Feeds ${ds.map(d => '#' + (sources.indexOf(d.src) + 1) + (d.tag ? ' ' + d.tag : '')).join(', ')}</span>`
+    : html`<span class="src-chip warn">Feeds no drive</span>`;
+}
+// A feeder row that sits right under a drive it feeds (other feeders between).
+function feederSitsUnderDrive(i) {
+  const f = sources[i];
+  if (!isFeederRow(f)) return false;
+  let j = i - 1;
+  while (j >= 0 && isFeederRow(sources[j])) j--;
+  return j >= 0 && feederFeedsDriveRow(sources, f, sources[j]);
+}
+// Where a new feeder goes: right under its drive, after that drive's own feeder
+// rows (never past another drive's, build 138 review). The rows after it move down one, each photo with its row (as ▲ / ▼ move
+// them); every link to a row is by its sourceId. Returns its index.
+function insertFeederRow(drive, row) {
+  const prev = sources.slice();
+  let at = sources.indexOf(drive);
+  if (at < 0) at = sources.length;
+  else { at++; while (at < sources.length && isFeederRow(sources[at]) && feederFeedsDriveRow(sources, sources[at], drive)) at++; }
+  sources.splice(at, 0, row);
+  rebindSourcePhotos(prev);
+  return at;
+}
+// "Go to" on a feeder or a drive: that row's card, opened and brought into view.
+function goToSource(j) {
+  if (!sources[j]) return;
+  sources[j].collapsed = false;
+  renderSources();
+  setTimeout(() => {
+    const c = document.querySelectorAll('#sourcesContainer > .source-card')[j];
+    if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 50);
+}
+
+// ---- The card's header and bands (build 138) -----------------------------------
+// The title says what the row is ("Electrical 480V · VFD"); "Energy Source #n"
+// moves under it. Link, Copy, Dup, Split 1 and Remove sit in More, away from Done.
+function sourceCardTitle(src) {
+  return [src.energySource, src.deviceType].filter(Boolean).join(' · ') || 'New energy source';
+}
+function closeSrcMenus(except) {
+  document.querySelectorAll('details.src-more[open]').forEach(d => { if (d !== except) d.open = false; });
+}
+document.addEventListener('click', e => {
+  const mine = e.target && e.target.closest ? e.target.closest('details.src-more') : null;
+  closeSrcMenus(mine);
+});
+// A kind's band (drive, valve, damper) shows only while it holds a question, and
+// says what it holds: refreshSourceDependents swaps the groups in place.
+function syncKindSections(card) {
+  if (!card) return;
+  card.querySelectorAll('.src-kind').forEach(s => {
+    s.style.display = s.querySelector('.form-group') ? '' : 'none';
+    const title = s.querySelector('.src-sec-title');
+    if (!title) return;
+    if (s.dataset.kind === 'drive') title.textContent = s.querySelector('.form-group[id^="feederGroup_"]') ? 'Drive' : 'Stored energy';
+    if (s.dataset.kind === 'valve') title.textContent = s.querySelector('.form-group[id^="valveStateGroup_"], .form-group[id^="lockOpenGroup_"]') ? 'Valve' : 'Release point';
+  });
+}
+
 // Each role's words: the card's line and button, and its noun in messages.
 const SOURCE_ROLES = {
   feeder: { line: 'loto-web reads this row as the breaker that feeds a drive', button: 'Not a feeder', noun: 'feeder' },
@@ -4376,7 +4564,7 @@ function sourceRoleBlock(src, i) {
   return html`<div class="form-group" id="roleGroup_${i}">
     <div style="font-size:12px;color:var(--text-dim);line-height:1.4;">${what}${kind}.${clearable ? ''
       : ' Its Location or Device says so \u2014 change that wording to make it an ordinary row.'}</div>
-    ${clearable ? html`<button type="button" class="btn btn-sm" id="src_clearrole_${i}" onclick="clearSourceRoleAt(${i})" style="margin-top:6px;padding:8px 10px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">${out}</button>` : ''}
+    ${clearable ? html`<button type="button" class="btn btn-sm" id="src_clearrole_${i}" onclick="clearSourceRoleAt(${i})" style="align-self:flex-start;margin-top:6px;padding:8px 10px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">${out}</button>` : ''}
   </div>`;
 }
 // A row naming one of the unit's OWN breakers in its Location: never copied to a duplicate.
@@ -7989,6 +8177,7 @@ function buildSourceCard(src, i) {
     card.className = 'source-card';
 
     if (src.collapsed) {
+      if (feederSitsUnderDrive(i)) card.classList.add('src-under');   // a feeder in the list, under its drive (build 138)
       const photoKey = `source_${i}`;
       const photoData = photos[photoKey];
       const hasThumbnail = photoData && photoData.thumbnail;
@@ -8000,7 +8189,7 @@ function buildSourceCard(src, i) {
         <div class="source-summary" onclick="expandSource(${i})">
           <span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
           <div class="source-summary-text">
-            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${src.valveState==='normally_closed' ? raw(' <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">NC</span>') : ''}${photoData && photoData.dbKey && fittingMarks(photoData, src).length ? raw(' <span title="Valve location marked">&#128205;</span>') : ''}${src.linkedTo ? raw(' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>') : ''}
+            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${src.valveState==='normally_closed' ? raw(' <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">NC</span>') : ''}${photoData && photoData.dbKey && fittingMarks(photoData, src).length ? raw(' <span title="Valve location marked">&#128205;</span>') : ''}${src.linkedTo ? raw(' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>') : ''}${summaryLinkChips(src)}
             ${src.deviceType ? html` &mdash; ${src.deviceType}` : ''}${src.deviceId ? html` <span style="color:#7eb8da;">(${src.deviceId})</span>` : ''}
             ${src.location ? html` &mdash; ${src.location}` : ''}
             ${src.detail ? html` <span style="color:var(--accent);font-weight:600;font-family:monospace;">(${src.detail})</span>` : ''}
@@ -8062,241 +8251,277 @@ function buildSourceCard(src, i) {
       ` : '';
       const isFirstExp = i === 0;
       const isLastExp = i === sources.length - 1;
+      const role = sourceRoleOf(src);
+      // The tech's Duplicate answer, as tap buttons under the photo (build 138: a
+      // dropdown beside Quantity, far from the photo it is about).
+      const dupBlock = html`<div class="form-group" id="dupGroup_${i}" style="margin-top:12px;">
+            <label>Duplicate <span style="font-weight:400;color:var(--text-dim);text-transform:none;letter-spacing:0;">&mdash; same photo as another source</span></label>
+            <div class="seg" id="src_dup_${i}">${DATA.duplicateOptions.map(d => html`<button type="button" class="${(src.duplicate === 'Yes' ? 'Yes' : 'No') === d ? 'on' : ''}" onclick="updateSource(${i},'duplicate','${d}')">${d}</button>`)}</div>
+          </div>`;
       card.innerHTML = html`
         <div class="source-card-header">
-          <h3><span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span> Energy Source #${i + 1}${autoBadge}</h3>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:${isFirstExp?'#555':'var(--text-dim)'};padding:6px 10px;" onclick="moveSource(${i},-1)" ${isFirstExp?'disabled':''}>&#9650;</button>
-            <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:${isLastExp?'#555':'var(--text-dim)'};padding:6px 10px;" onclick="moveSource(${i},1)" ${isLastExp?'disabled':''}>&#9660;</button>
-            <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="showLinkDialog(${i})">${src.linkedTo ? '🔗 Linked' : 'Link'}</button>
-            <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="showCopySourceDialog(${i})" title="Copy source config from a saved entry">Copy</button>
-            <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--text-dim);" onclick="duplicateSource(${i})">Dup</button>
-            ${src.quantity >= 2 ? html`<button class="btn btn-sm" style="background:var(--card);border:1px solid var(--accent);color:var(--accent);" onclick="splitSource(${i})" title="Pull one valve out as its own quantity-1 source (own photo + valve state)">Split 1</button>` : ''}
-            <button class="btn btn-danger btn-sm" onclick="removeSource(${i})">Remove</button>
-            <button class="btn btn-outline btn-sm" onclick="collapseSource(${i})">Done</button>
+          <h3 class="src-head"><span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
+            <span><span class="src-head-title">${sourceCardTitle(src)}</span>
+            <span class="src-head-sub">Energy Source #${i + 1}${autoBadge}${role ? html` &middot; ${SOURCE_ROLES[role].noun}` : ''}</span></span></h3>
+          <div class="src-head-btns">
+            <button class="btn btn-sm src-move" onclick="moveSource(${i},-1)" ${isFirstExp?'disabled':''} title="Move up">&#9650;</button>
+            <button class="btn btn-sm src-move" onclick="moveSource(${i},1)" ${isLastExp?'disabled':''} title="Move down">&#9660;</button>
+            <details class="src-more" id="srcMore_${i}">
+              <summary class="btn btn-sm btn-outline">&#8943; More</summary>
+              <div class="src-more-menu">
+                <button type="button" onclick="closeSrcMenus();showLinkDialog(${i})">${src.linkedTo ? '🔗 Linked — change or unlink' : '🔗 Link to another unit’s source'}</button>
+                <button type="button" onclick="closeSrcMenus();showCopySourceDialog(${i})" title="Copy source config from a saved entry">Copy from a saved unit&hellip;</button>
+                <button type="button" onclick="closeSrcMenus();duplicateSource(${i})">Duplicate this source</button>
+                ${src.quantity >= 2 ? html`<button type="button" onclick="closeSrcMenus();splitSource(${i})" title="Pull one valve out as its own quantity-1 source (own photo + valve state)">Split 1 out</button>` : ''}
+                <button type="button" class="danger" onclick="closeSrcMenus();removeSource(${i})">Remove this source</button>
+              </div>
+            </details>
+            <button class="btn btn-primary btn-sm" onclick="collapseSource(${i})">Done</button>
           </div>
         </div>
         <div class="source-card-body">
           ${linkedBanner}
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Energy Source</label>
-              <select onchange="handleEnergySourceChange(${i},this.value)" id="src_energy_${i}">
-                <option value="">-- Select --</option>
-                ${offeredEnergySources().map(s => html`<option value="${s}" ${src.energySource===s&&!src._customEnergy?'selected':''}>${s}</option>`)}
-                ${src.energySource && !src._customEnergy && !offeredEnergySources().includes(src.energySource) ? html`<option value="${src.energySource}" selected>${src.energySource}</option>` : ''}
-                <option value="** Custom Energy **" ${src._customEnergy?'selected':''}>Custom...</option>
-              </select>
-            </div>
-            ${src._customEnergy ? html`<div class="form-group" id="customEnergyGroup_${i}">
-              <label>Custom Energy Source</label>
-              <input type="text" id="src_energy_custom_${i}" value="${src.energySource||''}" placeholder="Enter custom energy source"
-                oninput="updateSourceCustomField(${i},'energySource',this.value)" onchange="commitCustomEnergy(${i})">
-            </div>` : html`<div id="customEnergyGroup_${i}" style="display:none;"></div>`}
-            <div class="form-group">
-              <label>Device Type</label>
-              <select onchange="handleDeviceTypeChange(${i},this.value)" id="src_device_${i}">
-                <option value="">-- Select --</option>
-                ${getFilteredDevices(src.energySource).map(s => html`<option value="${s}" ${src.deviceType===s&&!src._customDevice?'selected':''}>${s}</option>`)}
-                ${src.deviceType && !src._customDevice && !getFilteredDevices(src.energySource).includes(src.deviceType) ? html`<option value="${src.deviceType}" selected>${src.deviceType}</option>` : ''}
-                <option value="** Custom Device **" ${src._customDevice?'selected':''}>Custom...</option>
-              </select>
-            </div>
-            ${src._customDevice ? html`<div class="form-group" id="customDeviceGroup_${i}">
-              <label>Custom Device Type</label>
-              <input type="text" id="src_device_custom_${i}" value="${src.deviceType||''}" placeholder="Enter custom device type"
-                oninput="updateSourceCustomField(${i},'deviceType',this.value)" onchange="refreshSourceDependents(${i})">
-            </div>` : html`<div id="customDeviceGroup_${i}" style="display:none;"></div>`}
-            ${(() => {
-              // Per-unit Device IDs (build 106): with Quantity 2+ each unit gets its
-              // own tag box. They save as ONE string, "3-SF-50; 3-RF-50", so every
-              // export and loto-web's importer carry it unchanged; loto-web tags its
-              // unit 1 (lowest ID, photo mark #n.1, the IN valve of an In/Out pair)
-              // with the first entry. One tag with no ';' still covers every unit.
-              const n = valveMarkSlots(src);
-              if (n < 2) return html`<div class="form-group">
-              <label>Device ID</label>
-              <div class="scan-input-row">
-                <input type="text" id="src_deviceId_${i}" value="${src.deviceId||''}" placeholder="e.g. Pump 3, V-201"
-                  oninput="updateSource(${i},'deviceId',this.value)">
-                <button type="button" class="scan-btn" onclick="scanTextToField('src_deviceId_${i}')" title="Scan label">&#128247;</button>
+          ${feederForBanner(src, i)}
+          <div class="src-sec src-sec-top">
+            <div class="src-sec-title">What it is</div>
+            <div class="form-grid three-col">
+              <div class="form-group">
+                <label>Energy Source</label>
+                <select onchange="handleEnergySourceChange(${i},this.value)" id="src_energy_${i}">
+                  <option value="">-- Select --</option>
+                  ${offeredEnergySources().map(s => html`<option value="${s}" ${src.energySource===s&&!src._customEnergy?'selected':''}>${s}</option>`)}
+                  ${src.energySource && !src._customEnergy && !offeredEnergySources().includes(src.energySource) ? html`<option value="${src.energySource}" selected>${src.energySource}</option>` : ''}
+                  <option value="** Custom Energy **" ${src._customEnergy?'selected':''}>Custom...</option>
+                </select>
               </div>
-            </div>`;
-              const parts = splitUnitIds(src.deviceId);
-              const isList = String(src.deviceId || '').includes(';');
-              const inOut = isInOutPair(src);
-              const name = k => inOut ? (k ? 'Out' : 'In') : 'Unit ' + (k + 1);
-              const extra = parts.slice(n).filter(x => x.trim());
-              return html`<div class="form-group">
-              <label>Device ID <span style="font-weight:400;color:var(--text-dim);">&mdash; one per unit</span></label>
-              ${Array.from({ length: n }, (_, k) => html`<div class="scan-input-row" style="margin-bottom:6px;align-items:center;">
-                <span style="min-width:64px;font-size:12px;color:var(--text-dim);">${name(k)} <span style="opacity:.7;">#${i + 1}${inOut ? '' : '.' + (k + 1)}</span></span>
-                <input type="text" id="src_deviceId_${i}_${k}" value="${parts[k] || ''}"
-                  placeholder="${k === 0 ? 'e.g. Pump 3, V-201' : (!isList && parts[0].trim() ? 'same as ' + name(0) : 'no tag')}"
-                  oninput="updateUnitDeviceId(${i},${k},this.value)">
-                <button type="button" class="scan-btn" onclick="scanTextToField('src_deviceId_${i}_${k}')" title="Scan label">&#128247;</button>
-              </div>`)}
-              ${extra.length ? html`<div style="font-size:11px;color:#b5451b;">More tags than Quantity, not printed: ${extra.join('; ')}</div>` : ''}
-            </div>`;
-            })()}
-            ${existingTagBlock(src, i)}
-            ${springReturnBlock(src, i)}
-            ${poweredByBlock(src, i)}
-            ${labelWaitBlock(src, i)}
-            <div class="form-group">
-              <label>Location</label>
-              <select onchange="handleLocationChange(${i},this.value)" id="src_loc_${i}">
-                <option value="">-- Select --</option>
-                ${sourceLocationChoices(src).map(s => {
-                  const sel = !src._customLoc && (src.location===s || (LOCATION_ID_PREFIXES.includes(s) && (locationIdInfo(src.location)||{}).prefix===s));
-                  return html`<option value="${s}" ${sel?'selected':''}>${s}</option>`;
-                })}
-                ${src.location && !src._customLoc && !sourceLocationChoices(src).includes(src.location) && !locationIdInfo(src.location) ? html`<option value="${src.location}" selected>${src.location}</option>` : ''}
-                <option value="** Custom Location **" ${src._customLoc?'selected':''}>${isDamperRow(src) ? 'Other\u2026' : 'Custom...'}</option>
-              </select>
-            </div>
-            ${(() => { const li = !src._customLoc ? locationIdInfo(src.location) : null; return li ? html`<div class="form-group">
-              <label>${li.prefix} ID</label>
-              <div class="scan-input-row">
-                <input type="text" id="src_locid_${i}" value="${li.id}" placeholder="${li.prefix==='MCC'?'e.g. 3, 3B':'e.g. A, LP-1'}"
-                  oninput="updateLocationId(${i},this.value)" onchange="commitSourceLocation(${i})">
-                <button type="button" class="scan-btn" onclick="scanTextToField('src_locid_${i}','locationId')" title="Scan the ${li.prefix} label">&#128247;</button>
+              ${src._customEnergy ? html`<div class="form-group" id="customEnergyGroup_${i}">
+                <label>Custom Energy Source</label>
+                <input type="text" id="src_energy_custom_${i}" value="${src.energySource||''}" placeholder="Enter custom energy source"
+                  oninput="updateSourceCustomField(${i},'energySource',this.value)" onchange="commitCustomEnergy(${i})">
+              </div>` : html`<div id="customEnergyGroup_${i}" style="display:none;"></div>`}
+              <div class="form-group">
+                <label>Device Type</label>
+                <select onchange="handleDeviceTypeChange(${i},this.value)" id="src_device_${i}">
+                  <option value="">-- Select --</option>
+                  ${getFilteredDevices(src.energySource).map(s => html`<option value="${s}" ${src.deviceType===s&&!src._customDevice?'selected':''}>${s}</option>`)}
+                  ${src.deviceType && !src._customDevice && !getFilteredDevices(src.energySource).includes(src.deviceType) ? html`<option value="${src.deviceType}" selected>${src.deviceType}</option>` : ''}
+                  <option value="** Custom Device **" ${src._customDevice?'selected':''}>Custom...</option>
+                </select>
               </div>
-            </div>` : ''; })()}
-            ${src._customLoc ? html`<div class="form-group" id="customLocGroup_${i}">
-              <label>Custom Location</label>
-              <input type="text" id="src_loc_custom_${i}" value="${src.location||''}" placeholder="Enter custom location"
-                oninput="updateSourceCustomLoc(${i},this.value)" onchange="commitSourceLocation(${i})">
-            </div>` : html`<div id="customLocGroup_${i}" style="display:none;"></div>`}
-            ${(() => {
-              const ov = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource);
-              const useSimple = simpleVerifEnabled() && !src._classicVerif
-                && (ov ? overrideAllowsSimple(ov)
-                       : isWaterFamilySource(src.energySource)
-                         && (!src.deviceType || isValveVerifDevice(src.deviceType)))
-                && parseWaterVerification(src.verification).recognized;
-              if (useSimple) {
-                const p = parseWaterVerification(src.verification);
-                const derived = src.verification || synthesizeWaterVerification(false, false, simpleVerifSuffix(src));
-                const boxStyle = 'display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:14px;cursor:pointer;';
+              ${src._customDevice ? html`<div class="form-group" id="customDeviceGroup_${i}">
+                <label>Custom Device Type</label>
+                <input type="text" id="src_device_custom_${i}" value="${src.deviceType||''}" placeholder="Enter custom device type"
+                  oninput="updateSourceCustomField(${i},'deviceType',this.value)" onchange="refreshSourceDependents(${i})">
+              </div>` : html`<div id="customDeviceGroup_${i}" style="display:none;"></div>`}
+              <div class="form-group">
+                <label>Quantity</label>
+                <select onchange="updateSource(${i},'quantity',parseInt(this.value))">
+                  ${DATA.quantities.map(q => html`<option value="${q}" ${Number(src.quantity)===q?'selected':''}>${q}</option>`)}
+                  ${src.quantity != null && src.quantity !== '' && !DATA.quantities.includes(Number(src.quantity)) ? html`<option value="${src.quantity}" selected>${src.quantity}</option>` : ''}
+                </select>
+              </div>
+              </div>
+            <div class="form-grid">
+              ${(() => {
+                // Per-unit Device IDs (build 106): with Quantity 2+ each unit gets its
+                // own tag box. They save as ONE string, "3-SF-50; 3-RF-50", so every
+                // export and loto-web's importer carry it unchanged; loto-web tags its
+                // unit 1 (lowest ID, photo mark #n.1, the IN valve of an In/Out pair)
+                // with the first entry. One tag with no ';' still covers every unit.
+                const n = valveMarkSlots(src);
+                if (n < 2) return html`<div class="form-group">
+                <label>Device ID</label>
+                <div class="scan-input-row">
+                  <input type="text" id="src_deviceId_${i}" value="${src.deviceId||''}" placeholder="e.g. Pump 3, V-201"
+                    oninput="updateSource(${i},'deviceId',this.value)">
+                  <button type="button" class="scan-btn" onclick="scanTextToField('src_deviceId_${i}')" title="Scan label">&#128247;</button>
+                </div>
+              </div>`;
+                const parts = splitUnitIds(src.deviceId);
+                const isList = String(src.deviceId || '').includes(';');
+                const inOut = isInOutPair(src);
+                const name = k => inOut ? (k ? 'Out' : 'In') : 'Unit ' + (k + 1);
+                const extra = parts.slice(n).filter(x => x.trim());
                 return html`<div class="form-group">
-                  <label>Verification</label>
-                  <label style="${boxStyle}">
-                    <input type="checkbox" class="simple-verif-check" ${p.drain ? 'checked' : ''} onchange="updateSimpleVerif(${i},'drain',this.checked)">
-                    Drain present
-                  </label>
-                  <label style="${boxStyle}">
-                    <input type="checkbox" class="simple-verif-check" ${p.gauge ? 'checked' : ''} onchange="updateSimpleVerif(${i},'gauge',this.checked)">
-                    Gauge present
-                  </label>
-                  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-                    <span style="font-size:11px;color:var(--text-dim);">Saves as: ${derived}</span>
-                    <button type="button" onclick="showClassicVerif(${i})" style="background:none;border:none;color:var(--text-dim);font-size:11px;text-decoration:underline;padding:4px;">More options&hellip;</button>
-                  </div>
-                </div>`;
-              }
-              return html`<div class="form-group">
-              <label>Verification</label>
-              <select onchange="updateSource(${i},'verification',this.value)" id="src_ver_${i}">
-                <option value="">-- Select --</option>
-                ${getFilteredVerifications(src.deviceType, src.energySource).map(s => html`<option value="${s}" ${src.verification===s?'selected':''}>${s}</option>`)}
-                ${src.verification && !getFilteredVerifications(src.deviceType, src.energySource).includes(src.verification) ? html`<option value="${src.verification}" selected>${src.verification}</option>` : ''}
-              </select>
-            </div>`;
-            })()}
-            ${sourceTakesValveState(src) ? html`<div class="form-group" id="valveStateGroup_${i}">
-              <label>Valve State</label>
-              ${valveAnswerNote(src, 'state') ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${valveAnswerNote(src, 'state')}</div>` : ''}
-              <select onchange="updateSource(${i},'valveState',this.value)" id="src_valvestate_${i}">
-                ${DATA.valveStateOptions.map(o => html`<option value="${o.value}" ${(src.valveState||'normal')===o.value?'selected':''}>${o.label}</option>`)}
-                ${src.valveState && !DATA.valveStateOptions.some(o => o.value === src.valveState) ? html`<option value="${src.valveState}" selected>${src.valveState}</option>` : ''}
-              </select>
-            </div>` : html`<div id="valveStateGroup_${i}" style="display:none;"></div>`}
-            ${(sourceOffersValveState(src) || src.lockOpen) ? html`<div class="form-group" id="lockOpenGroup_${i}">
-              <label>Locked open</label>
-              ${valveAnswerNote(src, 'lock') ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${valveAnswerNote(src, 'lock')}</div>` : ''}
-              <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;font-size:14px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500;">
-                <input type="checkbox" class="painted-check" id="src_lockopen_${i}" ${src.lockOpen ? 'checked' : ''} onchange="updateLockOpen(${i},this.checked)">
-                Opened and locked open during lockout (rare)
-              </label>
-            </div>` : html`<div id="lockOpenGroup_${i}" style="display:none;"></div>`}
-            ${sourceTakesDrainLocation(src) ? (() => {
-              // Build 122: the point and its choices follow the medium; a fuel oil or
-              // chemical drain also asks where it drains to
-              const pt = releasePointOf(src), d = src.drainLocation || {};
-              const toOther = /^Other:/.test(d.to || '');
-              return html`<div class="form-group" id="drainLocGroup_${i}">
-              <label>${pt.label}</label>
-              ${nonValveDevice(src) ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${releaseHeldNote(src)}</div>` : ''}
-              <select id="src_drainwhere_${i}" onchange="updateDrainWhere(${i},this.value)">
-                <option value="">-- Not answered --</option>
-                ${DATA.drainLocations.map(w => html`<option value="${w}" ${d.where === w ? 'selected' : ''}>${pt.choices[w] || w}</option>`)}
-              </select>
-              ${d.where ? html`<input type="text" id="src_draintext_${i}" value="${d.text || ''}"
-                placeholder="${d.where === 'None found' ? 'Where you looked (optional)' : 'Where exactly, e.g. ' + pt.eg}"
-                oninput="updateDrainText(${i},this.value)" style="margin-top:6px;">` : ''}
-              ${pt.drainsTo && DRAIN_FOUND.includes(d.where) ? html`<label style="margin-top:10px;">Drains to</label>
-              <select id="src_drainto_${i}" onchange="updateDrainTo(${i},this.value)">
-                <option value="">-- Not answered --</option>
-                ${DATA.drainsTo.map(t => html`<option value="${t}" ${d.to === t ? 'selected' : ''}>${DRAINS_TO_LABEL[t] || t}</option>`)}
-                <option value="Other" ${toOther ? 'selected' : ''}>Other&hellip;</option>
-              </select>
-              ${toOther ? html`<input type="text" id="src_draintotext_${i}" value="${String(d.to).replace(/^Other:\s*/, '')}"
-                placeholder="Where it drains to" oninput="updateDrainToText(${i},this.value)" style="margin-top:6px;">` : ''}` : ''}
-            </div>`; })() : html`<div id="drainLocGroup_${i}" style="display:none;"></div>`}
-            ${isDriveDevice(src.deviceType) ? html`<div class="form-group" id="feederGroup_${i}">
-              <label>Feeder</label>
-              <button type="button" class="btn btn-sm" id="src_addfeeder_${i}" onclick="addFeederFromCard(${i})" style="padding:10px 12px;font-size:13px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">+ Add the breaker that feeds this drive</button>
-            </div>` : html`<div id="feederGroup_${i}" style="display:none;"></div>`}
-            ${driveIsolatesBlock(src, i)}
-            ${sourceRoleBlock(src, i)}
-            <div class="form-group">
-              <label>Quantity</label>
-              <select onchange="updateSource(${i},'quantity',parseInt(this.value))">
-                ${DATA.quantities.map(q => html`<option value="${q}" ${Number(src.quantity)===q?'selected':''}>${q}</option>`)}
-                ${src.quantity != null && src.quantity !== '' && !DATA.quantities.includes(Number(src.quantity)) ? html`<option value="${src.quantity}" selected>${src.quantity}</option>` : ''}
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Duplicate</label>
-              <select onchange="updateSource(${i},'duplicate',this.value)">
-                ${DATA.duplicateOptions.map(d => html`<option value="${d}" ${src.duplicate===d?'selected':''}>${d}</option>`)}
-              </select>
+                <label>Device ID <span style="font-weight:400;color:var(--text-dim);">&mdash; one per unit</span></label>
+                ${Array.from({ length: n }, (_, k) => html`<div class="scan-input-row" style="margin-bottom:6px;align-items:center;">
+                  <span style="min-width:64px;font-size:12px;color:var(--text-dim);">${name(k)} <span style="opacity:.7;">#${i + 1}${inOut ? '' : '.' + (k + 1)}</span></span>
+                  <input type="text" id="src_deviceId_${i}_${k}" value="${parts[k] || ''}"
+                    placeholder="${k === 0 ? 'e.g. Pump 3, V-201' : (!isList && parts[0].trim() ? 'same as ' + name(0) : 'no tag')}"
+                    oninput="updateUnitDeviceId(${i},${k},this.value)">
+                  <button type="button" class="scan-btn" onclick="scanTextToField('src_deviceId_${i}_${k}')" title="Scan label">&#128247;</button>
+                </div>`)}
+                ${extra.length ? html`<div style="font-size:11px;color:#b5451b;">More tags than Quantity, not printed: ${extra.join('; ')}</div>` : ''}
+              </div>`;
+              })()}
+              ${existingTagBlock(src, i)}
             </div>
           </div>
-          ${isNoPhoto ? html`<div style="padding:8px 0;color:var(--text-dim);font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span>${noPhotoMessage}</span>${photoToggleBtn}${sharedPhotoBtn}</div>` : html`
-          <div class="photo-section" style="display:flex;gap:16px;align-items:flex-start;">
-            <div>
-              <label style="font-size:11px;font-weight:600;color:var(--text-label);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;">Source Photo</label>
-              <div class="photo-capture ${photos['source_'+i] && photos['source_'+i].dbKey ?'has-photo':''}" onclick="takePhoto('source_${i}')" id="photo_source_${i}" style="position:relative;">
-                ${raw(photoSlotInnerHtml(photos['source_'+i], src))}
+          <div class="src-sec">
+            <div class="src-sec-title">Where it&rsquo;s isolated and verified</div>
+            <div class="form-grid${src._customLoc || locationIdInfo(src.location) ? ' three-col' : ''}">
+              <div class="form-group">
+                <label>Location</label>
+                <select onchange="handleLocationChange(${i},this.value)" id="src_loc_${i}">
+                  <option value="">-- Select --</option>
+                  ${sourceLocationChoices(src).map(s => {
+                    const sel = !src._customLoc && (src.location===s || (LOCATION_ID_PREFIXES.includes(s) && (locationIdInfo(src.location)||{}).prefix===s));
+                    return html`<option value="${s}" ${sel?'selected':''}>${s}</option>`;
+                  })}
+                  ${src.location && !src._customLoc && !sourceLocationChoices(src).includes(src.location) && !locationIdInfo(src.location) ? html`<option value="${src.location}" selected>${src.location}</option>` : ''}
+                  <option value="** Custom Location **" ${src._customLoc?'selected':''}>${isDamperRow(src) ? 'Other\u2026' : 'Custom...'}</option>
+                </select>
               </div>
-              <input type="file" accept="image/*" capture="environment" id="file_source_${i}" onchange="handlePhoto(this, 'source_${i}')">
-              <div style="display:flex;gap:6px;margin-top:6px;">
-                <button type="button" class="btn btn-sm" onclick="browsePhoto('source_${i}')" title="Pick from the photo library" style="flex:1;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#128194; Browse</button>
-                <button type="button" class="btn btn-sm" onclick="showReusePhotoPicker('source_${i}')" title="Reuse a photo already taken today (shared)" style="flex:1;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#8635; Reuse</button>
-                <button type="button" id="markbtn_source_${i}" class="btn btn-sm" onclick="openValveMarkDialog('source_${i}')" title="Tap where the valve / device is in this photo" style="flex:1;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;${photos['source_'+i] && photos['source_'+i].dbKey ? '' : 'display:none;'}">&#128205; Mark</button>
+              ${(() => { const li = !src._customLoc ? locationIdInfo(src.location) : null; return li ? html`<div class="form-group">
+                <label>${li.prefix} ID</label>
+                <div class="scan-input-row">
+                  <input type="text" id="src_locid_${i}" value="${li.id}" placeholder="${li.prefix==='MCC'?'e.g. 3, 3B':'e.g. A, LP-1'}"
+                    oninput="updateLocationId(${i},this.value)" onchange="commitSourceLocation(${i})">
+                  <button type="button" class="scan-btn" onclick="scanTextToField('src_locid_${i}','locationId')" title="Scan the ${li.prefix} label">&#128247;</button>
+                </div>
+              </div>` : ''; })()}
+              ${src._customLoc ? html`<div class="form-group" id="customLocGroup_${i}">
+                <label>Custom Location</label>
+                <input type="text" id="src_loc_custom_${i}" value="${src.location||''}" placeholder="Enter custom location"
+                  oninput="updateSourceCustomLoc(${i},this.value)" onchange="commitSourceLocation(${i})">
+              </div>` : html`<div id="customLocGroup_${i}" style="display:none;"></div>`}
+              ${(() => {
+                const ov = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource);
+                const useSimple = simpleVerifEnabled() && !src._classicVerif
+                  && (ov ? overrideAllowsSimple(ov)
+                         : isWaterFamilySource(src.energySource)
+                           && (!src.deviceType || isValveVerifDevice(src.deviceType)))
+                  && parseWaterVerification(src.verification).recognized;
+                if (useSimple) {
+                  const p = parseWaterVerification(src.verification);
+                  const derived = src.verification || synthesizeWaterVerification(false, false, simpleVerifSuffix(src));
+                  const boxStyle = 'display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:14px;cursor:pointer;';
+                  return html`<div class="form-group">
+                    <label>Verification</label>
+                    <label style="${boxStyle}">
+                      <input type="checkbox" class="simple-verif-check" ${p.drain ? 'checked' : ''} onchange="updateSimpleVerif(${i},'drain',this.checked)">
+                      Drain present
+                    </label>
+                    <label style="${boxStyle}">
+                      <input type="checkbox" class="simple-verif-check" ${p.gauge ? 'checked' : ''} onchange="updateSimpleVerif(${i},'gauge',this.checked)">
+                      Gauge present
+                    </label>
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                      <span style="font-size:11px;color:var(--text-dim);">Saves as: ${derived}</span>
+                      <button type="button" onclick="showClassicVerif(${i})" style="background:none;border:none;color:var(--text-dim);font-size:11px;text-decoration:underline;padding:4px;">More options&hellip;</button>
+                    </div>
+                  </div>`;
+                }
+                return html`<div class="form-group">
+                <label>Verification</label>
+                <select onchange="updateSource(${i},'verification',this.value)" id="src_ver_${i}">
+                  <option value="">-- Select --</option>
+                  ${getFilteredVerifications(src.deviceType, src.energySource).map(s => html`<option value="${s}" ${src.verification===s?'selected':''}>${s}</option>`)}
+                  ${src.verification && !getFilteredVerifications(src.deviceType, src.energySource).includes(src.verification) ? html`<option value="${src.verification}" selected>${src.verification}</option>` : ''}
+                </select>
+              </div>`;
+              })()}
               </div>
-              ${photos['source_'+i] && photos['source_'+i].timestamp ?
-                html`<div style="font-size:11px;color:var(--text-dim);margin-top:4px;text-align:center;">
-                  &#128247; ${new Date(photos['source_'+i].timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}
-                </div>` : ''}
-              ${photos['source_'+i] && photos['source_'+i].dbKey && photos['source_'+i].dupOf ?
-                html`<div style="font-size:11px;color:var(--accent);margin-top:2px;text-align:center;max-width:160px;word-break:break-word;">&#8635; Photo from ${dupOwnerLabel(photos['source_'+i])}</div>` : ''}
-              ${photoToggleBtn ? html`<div style="margin-top:8px;text-align:center;">${photoToggleBtn}</div>` : ''}
+            ${sourceRoleBlock(src, i)}
+          </div>
+          <div class="src-sec src-kind" data-kind="damper">
+            <div class="src-sec-title">Damper</div>
+            <div class="form-grid">
+              ${springReturnBlock(src, i)}
+              ${poweredByBlock(src, i)}
             </div>
-            <div style="flex:0 0 auto;">
-              <label style="font-size:11px;font-weight:600;color:var(--text-label);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;">Detail</label>
-              <div class="scan-input-row" style="width:160px;">
-                <input type="text" id="src_detail_${i}" value="${src.detail||''}" placeholder="LR, TL…"
-                  oninput="updateSource(${i},'detail',this.value)"
-                  style="text-transform:uppercase;font-family:monospace;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-main);font-size:14px;text-align:center;">
-                <button type="button" class="scan-btn" onclick="scanTextToField('src_detail_${i}')" title="Scan label" style="width:38px;height:38px;font-size:16px;">&#128247;</button>
-              </div>
+          </div>
+          <div class="src-sec src-kind" data-kind="drive">
+            <div class="src-sec-title">${isDriveDevice(src.deviceType) ? 'Drive' : 'Stored energy'}</div>
+            <div class="form-grid">
+              ${labelWaitBlock(src, i)}
+              ${feederGroupBlock(src, i)}
+              ${driveIsolatesBlock(src, i)}
             </div>
-          </div>`}
+          </div>
+          <div class="src-sec src-kind" data-kind="valve">
+            <div class="src-sec-title">Valve</div>
+            <div class="form-grid">
+              ${sourceTakesValveState(src) ? html`<div class="form-group" id="valveStateGroup_${i}">
+                <label>Valve State</label>
+                ${valveAnswerNote(src, 'state') ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${valveAnswerNote(src, 'state')}</div>` : ''}
+                <select onchange="updateSource(${i},'valveState',this.value)" id="src_valvestate_${i}">
+                  ${DATA.valveStateOptions.map(o => html`<option value="${o.value}" ${(src.valveState||'normal')===o.value?'selected':''}>${o.label}</option>`)}
+                  ${src.valveState && !DATA.valveStateOptions.some(o => o.value === src.valveState) ? html`<option value="${src.valveState}" selected>${src.valveState}</option>` : ''}
+                </select>
+              </div>` : html`<div id="valveStateGroup_${i}" style="display:none;"></div>`}
+              ${(sourceOffersValveState(src) || src.lockOpen) ? html`<div class="form-group" id="lockOpenGroup_${i}">
+                <label>Locked open</label>
+                ${valveAnswerNote(src, 'lock') ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${valveAnswerNote(src, 'lock')}</div>` : ''}
+                <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;font-size:14px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500;">
+                  <input type="checkbox" class="painted-check" id="src_lockopen_${i}" ${src.lockOpen ? 'checked' : ''} onchange="updateLockOpen(${i},this.checked)">
+                  Opened and locked open during lockout (rare)
+                </label>
+              </div>` : html`<div id="lockOpenGroup_${i}" style="display:none;"></div>`}
+              ${sourceTakesDrainLocation(src) ? (() => {
+                // Build 122: the point and its choices follow the medium; a fuel oil or
+                // chemical drain also asks where it drains to
+                const pt = releasePointOf(src), d = src.drainLocation || {};
+                const toOther = /^Other:/.test(d.to || '');
+                return html`<div class="form-group" id="drainLocGroup_${i}">
+                <label>${pt.label}</label>
+                ${nonValveDevice(src) ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${releaseHeldNote(src)}</div>` : ''}
+                <select id="src_drainwhere_${i}" onchange="updateDrainWhere(${i},this.value)">
+                  <option value="">-- Not answered --</option>
+                  ${DATA.drainLocations.map(w => html`<option value="${w}" ${d.where === w ? 'selected' : ''}>${pt.choices[w] || w}</option>`)}
+                </select>
+                ${d.where ? html`<input type="text" id="src_draintext_${i}" value="${d.text || ''}"
+                  placeholder="${d.where === 'None found' ? 'Where you looked (optional)' : 'Where exactly, e.g. ' + pt.eg}"
+                  oninput="updateDrainText(${i},this.value)" style="margin-top:6px;">` : ''}
+                ${pt.drainsTo && DRAIN_FOUND.includes(d.where) ? html`<label style="margin-top:10px;">Drains to</label>
+                <select id="src_drainto_${i}" onchange="updateDrainTo(${i},this.value)">
+                  <option value="">-- Not answered --</option>
+                  ${DATA.drainsTo.map(t => html`<option value="${t}" ${d.to === t ? 'selected' : ''}>${DRAINS_TO_LABEL[t] || t}</option>`)}
+                  <option value="Other" ${toOther ? 'selected' : ''}>Other&hellip;</option>
+                </select>
+                ${toOther ? html`<input type="text" id="src_draintotext_${i}" value="${String(d.to).replace(/^Other:\s*/, '')}"
+                  placeholder="Where it drains to" oninput="updateDrainToText(${i},this.value)" style="margin-top:6px;">` : ''}` : ''}
+              </div>`; })() : html`<div id="drainLocGroup_${i}" style="display:none;"></div>`}
+              </div>
+          </div>
+          <div class="src-sec">
+            <div class="src-sec-title">Photo</div>
+            ${isNoPhoto ? html`<div style="padding:8px 0;color:var(--text-dim);font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span>${noPhotoMessage}</span>${photoToggleBtn}${sharedPhotoBtn}</div>` : html`
+            <div class="photo-section" style="display:flex;gap:16px;align-items:flex-start;">
+              <div>
+                <label style="font-size:11px;font-weight:600;color:var(--text-label);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;">Source Photo</label>
+                <div class="photo-capture ${photos['source_'+i] && photos['source_'+i].dbKey ?'has-photo':''}" onclick="takePhoto('source_${i}')" id="photo_source_${i}" style="position:relative;">
+                  ${raw(photoSlotInnerHtml(photos['source_'+i], src))}
+                </div>
+                <input type="file" accept="image/*" capture="environment" id="file_source_${i}" onchange="handlePhoto(this, 'source_${i}')">
+                <div style="display:flex;gap:6px;margin-top:6px;">
+                  <button type="button" class="btn btn-sm" onclick="browsePhoto('source_${i}')" title="Pick from the photo library" style="flex:1;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#128194; Browse</button>
+                  <button type="button" class="btn btn-sm" onclick="showReusePhotoPicker('source_${i}')" title="Reuse a photo already taken today (shared)" style="flex:1;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#8635; Reuse</button>
+                  <button type="button" id="markbtn_source_${i}" class="btn btn-sm" onclick="openValveMarkDialog('source_${i}')" title="Tap where the valve / device is in this photo" style="flex:1;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;${photos['source_'+i] && photos['source_'+i].dbKey ? '' : 'display:none;'}">&#128205; Mark</button>
+                </div>
+                ${photos['source_'+i] && photos['source_'+i].timestamp ?
+                  html`<div style="font-size:11px;color:var(--text-dim);margin-top:4px;text-align:center;">
+                    &#128247; ${new Date(photos['source_'+i].timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}
+                  </div>` : ''}
+                ${photos['source_'+i] && photos['source_'+i].dbKey && photos['source_'+i].dupOf ?
+                  html`<div style="font-size:11px;color:var(--accent);margin-top:2px;text-align:center;max-width:160px;word-break:break-word;">&#8635; Photo from ${dupOwnerLabel(photos['source_'+i])}</div>` : ''}
+                ${photoToggleBtn ? html`<div style="margin-top:8px;text-align:center;">${photoToggleBtn}</div>` : ''}
+              </div>
+              <div style="flex:0 0 auto;">
+                <label style="font-size:11px;font-weight:600;color:var(--text-label);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;">Detail</label>
+                <div class="scan-input-row" style="width:160px;">
+                  <input type="text" id="src_detail_${i}" value="${src.detail||''}" placeholder="LR, TL…"
+                    oninput="updateSource(${i},'detail',this.value)"
+                    style="text-transform:uppercase;font-family:monospace;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-main);font-size:14px;text-align:center;">
+                  <button type="button" class="scan-btn" onclick="scanTextToField('src_detail_${i}')" title="Scan label" style="width:38px;height:38px;font-size:16px;">&#128247;</button>
+                </div>
+              </div>
+            </div>`}
+            ${dupBlock}
+          </div>
         </div>
       `;
+      syncKindSections(card);
     }
     return card;
 }
@@ -8361,6 +8586,17 @@ function refreshSourceDependents(index) {
   // build 118: they follow the source and device too (build 122: the drive's answer)
   ['lockOpenGroup_', 'drainLocGroup_', 'feederGroup_', 'driveIsoGroup_', 'roleGroup_'].forEach(p =>
     swapNode(live.querySelector('#' + p + index), fresh.querySelector('#' + p + index)));
+  // …and so do the card's title and its bands (build 138)
+  const ta = live.querySelector('.src-head-title'), tb = fresh.querySelector('.src-head-title');
+  if (ta && tb && ta.textContent !== tb.textContent) ta.textContent = tb.textContent;
+  const sa = live.querySelector('.src-head-sub'), sb = fresh.querySelector('.src-head-sub');
+  if (sa && sb && sa.innerHTML !== sb.innerHTML) sa.innerHTML = sb.innerHTML;
+  // a Device or Location typed into (or out of) a feeder: its banner comes or goes (review)
+  const fa = live.querySelector('#feederFor_' + index), fb = fresh.querySelector('#feederFor_' + index);
+  if (fa && fb) swapNode(fa, fb);
+  else if (fa) fa.remove();
+  else if (fb) { const body = live.querySelector('.source-card-body'); if (body) body.insertBefore(fb, body.querySelector(':scope > .src-sec')); }
+  syncKindSections(live);
 }
 
 // Build 107: a Kinetic row on an air handler or exhaust fan names its fan.
@@ -8763,10 +8999,15 @@ function labelWaitBlock(src, i) {
   const name = k => inOut ? (k ? 'Out' : 'In') : 'Unit ' + (k + 1);
   const pi = labelPhotoIndexOf(src);
   const photo = pi >= 0 ? miscPhotos[pi] : null;
+  const photoBtn = html`<span style="display:inline-flex;align-items:center;gap:8px;">
+      ${photo ? html`<img src="${photo.thumbnail}" onclick="showMiscPhotoViewer(${pi})" title="The label photo" style="width:44px;border-radius:6px;border:2px solid #333;cursor:pointer;">` : ''}
+      <button type="button" class="btn btn-sm" id="src_lwphoto_${i}" onclick="addLabelPhoto(${i})" style="padding:8px 12px;font-size:13px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">&#128247; ${photo ? 'Retake the label photo' : 'Photograph the label'}</button>
+    </span>`;
   return html`<div class="form-group" id="lwGroup_${i}" style="grid-column:1 / -1;">
     <label>Discharge wait on the label${n > 1 ? raw(' <span style="font-weight:400;color:var(--text-dim);">&mdash; one per unit</span>') : ''}</label>
     ${Array.from({ length: n }, (_, k) => {
       const e = lw[k], st = labelWaitState(e);
+      const inline = n === 1;   // one label photo per row: beside the box with one unit, on its own line with several (review)
       const mins = st === 'minutes' ? String(validLabelMinutes(e.minutes)) : '';
       const volts = validDcBusV(dv[k]) != null ? String(dv[k]) : '';
       return html`<div class="scan-input-row" style="margin-bottom:6px;align-items:center;flex-wrap:wrap;gap:6px;">
@@ -8780,13 +9021,11 @@ function labelWaitBlock(src, i) {
         </label>
         <input type="text" inputmode="numeric" id="src_dcv_${i}_${k}" value="${volts}" placeholder="DC bus V (optional)" style="max-width:170px;"
           oninput="updateDcBusV(${i},${k},this.value)">
+        ${inline ? photoBtn : ''}
       </div>`;
     })}
-    <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
-      ${photo ? html`<img src="${photo.thumbnail}" onclick="showMiscPhotoViewer(${pi})" title="The label photo" style="width:56px;border-radius:6px;border:2px solid #333;cursor:pointer;">` : ''}
-      <button type="button" class="btn btn-sm" id="src_lwphoto_${i}" onclick="addLabelPhoto(${i})" style="padding:8px 12px;font-size:13px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">&#128247; ${photo ? 'Retake the label photo' : 'Photograph the label'}</button>
-    </div>
-    <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">From the warning label on the drive or capacitor bank, e.g. &ldquo;Wait 15 minutes&rdquo;. Photograph the label.</div>
+    ${n > 1 ? html`<div style="margin-top:2px;">${photoBtn}</div>` : ''}
+    <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">From the warning label on the drive or capacitor bank, e.g. &ldquo;Wait 15 minutes&rdquo;.</div>
   </div>`;
 }
 
@@ -12496,7 +12735,9 @@ function updateIntegrityBadge() {
 // ============================================================================
 // MISC PHOTOS
 // ============================================================================
-const MAX_MISC_PHOTOS = 10;
+// 30 since build 137 (was 10): photos are cheaper than a trip back to the
+// site (wilkins 2026-10-29). Export, the sheet and loto-web take any number.
+const MAX_MISC_PHOTOS = 30;
 
 function addMiscPhoto() {
   if (refuseIfDuplicateCopying()) return;
