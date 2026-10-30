@@ -476,7 +476,9 @@
         if ((js.valveState || 'normal') !== wantVs) viol('export-valvestate-json', '"' + t.name + '" source ' + (i + 1) + ': ' + (js.valveState || 'normal') + ' vs ' + wantVs + ' (stored ' + (s.valveState || 'normal') + ' on "' + (s.energySource || '') + '" / "' + (s.deviceType || '') + '")');
         // build 94: col 7 = the source's detail ONLY; the link has its own col 13
         const linkTxt = s.linkedTo ? (s.linkedTo.equipName || '(unnamed)') + ' / Source #' + ((s.linkedTo.sourceIndex || 0) + 1) + (s.linkedTo.sourceLabel ? ' (' + s.linkedTo.sourceLabel + ')' : '') : '';
-        if (i < 10) rows.push([String(s.energySource || '').trim() || 'Unknown', s.deviceType || '', s.deviceId || '', String(s.quantity || ''), s.location || '', pf.replace(/^photos\//, ''), s.detail || '', '', s.verification || '', '', VS_TEXT[wantVs] || '', pf ? ownMarksText(wantMarks) : '', linkTxt]);
+        // every source (2026-10-29): since build 127 the block grows a row pair per source past 10 — the oracle
+        // kept build 126's ten-row block, so a unit of 11+ sources read as a mismatch (seeds 58, 155)
+        rows.push([String(s.energySource || '').trim() || 'Unknown', s.deviceType || '', s.deviceId || '', String(s.quantity || ''), s.location || '', pf.replace(/^photos\//, ''), s.detail || '', '', s.verification || '', '', VS_TEXT[wantVs] || '', pf ? ownMarksText(wantMarks) : '', linkTxt]);
       }
       totalRows += t.sources.length;
       expectedBlocks.push({ name: je.equipName || '', rows });

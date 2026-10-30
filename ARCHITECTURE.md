@@ -1304,10 +1304,13 @@ an edit with nothing changed and expected it back; they now make a change first 
 the kept template, the notes menu) is unchanged. The fuzzer's relaunch oracle (`tests/fuzz-harness.js`) lets a form
 that equals its saved unit by the harness's own signatures come back blank with its room. Suite **432 / 432** web and native-mock (scale
 test included); **not run in the Simulator**. Fuzzer, 4 workers × 15 seeds × 50 steps: clean (seeds 1–60) and with 15 %
-faults (seeds 101–160) — no lost, changed, added or duplicated unit at any relaunch. Each run found one
-`export-xlsx-mismatch` (seeds 58 and 155), a sheet-row mismatch on a unit with split and duplicated rows at an
-Atlanta facility; seed 58 replays the same on builds 136 and 138, so it predates builds 137–139 — not yet traced
-(app or oracle). Checked in the Browser pane: on build 138 a relaunch after opening a unit brought it back as an
+faults (seeds 101–160) — no lost, changed, added or duplicated unit at any relaunch. Each run first found one
+`export-xlsx-mismatch` (seeds 58 and 155; seed 58 the same on builds 136 and 138). **Traced (2026-10-29): the
+oracle's, not the app's** — the harness's sheet check expected only a unit's first ten source rows (`if (i < 10)`,
+build 126's fixed block), while since build 127 the block grows a row pair per source past ten; both seeds had built
+a unit of 11+ sources (add, split, duplicate). With every source expected, both seeds replay clean and the app's rows
+past ten match the harness's own reading cell by cell; the two batches then ran **clean of every violation kind**
+(6,000 actions). Checked in the Browser pane: on build 138 a relaunch after opening a unit brought it back as an
 unmarked edit; on build 139 it gave a new unit, building and room kept, the unit still exported.
 
 **Status:** branch `edit-close-139` (worktree `~/Desktop/Claude Apps/loto-edit-139`, preview config `loto-edit-139`,
