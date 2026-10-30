@@ -13289,7 +13289,7 @@ function discardForm() {
   if (!editing && !formHasData()) { updateDiscardButton(); return; }
   const name = (editing && editing.equipName) || (document.getElementById('equipName').value || '').trim();
   // nothing changed: nothing to drop, so no question (build 139)
-  if (editing && formMatchesSavedEntry(editing)) {
+  if (editing && formMatchesSavedEntry(formEditTarget() || editing)) {
     if (!tabMayWrite()) return;
     closeUnchangedEdit();
     showToast('Closed \u201c' + (name || 'the unit') + '\u201d \u2014 unchanged, still as saved');
@@ -13335,8 +13335,11 @@ function updateDiscardButton() {
 // it for changed. Now a form that holds exactly its saved unit is closed instead
 // of saved: by Save & New, by Cancel edit without asking, and at launch.
 // The saved unit the form is an edit of, or null.
+// The saved list's own copy first (review): editingEntry can be an older object
+// once another writer's save has been merged into the list.
 function formEditTarget() {
-  return editingEntry || (currentEntryId ? savedEquipment.find(e => sameEntryId(e.id, currentEntryId)) || null : null);
+  const id = currentEntryId || (editingEntry && editingEntry.id);
+  return (id ? savedEquipment.find(e => sameEntryId(e.id, id)) : null) || editingEntry || null;
 }
 // Keys sorted at every level, so two copies of one value compare equal.
 function stableJsonOf(v) {
@@ -17338,10 +17341,7 @@ async function loadAll() {
   // this launch read and decided on — never a copy it couldn't read.
   if (state && editingEntry && !_wipUnread && !_wipSupersedeOnSave && !_wipHold && !_bootLoadTimedOut && formMatchesSavedEntry(editingEntry)) {
     const name = editingEntry.equipName || 'The unit';
-    const building = getBuilding(), room = document.getElementById('equipRoom').value;
-    clearForm(false);
-    setBuilding(building || '');
-    document.getElementById('equipRoom').value = room || '';
+    closeUnchangedEdit();
     setTimeout(() => showToast('\u201c' + name + '\u201d was open, unchanged \u2014 it stays as saved. Here is a new unit; tap it in the saved list to open it again.'), 600);
   }
   _bootWipJson = wipJson(buildWipState());

@@ -13739,6 +13739,13 @@
     want(!document.getElementById('equipName').value && !formEditTarget() && getBuilding() === 'Bldg 5' && document.getElementById('equipRoom').value === 'R-422', 'a new unit: ' + got.unchanged);
     want(savedEquipment.length === 1 && entryExportState(a) === 'exported' && JSON.stringify(a) === before, 'the saved unit as it was');
     want(toasts.some(m => /“E-422” was open, unchanged/.test(m)), 'it says so: ' + toasts.join(' | '));
+    // a late launch (storage slow, the form decided before the store was read) never closes it (review)
+    await withDialogs({ confirm: true }, async () => { editSaved(0); });
+    const wasLate = _bootLoadTimedOut;
+    // the form is in use when a late launch decides (onBootTimeout): memory is not wiped
+    try { autoSaveCurrent(); await sleep(300); _bootLoadTimedOut = true; await loadAll(); await sleep(300); dropLoadBanners(); } finally { _bootLoadTimedOut = wasLate; }
+    got.late = [document.getElementById('equipName').value, !!formEditTarget()].join(' | ');
+    want(document.getElementById('equipName').value === 'E-422' && !!formEditTarget(), 'a late launch keeps it: ' + got.late);
     // with a change: the edit comes back
     await withDialogs({ confirm: true }, async () => { editSaved(0); });
     document.getElementById('equipNotes').value = 'half-typed';

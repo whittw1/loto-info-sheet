@@ -1260,6 +1260,59 @@ unit in it whose delete is no later than the list's stamp had been re-saved by t
 
 ---
 
+### Build 139 — a saved unit only looked at is closed, never saved again (2026-10-29)
+
+wilkins, 2026-10-29:
+
+> when I open up the app after I was looking at another equipment's sources, it doesnt give me the chance to do anything else really aside from saving that existing piece of equipment again (and throwing off the export) instead of creating a new piece of equipment
+
+**What happened (reproduced on build 138).** Opening a saved unit from the list makes the form an edit of it
+(`editSaved`). A relaunch restores the form in progress and re-derives the edit from its id (`loadAll`), as it must:
+an edit in progress is never lost. But nothing on the form said it was an edit — only build 109's small "✕ Cancel
+edit" in the header — and the bottom bar offers Save & New and Export. Save & New re-saved the unit, which drops its
+exported stamps (`performSaveAndNew`: an edit is not stamped exported, its data changed) and gives it a new
+`updatedAt`, so the next export took an unchanged unit for a changed one.
+
+**Now** a form that holds exactly its saved unit is closed instead of saved:
+- **The check** (`formMatchesSavedEntry`): everything Save & New would write — type, name, LOTO ID, room, building,
+  template, tied-to, notes, the unit's answers, the sources, the photo and misc-photo references, the sketch and the
+  survey date — compared with the saved unit, keys sorted at every level (`stableJsonOf`). A card open or shut
+  (`collapsed`) and preview thumbnails don't count; the facility stamp, the first-save date and the exported stamps
+  are the unit's own and a save keeps them anyway. Anything it can't read is a change, so a real edit is never
+  closed unsaved. The target is the saved list's own copy (`formEditTarget`).
+- **Save & New** on such a form closes it (`closeUnchangedEdit`) before any of its questions: "“P-1” is unchanged —
+  not saved again, so its export stays as it was. Ready for the next unit." The next unit keeps the building and
+  room, as after a save.
+- **Cancel edit** on it closes without asking ("Closed “P-1” — unchanged, still as saved").
+- **The launch** (`loadAll`) starts a new unit instead of reopening it, building and room kept, and says "“P-1” was
+  open, unchanged — it stays as saved. Here is a new unit; tap it in the saved list to open it again." Only from the
+  slot it read and decided on normally: never a copy restored from the backup (`_wipSupersedeOnSave`), an unread or
+  alternate slot (`_wipUnread`), a held write (`_wipHold`) or a late launch (`_bootLoadTimedOut`).
+- **The banner** (`#editBanner`, kept by `updateDiscardButton`): "Looking at saved unit “P-1” — nothing changed. Close
+  it to start a new unit; it stays as saved." with **✕ Close — new unit**, or, once anything changed, "Editing saved
+  unit “P-1” — Save & New saves your changes; Cancel edit drops them." with **✕ Cancel edit**.
+- A changed edit saves exactly as before (and is no longer stamped exported, as before).
+
+**The code review** (high, `--fix`): 4 findings, 3 fixed — the target is the saved list's copy, not an `editingEntry`
+object a merge may have replaced; the launch calls `closeUnchangedEdit`; T422 checks a late launch keeps the edit.
+Skipped: the check runs on every autosave during an edit (small; caching it could go stale).
+
+**Tests:** T421 (Save & New and Cancel edit on an unchanged, exported unit — no second copy, stamp and `updatedAt`
+kept, building and room carried; a change saves as before), T422 (a relaunch: unchanged → a new unit and the saved
+unit as it was; a late launch keeps it; a change comes back with the Editing banner). T20, T198 and T415 reloaded
+an edit with nothing changed and expected it back; they now make a change first — what they protect (no duplicate,
+the kept template, the notes menu) is unchanged. The fuzzer's relaunch oracle (`tests/fuzz-harness.js`) lets a form
+that equals its saved unit by the harness's own signatures come back blank with its room. Suite **432 / 432** web and native-mock (scale
+test included); **not run in the Simulator**. Fuzzer, 4 workers × 15 seeds × 50 steps: clean (seeds 1–60) and with 15 %
+faults (seeds 101–160) — no lost, changed, added or duplicated unit at any relaunch. Each run found one
+`export-xlsx-mismatch` (seeds 58 and 155), a sheet-row mismatch on a unit with split and duplicated rows at an
+Atlanta facility; seed 58 replays the same on builds 136 and 138, so it predates builds 137–139 — not yet traced
+(app or oracle). Checked in the Browser pane: on build 138 a relaunch after opening a unit brought it back as an
+unmarked edit; on build 139 it gave a new unit, building and room kept, the unit still exported.
+
+**Status:** branch `edit-close-139` (worktree `~/Desktop/Claude Apps/loto-edit-139`, preview config `loto-edit-139`,
+port 8756), not merged, pushed or released. Next free build after it: 140.
+
 ### Build 138 — the source card in sections; a feeder beside its drive (2026-10-29)
 
 wilkins, 2026-10-29, on the VFD card (two iPad screenshots):
@@ -4100,7 +4153,9 @@ stay generic, flagged by a pre-QC check); nothing changed in the app's templates
   open, **✕ Discard** for a new unit with data, hidden on a blank form. After a confirm,
   `discardForm` clears the form (`clearForm(false)`); the saved unit was never touched — the form only
   held copies — so it stays exactly as it was, its exported stamp included (re-saving had cleared
-  it). Photos taken on the form stay on the device, unattached, never deleted.
+  it). Photos taken on the form stay on the device, unattached, never deleted. Since build 139 a form
+  that holds exactly its saved unit closes without the confirm, and an edit shows a banner under the
+  header (§6 "Build 139").
 - **e. A saved value off its list shows as itself.** The Energy Source and Location selects (and
   Quantity, Valve State) add the saved value as its own selected option, as Device and Verification
   already did — a bare "Electrical" (the voltage dialog's "Other") and "At Capacitor Bank" showed as
@@ -6069,6 +6124,7 @@ Approximate line numbers (they drift as edits accumulate) — every row refreshe
 | Badge + Settings: `paintBackupBadge` / `openBackupSettings` · `paintBackupSettings` / `setBackupOn` / `testBackup` / `backupEverythingAgain` / `startBackup` / markup `#backupBadge` · `#backupSettings` · `#exportCloudBtn` | 12385 / 12404 · 12409 / 12441 / 12456 / 12481 / 12493 / 485 · 856 · 730 |
 | `qxhCreate` — QuickXorHash, the same as `api/shared/qxh.js` | 12507 |
 | **Build 110:** `effectiveDuplicate` · `settleAutoDuplicates` (an automatic Duplicate = Yes needs its borrowed photo) / `sourceKindTakesPhoto` · `pickSharedPhoto` (markup `#dupPhotoBtn_<i>`, line 5364) / `askChoice` (`opts.input`) · `askSurveyDate` / `refreshSourceDependents` (runs `applySimpleVerifDefaults`) / `updateUnitDeviceId` (a `;` never replaces a later tag) · `splitSource` (keeps extra tags) / `collectTodaysPhotos` (taken today) / `deviceCameraCapture` · `inputIsCamera` / `UNATTACHED_OK_KEY` · `markUnattachedOk` · `emptySlotsWithUnattachedShots` (misc + "don't warn again") / `removeMiscPhoto` / `isSurveyedOn` (Today / Yesterday) / `executeDuplicate` (the copy counts as running before its first render) / `EXPORT_BIG_BYTES` · `runCombinedExport` | 1611 · 1619 / 1631 · 1634 / 1979 · 2031 / 5588 / 5688 · 5731 / 6419 / 8487 · 8492 / 8787 · 8792 · 8800 / 9004 / 9372 / 9945 / 10546 · 10548 |
+| **Build 139:** `formEditTarget` · `stableJsonOf` · `formMatchesSavedEntry` · `closeUnchangedEdit` / `updateDiscardButton` (`#editBanner`) / the unchanged branches of `saveAndNew`, `discardForm` and the end of `loadAll` | 13308–13400, 17336 |
 | **Build 138:** `buildSourceCard` (the sections, the header's More menu `#srcMore_<i>`) / `sourceCardTitle` · `closeSrcMenus` · `syncKindSections` (bands `.src-kind[data-kind]`) / `setDriveIsolates` (line 4261) / `feedersOfDrive` · `feederDrivesOf` · `feederDrivesByRule` · `feederFeedsDriveRow` / `feederGroupBlock` (`#feederGroup_<i>`, Fed by) · `feederForBanner` (`#feederFor_<i>`) · `summaryLinkChips` · `feederSitsUnderDrive` · `insertFeederRow` · `goToSource` | 4420–4550, 8175 |
 | **Build 137:** `MAX_MISC_PHOTOS` = 30 | 12740 |
 | **Build 136:** `COMMON_NOTES` · `commonNotesFor` · `formCommonNotes` / `syncCommonNotes(k)` (from `renderUnitQuestions`, line 4660) / `addCommonNote` (markup `#commonNotesRow`, line 716); `addNoteLine` (build 118) / `appendNotesLine` | 4880 / 4895 / 4905; 4859 / 4863 |
