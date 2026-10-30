@@ -245,6 +245,23 @@
       sketch: (typeof sketchStrokes !== 'undefined' ? sketchStrokes.length : 0) + '/' + (typeof sketchLabels !== 'undefined' ? sketchLabels.length : 0),
     };
   }
+  // What the relaunch oracle also compares (build 140): fields the signatures above
+  // leave out but the fuzzer edits (setNotes, setType, setTemplate) or a save writes.
+  const answersSig = a => JSON.stringify(Object.keys(a || {}).sort()
+    .filter(k => Array.isArray(a[k]) ? a[k].length : String(a[k] == null ? '' : a[k]).trim()).map(k => [k, a[k]]));
+  function formExtraSig() {
+    const v = id => (document.getElementById(id) || {}).value || '';
+    return { type: getEquipType() || '', template: getTemplate() || '', notes: v('equipNotes').trim(), lotoId: v('equipLotoId').trim(), answers: answersSig(unitAnswers) };
+  }
+  function entryExtraSig(e) {
+    return { type: e.equipType || '', template: e.template || '', notes: String(e.notes || '').trim(), lotoId: String(e.lotoId || '').trim(), answers: answersSig(e.unitAnswers) };
+  }
+  // The form as the harness's last 'edit' opened it (build 140) — the harness's own
+  // record, never the app's: { id, session, sig }. The app now measures "unchanged"
+  // against the form as opened, so a unit whose saved copy opening fills in (an
+  // older build's) closes at a relaunch too.
+  let openedSnap = null;
+  const fullFormSig = () => Object.assign(formSig(), formExtraSig());
   // the app's rule (wipHasContent): a name that is only the equipment type,
   // filled in from the type, is not a unit — a type-only form is an empty form
   const formHasContent = (f) => !!((f.name && !((DATA && DATA.equipmentTypes) || []).includes(f.name)) || f.src.length || f.photos || f.misc);
@@ -555,6 +572,11 @@
     autoSaveCurrent(); await sleep(300);
     faultsOn = fo;
     const before = { entries: savedEquipment.map(entrySig).sort((a, b) => a.id.localeCompare(b.id)), form: formSig() };
+    // build 140: the rest of the form, the saved unit's, and whether it is still the form the last 'edit' opened
+    const beforeFull = Object.assign({}, before.form, formExtraSig());
+    const beforeSaved = before.form.id ? savedEquipment.find(e => sameEntryId(e.id, before.form.id)) : null;
+    const beforeSavedFull = beforeSaved ? Object.assign(entrySig(beforeSaved), entryExtraSig(beforeSaved)) : null;
+    const asOpened = !!openedSnap && openedSnap.session === formSession && openedSnap.id === before.form.id;
     // a fresh launch: blank form + empty memory, loadAll decides — and none of
     // this session's memory of deletes / re-saves or of the store's stamp
     // (build 96: the overlay hid a delete a real relaunch had lost)
@@ -607,13 +629,17 @@
       }
     } else if (formHasContent(before.form) && JSON.stringify(before.form) !== JSON.stringify(after.form)) {
       // Build 139: a form that is exactly its saved unit (an edit only looked at) comes back as a new unit, its room
-      // kept. Judged by the harness's own signatures, never the app's check: a form that differs from its saved unit
-      // in anything the signatures read must still come back as it was.
-      const saved = before.form.id ? before.entries.find(e => e.id === before.form.id) : null;
-      const same = !!saved && ['name', 'room', 'src', 'photos', 'misc', 'sketch'].every(k => JSON.stringify(saved[k]) === JSON.stringify(before.form[k]));
+      // kept. Judged by the harness's own signatures, never the app's check: a form that differs in anything they
+      // read — build 140: notes, type, template, LOTO ID and answers too — must still come back as it was. Build 140:
+      // "exactly" is the form as the harness's last 'edit' opened it, or else the saved unit itself.
+      const keys = ['name', 'room', 'src', 'photos', 'misc', 'sketch', 'type', 'template', 'notes', 'lotoId', 'answers'];
+      const eq = (x, y) => !!x && keys.every(k => JSON.stringify(x[k]) === JSON.stringify(y[k]));
+      const same = (asOpened && eq(openedSnap.sig, beforeFull)) || eq(beforeSavedFull, beforeFull);
       const fresh = !after.form.name && !after.form.src.length && !after.form.photos && !after.form.misc && after.form.room === before.form.room;
       if (!(same && fresh)) bad('relaunch-changed-form', sigDiff(before.form, after.form));
     }
+    // the edit came back: it is still the form as opened, as the app's autosave remembers (build 140)
+    if (asOpened && after.form.id === openedSnap.id) openedSnap.session = formSession; else openedSnap = null;
     warnedSinceRelaunch = false;
     document.querySelectorAll('.container > div[style*="rgba(200,40,40"], .sticky-banner').forEach(x => x.remove());   // load banners (b95: .sticky-banner)
     return 'relaunch';
@@ -842,7 +868,12 @@
       showCopySourceDialog(i); applyCopySource(ei, si); return 'copySource ' + ei + '/' + si + ' → ' + i;
     }],
     ['saveNew', 7, () => true, async () => { saveAndNew(); await drainOverlays(); return 'saveAndNew'; }],
-    ['edit', 4, () => savedEquipment.length > 0, async () => { const i = savedIdx(); editSaved(i); return 'edit ' + i; }],
+    ['edit', 4, () => savedEquipment.length > 0, async () => {
+      const i = savedIdx(), s0 = formSession, e = savedEquipment[i];
+      editSaved(i);
+      if (formSession !== s0 && e && sameEntryId(currentEntryId, e.id)) openedSnap = { id: String(currentEntryId), session: formSession, sig: fullFormSig() };
+      return 'edit ' + i;
+    }],
     ['duplicate', 2, () => savedEquipment.length > 0, async () => {
       const i = savedIdx(); const wp = chance(0.5);
       const p = executeDuplicate(i, wp);

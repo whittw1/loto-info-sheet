@@ -110,6 +110,10 @@
 //             a feeder under its drive, Fed by / Feeder for / list chips; the drive's answer as tap buttons
 //   T420      its code review: a feeder loto-web's rule gives a drive, never past another drive's feeder, a typed feeder's banner
 //   T421–T422 build 139: a saved unit only looked at is closed (Save & New, Cancel edit, a relaunch), never saved again
+//   T423–T426 build 140 (build 139's xhigh review): "unchanged" is the form as opened — an older build's unit
+//             (old sketch, defaults the cards fill in, untrimmed text), across a relaunch (openedHash), a newer
+//             copy merged in while open; Save & New settles ids / stamp / date in place; no "discard" questions
+//             for a unit only looked at; one close button
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -6154,8 +6158,10 @@
     const btn = () => document.getElementById('discardFormBtn');
     const hiddenBlank = btn().style.display === 'none';
     await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(A)); });
-    const label = btn().style.display !== 'none' ? btn().textContent : '(hidden)';
-    document.getElementById('equipNotes').value = 'changed';
+    document.getElementById('equipNotes').value = 'changed'; autoSaveCurrent();
+    // build 140: an edit's way out is the banner's button; the corner one discards a new unit
+    const label = (document.getElementById('editBanner').style.display !== 'none' && btn().style.display === 'none')
+      ? document.getElementById('editBannerClose').textContent : '(not the banner)';
     const dp = await captureInto('equip_dataplate', await makePhotoFile('e206dp'));
     const dpKey = dp && dp.dbKey;
     const { log } = await withDialogs({ confirm: true }, async () => { discardForm(); });
@@ -9188,18 +9194,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 139 (was build 122\'s): APP_BUILD and the header label say 139, the service worker\'s cache is loto-collector-v7.134, Xcode\'s CURRENT_PROJECT_VERSION is 139 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 140 (was build 122\'s): APP_BUILD and the header label say 140, the service worker\'s cache is loto-collector-v7.135, Xcode\'s CURRENT_PROJECT_VERSION is 140 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 139 && !!label && +label[1] === 139, 'the build');
+    want(APP_BUILD === 140 && !!label && +label[1] === 140, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.134', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.135', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 139;,CURRENT_PROJECT_VERSION = 139;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 140;,CURRENT_PROJECT_VERSION = 140;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -13706,7 +13712,7 @@
     await withDialogs({ confirm: true }, async () => { editSaved(0); });
     document.getElementById('equipNotes').value = 'changed'; autoSaveCurrent();
     got.editing = bannerText();
-    want(/^Editing saved unit “E-421” — Save & New saves your changes/.test(got.editing) && !formMatchesSavedEntry(formEditTarget()), 'a change: ' + got.editing);
+    want(/^Editing saved unit “E-421” — Save & New saves your changes/.test(got.editing) && !formIsUnchangedEdit(), 'a change: ' + got.editing);
     await withDialogs({ confirm: true }, async () => { performSaveAndNew(); });
     want(savedEquipment.length === 1 && savedEquipment[0].notes === 'changed' && entryExportState(savedEquipment[0]) !== 'exported', 'a changed unit saves (and is no longer stamped exported)');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
@@ -13720,7 +13726,8 @@
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const relaunch = async () => {
       autoSaveCurrent(); await sleep(300);
-      editingEntry = null; savedEquipment = []; sources = []; photos = {}; miscPhotos = [];   // what a reload loses
+      editingEntry = null; currentEntryId = null; _openBaseline = null; savedEquipment = []; sources = []; photos = {}; miscPhotos = [];   // what a reload loses
+      try { clearSketchState(); } catch (e) {}
       ['equipName', 'equipNotes', 'equipRoom'].forEach(id => { document.getElementById(id).value = ''; });
       const toasts = await withToasts(async () => { await loadAll(); await sleep(900); });
       dropLoadBanners();
@@ -13753,6 +13760,210 @@
     got.changed = [document.getElementById('equipName').value, document.getElementById('equipNotes').value, !!formEditTarget(), document.getElementById('editBanner').style.display].join(' | ');
     want(document.getElementById('equipName').value === 'E-422' && document.getElementById('equipNotes').value === 'half-typed' && !!formEditTarget()
       && /^Editing saved unit/.test(document.getElementById('editBannerText').textContent), 'a change comes back: ' + got.changed);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // ==========================================================================
+  // BUILD 140 — build 139's xhigh review: "unchanged" is the form as opened
+  // Build 139 rebuilt the saved unit field by field and compared that with the
+  // form, so a unit an older build saved never matched. Each fails on 139.
+  // ==========================================================================
+  // A unit as an older build stored it, exported (pushed straight into the list)
+  function plantOlderUnit(name, srcs, extra) {
+    const at = '2026-10-01T12:00:00.000Z', ex = '2026-10-02T00:00:00.000Z';
+    const u = Object.assign({ id: genUuid(), equipType: 'Pump', equipName: name, lotoId: '', hospitalCode: getHospitalCode(), equipRoom: 'R-' + name,
+      equipBuilding: 'Main', template: '', tiedTo: '', tiedToName: '', notes: '', unitAnswers: {}, sources: srcs, photos: {}, miscPhotos: [], sketch: null,
+      photoCount: 0, timestamp: '', savedAt: at, updatedAt: at, surveyDate: '2026-10-01', exportedAt: ex, exportedAllPhotos: true, exportId: 'x-' + name, firstExportedAt: ex }, extra || {});
+    savedEquipment.push(u);
+    saveAll();
+    return u;
+  }
+  const olderSrc = (verification, extra) => Object.assign({ energySource: 'Electrical 480V', deviceType: 'Breaker', deviceId: 'B1', quantity: 1, location: 'MCC-1',
+    duplicate: 'No', verification, detail: '', sourceId: genUuid() }, extra || {});
+  const bannerSays = () => (document.getElementById('editBanner').style.display !== 'none' ? document.getElementById('editBannerText').textContent : '');
+
+  // T423 — an older build's unit, only looked at
+  async function t423_anOlderUnitOnlyLookedAtIsUnchanged() {
+    const N = 'T423 build 140: a unit an older build saved reads as unchanged when only opened — a sketch with no label rule (from before build 122), a blank electrical verification the card fills with Controls, a chilled-water valve the card gives its drain, untrimmed name / LOTO ID / notes and a blank answer — "Looking at saved unit", and Save & New closes it with everything stored exactly as it was (exported, same updatedAt); a change still saves';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const key = Object.keys(SKETCH_DIAGRAMS)[0];
+    const units = {
+      sketch: plantOlderUnit('S-423', [olderSrc('Controls')], { sketch: { diagramKey: key, strokes: [{ color: '#000', width: 2, points: [{ x: 1, y: 2 }, { x: 3, y: 4 }] }], labels: [{ x: 5, y: 6, text: 'E-1' }] } }),
+      verification: plantOlderUnit('V-423', [olderSrc('')]),
+      drain: plantOlderUnit('C-423', [olderSrc('', { energySource: 'CHW Supply', deviceType: 'Ball Valve', deviceId: '', location: 'Mech' })], { equipType: 'AHU' }),
+      text: plantOlderUnit('T-423 ', [olderSrc('Controls')], { notes: 'Check the belt \n', lotoId: ' ID-423 ', unitAnswers: { shop: '' } }),
+    };
+    for (const [k, u] of Object.entries(units)) {
+      const before = JSON.stringify(u);
+      await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(u)); });
+      const filled = [getSketchData() ? 'rule ' + getSketchData().labelRule : '', sources[0] && sources[0].verification].join(' ');
+      const banner = bannerSays();
+      const toasts = await withToasts(async () => { await withDialogs({ confirm: true }, async () => { await saveAndNew(); }); });
+      const a = savedEquipment.find(e => e.id === u.id) || {};
+      got[k] = [filled, banner.slice(0, 22), JSON.stringify(a) === before, entryExportState(a), !!formEditTarget()].join(' | ');
+      want(/^Looking at saved unit/.test(banner), k + ': the banner says ' + JSON.stringify(banner));
+      want(JSON.stringify(a) === before && entryExportState(a) === 'exported' && savedEquipment.filter(e => e.id === u.id).length === 1, k + ': not saved again');
+      want(!formEditTarget() && toasts.some(m => /unchanged — not saved again/.test(m)), k + ': closed, and says so');
+    }
+    want(/^rule 1 /.test(got.sketch) && / Controls \|/.test(got.verification) && /Drain/.test(got.drain), 'opening filled in what an older build left out: ' + [got.sketch, got.verification, got.drain].join(' / '));
+    // a change still saves
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(units.sketch)); });
+    document.getElementById('equipNotes').value = 'changed'; autoSaveCurrent();
+    got.editing = bannerSays().slice(0, 22);
+    await withDialogs({ confirm: true }, async () => { performSaveAndNew(); });
+    const s = savedEquipment.find(e => e.id === units.sketch.id) || {};
+    want(/^Editing saved unit/.test(got.editing) && s.notes === 'changed' && entryExportState(s) !== 'exported', 'a change saves: ' + got.editing + ' / ' + s.notes);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T424 — across a relaunch: the unit in progress carries the form as opened
+  async function t424_aRelaunchKnowsTheFormAsOpened() {
+    const N = 'T424 build 140: the unit in progress carries the form as opened (openedHash) — a relaunch with an older unit only looked at (a sketch from before build 122) starts a new unit, the saved unit exactly as it was; with a change the edit comes back as Editing, and undoing the change makes it "Looking at" again, so Save & New closes it; a unit in progress autosaved by build 139 (no openedHash), or with a fingerprint of another format (review), is judged against the saved unit, as before';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const relaunch = async () => {
+      autoSaveCurrent(); await sleep(300);
+      editingEntry = null; currentEntryId = null; _openBaseline = null; savedEquipment = []; sources = []; photos = {}; miscPhotos = [];   // what a reload loses
+      try { clearSketchState(); } catch (e) {}
+      ['equipName', 'equipNotes', 'equipRoom'].forEach(id => { document.getElementById(id).value = ''; });
+      const toasts = await withToasts(async () => { await loadAll(); await sleep(900); });
+      dropLoadBanners();
+      return toasts;
+    };
+    const key = Object.keys(SKETCH_DIAGRAMS)[0];
+    const S = plantOlderUnit('S-424', [olderSrc('')], { sketch: { diagramKey: key, strokes: [{ color: '#000', width: 2, points: [{ x: 1, y: 2 }] }], labels: [] } });
+    const before = JSON.stringify(S);
+    await sleep(300);
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(S)); });
+    let toasts = await relaunch();
+    const s1 = savedEquipment.find(e => e.id === S.id) || {};
+    got.unchanged = [document.getElementById('equipName').value, !!formEditTarget(), document.getElementById('equipRoom').value, JSON.stringify(s1) === before].join(' | ');
+    want(!document.getElementById('equipName').value && !formEditTarget() && document.getElementById('equipRoom').value === 'R-S-424' && JSON.stringify(s1) === before, 'a new unit, the saved one as it was: ' + got.unchanged);
+    want(toasts.some(m => /“S-424” was open, unchanged/.test(m)), 'it says so: ' + toasts.join(' | '));
+    // a change comes back as Editing; undoing it is "Looking at" again (the fingerprint)
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.findIndex(e => e.id === S.id)); });
+    document.getElementById('equipNotes').value = 'half-typed';
+    toasts = await relaunch();
+    got.changed = [document.getElementById('equipNotes').value, !!formEditTarget(), bannerSays().slice(0, 22), !!(_openBaseline && _openBaseline.hash && _openBaseline.json == null)].join(' | ');
+    want(document.getElementById('equipNotes').value === 'half-typed' && !!formEditTarget() && /^Editing saved unit/.test(bannerSays()), 'the change comes back: ' + got.changed);
+    document.getElementById('equipNotes').value = ''; autoSaveCurrent();
+    got.undone = bannerSays().slice(0, 22);
+    want(/^Looking at saved unit/.test(got.undone), 'undone: ' + got.undone);
+    await withDialogs({ confirm: true }, async () => { await saveAndNew(); });
+    const s2 = savedEquipment.find(e => e.id === S.id) || {};
+    want(!formEditTarget() && JSON.stringify(s2) === before, 'Save & New closes it, unsaved');
+    // a unit in progress autosaved by build 139 carries no fingerprint: the saved unit decides
+    fillForm('E-424', { room: 'R-424' });
+    const C = saveEntry();
+    const cBefore = JSON.stringify(C);
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(C)); });
+    _openBaseline = null;   // as build 139 autosaved it
+    toasts = await relaunch();
+    const c = savedEquipment.find(e => e.id === C.id) || {};
+    got.legacy = [document.getElementById('equipName').value, !!formEditTarget(), JSON.stringify(c) === cBefore].join(' | ');
+    want(!document.getElementById('equipName').value && !formEditTarget() && JSON.stringify(c) === cBefore, 'a build 139 unit in progress, unchanged: a new unit: ' + got.legacy);
+    // a fingerprint of another format (a build whose compare held something else): ignored, not taken for a change (review)
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.findIndex(e => e.id === C.id)); });
+    _openBaseline.hash = 'f0.' + _openBaseline.hash.slice(3);
+    toasts = await relaunch();
+    got.format = [document.getElementById('equipName').value, !!formEditTarget()].join(' | ');
+    want(!document.getElementById('equipName').value && !formEditTarget(), 'another format\'s fingerprint: judged against the saved unit, a new unit: ' + got.format);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T425 — what a save settles, put right on an unchanged unit
+  async function t425_saveAndNewSettlesAnUnchangedUnitInPlace() {
+    const N = 'T425 build 140: Save & New on an older unit only looked at still settles what a save would — the second of two sources sharing an id gets its own (the old one in priorSourceIds), a source with none gets one, a missing facility stamp and survey date are filled in — on the saved unit itself, which stays exported with the same updatedAt, one copy; a unit with nothing to settle stays byte for byte';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const shared = genUuid();
+    const U = plantOlderUnit('U-425', [olderSrc('Controls', { sourceId: shared }), olderSrc('Controls', { deviceId: 'B2', sourceId: shared }), olderSrc('Controls', { deviceId: 'B3', sourceId: undefined })],
+      { hospitalCode: undefined, surveyDate: undefined });
+    delete U.hospitalCode; delete U.surveyDate; delete U.sources[2].sourceId; saveAll();
+    const stamp = U.updatedAt, day = localDateStr(U.savedAt);
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(U)); });
+    got.banner = bannerSays().slice(0, 22);
+    await withDialogs({ confirm: true }, async () => { await saveAndNew(); });
+    const u = savedEquipment.find(e => e.id === U.id) || {};
+    const ids = (u.sources || []).map(s => s.sourceId);
+    got.u = [ids[0] === shared, !!ids[1] && ids[1] !== shared && JSON.stringify(u.sources[1].priorSourceIds) === JSON.stringify([shared]), !!ids[2],
+      u.hospitalCode === (getHospitalCode() || undefined), u.surveyDate === day, entryExportState(u), u.updatedAt === stamp, savedEquipment.filter(e => e.id === U.id).length].join(' | ');
+    want(/^Looking at saved unit/.test(got.banner) && !formEditTarget(), 'closed as unchanged: ' + got.banner);
+    want(ids[0] === shared && !!ids[1] && ids[1] !== shared && JSON.stringify(u.sources[1].priorSourceIds) === JSON.stringify([shared]) && !!ids[2] && new Set(ids).size === 3, 'one id per source: ' + JSON.stringify(ids));
+    want((!getHospitalCode() || u.hospitalCode === getHospitalCode()) && u.surveyDate === day, 'the facility stamp and the survey date');
+    want(entryExportState(u) === 'exported' && u.updatedAt === stamp && savedEquipment.filter(e => e.id === U.id).length === 1, 'still exported, same updatedAt, one copy');
+    // nothing to settle: byte for byte
+    const V = plantOlderUnit('V-425', [olderSrc('Controls')]);
+    const vBefore = JSON.stringify(V);
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(V)); });
+    await withDialogs({ confirm: true }, async () => { await saveAndNew(); });
+    want(JSON.stringify(savedEquipment.find(e => e.id === V.id)) === vBefore, 'a unit with nothing to settle stays as it was');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T426 — no "discard" questions for a unit only looked at; one close button; a newer copy merged in
+  async function t426_aUnitOnlyLookedAtAsksNothingWhenLeft() {
+    const N = 'T426 build 140: opening a unit says "Opened … stays as saved" and runs no saved-unit check before its baseline (review); with a saved unit only looked at open, Edit on another unit, Duplicate and Clear ask nothing (with a change they ask); the banner\'s button is the only way out of an edit (the corner one shows "✕ Discard" for a new unit only); an edit the list knows only by its id closes as the banner says; a newer copy of the unit merged in while it is open unchanged is kept — Save & New closes the form instead of writing the older view over it';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const corner = () => document.getElementById('discardFormBtn');
+    fillForm('A-426', { room: 'R-426' }); const A = saveEntry();
+    fillForm('B-426', { room: 'R-426' }); const B = saveEntry();
+    A.exportedAt = B.exportedAt = new Date().toISOString(); A.exportedAllPhotos = B.exportedAllPhotos = true; saveAll();
+    const realCheck = window.formMatchesSavedEntry;
+    let checks = 0;
+    window.formMatchesSavedEntry = (e) => { checks++; return realCheck(e); };
+    let opened;
+    try { opened = await withToasts(async () => { await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(A)); }); }); }
+    finally { window.formMatchesSavedEntry = realCheck; }
+    got.open = [checks, opened.join(' / ')].join(' | ');
+    want(checks === 0 && opened.some(m => /^Opened "A-426" — it stays as saved unless you change something/.test(m)), 'opening: ' + got.open);
+    got.buttons = [corner().style.display, document.getElementById('editBannerClose').textContent].join(' | ');
+    want(corner().style.display === 'none' && /Close — new unit/.test(document.getElementById('editBannerClose').textContent), 'one button, on the banner: ' + got.buttons);
+    let r = await withDialogs({ confirm: false }, async () => { editSaved(savedEquipment.indexOf(B)); });
+    got.edit = [r.log.length, document.getElementById('equipName').value].join(' | ');
+    want(!r.log.length && document.getElementById('equipName').value === 'B-426', 'Edit on another unit asks nothing: ' + got.edit);
+    r = await withDialogs({ confirm: false }, async () => { duplicateSaved(savedEquipment.indexOf(A)); });
+    const dlg = document.getElementById('duplicateDialog');
+    got.duplicate = [r.log.length, !!dlg].join(' | ');
+    want(!r.log.length && !!dlg, 'Duplicate asks nothing: ' + got.duplicate);
+    if (dlg) dlg.remove();
+    r = await withDialogs({ confirm: false }, async () => { clearForm(true); });
+    got.clear = [r.log.length, document.getElementById('equipName').value, !!formEditTarget()].join(' | ');
+    want(!r.log.length && !document.getElementById('equipName').value && !formEditTarget(), 'Clear asks nothing: ' + got.clear);
+    // with a change, they ask
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(A)); });
+    document.getElementById('equipNotes').value = 'typed'; autoSaveCurrent();
+    got.corner = [corner().style.display, document.getElementById('editBannerClose').textContent].join(' | ');
+    r = await withDialogs({ confirm: false }, async () => { editSaved(savedEquipment.indexOf(B)); });
+    want(r.log.length === 1 && document.getElementById('equipName').value === 'A-426', 'with a change, Edit asks (and No keeps it): ' + r.log.join(' | '));
+    want(corner().style.display === 'none' && /Cancel edit/.test(document.getElementById('editBannerClose').textContent), 'the banner\'s Cancel edit: ' + got.corner);
+    await withDialogs({ confirm: true }, async () => { discardForm(); });
+    fillForm('N-426'); autoSaveCurrent();
+    got.newUnit = [corner().style.display, corner().textContent, document.getElementById('editBanner').style.display].join(' | ');
+    want(corner().style.display !== 'none' && /Discard/.test(corner().textContent) && document.getElementById('editBanner').style.display === 'none', 'a new unit: the corner Discard: ' + got.newUnit);
+    await withDialogs({ confirm: true }, async () => { discardForm(); });
+    // an edit known only by its id (editingEntry gone): the banner's Close closes it, as it says
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(A)); });
+    editingEntry = null; updateDiscardButton();
+    const said = bannerSays().slice(0, 22);
+    r = await withDialogs({ confirm: false }, async () => { discardForm(); });
+    got.byId = [said, r.log.length, !!formEditTarget(), document.getElementById('equipName').value].join(' | ');
+    want(/^Looking at saved unit/.test(said) && !r.log.length && !formEditTarget() && !document.getElementById('equipName').value, 'by its id: closed without a question: ' + got.byId);
+    // a newer copy merged in while the form is open unchanged: kept
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(A)); });
+    const newer = Object.assign(JSON.parse(JSON.stringify(A)), { notes: 'from the other copy', updatedAt: new Date(Date.now() + 1000).toISOString() });
+    mergeStoredEntryList([newer]);
+    updateDiscardButton();
+    got.merged = bannerSays().slice(0, 22);
+    await withDialogs({ confirm: true }, async () => { await saveAndNew(); });
+    const a = savedEquipment.find(e => e.id === A.id) || {};
+    want(/^Looking at saved unit/.test(got.merged) && a.notes === 'from the other copy' && !formEditTarget(), 'the newer copy stays: ' + got.merged + ' / ' + JSON.stringify(a.notes));
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
   // ---------- runner --------------------------------------------------------
@@ -13926,7 +14137,9 @@
     t415_anAhuOffersItsCommonNotes, t416_aUnitTakesThirtyMiscPhotos,
     t417_theCardIsInSections, t418_aFeederSitsUnderItsDriveAndBothSayIt, t419_theDrivesAnswerIsTapButtons,
     t420_theFeederLinkReviewFixes,
-    t421_aUnitOnlyLookedAtIsClosedNotSaved, t422_aRelaunchStartsANewUnitAfterOnlyLooking];
+    t421_aUnitOnlyLookedAtIsClosedNotSaved, t422_aRelaunchStartsANewUnitAfterOnlyLooking,
+    t423_anOlderUnitOnlyLookedAtIsUnchanged, t424_aRelaunchKnowsTheFormAsOpened, t425_saveAndNewSettlesAnUnchangedUnitInPlace,
+    t426_aUnitOnlyLookedAtAsksNothingWhenLeft];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
