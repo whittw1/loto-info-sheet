@@ -183,7 +183,7 @@ Form Inputs ──► localStorage (auto-saved as JSON)
 - **Saved Equipment Panel** — Collapsible sidebar listing previously saved entries with edit/duplicate/delete. Entries currently being edited show an **EDITING** badge.
 - **Equipment Form** — 2-column grid for equipment metadata fields (type, name, building, room, template, tied-to)
 - **Photo Grid** — 3-column capture grid (Main, Data Plate, EE Number) with view-before-retake
-- **Energy Sources** — Dynamic collapsible cards with add/remove/duplicate/reorder/link controls; conditional device and verification dropdowns
+- **Energy Sources** — Dynamic collapsible cards with add/remove/duplicate/reorder/link controls; conditional device and verification dropdowns. Since build 138 an open card is in sections (what it is; where it's isolated and verified; a Drive, Valve or Damper band; the photo), with Link, Copy, Duplicate, Split and Remove under **More**; a drive's card shows the feeder row that feeds it and the feeder's card its drive, each with **Go to**
 - **Overhead Sketch** — Collapsible section with SVG diagram + canvas drawing layer + draggable energy labels
 - **Misc Photos** — Additional photos beyond the standard equipment/source slots (up to 30 a unit since build 137)
 - **Notes Section** — Free-text area per equipment entry. **+ NOTE** / **+ CAUTION** start a line that loto-web prints in the procedure's Section 2 as written; on an AHU, a **+ Common note…** menu adds a stock NOTE line (the duct smoke damper, build 136) to reword for the unit

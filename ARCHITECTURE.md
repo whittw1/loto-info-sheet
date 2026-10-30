@@ -88,7 +88,7 @@ group `rg-fs-tools`) is done; until then it stays off and the app is build 100's
 
 ```
 loto-info-sheet/                              (the GitHub repo)
-├── index.html                                (~12,850 lines — the whole app)
+├── index.html                                (~18,300 lines at build 138 — the whole app)
 ├── FingerLakes_Information_Sheet.html        (byte-identical mirror of index.html)
 ├── sw.js                                     (service worker — network-first cache)
 ├── manifest.json                             (PWA manifest, main)
