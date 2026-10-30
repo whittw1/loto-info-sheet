@@ -108,6 +108,7 @@
 //   T416      build 137: 30 misc photos a unit (was 10), all 30 exported; the 31st is refused
 //   T417–T419 build 138: the source card in sections (What it is / Where / the kind's band / Photo, More menu);
 //             a feeder under its drive, Fed by / Feeder for / list chips; the drive's answer as tap buttons
+//   T420      its code review: a feeder loto-web's rule gives a drive, never past another drive's feeder, a typed feeder's banner
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -9278,7 +9279,9 @@
       form(retagged());
       await withDialogs({ choice: (o) => ({ 'feeder-orphan': 'new', 'feeder-panel': 'MCC-3', 'feeder-breaker': '2', 'feeder-drive': 'AHU-1-VFD' })[o.id] || 'cancel' },
         async () => { await recordDrive(unitDrives(sources).find(d => d.tag === 'AHU-1-VFD')); });
-      want(sources.length === 5 && sources[4].location === 'Feeder: MCC-3 bkr 2 (AHU-1-VFD)' && sources[4].role === 'feeder', 'No: a new row, with its role');
+      // build 138: the new row goes right under its drive (#2), not to the bottom
+      const newRow = sources.find(s => s.location === 'Feeder: MCC-3 bkr 2 (AHU-1-VFD)');
+      want(sources.length === 5 && !!newRow && sources.indexOf(newRow) === 2 && newRow.role === 'feeder', 'No: a new row, with its role, under its drive');
       // an untagged drive next to tagged ones: the feeder's tag is offered as its Device ID
       form([DRIVE({ deviceId: 'VFD-1' }), DRIVE({ deviceId: '' }), FEEDER('Feeder: MCC-2A bkr 14 (VFD-1)'), FEEDER('Feeder: MCC-2A bkr 15 (VFD-2)')]);
       const dU = unitDrives(sources).find(d => !d.tag);
@@ -13621,6 +13624,48 @@
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T420 — the code review of build 138
+  async function t420_theFeederLinkReviewFixes() {
+    const N = 'T420 build 138 review: a feeder that names no drive but that loto-web\'s rule gives to the unit\'s drive says it feeds that drive (no "names no drive" warning, no "Feeds no drive" chip); a new feeder goes under its own drive, never past another drive\'s feeder; a Device typed into a feeder brings its banner without a re-render; Quantity 2 puts the one label photo button on its own line; a Duplicate stored blank shows No';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('');
+      formOfType('AHU-420', 'Air Handler', 'AHU - Steam');
+      sources = [DRIVE({ deviceId: 'VFD-1', driveIsolates: ['yes'] }), Object.assign(FEEDER('Feeder: MCC-1 bkr 2'), { role: 'feeder', collapsed: false })];
+      sources.forEach(ensureSourceId); renderSources();
+      const text = id => { const el = document.getElementById(id); return el ? el.textContent.replace(/\s+/g, ' ').trim() : ''; };
+      got.rule = [unitDrives(sources)[0].fed, text('feederFor_1')].join(' | ');
+      want(unitDrives(sources)[0].fed && /Feeder for #1 · Electrical 480V VFD \(VFD-1\) — it names no drive/.test(text('feederFor_1')), 'the rule\'s drive: ' + got.rule);
+      sources.forEach(s => { s.collapsed = true; }); renderSources();
+      got.chip = [...document.querySelectorAll('#sourcesContainer > .source-card')][1].textContent.replace(/\s+/g, ' ');
+      want(/Feeds #1 VFD-1/.test(got.chip) && !/Feeds no drive/.test(got.chip), 'its chip');
+      // under its own drive, never past another drive's feeder
+      sources = [DRIVE({ deviceId: 'VFD-1', driveIsolates: ['yes'] }), Object.assign(FEEDER('Feeder: MCC-1 bkr 9 (VFD-2)'), { role: 'feeder' }), DRIVE({ deviceId: 'VFD-2', collapsed: true, driveIsolates: ['yes'] })];
+      sources.forEach(ensureSourceId); renderSources();
+      const other = sources[1];
+      await withDialogs({ choice: { 'feeder-panel': tapped('MCC-2A', 'bkr'), 'feeder-breaker': '14', 'feeder-drive': 'VFD-1' } }, async () => { await addFeederFromCard(0); });
+      got.order = sources.map(s => s === other ? 'other' : isFeederRow(s) ? 'new' : s.deviceId).join();
+      want(got.order === 'VFD-1,new,other,VFD-2', 'order: ' + got.order);
+      // a Device typed into a feeder: the banner comes in place
+      sources = [DRIVE({ deviceId: 'VFD-3', driveIsolates: ['yes'] }), Object.assign(FEEDER('MCC-3 bkr 1 (VFD-3)'), { collapsed: false, _customDevice: true, deviceType: '' })];
+      sources.forEach(ensureSourceId); renderSources();
+      const live = document.querySelectorAll('#sourcesContainer > .source-card')[1];
+      got.before = !!document.getElementById('feederFor_1');
+      sources[1].deviceType = 'Feeder Breaker'; refreshSourceDependents(1);
+      got.after = [document.querySelectorAll('#sourcesContainer > .source-card')[1] === live, isFeederRow(sources[1]), text('feederFor_1')].join(' | ');
+      want(!got.before && document.querySelectorAll('#sourcesContainer > .source-card')[1] === live && /Feeder for #1/.test(text('feederFor_1')), 'the typed feeder\'s banner: ' + got.after);
+      // the label photo on its own line with two units; a blank Duplicate shows No
+      sources = [DRIVE({ deviceId: 'VFD-4; VFD-5', quantity: 2, duplicate: '' })]; sources.forEach(ensureSourceId); renderSources();
+      const btn = document.getElementById('src_lwphoto_0');
+      got.photoLine = !!btn && !btn.closest('.scan-input-row');
+      got.dup = [...document.querySelectorAll('#src_dup_0 button.on')].map(b => b.textContent).join();
+      want(got.photoLine && got.dup === 'No', 'label photo line / Duplicate: ' + got.photoLine + ' ' + got.dup);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -13790,7 +13835,8 @@
     t410_olderMarksExportAsBefore, t411_theSourceCardsColumnsStayOnTheCard,
     t412_unplacedMarksGoAroundPlacedBoxes, t413_aTapOnACircleDoesNothing, t414_theLoupeStaysOverThePhoto,
     t415_anAhuOffersItsCommonNotes, t416_aUnitTakesThirtyMiscPhotos,
-    t417_theCardIsInSections, t418_aFeederSitsUnderItsDriveAndBothSayIt, t419_theDrivesAnswerIsTapButtons];
+    t417_theCardIsInSections, t418_aFeederSitsUnderItsDriveAndBothSayIt, t419_theDrivesAnswerIsTapButtons,
+    t420_theFeederLinkReviewFixes];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

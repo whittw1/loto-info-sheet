@@ -4424,6 +4424,16 @@ function feedersOfDrive(srcList, d) {
 function feederDrivesOf(srcList, f) {
   return unitDrives(srcList).filter(d => (d.tag && feederNamesTag(f.location, d.tag)) || feederLinksDrive(srcList, f, d));
 }
+// …and, for a feeder that names none of them, the drives loto-web's rule still
+// counts as fed by the unit's unnamed feeders (unitDrives' fed with no feeder row
+// naming or linking them) — never "names no drive" for those (build 138 review).
+function feederDrivesByRule(srcList, f) {
+  return feederDrivesOf(srcList, f).length ? [] : unitDrives(srcList).filter(d => d.fed && !feedersOfDrive(srcList, d).length);
+}
+// Does feeder row f feed this drive row — by name, link or that rule?
+function feederFeedsDriveRow(srcList, f, drive) {
+  return feederDrivesOf(srcList, f).concat(feederDrivesByRule(srcList, f)).some(d => d.src === drive);
+}
 // "MCC-2A bkr 14" with what it is: "Breaker · MCC-2A bkr 14".
 function feederRowText(f) {
   const where = feederPanelText(f.location) || String(f.location || '').replace(/^\s*Feeder\s*:\s*/i, '');
@@ -4460,11 +4470,11 @@ function feederGroupBlock(src, i) {
 // The feeder's card: the drives it feeds, each with Go to — or that it names none.
 function feederForBanner(src, i) {
   if (sourceRoleOf(src) !== 'feeder') return '';
-  const ds = feederDrivesOf(sources, src);
+  const named = feederDrivesOf(sources, src), ds = named.length ? named : feederDrivesByRule(sources, src);
   return html`<div class="src-banner" id="feederFor_${i}">
     ${ds.length ? ds.map(d => {
       const j = sources.indexOf(d.src);
-      return html`<div class="src-banner-row"><span>&#128268; Feeder for <strong>#${j + 1}</strong> &middot; ${driveCardLabel(d)}</span><button type="button" class="btn btn-sm btn-outline" onclick="goToSource(${j})">Go to drive</button></div>`;
+      return html`<div class="src-banner-row"><span>&#128268; Feeder for <strong>#${j + 1}</strong> &middot; ${driveCardLabel(d)}${named.length ? '' : ' \u2014 it names no drive; loto-web gives it to the unit\u2019s drives'}</span><button type="button" class="btn btn-sm btn-outline" onclick="goToSource(${j})">Go to drive</button></div>`;
     }) : html`<div class="src-banner-row warn"><span>This feeder names no drive on this unit. On the drive&rsquo;s card, + Add the breaker offers it to the drive.</span></div>`}
   </div>`;
 }
@@ -4478,7 +4488,7 @@ function summaryLinkChips(src) {
       ? html`<span class="src-chip warn">${nums.length ? unfed + ' without a feeder' : 'No feeder yet'}</span>` : ''}`;
   }
   if (sourceRoleOf(src) !== 'feeder') return '';
-  const ds = feederDrivesOf(sources, src);
+  const named = feederDrivesOf(sources, src), ds = named.length ? named : feederDrivesByRule(sources, src);
   return ds.length ? html`<span class="src-chip link">Feeds ${ds.map(d => '#' + (sources.indexOf(d.src) + 1) + (d.tag ? ' ' + d.tag : '')).join(', ')}</span>`
     : html`<span class="src-chip warn">Feeds no drive</span>`;
 }
@@ -4488,16 +4498,16 @@ function feederSitsUnderDrive(i) {
   if (!isFeederRow(f)) return false;
   let j = i - 1;
   while (j >= 0 && isFeederRow(sources[j])) j--;
-  return j >= 0 && feederDrivesOf(sources, f).some(d => d.src === sources[j]);
+  return j >= 0 && feederFeedsDriveRow(sources, f, sources[j]);
 }
-// Where a new feeder goes: right under its drive, after the feeder rows already
-// there. The rows after it move down one, each photo with its row (as ▲ / ▼ move
+// Where a new feeder goes: right under its drive, after that drive's own feeder
+// rows (never past another drive's, build 138 review). The rows after it move down one, each photo with its row (as ▲ / ▼ move
 // them); every link to a row is by its sourceId. Returns its index.
 function insertFeederRow(drive, row) {
   const prev = sources.slice();
   let at = sources.indexOf(drive);
   if (at < 0) at = sources.length;
-  else { at++; while (at < sources.length && isFeederRow(sources[at])) at++; }
+  else { at++; while (at < sources.length && isFeederRow(sources[at]) && feederFeedsDriveRow(sources, sources[at], drive)) at++; }
   sources.splice(at, 0, row);
   rebindSourcePhotos(prev);
   return at;
@@ -8246,7 +8256,7 @@ function buildSourceCard(src, i) {
       // dropdown beside Quantity, far from the photo it is about).
       const dupBlock = html`<div class="form-group" id="dupGroup_${i}" style="margin-top:12px;">
             <label>Duplicate <span style="font-weight:400;color:var(--text-dim);text-transform:none;letter-spacing:0;">&mdash; same photo as another source</span></label>
-            <div class="seg" id="src_dup_${i}">${DATA.duplicateOptions.map(d => html`<button type="button" class="${src.duplicate === d ? 'on' : ''}" onclick="updateSource(${i},'duplicate','${d}')">${d}</button>`)}</div>
+            <div class="seg" id="src_dup_${i}">${DATA.duplicateOptions.map(d => html`<button type="button" class="${(src.duplicate === 'Yes' ? 'Yes' : 'No') === d ? 'on' : ''}" onclick="updateSource(${i},'duplicate','${d}')">${d}</button>`)}</div>
           </div>`;
       card.innerHTML = html`
         <div class="source-card-header">
@@ -8579,6 +8589,13 @@ function refreshSourceDependents(index) {
   // …and so do the card's title and its bands (build 138)
   const ta = live.querySelector('.src-head-title'), tb = fresh.querySelector('.src-head-title');
   if (ta && tb && ta.textContent !== tb.textContent) ta.textContent = tb.textContent;
+  const sa = live.querySelector('.src-head-sub'), sb = fresh.querySelector('.src-head-sub');
+  if (sa && sb && sa.innerHTML !== sb.innerHTML) sa.innerHTML = sb.innerHTML;
+  // a Device or Location typed into (or out of) a feeder: its banner comes or goes (review)
+  const fa = live.querySelector('#feederFor_' + index), fb = fresh.querySelector('#feederFor_' + index);
+  if (fa && fb) swapNode(fa, fb);
+  else if (fa) fa.remove();
+  else if (fb) { const body = live.querySelector('.source-card-body'); if (body) body.insertBefore(fb, body.querySelector(':scope > .src-sec')); }
   syncKindSections(live);
 }
 
@@ -8982,11 +8999,15 @@ function labelWaitBlock(src, i) {
   const name = k => inOut ? (k ? 'Out' : 'In') : 'Unit ' + (k + 1);
   const pi = labelPhotoIndexOf(src);
   const photo = pi >= 0 ? miscPhotos[pi] : null;
+  const photoBtn = html`<span style="display:inline-flex;align-items:center;gap:8px;">
+      ${photo ? html`<img src="${photo.thumbnail}" onclick="showMiscPhotoViewer(${pi})" title="The label photo" style="width:44px;border-radius:6px;border:2px solid #333;cursor:pointer;">` : ''}
+      <button type="button" class="btn btn-sm" id="src_lwphoto_${i}" onclick="addLabelPhoto(${i})" style="padding:8px 12px;font-size:13px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">&#128247; ${photo ? 'Retake the label photo' : 'Photograph the label'}</button>
+    </span>`;
   return html`<div class="form-group" id="lwGroup_${i}" style="grid-column:1 / -1;">
     <label>Discharge wait on the label${n > 1 ? raw(' <span style="font-weight:400;color:var(--text-dim);">&mdash; one per unit</span>') : ''}</label>
     ${Array.from({ length: n }, (_, k) => {
       const e = lw[k], st = labelWaitState(e);
-      const last = k === n - 1;
+      const inline = n === 1;   // one label photo per row: beside the box with one unit, on its own line with several (review)
       const mins = st === 'minutes' ? String(validLabelMinutes(e.minutes)) : '';
       const volts = validDcBusV(dv[k]) != null ? String(dv[k]) : '';
       return html`<div class="scan-input-row" style="margin-bottom:6px;align-items:center;flex-wrap:wrap;gap:6px;">
@@ -9000,12 +9021,10 @@ function labelWaitBlock(src, i) {
         </label>
         <input type="text" inputmode="numeric" id="src_dcv_${i}_${k}" value="${volts}" placeholder="DC bus V (optional)" style="max-width:170px;"
           oninput="updateDcBusV(${i},${k},this.value)">
-        ${last ? html`<span style="display:inline-flex;align-items:center;gap:8px;">
-          ${photo ? html`<img src="${photo.thumbnail}" onclick="showMiscPhotoViewer(${pi})" title="The label photo" style="width:44px;border-radius:6px;border:2px solid #333;cursor:pointer;">` : ''}
-          <button type="button" class="btn btn-sm" id="src_lwphoto_${i}" onclick="addLabelPhoto(${i})" style="padding:8px 12px;font-size:13px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">&#128247; ${photo ? 'Retake the label photo' : 'Photograph the label'}</button>
-        </span>` : ''}
+        ${inline ? photoBtn : ''}
       </div>`;
     })}
+    ${n > 1 ? html`<div style="margin-top:2px;">${photoBtn}</div>` : ''}
     <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">From the warning label on the drive or capacitor bank, e.g. &ldquo;Wait 15 minutes&rdquo;.</div>
   </div>`;
 }
