@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 141,
+  "build": 142,
   "hospitals": [
     {
       "code": "Marion",
@@ -22,6 +22,10 @@
     {
       "code": "Atlanta - Trinka Davis",
       "name": "Atlanta VAMC - Trinka Davis Veterans Village"
+    },
+    {
+      "code": "Palo Alto",
+      "name": "Palo Alto VAMC"
     }
   ],
   "equipmentTypes": [

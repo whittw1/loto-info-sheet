@@ -115,6 +115,10 @@
 //             copy merged in while open; Save & New settles ids / stamp / date in place; no "discard" questions
 //             for a unit only looked at; one close button
 //   T427      build 141: "Not yet exported" sends only the units not yet exported, and only their photos
+//   T428–T431 build 142: Palo Alto; a facility's building list imported from Excel / CSV in Settings (the menu,
+//             the saved value, the unit's own facility, replace / remove, which column, refusals); its review
+//             (title rows and "Bldg 100" values are no heading, 0000-formatted numbers, other files, launch, Custom)
+//   T432      build 142: a card opened or closed with a box still focused lets the box go first and stays put
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -255,6 +259,7 @@
     }
     lsKill.forEach(k => localStorage.removeItem(k));
     localStorage.removeItem('photoSeqNext');
+    localStorage.removeItem('loto_building_lists');   // build 142: no facility's building list carries over
     // clear the form exactly as the app does (repaints the photo slots, clears
     // building/room, autosaves the blank form so a relaunch doesn't restore a
     // test form), then refresh the header count
@@ -9195,18 +9200,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 141 (was build 122\'s): APP_BUILD and the header label say 141, the service worker\'s cache is loto-collector-v7.136, Xcode\'s CURRENT_PROJECT_VERSION is 141 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 142 (was build 122\'s): APP_BUILD and the header label say 142, the service worker\'s cache is loto-collector-v7.137, Xcode\'s CURRENT_PROJECT_VERSION is 142 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 141 && !!label && +label[1] === 141, 'the build');
+    want(APP_BUILD === 142 && !!label && +label[1] === 142, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.136', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.137', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 141;,CURRENT_PROJECT_VERSION = 141;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 142;,CURRENT_PROJECT_VERSION = 142;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -13991,6 +13996,249 @@
     record(N, !fails.length,(fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ---- build 142: a facility's building list (wilkins 2026-10-30, Palo Alto) ----
+  const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  async function xlsxFile(name, rows, fmt) {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Buildings');
+    rows.forEach(r => ws.addRow(r));
+    if (fmt) ws.eachRow(row => row.eachCell(c => { if (typeof c.value === 'number') c.numFmt = fmt; }));
+    return new File([await wb.xlsx.writeBuffer()], name, { type: XLSX_TYPE });
+  }
+  // Settings open on `code`, the file imported, the preview answered with `answer`
+  async function importBuildings(code, file, answer) {
+    showSettings();
+    const sel = document.getElementById('settingsHospital');
+    if (HOSPITALS.some(h => h.code === code) || !code) sel.value = code;
+    else { sel.value = '__custom__'; document.getElementById('settingsHospitalCustom').value = code; }
+    onHospitalSelectChange();
+    let asked = null;
+    const toasts = await withToasts(async () => {
+      await withDialogs({ choice: (o) => { asked = o; return answer || 'use'; } }, async () => { await importBuildingListFile({ files: [file] }); });
+    });
+    const summary = (document.getElementById('settingsBuildingsSummary') || {}).textContent || '';
+    closeSettings();
+    return { asked, toasts, summary };
+  }
+  function buildingMenu() {
+    return [...document.getElementById('equipBuilding').options].map(o => o.value + '=' + o.textContent);
+  }
+  function withFacility(code) { const was = getHospitalCode(); setHospitalCode(code); return () => setHospitalCode(was); }
+
+  // T428 — Palo Alto; an imported list is the Building menu, a pick saves the list value and exports it
+  async function t428_aFacilitysBuildingListIsImportedAndOffered() {
+    const N = 'T428 build 142: Palo Alto is a facility (picker, app-lists); Settings imports an .xlsx building list for the facility it shows — the Bldg column, names from Building Name beside it, blanks and repeats skipped — after a preview that names the file, the columns and the count; the Building menu lists them, then "Enter Building (not listed)"; a pick saves and exports the building as listed (never its name); Cancel changes nothing';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const restore = withFacility('Palo Alto');
+    try {
+      showSettings();
+      got.picker = [...document.getElementById('settingsHospital').options].some(o => o.value === 'Palo Alto' && /Palo Alto VAMC/.test(o.textContent));
+      closeSettings();
+      want(got.picker && appListsSnapshot(APP_BUILD).hospitals.some(h => h.code === 'Palo Alto' && h.name === 'Palo Alto VAMC'), 'Palo Alto in the picker and app-lists.json');
+      const file = await xlsxFile('PaloAlto_Buildings.xlsx', [['VA Palo Alto buildings'], [], ['Bldg', 'Building Name', 'Floors'],
+        ['100', 'Main Hospital', 7], ['101', 'Spinal Cord Injury', 2], [''], ['101', 'repeat', 1], ['  MB  2 ', 'Mental  Health', 3], [7, '', 1]]);
+      let r = await importBuildings('Palo Alto', file, 'cancel');
+      want(!buildingListFor('Palo Alto').length && r.toasts.some(t => /not changed/.test(t)), 'Cancel stores nothing: ' + r.toasts.join(' / '));
+      r = await importBuildings('Palo Alto', file, 'use');
+      const a = r.asked || {};
+      got.preview = [a.id, a.title, String(a.html || '').replace(/<[^>]+>/g, '').slice(0, 260)].join(' | ');
+      want(a.id === 'building-import' && /4 buildings for Palo Alto VAMC/.test(a.title || '') && /PaloAlto_Buildings\.xlsx/.test(a.html) && /column <b>Bldg<\/b>/.test(a.html)
+        && /names from <b>Building Name<\/b>/.test(a.html) && /on each iPad/.test(a.html), 'the preview: ' + got.preview);
+      got.list = JSON.stringify(buildingListFor('Palo Alto'));
+      want(got.list === JSON.stringify([{ v: '100', label: 'Main Hospital' }, { v: '101', label: 'Spinal Cord Injury' }, { v: 'MB 2', label: 'Mental Health' }, { v: '7' }]), 'the list: ' + got.list);
+      want(/4 buildings for Palo Alto VAMC \(from PaloAlto_Buildings\.xlsx\)/.test(r.summary), 'the Settings summary: ' + r.summary);
+      got.menu = buildingMenu().join(' ; ');
+      want(got.menu === '=-- Select -- ; 100=100 — Main Hospital ; 101=101 — Spinal Cord Injury ; MB 2=MB 2 — Mental Health ; 7=7 ; ** Custom Building **=Enter Building (not listed)...', 'the menu: ' + got.menu);
+      fillForm('P-428', { building: '101', room: '1A' });
+      want(document.getElementById('equipBuilding').value === '101' && document.getElementById('customBuildingGroup').style.display === 'none', 'a listed building is picked in the menu');
+      const P = saveEntry();
+      want(P && P.equipBuilding === '101' && P.hospitalCode === 'Palo Alto', 'saved as listed: ' + (P && P.equipBuilding));
+      want(document.getElementById('equipBuilding').value === '101', 'Save & New carries the building in the menu');
+      const { zip } = await runExport({ confirmResponse: true, dateFilter: 'all' });
+      const u = zip ? await unzipExport(zip.blob) : null;
+      got.exported = u ? (u.entriesJson.entries || []).map(e => e.equipBuilding).join() : 'no zip';
+      const csvName = u && Object.keys(u.files).find(f => /\.csv$/.test(f));
+      const csvText = csvName ? new TextDecoder().decode(u.files[csvName]) : '';
+      want(got.exported === '101' && /,1A,101,/.test(csvText) && !/Spinal Cord Injury/.test(csvText), 'exported as 101, never its name: ' + got.exported);
+    } finally { restore(); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T429 — the menu is the unit's own facility's; a building off the list shows as typed; replace; remove
+  async function t429_theBuildingMenuFollowsTheUnitsFacility() {
+    const N = 'T429 build 142: the Building menu lists the form\'s facility\'s buildings — the setting\'s for a new unit, the unit\'s own stamp for a saved one (a Palo Alto unit opened while the iPad is set to Marion shows Palo Alto\'s list); Settings Save to another facility swaps it, keeping the form\'s building (typed when not listed); a saved building not on the list shows as typed; a second import says it replaces the list; Remove list (confirmed) brings the plain menu back, and saved units keep their buildings';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const restore = withFacility('Palo Alto');
+    try {
+      await importBuildings('Palo Alto', await xlsxFile('pa.xlsx', [['Building'], ['100'], ['101']]), 'use');
+      await importBuildings('Marion', await xlsxFile('marion.xlsx', [['Building'], ['1'], ['2']]), 'use');
+      fillForm('A-429', { building: '100' }); const A = saveEntry();
+      fillForm('B-429', { building: 'Annex 9' }); const B = saveEntry();
+      want(A.equipBuilding === '100' && B.equipBuilding === 'Annex 9', 'saved: ' + A.equipBuilding + ', ' + B.equipBuilding);
+      setHospitalCode('Marion');
+      clearForm(false);
+      got.newUnit = buildingMenu().map(x => x.split('=')[0]).join();
+      want(got.newUnit === ',1,2,** Custom Building **', 'a new unit at Marion: ' + got.newUnit);
+      await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(A)); });
+      got.editA = [buildingMenu().map(x => x.split('=')[0]).join(), document.getElementById('equipBuilding').value].join(' | ');
+      want(got.editA === ',100,101,** Custom Building ** | 100', 'Palo Alto\'s unit opened at Marion: ' + got.editA);
+      await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(B)); });
+      got.editB = [document.getElementById('equipBuilding').value, document.getElementById('equipBuildingCustom').value, getBuilding()].join(' | ');
+      want(got.editB === '** Custom Building ** | Annex 9 | Annex 9', 'a building not on the list shows as typed: ' + got.editB);
+      await withDialogs({ confirm: true }, async () => { discardForm(); });
+      // Settings Save to another facility, with a building on the form
+      setHospitalCode('Palo Alto'); clearForm(false);
+      fillForm('C-429', { building: '101' });
+      showSettings();
+      document.getElementById('settingsHospital').value = 'Marion'; onHospitalSelectChange();
+      savePhotoSettings();
+      got.swap = [buildingMenu().map(x => x.split('=')[0]).join(), getBuilding(), document.getElementById('equipBuilding').value].join(' | ');
+      want(got.swap === ',1,2,** Custom Building ** | 101 | ** Custom Building **', 'Save to Marion swaps the menu, keeps 101 typed: ' + got.swap);
+      clearForm(false);
+      // replace
+      setHospitalCode('Palo Alto'); renderBuildingOptions();
+      const r = await importBuildings('Palo Alto', await xlsxFile('pa2.xlsx', [['Building'], ['100'], ['102'], ['103']]), 'use');
+      want(/replaces the current list of 2/.test(String((r.asked || {}).html || '')) && buildingListFor('Palo Alto').map(x => x.v).join() === '100,102,103', 'a second import replaces: ' + buildingListFor('Palo Alto').map(x => x.v).join());
+      want(buildingMenu().map(x => x.split('=')[0]).join() === ',100,102,103,** Custom Building **', 'the menu follows the new list');
+      // remove
+      showSettings();
+      document.getElementById('settingsHospital').value = 'Palo Alto'; onHospitalSelectChange();
+      const rmShown = document.getElementById('settingsBuildingsRemove').style.display !== 'none';
+      const no = await withDialogs({ confirm: false }, async () => { removeBuildingListForSettingsFacility(); });
+      const kept = buildingListFor('Palo Alto').length;
+      const yes = await withDialogs({ confirm: true }, async () => { removeBuildingListForSettingsFacility(); });
+      got.remove = [rmShown, no.log.length, kept, yes.log.length, buildingListFor('Palo Alto').length, document.getElementById('settingsBuildingsRemove').style.display].join(' | ');
+      closeSettings();
+      want(got.remove === 'true | 1 | 3 | 1 | 0 | none', 'Remove asks, No keeps, Yes removes: ' + got.remove);
+      got.plain = buildingMenu().join(' ; ');
+      want(got.plain === '=-- Select -- ; ** Custom Building **=Enter Building...', 'the plain menu: ' + got.plain);
+      want(savedEquipment.find(e => e.id === A.id).equipBuilding === '100', 'saved units keep their buildings');
+      want(buildingListFor('Marion').length === 2, 'another facility\'s list is untouched');
+    } finally { restore(); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T430 — which column; CSV; refusals
+  async function t430_theBuildingColumnIsFoundAndBadFilesAreRefused() {
+    const N = 'T430 build 142: a CSV (BOM, CRLF, quoted commas and quotes) imports; a sheet with no Building heading takes its first column with text, every row; "Building Name" alone is the building; Bldg_No beside a Description; an .xls, a file with no buildings and no facility picked are refused with a reason and store nothing; a list longer than 2000 is refused';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const restore = withFacility('Palo Alto');
+    const vals = (code) => buildingListFor(code).map(x => x.v + (x.label ? ':' + x.label : '')).join('|');
+    try {
+      const csv = new File(['﻿Building,Description\r\n"4, East","Clinic ""B"""\r\n5,Garage\r\n'], 'b.csv', { type: 'text/csv' });
+      await importBuildings('Palo Alto', csv, 'use');
+      got.csv = vals('Palo Alto');
+      want(got.csv === '4, East:Clinic "B"|5:Garage', 'the CSV: ' + got.csv);
+      await importBuildings('Marion', await xlsxFile('nohead.xlsx', [[null, 'A1'], [null, 'B2'], [null, '']]), 'use');
+      got.nohead = vals('Marion');
+      want(got.nohead === 'A1|B2', 'no heading: the first column with text: ' + got.nohead);
+      await importBuildings('Kansas City', await xlsxFile('names.xlsx', [['Building Name', 'Notes'], ['Main Hospital', 'x'], ['Annex', '']]), 'use');
+      got.names = vals('Kansas City');
+      want(got.names === 'Main Hospital|Annex', '"Building Name" alone: ' + got.names);
+      await importBuildings('Atlanta', await xlsxFile('no.xlsx', [['Bldg_No', 'Description'], ['12', 'Boiler Plant']]), 'use');
+      got.underscore = vals('Atlanta');
+      want(got.underscore === '12:Boiler Plant', 'Bldg_No with a Description: ' + got.underscore);
+      const before = JSON.stringify(getBuildingLists());
+      const xls = await importBuildings('Palo Alto', new File(['x'], 'old.xls'), 'use');
+      const empty = await importBuildings('Palo Alto', await xlsxFile('empty.xlsx', [['Building'], [''], ['']]), 'use');
+      const none = await importBuildings('', await xlsxFile('x.xlsx', [['Building'], ['1']]), 'use');
+      const big = await importBuildings('Palo Alto', new File(['Building\n' + Array.from({ length: 2001 }, (_, i) => 'B' + i).join('\n')], 'big.csv'), 'use');
+      got.refused = [xls.toasts.join('/'), empty.toasts.join('/'), none.toasts.join('/'), big.toasts.join('/')].join(' || ');
+      want(/\.xlsx \(Excel Workbook\)/.test(xls.toasts.join()) && /No buildings found/.test(empty.toasts.join()) && /Pick the facility first/.test(none.toasts.join())
+        && /more than 2000/.test(big.toasts.join()) && !xls.asked && !empty.asked && !none.asked && !big.asked && JSON.stringify(getBuildingLists()) === before, 'refusals: ' + got.refused);
+    } finally { restore(); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T431 — build 142's code review: which row is the heading, number formats, other files, launch, a Custom facility
+  async function t431_theBuildingImportReviewFixes() {
+    const N = 'T431 build 142 review: a title row ("Building List") above the heading is not the heading; a list of "Bldg 100" values with no heading keeps every row; a building kept as a number formatted 0000 keeps its zeros; a .numbers file is refused with what to do; the menu shows the facility\'s list as the app starts with no unit restored (init renders it); a list imported for a Custom facility key is offered at that key';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const vals = (code) => buildingListFor(code).map(x => x.v + (x.label ? ':' + x.label : '')).join('|');
+    const restore = withFacility('Palo Alto');
+    try {
+      let r = await importBuildings('Palo Alto', await xlsxFile('titled.xlsx', [['Building List'], ['VA Palo Alto HCS'], [], ['Bldg #', 'Building Name'], ['1', 'Main'], ['2', 'Annex']]), 'use');
+      got.titled = vals('Palo Alto') + ' / ' + String((r.asked || {}).html || '').replace(/<[^>]+>/g, '').slice(0, 70);
+      want(vals('Palo Alto') === '1:Main|2:Annex' && /column Bldg #/.test(got.titled), 'a title row above the heading: ' + got.titled);
+      await importBuildings('Marion', await xlsxFile('bldgs.xlsx', [['Bldg 100'], ['Bldg 101'], ['Building 5']]), 'use');
+      got.values = vals('Marion');
+      want(got.values === 'Bldg 100|Bldg 101|Building 5', '"Bldg 100" values, no heading: ' + got.values);
+      await importBuildings('Kansas City', await xlsxFile('zeros.xlsx', [['Building'], [45], [101], [7]], '0000'), 'use');
+      got.zeros = vals('Kansas City');
+      want(got.zeros === '0045|0101|0007', 'a 0000 format keeps its zeros: ' + got.zeros);
+      const before = JSON.stringify(getBuildingLists());
+      r = await importBuildings('Palo Alto', new File(['x'], 'Buildings.numbers'), 'use');
+      got.numbers = r.toasts.join(' / ');
+      want(/not an \.xlsx or \.csv/.test(got.numbers) && !r.asked && JSON.stringify(getBuildingLists()) === before, 'a .numbers file refused: ' + got.numbers);
+      // launch: the menu the static markup starts with, then init's render
+      clearForm(false);
+      const sel = document.getElementById('equipBuilding');
+      sel.innerHTML = '<option value="">-- Select --</option><option value="** Custom Building **">Enter Building...</option>';
+      delete sel.dataset.listSig;
+      want(/renderBuildingOptions\(\)/.test(String(init)), 'init renders the building menu');
+      renderBuildingOptions();
+      got.launch = [...sel.options].map(o => o.value).join();
+      want(got.launch === ',1,2,** Custom Building **', 'at launch, Palo Alto\'s list: ' + got.launch);
+      // a Custom facility key
+      await importBuildings('Palo Alto - Livermore', await xlsxFile('liv.xlsx', [['Building'], ['L1'], ['L2']]), 'use');
+      setHospitalCode('Palo Alto - Livermore'); clearForm(false);
+      got.custom = [vals('Palo Alto - Livermore'), [...sel.options].map(o => o.value).join()].join(' | ');
+      want(got.custom === 'L1|L2 | ,L1,L2,** Custom Building **', 'a Custom facility\'s list: ' + got.custom);
+    } finally { restore(); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T432 — wilkins 2026-10-30: typing in a source, scrolling up and tapping a card "sometimes … brings me all the
+  // way back to the bottom" (the iPad keeps the box focused; the redraw removed it under the keyboard)
+  async function t432_aCardOpensWhereItIsWithABoxStillFocused() {
+    const N = 'T432 build 142: with a box in the last card still focused (the iPad keeps it on a tap elsewhere), tapping a card\'s title higher up lets the box go before the list is redrawn and opens the card where it was (the same height, also after the keyboard would close); Done at the foot of a long card whose top is off the screen brings the closed card into view; with no box focused a card still opens in place';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('S-432');
+    for (let k = 0; k < 12; k++) sources.push(Object.assign(mkSrc('Electrical'), { location: 'Panel ' + k, collapsed: k < 11 }));
+    sources.forEach(ensureSourceId);
+    renderSources();
+    const cardAt = (i) => document.querySelectorAll('#sourcesContainer > .source-card')[i];
+    const box = document.getElementById('src_detail_11');
+    box.focus();
+    let letGo = null;
+    box.blur = function () { letGo = document.body.contains(this); HTMLElement.prototype.blur.call(this); };
+    window.scrollTo(0, document.getElementById('sourcesContainer').getBoundingClientRect().top + window.scrollY - 40);
+    const before = cardAt(3).getBoundingClientRect().top;
+    expandSource(3);
+    const now = cardAt(3).getBoundingClientRect().top;
+    await sleep(500);
+    const later = cardAt(3).getBoundingClientRect().top;
+    got.open = [letGo, before, now, later, !sources[3].collapsed, document.activeElement === box].join(' | ');
+    want(letGo === true && Math.abs(now - before) <= 1 && Math.abs(later - before) <= 1 && !sources[3].collapsed && document.activeElement !== box,
+      'the box is let go while still in the page and the card opens in place: ' + got.open);
+    // Done at the foot of a long card whose top is above the screen
+    const done = [...cardAt(3).querySelectorAll('button')].find(b => /^Done$/.test(b.textContent.trim()));
+    window.scrollTo(0, cardAt(3).getBoundingClientRect().top + window.scrollY + 60);   // its top just off the screen
+    const topWas = cardAt(3).getBoundingClientRect().top;
+    if (done) done.click();
+    const r = cardAt(3).getBoundingClientRect();
+    got.done = [!!done, topWas < 0, sources[3].collapsed, Math.round(r.top), Math.round(r.bottom), window.innerHeight].join(' | ');
+    want(!!done && topWas < 0 && sources[3].collapsed && r.top >= -1 && r.bottom <= window.innerHeight + 1, 'Done brings the closed card into view: ' + got.done);
+    // no box focused: in place too
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    const b2 = cardAt(5).getBoundingClientRect().top;
+    expandSource(5);
+    got.plain = [b2, cardAt(5).getBoundingClientRect().top].join(' | ');
+    want(Math.abs(cardAt(5).getBoundingClientRect().top - b2) <= 1, 'no box focused: in place: ' + got.plain);
+    window.scrollTo(0, 0);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // T426 — no "discard" questions for a unit only looked at; one close button; a newer copy merged in
   async function t426_aUnitOnlyLookedAtAsksNothingWhenLeft() {
     const N = 'T426 build 140: opening a unit says "Opened … stays as saved" and runs no saved-unit check before its baseline (review); with a saved unit only looked at open, Edit on another unit, Duplicate and Clear ask nothing (with a change they ask); the banner\'s button is the only way out of an edit (the corner one shows "✕ Discard" for a new unit only); an edit the list knows only by its id closes as the banner says; a newer copy of the unit merged in while it is open unchanged is kept — Save & New closes the form instead of writing the older view over it';
@@ -14226,7 +14474,10 @@
     t421_aUnitOnlyLookedAtIsClosedNotSaved, t422_aRelaunchStartsANewUnitAfterOnlyLooking,
     t423_anOlderUnitOnlyLookedAtIsUnchanged, t424_aRelaunchKnowsTheFormAsOpened, t425_saveAndNewSettlesAnUnchangedUnitInPlace,
     t426_aUnitOnlyLookedAtAsksNothingWhenLeft,
-    t427_notYetExportedSendsOnlyThoseUnitsAndTheirPhotos];
+    t427_notYetExportedSendsOnlyThoseUnitsAndTheirPhotos,
+    t428_aFacilitysBuildingListIsImportedAndOffered, t429_theBuildingMenuFollowsTheUnitsFacility,
+    t430_theBuildingColumnIsFoundAndBadFilesAreRefused, t431_theBuildingImportReviewFixes,
+    t432_aCardOpensWhereItIsWithABoxStillFocused];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
