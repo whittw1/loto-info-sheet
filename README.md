@@ -185,7 +185,7 @@ Form Inputs ──► localStorage (auto-saved as JSON)
 - **Photo Grid** — 3-column capture grid (Main, Data Plate, EE Number) with view-before-retake
 - **Energy Sources** — Dynamic collapsible cards with add/remove/duplicate/reorder/link controls; conditional device and verification dropdowns
 - **Overhead Sketch** — Collapsible section with SVG diagram + canvas drawing layer + draggable energy labels
-- **Misc Photos** — Additional photos beyond the standard equipment/source slots
+- **Misc Photos** — Additional photos beyond the standard equipment/source slots (up to 30 a unit since build 137)
 - **Notes Section** — Free-text area per equipment entry. **+ NOTE** / **+ CAUTION** start a line that loto-web prints in the procedure's Section 2 as written; on an AHU, a **+ Common note…** menu adds a stock NOTE line (the duct smoke damper, build 136) to reword for the unit
 - **Bottom Bar** — Source counter, storage usage indicator, Save & New / Export buttons
 
