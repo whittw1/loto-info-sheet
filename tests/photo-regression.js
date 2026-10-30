@@ -114,6 +114,7 @@
 //             (old sketch, defaults the cards fill in, untrimmed text), across a relaunch (openedHash), a newer
 //             copy merged in while open; Save & New settles ids / stamp / date in place; no "discard" questions
 //             for a unit only looked at; one close button
+//   T427      build 141: "Not yet exported" sends only the units not yet exported, and only their photos
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -6228,8 +6229,8 @@
   }
 
   // T208 — 4.3 g: units edited today but first saved earlier were left out; undated units went on a sheet loto-web refuses
-  async function t208_notYetExportedSendsWholeDaysAndUndatedUnitsGetADate() {
-    const N = 'T208 "Not yet exported" sends every date holding an unexported unit as its whole sheet (no other day; today stays the default) and says a change to a unit already in loto-web must be made there too; a unit with no date gets one at export instead of the undated sheet';
+  async function t208_notYetExportedSendsOnlyItsUnitsAndUndatedUnitsGetADate() {
+    const N = 'T208 "Not yet exported" sends every unexported unit on its own day\'s sheet, and only those (build 141: an exported unit of the same day stays out; today stays the default) and says a change to a unit already in loto-web must be made there too; a unit with no date gets one at export instead of the undated sheet';
     await resetAppState();
     const at = n => { const d = new Date(); d.setDate(d.getDate() - n); d.setHours(10, 0, 0, 0); return d.toISOString(); };
     const X1 = mkEntry('X1-208', { savedAt: at(1) }); X1.exportedAt = at(1); X1.exportedAllPhotos = true; X1.firstExportedAt = at(1);
@@ -6257,7 +6258,7 @@
     const uSheets = r.zip ? Object.keys((await unzipExport(r.zip.blob)).files).filter(x => /Information_Sheet_/.test(x)).map(x => x.replace('info_sheets/', '')) : [];
     const asked = r.confirms.some(m => /CHOICE survey-date/.test(m));
     record(N, opts.includes('unexported') && dflt === dayAgo(0) && /not yet exported/i.test(summary) && /make the same change there/i.test(summary)
-      && !!zip && Object.keys(units).sort().join() === want && got === ['X1-208', 'X2-208', 'X4-208', 'X5-208'].sort().join()
+      && !!zip && Object.keys(units).sort().join() === want && got === ['X2-208', 'X4-208', 'X5-208'].sort().join()
       && asked && uSheets.join() === sheetName(dayAgo(5)) && U.surveyDate === dayAgo(5),
       'options ' + JSON.stringify(opts) + ', default ' + dflt + '; summary ' + JSON.stringify(summary) + '; sheets ' + JSON.stringify(units) + '; undated unit asked=' + asked + ', sheets ' + JSON.stringify(uSheets) + ', its date ' + U.surveyDate);
   }
@@ -9194,18 +9195,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 140 (was build 122\'s): APP_BUILD and the header label say 140, the service worker\'s cache is loto-collector-v7.135, Xcode\'s CURRENT_PROJECT_VERSION is 140 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 141 (was build 122\'s): APP_BUILD and the header label say 141, the service worker\'s cache is loto-collector-v7.136, Xcode\'s CURRENT_PROJECT_VERSION is 141 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 140 && !!label && +label[1] === 140, 'the build');
+    want(APP_BUILD === 141 && !!label && +label[1] === 141, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.135', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.136', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 140;,CURRENT_PROJECT_VERSION = 140;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 141;,CURRENT_PROJECT_VERSION = 141;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -13905,6 +13906,91 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T427 — build 141 (wilkins 2026-10-30): 7 new units + 1 edit of yesterday's unit, "Not yet exported — 8 entries",
+  // and the ZIP held 250+ photos — all of yesterday's units went again, because the rest of a pending unit's day did
+  async function t427_notYetExportedSendsOnlyThoseUnitsAndTheirPhotos() {
+    const N = 'T427 build 141: "Not yet exported" sends only the units not yet exported — a unit of the same day already exported stays out with its photos and keeps its stamps; the menu\'s count, the summary\'s count and the units in the ZIP agree; a day already exported gets a sheet of just its changed unit; each unit sent is stamped exported; a saved unit open on the form goes when changed (as the form has it), never when only looked at';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const at = n => { const d = new Date(); d.setDate(d.getDate() - n); d.setHours(10, 0, 0, 0); return d.toISOString(); };
+    const make = async (name, seed) => {
+      fillForm(name);
+      await captureInto('equip_main', await makePhotoFile(seed + '-main'));
+      await captureInto('source_0', await makePhotoFile(seed + '-src'));
+      return saveEntry();
+    };
+    // yesterday: three units exported, then one of them edited (firstExportedAt only)
+    const Y = [await make('Y1-427', 'y1'), await make('Y2-427', 'y2'), await make('Y3-427', 'y3')];
+    Y.forEach(e => { e.surveyDate = dayAgo(1); e.savedAt = at(1); e.exportedAt = at(1); e.exportedAllPhotos = true; e.firstExportedAt = at(1); });
+    delete Y[2].exportedAt; delete Y[2].exportedAllPhotos;
+    // today: two new units
+    const T = [await make('T1-427', 't1'), await make('T2-427', 't2')];
+    saveAll();
+    const stampsBefore = Y.slice(0, 2).map(e => e.exportedAt).join();
+    showExportDialog();
+    const dsel = document.getElementById('exportDateFilter');
+    const opt = [...dsel.options].find(o => o.value === 'unexported');
+    got.option = opt ? opt.textContent : '(none)';
+    dsel.value = 'unexported'; updateExportDateSummary();
+    got.summary = (document.getElementById('exportDateSummary') || {}).textContent || '';
+    closeExportDialog();
+    want(!!opt && /^Not yet exported — 3 entries, 2 dates$/.test(opt.textContent), 'the menu says 3 entries on 2 dates: ' + got.option);
+    want(/^3 entries will be exported/.test(got.summary) && /Only the 3 not yet exported go/.test(got.summary), 'the summary says 3: ' + got.summary);
+    const { zip } = await runExport({ confirmResponse: true, dateFilter: 'unexported' });
+    if (!zip) { record(N, false, 'no ZIP'); return; }
+    const u = await unzipExport(zip.blob);
+    const sent = ((u.entriesJson && u.entriesJson.entries) || []).map(e => e.equipName).sort();
+    got.sent = sent.join();
+    want(got.sent === ['T1-427', 'T2-427', 'Y3-427'].sort().join(), 'the units sent: ' + got.sent);
+    const photoFiles = Object.keys(u.files).filter(p => p.startsWith('photos/'));
+    got.photos = photoFiles.length;
+    want(photoFiles.length === 6, 'two photos for each of the 3 units: ' + photoFiles.length);
+    const sentKeys = new Set([].concat(...[T[0], T[1], Y[2]].map(e => entryPhotoRefs(e).map(r => r.ref.dbKey))));
+    const records = (u.manifest && u.manifest.photos) || [];
+    const owners = new Set([].concat(...records.map(r => (r.entries || []).map(x => x.entryId))));
+    got.owners = owners.size;
+    const sentIds = [T[0], T[1], Y[2]].map(e => e.id).sort().join();
+    want(sentKeys.size === 6 && [...owners].sort().join() === sentIds, 'the manifest\'s photos belong to the 3 units sent, and only to them');
+    const sheets = {};
+    for (const q of Object.keys(u.files).filter(x => /Information_Sheet_.*\.xlsx$/.test(x)).sort()) sheets[q.replace('info_sheets/', '')] = await sheetUnits(u.files[q]);
+    got.sheets = sheets;
+    want(JSON.stringify(sheets[sheetName(dayAgo(1))] || []) === JSON.stringify(['Y3-427']), 'yesterday\'s sheet holds only its changed unit');
+    want((sheets[sheetName(dayAgo(0))] || []).slice().sort().join() === 'T1-427,T2-427', 'today\'s sheet holds the two new units');
+    const byName = n => savedEquipment.find(e => e.equipName === n);
+    got.states = savedEquipment.map(e => e.equipName + ':' + entryExportState(e)).join(' ');
+    want(Y.slice(0, 2).map(e => byName(e.equipName).exportedAt).join() === stampsBefore, 'the exported units keep their stamps');
+    want(['T1-427', 'T2-427', 'Y3-427'].every(n => entryExportState(byName(n)) === 'exported'), 'each unit sent is stamped exported: ' + got.states);
+    showExportDialog();
+    got.after = [...document.getElementById('exportDateFilter').options].some(o => o.value === 'unexported');
+    closeExportDialog();
+    want(!got.after, 'nothing left to send');
+    // a saved unit open on the form: only looked at, it is not pending; changed, it goes as the form has it
+    const Y1 = byName('Y1-427');
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(Y1)); });
+    showExportDialog();
+    const lookedOpt = [...document.getElementById('exportDateFilter').options].find(o => o.value === 'unexported');
+    closeExportDialog();
+    got.looked = lookedOpt ? lookedOpt.textContent : '(none)';
+    want(!lookedOpt, 'a unit only looked at is not pending: ' + got.looked);
+    document.getElementById('equipNotes').value = 'changed-427'; autoSaveCurrent();
+    showExportDialog();
+    const editOpt = [...document.getElementById('exportDateFilter').options].find(o => o.value === 'unexported');
+    closeExportDialog();
+    got.edited = editOpt ? editOpt.textContent : '(none)';
+    want(!!editOpt && /^Not yet exported — 1 entry$/.test(editOpt.textContent), 'a changed open unit is pending: ' + got.edited);
+    const r2 = await runExport({ confirmResponse: true, dateFilter: 'unexported' });
+    const u2 = r2.zip ? await unzipExport(r2.zip.blob) : null;
+    const sent2 = ((u2 && u2.entriesJson && u2.entriesJson.entries) || []).map(e => e.equipName + ':' + e.notes);
+    got.sent2 = sent2.join();
+    want(got.sent2 === 'Y1-427:changed-427', 'the changed open unit goes with its change, alone: ' + got.sent2);
+    const savedY1 = byName('Y1-427');
+    got.savedY1 = [savedY1.notes, savedY1.exportedAt === stampsBefore.split(',')[0], entryExportState(savedY1)].join(' | ');
+    want(savedY1.notes !== 'changed-427' && savedY1.exportedAt === stampsBefore.split(',')[0] && entryExportState(savedY1) === 'exported', 'the saved copy keeps its notes and stamps (the form is not saved by an export): ' + got.savedY1);
+    await withDialogs({ confirm: true }, async () => { discardForm(); });
+    record(N, !fails.length,(fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // T426 — no "discard" questions for a unit only looked at; one close button; a newer copy merged in
   async function t426_aUnitOnlyLookedAtAsksNothingWhenLeft() {
     const N = 'T426 build 140: opening a unit says "Opened … stays as saved" and runs no saved-unit check before its baseline (review); with a saved unit only looked at open, Edit on another unit, Duplicate and Clear ask nothing (with a change they ask); the banner\'s button is the only way out of an edit (the corner one shows "✕ Discard" for a new unit only); an edit the list knows only by its id closes as the banner says; a newer copy of the unit merged in while it is open unchanged is kept — Save & New closes the form instead of writing the older view over it';
@@ -14054,7 +14140,7 @@
     t202_savedValuesOffTheListShowAsThemselves, t203_customBoxesAreNotRebuiltWhileTyping,
     t204_valveStateOnValvesAndInOutSplitsByDirection, t205_aScanNeverLandsOnAnotherUnitOrSource,
     t206_cancelEditLeavesTheSavedUnitAsItWas, t207_theSurveyDateIsOnTheFormAndKeptOnEdit,
-    t208_notYetExportedSendsWholeDaysAndUndatedUnitsGetADate, t209_duplicateFollowsReuseAndAHandSetYesPicksThePhoto,
+    t208_notYetExportedSendsOnlyItsUnitsAndUndatedUnitsGetADate, t209_duplicateFollowsReuseAndAHandSetYesPicksThePhoto,
     t210_thePhotoSizeLimitTurnsWithThePhoto, t211_newPhotosCarryTheirCaptureTime,
     t212_anEmptySlotWithAPhotoTakenForItIsFlaggedAtExport, t213_appListsJsonMatchesTheApp,
     t214_cancelAfterAnAppMadeTemplatePickKeepsThisUnitsTemplate, t215_reviewFixesForDuplicateDatesAndLinks,
@@ -14139,7 +14225,8 @@
     t420_theFeederLinkReviewFixes,
     t421_aUnitOnlyLookedAtIsClosedNotSaved, t422_aRelaunchStartsANewUnitAfterOnlyLooking,
     t423_anOlderUnitOnlyLookedAtIsUnchanged, t424_aRelaunchKnowsTheFormAsOpened, t425_saveAndNewSettlesAnUnchangedUnitInPlace,
-    t426_aUnitOnlyLookedAtAsksNothingWhenLeft];
+    t426_aUnitOnlyLookedAtAsksNothingWhenLeft,
+    t427_notYetExportedSendsOnlyThoseUnitsAndTheirPhotos];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
