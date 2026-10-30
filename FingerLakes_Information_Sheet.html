@@ -526,7 +526,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b139</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b140</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1219,7 +1219,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 139;
+const APP_BUILD = 140;
 
 // ============================================================================
 // DATA
@@ -2160,7 +2160,10 @@ function sameEntryId(a, b) { return a != null && b != null && a !== '' && b !== 
 // While any write is in flight, Save & New / Edit / Duplicate / Clear /
 // Export / Backup are refused, so in practice the form can't move on under one.
 let formSession = 1;
-function beginNewFormSession() { formSession++; }
+// The form as it stood once a saved unit was opened in it (build 140 — see
+// formIsUnchangedEdit). A new form session is a new form: it goes.
+let _openBaseline = null;   // { entryId, json, hash, last }
+function beginNewFormSession() { formSession++; _openBaseline = null; }
 const _photoWrites = new Map();   // token → { kind, at }
 let _photoWriteSeq = 0;
 const PHOTO_WRITE_STALE_MS = 60000;   // a write this old is presumed dead — never block forever
@@ -5033,10 +5036,11 @@ function toggleUnitBackfeed(choice, checked) {
   autoSaveCurrent();
 }
 // The answers the form holds, as saved (blanks dropped, the list copied).
-function savedUnitAnswers() {
+function savedUnitAnswers() { return answersAsSaved(unitAnswers); }
+function answersAsSaved(a) {
   const out = {};
-  Object.keys(unitAnswers).forEach(k => {
-    const v = unitAnswers[k];
+  Object.keys(a || {}).forEach(k => {
+    const v = a[k];
     if (Array.isArray(v) ? v.length : String(v == null ? '' : v).trim()) out[k] = Array.isArray(v) ? v.slice() : v;
   });
   return out;
@@ -13150,8 +13154,9 @@ async function saveAndNew() {
   // A saved unit only looked at is closed, never saved again (build 139): a save
   // drops its exported stamps, and the export then takes it for changed
   const target = formEditTarget();
-  if (target && formMatchesSavedEntry(target)) {
-    closeUnchangedEdit();
+  if (target && formIsUnchangedEdit(target)) {
+    if (settleSavedUnit(target)) saveAll();   // …what a save would settle is put right on it (build 140)
+    startNextUnit();
     showToast('\u201c' + (target.equipName || equipName || 'The unit') + '\u201d is unchanged \u2014 not saved again, so its export stays as it was. Ready for the next unit.');
     return;
   }
@@ -13266,14 +13271,7 @@ function performSaveAndNew() {
   editingEntry = null;
   clearTombstones([entryId]);
   saveAll();
-  const lastBuilding = entry.equipBuilding;
-  const lastRoom = entry.equipRoom;
-  clearForm(false); // Don't confirm
-  setBuilding(lastBuilding || '');
-  document.getElementById('equipRoom').value = lastRoom || '';
-  autoSaveCurrent();   // the blank form (with the carried-over building/room) is what survives a reload
-  renderSavedPanel();
-  updateHeaderBadge();
+  startNextUnit();   // the blank form (with the carried-over building/room) is what survives a reload
   showToast(`\u2714 Saved "${equipName}" \u2014 ${savedEquipment.length} total`);   // plain text: the toast shows text, not HTML (build 94)
 }
 
@@ -13285,13 +13283,14 @@ function performSaveAndNew() {
 // unattached (Settings → Photo Store Report lists them) — never deleted.
 function discardForm() {
   if (refuseIfPhotoWritesBusy('discard')) return;
-  const editing = editingEntry;
+  // the saved unit the form is an edit of, as the banner and Save & New see it (build 140)
+  const editing = formEditTarget();
   if (!editing && !formHasData()) { updateDiscardButton(); return; }
   const name = (editing && editing.equipName) || (document.getElementById('equipName').value || '').trim();
   // nothing changed: nothing to drop, so no question (build 139)
-  if (editing && formMatchesSavedEntry(formEditTarget() || editing)) {
+  if (editing && formIsUnchangedEdit(editing)) {
     if (!tabMayWrite()) return;
-    closeUnchangedEdit();
+    startNextUnit();
     showToast('Closed \u201c' + (name || 'the unit') + '\u201d \u2014 unchanged, still as saved');
     return;
   }
@@ -13310,16 +13309,17 @@ function updateDiscardButton() {
   if (!b) return;
   const target = formEditTarget();
   const editing = !!target;
-  const show = editing || formHasData();
-  b.style.display = show ? '' : 'none';
-  b.textContent = editing ? '✕ Cancel edit' : '✕ Discard';
+  // An edit's way out is the banner's button (build 140: one button, one label);
+  // this one discards a new unit
+  b.style.display = (!editing && formHasData()) ? '' : 'none';
+  b.textContent = '✕ Discard';
   // The banner (build 139): the form is a saved unit, and whether anything changed
   const banner = document.getElementById('editBanner');
   if (!banner) return;
   banner.style.display = editing ? 'flex' : 'none';
   if (!editing) return;
   const name = target.equipName || 'this unit';
-  const same = formMatchesSavedEntry(target);
+  const same = formIsUnchangedEdit(target);
   document.getElementById('editBannerText').textContent = same
     ? 'Looking at saved unit \u201c' + name + '\u201d \u2014 nothing changed. Close it to start a new unit; it stays as saved.'
     : 'Editing saved unit \u201c' + name + '\u201d \u2014 Save & New saves your changes; Cancel edit drops them.';
@@ -13341,54 +13341,145 @@ function formEditTarget() {
   const id = currentEntryId || (editingEntry && editingEntry.id);
   return (id ? savedEquipment.find(e => sameEntryId(e.id, id)) : null) || editingEntry || null;
 }
-// Keys sorted at every level, so two copies of one value compare equal.
-function stableJsonOf(v) {
-  return JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x))
-    ? Object.keys(x).sort().reduce((o, kk) => { o[kk] = x[kk]; return o; }, {}) : x);
+// Keys sorted at every level, so two copies of one value compare equal; keys in
+// `omit` are left out wherever they appear.
+function stableJsonOf(v, omit) {
+  return JSON.stringify(v, (k, x) => (omit && omit.has(k)) ? undefined
+    : (x && typeof x === 'object' && !Array.isArray(x))
+      ? Object.keys(x).sort().reduce((o, kk) => { o[kk] = x[kk]; return o; }, {}) : x);
 }
-// Does the form hold exactly the saved unit — everything Save & New would write
-// (performSaveAndNew)? A card open or shut and the preview thumbnails don't
+// Is the form a saved unit with nothing of the tech's on it? Build 140: measured
+// against the form as it stood once the unit was opened (noteFormOpened), not
+// against the saved unit rebuilt field by field — a unit an older build saved
+// never matched that: a sketch from before build 122 has no label rule, opening
+// fills in defaults the cards then show (a blank electrical verification →
+// Controls, a chilled-water drain), an imported unit keeps untrimmed text. What
+// opening puts on the form is the unit's; only what the tech does after counts.
+// After a relaunch only the fingerprint is known (the autosave's openedHash).
+// Without a baseline — a form autosaved by build 139 or earlier, or a unit that
+// turned up in the list while open — it is the saved unit, as build 139 did.
+// Anything it can't read is a change, so a real edit is never closed unsaved.
+function formIsUnchangedEdit(target) {
+  target = target || formEditTarget();
+  if (!target) return false;
+  const b = _openBaseline;
+  if (b && b.opening) return false;   // still being opened (editSaved): decided once it is
+  if (!b || !sameEntryId(b.entryId, target.id)) return formMatchesSavedEntry(target);
+  try {
+    const json = formCompareJson();
+    if (b.json != null) return json === b.json;
+    if (b.last && b.last.json === json) return b.last.same;   // the same form as last asked: no second hash
+    const same = OPENED_HASH_FORMAT + textHash(json) === b.hash;
+    if (same) b.json = json;   // this is the form as opened
+    else b.last = { json, same };
+    return same;
+  } catch (e) {
+    console.warn('formIsUnchangedEdit', e);
+    return false;
+  }
+}
+// The form has just been loaded with its saved unit (editSaved): the baseline.
+function noteFormOpened() {
+  _openBaseline = null;
+  if (!currentEntryId) return;
+  try {
+    const json = formCompareJson();
+    _openBaseline = { entryId: normEntryId(currentEntryId), json, hash: OPENED_HASH_FORMAT + textHash(json) };
+  } catch (e) { console.warn('noteFormOpened', e); }
+}
+// Everything Save & New writes (performSaveAndNew), the form's or a saved
+// unit's, as one string. A card open or shut and the preview thumbnails don't
 // count; the facility stamp, the first-save date and the exported stamps are the
-// saved unit's own and are kept by a save anyway. Anything it can't read is a
-// change, so a real edit is never closed unsaved.
+// saved unit's own and are kept by a save anyway. The sketch goes as it is, its
+// keys unsorted: the app writes every point the same way, and sorting thousands
+// of them was most of the cost of a check run on every keystroke.
+const FORM_COMPARE_OMIT = new Set(['collapsed', 'thumbnail']);
+function unitCompareJson(u) {
+  const ph = Object.assign({}, u.photos || {});
+  dropStaleSourceRefs(ph, u.sources || []);
+  Object.keys(ph).forEach(k => { if (!ph[k]) delete ph[k]; });
+  const s = v => String(v == null ? '' : v);
+  return stableJsonOf({
+    equipType: s(u.equipType), equipName: s(u.equipName).trim(), lotoId: s(u.lotoId).trim(),
+    equipRoom: s(u.equipRoom), equipBuilding: s(u.equipBuilding), template: s(u.template),
+    tiedTo: s(u.tiedTo), tiedToName: s(u.tiedToName).trim(), notes: s(u.notes).trim(),
+    unitAnswers: answersAsSaved(u.unitAnswers), sources: u.sources || [], photos: ph,
+    miscPhotos: u.miscPhotos || [], surveyDate: s(u.surveyDate)
+  }, FORM_COMPARE_OMIT) + '|' + JSON.stringify(u.sketch || null);
+}
+// The form, shaped as a saved unit
+function formAsUnit() {
+  const val = id => (document.getElementById(id) || {}).value || '';
+  return {
+    equipType: getEquipType(), equipName: val('equipName'), lotoId: val('equipLotoId'),
+    equipRoom: val('equipRoom'), equipBuilding: getBuilding(), template: getTemplate(),
+    tiedTo: val('equipTiedTo'), tiedToName: val('equipTiedToName'), notes: val('equipNotes'),
+    unitAnswers, sources, photos, miscPhotos, sketch: getSketchData(), surveyDate: surveyDateFieldValue()
+  };
+}
+function formCompareJson() { return unitCompareJson(formAsUnit()); }
+// The fingerprint names the shape it was taken of (build 140 review): bump it
+// whenever unitCompareJson changes what it holds, and a form autosaved by the
+// build before is judged against its saved unit instead of a fingerprint that
+// can no longer match — which would bring an unchanged unit back as an edit.
+const OPENED_HASH_FORMAT = 'f1.';
+// A short fingerprint of a string, with its length (cyrb53: 53 bits, not cryptographic).
+function textHash(str) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return str.length.toString(36) + '.' + (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+// Build 139's test: does the form hold exactly the saved unit, as stored? For a
+// form with no baseline only (see formIsUnchangedEdit). The survey date: the
+// form's box, else the unit's own date, as a save takes it.
 function formMatchesSavedEntry(entry) {
   if (!entry) return false;
   try {
-    const val = id => (document.getElementById(id) || {}).value || '';
-    const srcs = list => (list || []).map(s => { const c = JSON.parse(JSON.stringify(s || {})); delete c.collapsed; return c; });
-    const ref = r => { if (!r || typeof r !== 'object') return r || null; const { thumbnail, ...rest } = r; return rest; };
-    const refs = (map, list) => {
-      const c = Object.assign({}, map || {});
-      dropStaleSourceRefs(c, list || []);
-      const o = {};
-      Object.keys(c).forEach(k => { if (c[k]) o[k] = ref(c[k]); });
-      return o;
-    };
-    const form = {
-      equipType: getEquipType(), equipName: val('equipName').trim(), lotoId: val('equipLotoId').trim(),
-      equipRoom: val('equipRoom'), equipBuilding: getBuilding(), template: getTemplate(),
-      tiedTo: val('equipTiedTo'), tiedToName: val('equipTiedToName').trim(), notes: val('equipNotes').trim(),
-      unitAnswers: savedUnitAnswers(), sources: srcs(sources), photos: refs(photos, sources),
-      miscPhotos: (miscPhotos || []).map(ref), sketch: getSketchData() || null,
-      surveyDate: surveyDateFieldValue() || getEntryDate(entry) || ''
-    };
-    const saved = {
-      equipType: entry.equipType || '', equipName: entry.equipName || '', lotoId: entry.lotoId || '',
-      equipRoom: entry.equipRoom || '', equipBuilding: entry.equipBuilding || '', template: entry.template || '',
-      tiedTo: entry.tiedTo || '', tiedToName: entry.tiedToName || '', notes: entry.notes || '',
-      unitAnswers: entry.unitAnswers || {}, sources: srcs(entry.sources), photos: refs(entry.photos, entry.sources),
-      miscPhotos: (entry.miscPhotos || []).map(ref), sketch: entry.sketch || null,
-      surveyDate: getEntryDate(entry) || ''
-    };
-    return stableJsonOf(form) === stableJsonOf(saved);
+    const day = getEntryDate(entry) || '';
+    const form = formAsUnit();
+    if (!form.surveyDate) form.surveyDate = day;
+    return unitCompareJson(form) === unitCompareJson(Object.assign({}, entry, { surveyDate: day }));
   } catch (e) {
     console.warn('formMatchesSavedEntry', e);
     return false;
   }
 }
-// Close a form that holds exactly its saved unit: nothing is saved, and the next
-// unit starts with its building and room, as after Save & New.
-function closeUnchangedEdit() {
+// What Save & New settles on every unit it writes, put right on a saved unit it
+// closes unchanged instead (build 140; before, opening an older unit and tapping
+// Save & New fixed these): each source an id of its own — an older Duplicate
+// copy shared one, and the later copy gets a fresh id and keeps the old one in
+// priorSourceIds, so the photo shot under it still binds — the facility stamp,
+// and the survey date the unit already shows (a unit from before build 109).
+// Nothing the sheet shows changes, so the exported stamps stay. True if any did.
+function settleSavedUnit(entry) {
+  if (!entry) return false;
+  let changed = false;
+  const seen = new Set();
+  (entry.sources || []).forEach(src => {
+    if (!src) return;
+    if (src.sourceId && seen.has(src.sourceId)) {
+      (src.priorSourceIds = src.priorSourceIds || []).push(src.sourceId);
+      delete src.sourceId;
+    }
+    if (!src.sourceId) { ensureSourceId(src); changed = true; }
+    seen.add(src.sourceId);
+  });
+  if (!entry.hospitalCode && getHospitalCode()) { entry.hospitalCode = getHospitalCode(); changed = true; }
+  if (!isIsoDay(entry.surveyDate)) { const day = getEntryDate(entry); if (day) { entry.surveyDate = day; changed = true; } }
+  return changed;
+}
+// Would the tech lose anything by leaving the form? Not with a saved unit only
+// looked at (build 140): opening another unit, Duplicate and Clear ask only then.
+function formHasUnsavedWork() { return formHasData() && !formIsUnchangedEdit(); }
+// The next unit, after a save or an unchanged unit closed: a blank form that
+// keeps the building and room.
+function startNextUnit() {
   const building = getBuilding(), room = document.getElementById('equipRoom').value;
   clearForm(false);
   setBuilding(building || '');
@@ -13401,7 +13492,7 @@ function closeUnchangedEdit() {
 function clearForm(confirm_first = true) {
   if (confirm_first) {
     if (refuseIfPhotoWritesBusy('clear the form')) return;
-    if (formHasData()) {
+    if (formHasUnsavedWork()) {
       const msg = editingEntry
         ? `Discard edits to "${editingEntry.equipName}"? (The original saved entry will be preserved.)`
         : 'Clear current form? Unsaved data will be lost.';
@@ -13919,9 +14010,10 @@ function editSaved(index) {
   // Never switch forms under a photo that is still saving (build 89)
   if (refuseIfPhotoWritesBusy('open another entry')) return;
 
-  // Check if current form has unsaved data (photos alone count)
+  // Check if current form has unsaved data (photos alone count; a saved unit
+  // only looked at has none — build 140)
   const currentName = document.getElementById('equipName').value.trim();
-  if (formHasData()) {
+  if (formHasUnsavedWork()) {
     const currentDesc = editingEntry ? `edits to "${editingEntry.equipName}"` : `unsaved entry "${currentName || 'unnamed'}"`;
     const confirmMsg = editingEntry
       ? `Discard ${currentDesc} (original preserved) and edit "${savedEquipment[index].equipName}"?`
@@ -13939,6 +14031,9 @@ function editSaved(index) {
   if (!isValidEntryId(entry.id)) { if (entry.id) entry.legacyId = String(entry.id); entry.id = genUuid(); saveAll(); }
   else if (typeof entry.id !== 'string') { entry.id = normEntryId(entry.id); saveAll(); }
   currentEntryId = entry.id;
+  // Until the cards have rendered and noteFormOpened has the baseline, the form
+  // counts as an edit (build 140 review): its autosaves don't run the check
+  _openBaseline = { entryId: normEntryId(entry.id), opening: true };
   
   // Restore equipment type "" check if it's a custom value
   if (entry.equipType && !DATA.equipmentTypes.includes(entry.equipType)) {
@@ -14008,17 +14103,20 @@ function editSaved(index) {
   renderSources();
   renderMiscPhotos();
   updateHeaderBadge();
+  noteFormOpened();   // the form as opened is what "unchanged" means (build 140)…
+  autoSaveCurrent();  // …and the autosave carries it, for a relaunch
 
   // Scroll to form
   document.querySelector('.equipment-section').scrollIntoView({ behavior: 'smooth' });
-  showToast(`Editing "${entry.equipName}" (original preserved until you Save & New)`);
+  showToast(`Opened "${entry.equipName}" \u2014 it stays as saved unless you change something`);   // build 140 review: it no longer said so
 }
 
 function duplicateSaved(index) {
   if (refuseIfPhotoWritesBusy('duplicate')) return;
-  // Check if current form has unsaved data (photos alone count)
+  // Check if current form has unsaved data (photos alone count; a saved unit
+  // only looked at has none — build 140)
   const currentName = document.getElementById('equipName').value.trim();
-  if (formHasData()) {
+  if (formHasUnsavedWork()) {
     if (!confirm(`Current form has unsaved data ("${currentName || 'unnamed'}"). Discard and duplicate "${savedEquipment[index].equipName}"?`)) return;
   }
 
@@ -16274,6 +16372,8 @@ function buildWipState() {
     sketch: getSketchData()
   };
   if (!state.entryId && wipHasContent(state)) state.entryId = ensureCurrentEntryId();
+  // the form as opened (build 140), while it is still that unit
+  if (_openBaseline && _openBaseline.hash && state.entryId && sameEntryId(_openBaseline.entryId, state.entryId)) state.openedHash = _openBaseline.hash;
   return state;
 }
 const wipJson = (st) => JSON.stringify(Object.assign({}, st, { at: null }));
@@ -17265,6 +17365,9 @@ async function loadAll() {
     // id. (editingEntry itself doesn't survive a reload — that is how a reload
     // mid-edit used to save a SECOND copy of the entry.)
     editingEntry = currentEntryId ? (savedEquipment.find(e => sameEntryId(e.id, currentEntryId)) || null) : null;
+    // the form as it was opened, when the autosave knows it (build 140)
+    _openBaseline = (editingEntry && String(state.openedHash || '').startsWith(OPENED_HASH_FORMAT))
+      ? { entryId: currentEntryId, json: null, hash: String(state.openedHash) } : null;
     document.getElementById('equipType').value = state.equipType || '';
     filterTemplateDropdown(state.equipType === '** New Equipment Type **' ? '' : (state.equipType || ''));
 
@@ -17339,9 +17442,9 @@ async function loadAll() {
   // A saved unit that was only looked at isn't reopened as the form (build 139):
   // the launch starts a new unit, and the list still has it. Only from the slot
   // this launch read and decided on — never a copy it couldn't read.
-  if (state && editingEntry && !_wipUnread && !_wipSupersedeOnSave && !_wipHold && !_bootLoadTimedOut && formMatchesSavedEntry(editingEntry)) {
+  if (state && editingEntry && !_wipUnread && !_wipSupersedeOnSave && !_wipHold && !_bootLoadTimedOut && formIsUnchangedEdit(editingEntry)) {
     const name = editingEntry.equipName || 'The unit';
-    closeUnchangedEdit();
+    startNextUnit();
     setTimeout(() => showToast('\u201c' + name + '\u201d was open, unchanged \u2014 it stays as saved. Here is a new unit; tap it in the saved list to open it again.'), 600);
   }
   _bootWipJson = wipJson(buildWipState());
