@@ -119,6 +119,10 @@
 //             the saved value, the unit's own facility, replace / remove, which column, refusals); its review
 //             (title rows and "Bldg 100" values are no heading, 0000-formatted numbers, other files, launch, Custom)
 //   T432      build 142: a card opened or closed with a box still focused lets the box go first and stays put
+//   T433–T436 build 143 (the build 142 review): building names from "Building Name", more headings, other CSVs, formula
+//             zeros, hidden sheets; replaced / removed building lists kept and put back; any tap on the list lets a typed
+//             box go first and follows its row; the hold stops for the tech; "Not yet exported" and the saved-twice guard;
+//             the summary counts the facility picked
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -260,6 +264,7 @@
     lsKill.forEach(k => localStorage.removeItem(k));
     localStorage.removeItem('photoSeqNext');
     localStorage.removeItem('loto_building_lists');   // build 142: no facility's building list carries over
+    localStorage.removeItem('loto_building_lists_earlier');   // …nor its earlier lists (build 143)
     // clear the form exactly as the app does (repaints the photo slots, clears
     // building/room, autosaves the blank form so a relaunch doesn't restore a
     // test form), then refresh the header count
@@ -9200,18 +9205,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 142 (was build 122\'s): APP_BUILD and the header label say 142, the service worker\'s cache is loto-collector-v7.137, Xcode\'s CURRENT_PROJECT_VERSION is 142 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 143 (was build 122\'s): APP_BUILD and the header label say 143, the service worker\'s cache is loto-collector-v7.138, Xcode\'s CURRENT_PROJECT_VERSION is 143 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 142 && !!label && +label[1] === 142, 'the build');
+    want(APP_BUILD === 143 && !!label && +label[1] === 143, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.137', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.138', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 142;,CURRENT_PROJECT_VERSION = 142;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 143;,CURRENT_PROJECT_VERSION = 143;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -14068,7 +14073,7 @@
 
   // T429 — the menu is the unit's own facility's; a building off the list shows as typed; replace; remove
   async function t429_theBuildingMenuFollowsTheUnitsFacility() {
-    const N = 'T429 build 142: the Building menu lists the form\'s facility\'s buildings — the setting\'s for a new unit, the unit\'s own stamp for a saved one (a Palo Alto unit opened while the iPad is set to Marion shows Palo Alto\'s list); Settings Save to another facility swaps it, keeping the form\'s building (typed when not listed); a saved building not on the list shows as typed; a second import says it replaces the list; Remove list (confirmed) brings the plain menu back, and saved units keep their buildings';
+    const N = 'T429 build 142: the Building menu lists the form\'s facility\'s buildings — the setting\'s for a new unit, the unit\'s own stamp for a saved one (a Palo Alto unit opened while the iPad is set to Marion shows Palo Alto\'s list); Settings Save to another facility swaps it, keeping the form\'s building (typed when not listed); a saved building not on the list shows as typed; a second import says it replaces the list (since build 143: and keeps it under Earlier lists); Remove list (confirmed) brings the plain menu back, and saved units keep their buildings';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -14102,7 +14107,7 @@
       // replace
       setHospitalCode('Palo Alto'); renderBuildingOptions();
       const r = await importBuildings('Palo Alto', await xlsxFile('pa2.xlsx', [['Building'], ['100'], ['102'], ['103']]), 'use');
-      want(/replaces the current list of 2/.test(String((r.asked || {}).html || '')) && buildingListFor('Palo Alto').map(x => x.v).join() === '100,102,103', 'a second import replaces: ' + buildingListFor('Palo Alto').map(x => x.v).join());
+      want(/current list of 2 is kept under Earlier lists/.test(String((r.asked || {}).html || '')) && buildingListFor('Palo Alto').map(x => x.v).join() === '100,102,103', 'a second import replaces: ' + buildingListFor('Palo Alto').map(x => x.v).join());
       want(buildingMenu().map(x => x.split('=')[0]).join() === ',100,102,103,** Custom Building **', 'the menu follows the new list');
       // remove
       showSettings();
@@ -14236,6 +14241,241 @@
     got.plain = [b2, cardAt(5).getBoundingClientRect().top].join(' | ');
     want(Math.abs(cardAt(5).getBoundingClientRect().top - b2) <= 1, 'no box focused: in place: ' + got.plain);
     window.scrollTo(0, 0);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T433 — build 142 review: real inventories (the names beside the buildings, more headings, other CSVs, formulas, hidden sheets)
+  async function t433_theBuildingImportReadsRealInventories() {
+    const N = 'T433 build 143 (build 142 review): the names beside the buildings come from "Building Name", never a Facility Name or an Occupancy Use beside it; "Bldg Nbr", "Building:", "Bldg ID#" and "Building Number (VA)" are headings; a semicolon CSV and a Windows-1252 CSV import; a building column of formulas formatted 0000 keeps its zeros; a hidden sheet ahead of the list is passed over';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const vals = (code) => buildingListFor(code).map(x => x.v + (x.label ? ':' + x.label : '')).join('|');
+    const restore = withFacility('Palo Alto');
+    try {
+      const r = await importBuildings('Palo Alto', await xlsxFile('inv.xlsx', [['Station', 'Facility Name', 'Building Number', 'Occupancy Use', 'Building Name'],
+        ['640', 'Palo Alto VA HCS', '100', 'I-2', 'Main Hospital'], ['640', 'Palo Alto VA HCS', '101', 'B', 'Clinic']]), 'use');
+      got.inventory = vals('Palo Alto') + ' / ' + String((r.asked || {}).html || '').replace(/<[^>]+>/g, '').slice(0, 80);
+      want(vals('Palo Alto') === '100:Main Hospital|101:Clinic' && /column Building Number, names from Building Name/.test(got.inventory), 'the names: ' + got.inventory);
+      const heads = {};
+      for (const h of ['Bldg Nbr', 'Building:', 'Bldg ID#', 'Building Number (VA)']) {
+        await importBuildings('Marion', await xlsxFile('h.xlsx', [['Station', h, 'Description'], ['640', '7', 'Boiler Plant']]), 'use');
+        heads[h] = vals('Marion');
+      }
+      got.heads = heads;
+      want(Object.values(heads).every(v => v === '7:Boiler Plant'), 'the headings: ' + JSON.stringify(heads));
+      await importBuildings('Kansas City', new File(['Building;Name\r\n4;East Wing\r\n5;Garage\r\n'], 'semi.csv', { type: 'text/csv' }), 'use');
+      got.semicolon = vals('Kansas City');
+      want(got.semicolon === '4:East Wing|5:Garage', 'a semicolon CSV: ' + got.semicolon);
+      // "Café – Annex" as Excel for Windows saves a plain CSV: é = E9, the en dash = 96
+      const enc = (t) => [...new TextEncoder().encode(t)];
+      const ansi = new Uint8Array(enc('Building,Name\r\n9,Caf').concat([0xE9, 0x20, 0x96, 0x20], enc('Annex\r\n')));
+      await importBuildings('Atlanta', new File([ansi], 'ansi.csv', { type: 'text/csv' }), 'use');
+      got.ansi = vals('Atlanta');
+      want(got.ansi === '9:Café – Annex', 'a Windows-1252 CSV: ' + got.ansi);
+      // formulas formatted 0000, behind a hidden sheet with text of its own
+      const wb = new ExcelJS.Workbook();
+      const hidden = wb.addWorksheet('Lookup', { state: 'hidden' });
+      hidden.addRow(['Code']); hidden.addRow(['ZZZ']);
+      const ws = wb.addWorksheet('Buildings');
+      ws.addRow(['Building', 'Building Name']);
+      ws.addRow([{ formula: 'Lookup!B9', result: 45 }, 'Main']);
+      ws.addRow([{ formula: '3+4', result: 7 }, 'Annex']);
+      ws.getCell('A2').numFmt = '0000'; ws.getCell('A3').numFmt = '0000';
+      await importBuildings('Palo Alto', new File([await wb.xlsx.writeBuffer()], 'formulas.xlsx', { type: XLSX_TYPE }), 'use');
+      got.formula = vals('Palo Alto');
+      want(got.formula === '0045:Main|0007:Annex', 'formulas formatted 0000, the hidden sheet passed over: ' + got.formula);
+    } finally { restore(); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T434 — build 142 review (nothing on the device is overwritten): a replaced or removed building list is kept
+  async function t434_aReplacedOrRemovedBuildingListIsKept() {
+    const N = 'T434 build 143 (build 142 review): a second import keeps the list it replaces under Earlier lists, and its preview says so; Earlier lists… puts one back and keeps the current list in its place; Remove list keeps the list; the same list is kept once, five a facility, a re-import of the list in the menu keeps nothing; when the list it would take away cannot be kept (storage full), an import and Remove change nothing';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const restore = withFacility('Palo Alto');
+    const cur = () => buildingListFor('Palo Alto').map(x => x.v).join(',');
+    const earlier = () => earlierBuildingListsFor('Palo Alto').map(x => x.items.map(i => i.v).join(',')).join(' / ');
+    const list = (name, ...vs) => xlsxFile(name, [['Building']].concat(vs.map(v => [v])));
+    const realSet = Storage.prototype.setItem;
+    try {
+      await importBuildings('Palo Alto', await list('a.xlsx', 'A1', 'A2'), 'use');
+      const r = await importBuildings('Palo Alto', await list('b.xlsx', 'B1'), 'use');
+      got.replaced = [cur(), earlier(), /current list of 2 is kept under Earlier lists/.test(String((r.asked || {}).html || '')), r.summary].join(' | ');
+      want(/^B1 \| A1,A2 \| true \| .*1 earlier list kept\.$/.test(got.replaced), 'a second import keeps the first: ' + got.replaced);
+      showSettings();
+      document.getElementById('settingsHospital').value = 'Palo Alto'; onHospitalSelectChange();
+      const shown = document.getElementById('settingsBuildingsEarlier').style.display !== 'none';
+      let asked = null;
+      await withToasts(async () => { await withDialogs({ choice: (o) => { asked = o; return 'k0'; } }, async () => { await putBackEarlierBuildingList(); }); });
+      got.putBack = [shown, asked && asked.id, asked && (asked.choices || []).map(c => c.label.replace(/ \(until .*\)$/, '')).join(' + '), cur(), earlier(),
+        buildingMenu().map(x => x.split('=')[0]).join()].join(' | ');
+      want(got.putBack === 'true | building-earlier | 2 buildings — a.xlsx + Cancel | A1,A2 | B1 | ,A1,A2,** Custom Building **', 'Earlier lists… puts one back: ' + got.putBack);
+      await withDialogs({ confirm: true }, async () => { removeBuildingListForSettingsFacility(); });
+      got.removed = [cur(), earlier(), document.getElementById('settingsBuildingsEarlier').style.display].join(' | ');
+      want(got.removed === ' | A1,A2 / B1 | ', 'Remove keeps the list: ' + got.removed);
+      closeSettings();
+      for (const k of [1, 2, 3, 4, 5, 6]) await importBuildings('Palo Alto', await list('n.xlsx', 'N' + k), 'use');
+      got.five = earlier();
+      await importBuildings('Palo Alto', await list('n.xlsx', 'N6'), 'use');
+      got.again = earlier();
+      await importBuildings('Palo Alto', await list('n.xlsx', 'N5'), 'use');
+      got.once = [cur(), earlier()].join(' | ');
+      want(got.five === 'N5 / N4 / N3 / N2 / N1' && got.again === got.five && got.once === 'N5 | N6 / N4 / N3 / N2 / N1',
+        'five a facility, the list in the menu kept nowhere else, a re-import keeps nothing: ' + [got.five, got.again, got.once].join(' || '));
+      // storage full for the earlier lists: nothing changes
+      Storage.prototype.setItem = function (k, v) { if (k === 'loto_building_lists_earlier') throw new DOMException('full', 'QuotaExceededError'); return realSet.call(this, k, v); };
+      const full = await importBuildings('Palo Alto', await list('c.xlsx', 'C1'), 'use');
+      showSettings();
+      document.getElementById('settingsHospital').value = 'Palo Alto'; onHospitalSelectChange();
+      const rm = await withToasts(async () => { await withDialogs({ confirm: true }, async () => { removeBuildingListForSettingsFacility(); }); });
+      closeSettings();
+      Storage.prototype.setItem = realSet;
+      got.full = [cur(), earlier(), full.toasts.join(' / '), rm.join(' / ')].join(' | ');
+      want(cur() === 'N5' && earlier() === 'N6 / N4 / N3 / N2 / N1' && /could not be kept/.test(full.toasts.join()) && /could not be kept/.test(rm.join()),
+        'storage full: nothing changes: ' + got.full);
+    } finally { Storage.prototype.setItem = realSet; restore(); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T435 — build 142 review: every tap on the source list lets a typed box go first; the row is followed, not its old number
+  async function t435_everyTapOnTheListLetsTheBoxGoFirst() {
+    const N = 'T435 build 143 (build 142 review): ▲ and Go to drive let a box still being typed in go before the list is redrawn, while its row is where it was drawn; a typed equipment type that picks a template on that let-go drops the tap (no error, no other card opened), by a tap or a direct call; the card is held while a keyboard closes but not once the tech touches the page, and not at all after a select had the focus';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const errors = [];
+    const onErr = (e) => errors.push(String((e && e.message) || e));
+    window.addEventListener('error', onErr);
+    const cardAt = (i) => document.querySelectorAll('#sourcesContainer > .source-card')[i];
+    const twelve = (name) => {
+      fillFormNoSources(name);
+      for (let k = 0; k < 12; k++) sources.push(Object.assign(mkSrc('Electrical'), { location: 'Panel ' + k, collapsed: k < 11 }));
+      sources.forEach(ensureSourceId);
+      renderSources();
+    };
+    const watchBlur = (box, note) => { box.blur = function () { note(document.body.contains(this)); HTMLElement.prototype.blur.call(this); }; };
+    try {
+      // ▲ on card 5 with the last card's box focused
+      twelve('S-435');
+      const row5 = sources[5], row11 = sources[11];
+      let atBlur = null;
+      const box = document.getElementById('src_detail_11');
+      box.focus();
+      watchBlur(box, (inPage) => { atBlur = [inPage, sources.indexOf(row5), sources.indexOf(row11)].join(','); });
+      const up = [...cardAt(5).querySelectorAll('button')].find(b => b.textContent.trim() === '▲');
+      if (up) up.click();
+      got.move = [!!up, atBlur, sources.indexOf(row5), document.activeElement === box].join(' | ');
+      want(got.move === 'true | true,5,11 | 4 | false', '▲ lets the box go first, its row where it was drawn: ' + got.move);
+      // Go to drive / feeder (goToSource) with a box focused
+      await sleep(700);
+      const box2 = document.getElementById('src_detail_11');
+      box2.focus();
+      let goBlur = null;
+      watchBlur(box2, (inPage) => { goBlur = inPage; });
+      goToSource(2);
+      got.goTo = [goBlur, !sources[2].collapsed, document.activeElement === box2].join(' | ');
+      want(got.goTo === 'true | true | false', 'Go to lets the box go first: ' + got.goTo);
+      // a typed equipment type that picks a template when let go
+      for (const how of ['tap', 'call']) {
+        await sleep(700);
+        await resetAppState();
+        fillFormNoSources('T-435-' + how);
+        document.getElementById('equipType').value = '** New Equipment Type **';
+        document.getElementById('customEquipTypeGroup').style.display = 'flex';
+        for (let k = 0; k < 5; k++) sources.push({ energySource: '', deviceType: '', quantity: 1, location: '', duplicate: 'No', verification: '', detail: '', collapsed: true });
+        renderSources();
+        const typed = document.getElementById('equipTypeCustom');
+        typed.focus();
+        document.execCommand('insertText', false, 'Lab Vacuum Pump');
+        await withDialogs({ choice: () => 'cancel', confirm: true }, async () => {
+          if (how === 'tap') { const s = cardAt(4) && cardAt(4).querySelector('.source-summary'); if (s) s.click(); }
+          else expandSource(4);
+        });
+        closeAllPrompts();
+        got['template_' + how] = [getTemplate(), sources.length, sources.filter(s => !s.collapsed).length, errors.length].join(' | ');
+        want(getTemplate() === 'Lab Vacuum' && sources.every(s => s.collapsed) && !errors.length,
+          'a template picked on the let-go drops the ' + how + ': ' + got['template_' + how] + (errors.length ? ' ' + errors.join(' / ') : ''));
+      }
+      // the hold stops once the tech touches the page
+      await sleep(700);
+      twelve('H-435');
+      window.scrollTo(0, document.getElementById('sourcesContainer').getBoundingClientRect().top + window.scrollY - 40);
+      document.getElementById('src_detail_11').focus();
+      expandSource(3);
+      await sleep(80);
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      window.scrollBy(0, 150);
+      const flicked = window.scrollY;
+      await sleep(500);
+      got.touched = [flicked, window.scrollY].join(' | ');
+      want(Math.abs(window.scrollY - flicked) <= 1, 'a touch stops the hold: ' + got.touched);
+      // a select had the focus: no keyboard, no later hold
+      await sleep(700);
+      window.scrollTo(0, document.getElementById('sourcesContainer').getBoundingClientRect().top + window.scrollY - 40);
+      const sel = cardAt(11).querySelector('select');
+      if (sel) sel.focus();
+      expandSource(5);
+      await sleep(80);
+      window.scrollBy(0, 150);
+      const scrolled = window.scrollY;
+      await sleep(500);
+      got.select = [!!sel, scrolled, window.scrollY].join(' | ');
+      want(!!sel && Math.abs(window.scrollY - scrolled) <= 1, 'after a select, no later hold: ' + got.select);
+      window.scrollTo(0, 0);
+    } finally { window.removeEventListener('error', onErr); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T436 — build 141 review: a copy of a unit saved twice never goes alone; the summary counts the facility picked
+  async function t436_anOutdatedCopyNeverGoesAloneAndTheSummaryCountsTheFacility() {
+    const N = 'T436 build 143 (build 141 review): an older copy of a unit saved twice under one id is not "Not yet exported" once the newer copy was exported, and an export that picks it alone asks and sends nothing; with a facility picked, "Only the N not yet exported go" counts that facility\'s units and dates';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const at = n => { const d = new Date(); d.setDate(d.getDate() - n); d.setHours(10, 0, 0, 0); return d.toISOString(); };
+    fillForm('TW-436');
+    const A = saveEntry();
+    const B = JSON.parse(JSON.stringify(A));
+    A.savedAt = at(3); delete A.updatedAt; A.surveyDate = dayAgo(3);
+    Object.assign(B, { savedAt: at(2), surveyDate: dayAgo(2), notes: 'newer', exportedAt: at(1), exportedAllPhotos: true, firstExportedAt: at(1) });
+    delete B.updatedAt; delete A.exportedAt; delete A.exportIncompleteAt; delete A.firstExportedAt;
+    savedEquipment.push(B);
+    saveAll();
+    showExportDialog();
+    const opt = [...document.getElementById('exportDateFilter').options].find(o => o.value === 'unexported');
+    closeExportDialog();
+    got.option = opt ? opt.textContent : '(none)';
+    want(!opt, 'the older copy is not "Not yet exported": ' + got.option);
+    const { zip, confirms } = await runExport({ confirmResponse: true, dateFilter: dayAgo(3) });
+    got.alone = [!!zip, confirms.filter(c => /saved TWICE/.test(c)).length, confirms.some(c => /none when that copy is not part of this export/.test(c))].join(' | ');
+    want(got.alone === 'false | 1 | true', 'picked alone, it asks and sends nothing: ' + got.alone);
+    // the summary counts the facility picked
+    await resetAppState();
+    const restore = withFacility('Palo Alto');
+    try {
+      fillForm('P1-436'); saveEntry(); fillForm('P2-436'); saveEntry();
+      setHospitalCode('Atlanta');
+      fillForm('A1-436'); const a1 = saveEntry(); fillForm('A2-436'); saveEntry(); fillForm('A3-436'); saveEntry();
+      a1.surveyDate = dayAgo(1); saveAll();
+      clearForm(false);
+      showExportDialog();
+      const dsel = document.getElementById('exportDateFilter'), fsel = document.getElementById('exportFacilityFilter');
+      dsel.value = 'unexported'; populateExportFacilityFilter();
+      fsel.value = 'Palo Alto'; updateExportDateSummary();
+      const pa = (document.getElementById('exportDateSummary') || {}).textContent || '';
+      fsel.value = 'Atlanta'; updateExportDateSummary();
+      const atl = (document.getElementById('exportDateSummary') || {}).textContent || '';
+      fsel.value = 'all'; updateExportDateSummary();
+      const all = (document.getElementById('exportDateSummary') || {}).textContent || '';
+      closeExportDialog();
+      got.summary = [pa, atl, all].map(t => t.replace(/\n/g, ' ¶ ')).join(' || ');
+      want(/^2 entries will be exported/.test(pa) && /Only the 2 not yet exported go, on 1 date —/.test(pa)
+        && /^3 entries/.test(atl) && /Only the 3 not yet exported go, on 2 dates —/.test(atl)
+        && /Only the 5 not yet exported go, on 2 dates —/.test(all), 'the summary: ' + got.summary);
+    } finally { restore(); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -14477,7 +14717,9 @@
     t427_notYetExportedSendsOnlyThoseUnitsAndTheirPhotos,
     t428_aFacilitysBuildingListIsImportedAndOffered, t429_theBuildingMenuFollowsTheUnitsFacility,
     t430_theBuildingColumnIsFoundAndBadFilesAreRefused, t431_theBuildingImportReviewFixes,
-    t432_aCardOpensWhereItIsWithABoxStillFocused];
+    t432_aCardOpensWhereItIsWithABoxStillFocused,
+    t433_theBuildingImportReadsRealInventories, t434_aReplacedOrRemovedBuildingListIsKept,
+    t435_everyTapOnTheListLetsTheBoxGoFirst, t436_anOutdatedCopyNeverGoesAloneAndTheSummaryCountsTheFacility];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

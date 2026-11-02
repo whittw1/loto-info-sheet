@@ -526,7 +526,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b142</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b143</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -898,6 +898,7 @@ if ('serviceWorker' in navigator) {
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
           <button type="button" id="settingsBuildingsImport" onclick="pickBuildingListFile()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--input-bg);color:var(--text);font-size:13px;cursor:pointer;">Import from Excel&hellip;</button>
           <button type="button" id="settingsBuildingsRemove" onclick="removeBuildingListForSettingsFacility()" style="display:none;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text-dim);font-size:13px;cursor:pointer;">Remove list</button>
+          <button type="button" id="settingsBuildingsEarlier" onclick="putBackEarlierBuildingList()" style="display:none;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text-dim);font-size:13px;cursor:pointer;">Earlier lists&hellip;</button>
         </div>
         <input type="file" id="buildingListFile" accept=".xlsx,.csv,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" style="display:none;" onchange="importBuildingListFile(this)">
         <div style="font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.4;">An .xlsx or .csv: the column headed Building or Bldg (else the first column); a Name or Description column shows beside each. The Building menu then lists them, with Enter Building for one not listed. Kept on this device only &mdash; import it on each iPad.</div>
@@ -1232,7 +1233,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 142;
+const APP_BUILD = 143;
 
 // ============================================================================
 // DATA
@@ -4536,14 +4537,18 @@ function insertFeederRow(drive, row) {
   return at;
 }
 // "Go to" on a feeder or a drive: that row's card, opened and brought into view.
+// A box still being typed in is let go first, and the card is brought into view
+// again once the keyboard has closed (build 143; see letGoOfBox).
 function goToSource(j) {
-  if (!sources[j]) return;
-  sources[j].collapsed = false;
+  const src = sources[j];
+  if (!src) return;
+  const keyboard = letGoOfBox() || keyboardJustLetGo();
+  if (!sources.includes(src)) return;
+  src.collapsed = false;
   renderSources();
-  setTimeout(() => {
-    const c = document.querySelectorAll('#sourcesContainer > .source-card')[j];
-    if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, 50);
+  const show = () => { const c = srcCardOf(src); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  setTimeout(show, 50);
+  if (keyboard) whileKeyboardCloses(show, [450]);
 }
 
 // ---- The card's header and bands (build 138) -----------------------------------
@@ -8086,6 +8091,46 @@ function setBuildingListFor(code, list) {
   if (list) all[code] = list; else delete all[code];
   try { localStorage.setItem(BUILDING_LISTS_KEY, JSON.stringify(all)); return true; } catch (e) { return false; }
 }
+// The lists a facility had before (build 143 — the build 142 review, after
+// wilkins' rule that nothing on the device is ever overwritten): an import that
+// replaces a list, Remove list and a put-back each keep the list they take away
+// here first, newest first, and Settings → Earlier lists… puts one back. Five a
+// facility, the same list kept once, so this store never crowds out the saved
+// units' own copy in the same storage.
+const BUILDING_EARLIER_KEY = 'loto_building_lists_earlier';
+const BUILDING_EARLIER_MAX = 5;
+function getEarlierBuildingLists() {
+  let v = null;
+  try { v = JSON.parse(localStorage.getItem(BUILDING_EARLIER_KEY) || 'null'); } catch (e) {}
+  return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+}
+function earlierBuildingListsFor(code) {
+  const l = getEarlierBuildingLists()[code || ''];
+  return Array.isArray(l) ? l.filter(x => x && Array.isArray(x.items) && x.items.length) : [];
+}
+function setEarlierBuildingListsFor(code, lists, max) {
+  const all = getEarlierBuildingLists();
+  if (lists.length) all[code] = lists.slice(0, max || BUILDING_EARLIER_MAX); else delete all[code];
+  try { localStorage.setItem(BUILDING_EARLIER_KEY, JSON.stringify(all)); return true; } catch (e) { return false; }
+}
+// Before the menu's list is replaced (by `replacement`'s items) or removed: the
+// current list joins the earlier ones — unless it is the replacement itself.
+// False: it could not be kept, and then nothing may replace or remove it. One
+// over five until the new list is stored (settleEarlierBuildingLists), so the
+// list being put back is never cut before it is in the menu.
+function keepCurrentBuildingList(code, replacement) {
+  const cur = getBuildingLists()[code];
+  if (!cur || !buildingListFor(code).length || JSON.stringify(cur.items) === JSON.stringify(replacement || null)) return true;
+  const same = JSON.stringify(cur.items);
+  const rest = earlierBuildingListsFor(code).filter(x => JSON.stringify(x.items) !== same);
+  return setEarlierBuildingListsFor(code, [Object.assign({}, cur, { until: new Date().toISOString() })].concat(rest), BUILDING_EARLIER_MAX + 1);
+}
+// Once a list is in the menu: no earlier copy of it, and five a facility.
+function settleEarlierBuildingLists(code) {
+  const cur = getBuildingLists()[code], same = cur ? JSON.stringify(cur.items) : null;
+  const all = earlierBuildingListsFor(code), rest = all.filter(x => JSON.stringify(x.items) !== same).slice(0, BUILDING_EARLIER_MAX);
+  if (rest.length !== all.length) setEarlierBuildingListsFor(code, rest);
+}
 function buildingOptionText(it) { return it.label ? it.v + ' — ' + it.label : it.v; }
 // Rebuilds the menu when the form's facility's list differs from what it
 // shows, then shows `value` — or, called with none, the form's building.
@@ -8106,20 +8151,26 @@ function renderBuildingOptions(value) {
   showBuildingValue(show);
 }
 
-// The rows of a picked file as text cells: an .xlsx (its first sheet with any
-// text) or a .csv. An old .xls is refused with what to do.
-function readFileAs(file, how) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result);
-    r.onerror = () => reject(r.error || new Error('the file could not be read'));
-    if (how === 'text') r.readAsText(file); else r.readAsArrayBuffer(file);
-  });
+// The rows of a picked file as text cells: an .xlsx (its first visible sheet
+// with any text) or a .csv. An old .xls is refused with what to do.
+// A .csv is read as UTF-8, else as Windows-1252 — Excel for Windows' plain
+// "CSV" (build 143: its é and – came out as �) — and split on commas, or on the
+// semicolons (or tabs) a European Excel writes when its first line has more.
+function csvTextOf(buf) {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch (e) { return new TextDecoder('windows-1252').decode(buf); }
 }
-function parseCsvRows(text) {
+function csvDelimiterOf(text) {
+  const line = String(text || '').split(/\r\n|\n|\r/).find(l => l.trim()) || '';
+  const count = ch => line.split(ch).length - 1;
+  const c = count(','), s = count(';'), t = count('\t');
+  return (t > c && t >= s) ? '\t' : (s > c ? ';' : ',');
+}
+function parseCsvRows(text, delim) {
   const rows = [];
   let row = [], cell = '', quoted = false;
   text = String(text || '').replace(/^﻿/, '');
+  const sep = delim || csvDelimiterOf(text);
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (quoted) {
@@ -8127,7 +8178,7 @@ function parseCsvRows(text) {
       else if (text[i + 1] === '"') { cell += '"'; i++; }
       else quoted = false;
     } else if (ch === '"') quoted = true;
-    else if (ch === ',') { row.push(cell); cell = ''; }
+    else if (ch === sep) { row.push(cell); cell = ''; }
     else if (ch === '\n' || ch === '\r') {
       if (ch === '\r' && text[i + 1] === '\n') i++;
       row.push(cell); rows.push(row); row = []; cell = '';
@@ -8137,21 +8188,25 @@ function parseCsvRows(text) {
   return rows;
 }
 // A cell as Excel shows it. ExcelJS's text ignores a number's format, so a
-// building kept as the number 45 formatted 0000 ("0045") keeps its zeros here.
+// building kept as the number 45 formatted 0000 ("0045") keeps its zeros here —
+// a formula's result too (build 143: =A2 or a lookup formatted 0000 lost them).
 function sheetCellText(c) {
-  const v = c.value, fmt = String(c.numFmt || '');
+  const raw = c.value, formula = !!(raw && typeof raw === 'object' && 'result' in raw);
+  const v = formula ? raw.result : raw, fmt = String(c.numFmt || '');
   if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && /^0+$/.test(fmt)) return String(v).padStart(fmt.length, '0');
+  if (formula && (typeof v === 'number' || typeof v === 'string')) return String(v);
   return c.text == null ? '' : String(c.text);
 }
 async function readBuildingFileRows(file) {
   const name = String(file.name || '').toLowerCase();
-  if (/\.(csv|txt)$/.test(name)) return parseCsvRows(await readFileAs(file, 'text'));
+  if (/\.(csv|txt)$/.test(name)) return parseCsvRows(csvTextOf(await file.arrayBuffer()));
   if (/\.xls$/.test(name)) throw new Error('it is an old .xls file — save it in Excel as .xlsx (Excel Workbook) and import that');
   if (!/\.xls[xm]$/.test(name)) throw new Error('it is not an .xlsx or .csv file — save or export the list as one of those and import that');
   if (typeof ExcelJS === 'undefined') throw new Error('the Excel library is not loaded — restart the app');
   const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(await readFileAs(file, 'buffer'));
+  await wb.xlsx.load(await file.arrayBuffer());
   for (const ws of wb.worksheets) {
+    if (ws.state && ws.state !== 'visible') continue;   // a hidden lookup sheet is not the list (build 143)
     const rows = [];
     ws.eachRow({ includeEmpty: true }, (row, r) => {
       const cells = [];
@@ -8165,12 +8220,28 @@ async function readBuildingFileRows(file) {
 }
 // Which column holds the buildings: the first headed Building / Bldg (in the
 // first 10 rows) that isn't a name column ("Building Name" counts only when it
-// is the one there); a column headed Name / Description / Use beside it is
-// shown with each. No such heading: the first column with any text, every row.
+// is the one there). No such heading: the first column with any text, every row.
 // A heading is the whole cell — "Bldg #", "Building No.", "BLDG_NO", "Building
-// Name" — so a title row ("Building List") or a value ("Bldg 100") never is one.
-const BUILDING_HEAD = /^(bldg|building)s?\.?[\s_#-]*(no|num|number|id|code|name|names|description)?\.?$/i;
-const BUILDING_NAME_HEAD = /(^|[^a-z])(name|description|desc|use|function|title)([^a-z]|$)/i;
+// Name", and since build 143 "Bldg Nbr", "Building:", "Bldg ID#", "Building
+// Number (VA)" — so a title row ("Building List") or a value ("Bldg 100") never is one.
+const BUILDING_HEAD = /^(bldg|building)s?\.?[\s_#-]*(no|nbr|num|number|id|code|name|names|description)?\.?[\s_#:-]*(\([a-z .]*\))?[\s:]*$/i;
+const BUILDING_NAME_HEAD = /(^|[^a-z])(names?|descriptions?|desc|use|function|title)([^a-z]|$)/i;
+// The names shown beside the buildings: a "Building Name" first, then a Name /
+// Description, then a Use / Function / Title column, the nearest after the
+// building column before one ahead of it — never a column that names something
+// else (build 143: "Facility Name" ahead of "Building Number" put the
+// facility's name beside every building).
+const NAME_WORD_HEAD = /(^|[^a-z])(names?|descriptions?|desc)([^a-z]|$)/i;
+const OTHER_PLACE_HEAD = /(^|[^a-z])(facility|facilities|station|site|campus|hospital|vamc|division|city|state|county|region|district|owner|contact)([^a-z]|$)/i;
+function buildingLabelColumn(cells, vCol, buildingCols) {
+  let best = -1, bestRank = -1;
+  cells.forEach((t, k) => {
+    if (k === vCol || !BUILDING_NAME_HEAD.test(t) || OTHER_PLACE_HEAD.test(t)) return;
+    const rank = (buildingCols.includes(k) ? 4 : 0) + (NAME_WORD_HEAD.test(t) ? 2 : 0) + (k > vCol ? 1 : 0);
+    if (rank > bestRank) { best = k; bestRank = rank; }
+  });
+  return best;
+}
 function buildingListFromRows(rows) {
   const clean = x => String(x == null ? '' : x).replace(/\s+/g, ' ').trim();
   let head = -1, vCol = -1, lCol = -1;
@@ -8181,7 +8252,7 @@ function buildingListFromRows(rows) {
     head = r;
     vCol = cols.find(k => !BUILDING_NAME_HEAD.test(cells[k]));
     if (vCol === undefined) vCol = cols[0];
-    lCol = cells.findIndex((t, k) => k !== vCol && BUILDING_NAME_HEAD.test(t));
+    lCol = buildingLabelColumn(cells, vCol, cols);
   }
   if (head < 0) {
     let width = 0;
@@ -8209,11 +8280,15 @@ function paintBuildingListSettings() {
   const el = document.getElementById('settingsBuildingsSummary');
   if (!el) return;
   const code = settingsFacilityPick(), n = buildingListFor(code).length, l = getBuildingLists()[code];
-  el.textContent = !code ? 'Pick the facility first — each facility has its own list.'
+  const e = code ? earlierBuildingListsFor(code).length : 0;
+  el.textContent = (!code ? 'Pick the facility first — each facility has its own list.'
     : n ? n + ' building' + (n === 1 ? '' : 's') + ' for ' + hospitalName(code) + (l && l.file ? ' (from ' + l.file + ')' : '') + '.'
-    : 'No list for ' + hospitalName(code) + ' — Building is typed for each unit.';
+    : 'No list for ' + hospitalName(code) + ' — Building is typed for each unit.')
+    + (e ? ' ' + e + ' earlier list' + (e === 1 ? '' : 's') + ' kept.' : '');
   const rm = document.getElementById('settingsBuildingsRemove');
   if (rm) rm.style.display = n ? '' : 'none';
+  const back = document.getElementById('settingsBuildingsEarlier');
+  if (back) back.style.display = e ? '' : 'none';
 }
 function pickBuildingListFile() {
   if (!settingsFacilityPick()) { showToast('Pick the facility first — each facility has its own building list', true); return; }
@@ -8237,26 +8312,57 @@ async function importBuildingListFile(input) {
   const go = await askChoice({
     id: 'building-import', defaultValue: 'use',
     title: '&#127970; ' + n + ' building' + (n === 1 ? '' : 's') + ' for ' + escHtml(hospitalName(code)),
-    html: html`From <b>${file.name}</b>${parsed.column ? html`, column <b>${parsed.column}</b>` : raw(' &mdash; the first column (no Building heading found)')}${parsed.labelColumn ? html`, names from <b>${parsed.labelColumn}</b>` : ''}:<br>${shown.map((it, k) => html`${k ? raw('<br>') : ''}&bull; ${buildingOptionText(it)}`)}${n > shown.length ? html`<br>&hellip; and ${n - shown.length} more` : ''}<br><br>A unit saves its building as listed${parsed.labelColumn ? ' (not the name beside it)' : ''}: write it the way the loto-web inventory does. Units already saved keep their building.${old ? html` This replaces the current list of ${old}.` : ''} The list stays on this device &mdash; import it on each iPad.`,
+    html: html`From <b>${file.name}</b>${parsed.column ? html`, column <b>${parsed.column}</b>` : raw(' &mdash; the first column (no Building heading found)')}${parsed.labelColumn ? html`, names from <b>${parsed.labelColumn}</b>` : ''}:<br>${shown.map((it, k) => html`${k ? raw('<br>') : ''}&bull; ${buildingOptionText(it)}`)}${n > shown.length ? html`<br>&hellip; and ${n - shown.length} more` : ''}<br><br>A unit saves its building as listed${parsed.labelColumn ? ' (not the name beside it)' : ''}: write it the way the loto-web inventory does. Units already saved keep their building.${old ? html` The current list of ${old} is kept under Earlier lists, where it can be put back.` : ''} The list stays on this device &mdash; import it on each iPad.`,
     choices: [{ value: 'use', label: 'Use these ' + n + ' buildings', primary: true }, { value: 'cancel', label: 'Cancel' }]
   });
   if (go !== 'use') { showToast('Building list not changed'); return; }
+  if (!keepCurrentBuildingList(code, items)) { showToast(BUILDING_LIST_NOT_KEPT, true); return; }
   if (!setBuildingListFor(code, { items: items, file: String(file.name || ''), at: new Date().toISOString() })) {
     showToast('⚠ The list could not be stored — this device’s storage is full', true);
     return;
   }
+  settleEarlierBuildingLists(code);
   paintBuildingListSettings();
   renderBuildingOptions();
   showToast('✔ ' + n + ' building' + (n === 1 ? '' : 's') + ' for ' + hospitalName(code));
 }
+const BUILDING_LIST_NOT_KEPT = '⚠ The current building list could not be kept — this device’s storage is full. Nothing changed.';
 function removeBuildingListForSettingsFacility() {
   const code = settingsFacilityPick(), n = buildingListFor(code).length;
   if (!code || !n) return;
-  if (!confirm('Remove the ' + n + ' buildings for ' + hospitalName(code) + ' from this device?\n\nSaved units keep their buildings; Building is typed for new ones.')) return;
+  if (!confirm('Remove the ' + n + ' buildings for ' + hospitalName(code) + ' from the Building menu?\n\nThe list is kept under Earlier lists, where it can be put back. Saved units keep their buildings; Building is typed for new ones.')) return;
+  if (!keepCurrentBuildingList(code)) { showToast(BUILDING_LIST_NOT_KEPT, true); return; }
   setBuildingListFor(code, null);
+  settleEarlierBuildingLists(code);
   paintBuildingListSettings();
   renderBuildingOptions();
-  showToast('Building list removed');
+  showToast('Building list removed — kept under Earlier lists');
+}
+// Settings → Earlier lists…: one goes back in the Building menu, and the list it
+// replaces is kept in its place (build 143).
+async function putBackEarlierBuildingList() {
+  const code = settingsFacilityPick(), earlier = earlierBuildingListsFor(code);
+  if (!code || !earlier.length) return;
+  const n = buildingListFor(code).length;
+  const when = s => { const d = new Date(s); return isNaN(d.getTime()) ? '' : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); };
+  const go = await askChoice({
+    id: 'building-earlier', defaultValue: 'cancel',
+    title: '&#127970; Earlier building lists for ' + escHtml(hospitalName(code)),
+    html: html`The lists ${hospitalName(code)} had before an import or Remove list, newest first. The one you pick goes back in the Building menu${n ? html`; the current list of ${n} is kept here in its place` : ''}.`,
+    choices: earlier.map((x, k) => ({ value: 'k' + k, label: x.items.length + ' building' + (x.items.length === 1 ? '' : 's') + (x.file ? ' — ' + x.file : '') + (x.until ? ' (until ' + when(x.until) + ')' : '') }))
+      .concat([{ value: 'cancel', label: 'Cancel' }])
+  });
+  const pick = /^k\d+$/.test(String(go || '')) ? earlier[+String(go).slice(1)] : null;
+  if (!pick) { showToast('Building list not changed'); return; }
+  if (!keepCurrentBuildingList(code, pick.items)) { showToast(BUILDING_LIST_NOT_KEPT, true); return; }
+  if (!setBuildingListFor(code, { items: pick.items, file: String(pick.file || ''), at: new Date().toISOString() })) {
+    showToast('⚠ The list could not be stored — this device’s storage is full', true);
+    return;
+  }
+  settleEarlierBuildingLists(code);   // back in the menu: no longer an earlier list
+  paintBuildingListSettings();
+  renderBuildingOptions();
+  showToast('✔ ' + pick.items.length + ' building' + (pick.items.length === 1 ? '' : 's') + ' for ' + hospitalName(code) + ' put back');
 }
 
 function getTemplate() {
@@ -9692,17 +9798,28 @@ function commitSourceLocation(index) {
 // the keyboard, and iOS scrolled back down to where it was. The box is let go
 // first (its own change runs, the keyboard closes on our terms), and the card
 // is held at the same height through the redraw and the keyboard closing.
+// The row is followed as an object, not by the number the tap was drawn with
+// (build 143): letting the box go runs its own change, and a change can redraw
+// the list — a typed equipment type picks a template — so the number may now
+// be another row's, or past the end. The card is held only while a keyboard
+// closes, and not once the tech touches or scrolls the page (build 143: a select
+// or checkbox left focused held it too, and a quick flick was thrown back).
+function srcCardOf(src) {
+  const k = sources.indexOf(src);
+  return k < 0 ? null : (document.querySelectorAll('#sourcesContainer > .source-card')[k] || null);
+}
 function redrawKeepingCard(i, change) {
-  const cardAt = () => document.querySelectorAll('#sourcesContainer > .source-card')[i];
-  const before = cardAt();
+  const src = sources[i];
+  if (!src) return;
+  const before = srcCardOf(src);
   const top = before ? before.getBoundingClientRect().top : null;
-  const a = document.activeElement;
-  const typing = !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
-  if (typing) a.blur();
-  change();
+  const keyboard = letGoOfBox() || keyboardJustLetGo();
+  if (!sources.includes(src)) return;   // the box's change replaced the list: no row of it to open
+  change(src);
+  renderSources();
   if (top == null) return;
   const hold = () => {
-    const c = cardAt();
+    const c = srcCardOf(src);
     if (!c) return;
     // a card that started above the screen (Done at the foot of a long card) comes into view instead
     if (top < 0) { c.scrollIntoView({ block: 'nearest' }); return; }
@@ -9710,10 +9827,58 @@ function redrawKeepingCard(i, change) {
     if (Math.abs(d) > 1) window.scrollBy(0, d);
   };
   hold();
-  if (typing) { requestAnimationFrame(hold); setTimeout(hold, 400); }   // iOS scrolls again as its keyboard closes
+  if (keyboard) whileKeyboardCloses(hold);   // iOS scrolls again as its keyboard closes
 }
-function collapseSource(i) { redrawKeepingCard(i, () => { sources[i].collapsed = true; renderSources(); }); }
-function expandSource(i) { redrawKeepingCard(i, () => { sources[i].collapsed = false; renderSources(); }); }
+function collapseSource(i) { redrawKeepingCard(i, src => { src.collapsed = true; }); }
+function expandSource(i) { redrawKeepingCard(i, src => { src.collapsed = false; }); }
+
+// Any tap on the source list lets go of a box still being typed in FIRST
+// (build 143 — the build 142 review: only a card's title and Done did). The iPad
+// keeps a box's focus when a button is tapped, and a redraw then removed the box
+// from under its keyboard and iOS scrolled back down to it: ▲ / ▼, Go to drive,
+// + Add the breaker, Remove, Dup and Split 1 as much as a card's title. Let go
+// here, the box's own change runs against the list it was drawn from (after a
+// row moved, its change would write into the row now in its place); when that
+// change reorders the list, the tap was for the list as it was and goes no further.
+function isKeyboardBox(el) {
+  if (!el) return false;
+  if (el.tagName === 'TEXTAREA') return true;
+  return el.tagName === 'INPUT' && /^(text|search|email|tel|url|number|password)$/i.test(el.type || 'text');
+}
+let _keyboardLetGoAt = -Infinity;
+// Lets go of the focused box, if any; true when it had the keyboard up.
+function letGoOfBox() {
+  const a = document.activeElement;
+  if (!a || !/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return false;
+  const keyboard = isKeyboardBox(a);
+  if (keyboard) _keyboardLetGoAt = performance.now();
+  a.blur();
+  return keyboard;
+}
+function keyboardJustLetGo() { return performance.now() - _keyboardLetGoAt < 600; }
+// `fn` again a frame later and once the keyboard has closed (`delays` in ms),
+// unless the tech touches, scrolls or types meanwhile.
+function whileKeyboardCloses(fn, delays) {
+  let moved = false;
+  const stop = () => { moved = true; };
+  const kinds = ['pointerdown', 'touchstart', 'wheel', 'keydown'];
+  kinds.forEach(k => window.addEventListener(k, stop, { capture: true, passive: true }));
+  const list = delays || [0, 400], last = Math.max.apply(null, list);
+  list.forEach(ms => {
+    const run = () => { if (!moved) fn(); if (ms === last) kinds.forEach(k => window.removeEventListener(k, stop, { capture: true })); };
+    if (ms) setTimeout(run, ms); else requestAnimationFrame(run);
+  });
+}
+document.addEventListener('click', e => {
+  const t = e.target;
+  if (!t || !t.closest || !t.closest('#sourcesContainer, .add-source-btn')) return;
+  if (t.closest('input, textarea, select, label')) return;   // another box takes the focus itself
+  const a = document.activeElement;
+  if (!a || a.contains(t) || !/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+  const rows = sources.slice();
+  letGoOfBox();
+  if (rows.length !== sources.length || rows.some((s, k) => s !== sources[k])) { e.stopPropagation(); e.preventDefault(); }
+}, true);
 
 function removeSource(index) {
   if (confirm(`Remove Energy Source #${index + 1}?`)) {
@@ -14815,8 +14980,10 @@ function updateExportDateSummary() {
     ? `${n} saved + 1 current (unsaved) = ${n + 1} total`
     : `${n} entr${n === 1 ? 'y' : 'ies'} will be exported` + (editingSaved ? ' (the one open for edit goes out with its unsaved changes)' : '');
   if (dateSel && dateSel.value === 'unexported') {
-    const pend = unexportedSelection();
-    text += `\nOnly the ${pend.pending.length} not yet exported go, on ${pend.days.size} date${pend.days.size === 1 ? '' : 's'} — units already exported stay out, with their photos.`;
+    // those of the facility picked (build 143 — it counted every facility's)
+    const going = filtered.length, days = new Set(filtered.map(e => getEntryDate(e) || 'undated'));
+    if (hasNew) days.add(openNewUnitDay() || localDateStr(new Date()));
+    text += `\nOnly the ${going} not yet exported go, on ${days.size} date${days.size === 1 ? '' : 's'} — units already exported stay out, with their photos.`;
   }
   // A change to a unit loto-web may already hold doesn't reach it by any
   // export (build 109; loto-web keeps what it pulled — gap 3.6). Say so.
@@ -14839,12 +15006,26 @@ function updateExportDateSummary() {
 function unexportedSelection() {
   // …and a saved unit open with the tech's changes on it: it goes as the form
   // has it (build 141 — before, only when another unit of its day was pending)
-  const open = openChangedEdit();
-  const pending = savedEquipment.filter(e => e === open || entryExportState(e) !== 'exported');
+  const open = openChangedEdit(), outdated = outdatedTwins();
+  const pending = savedEquipment.filter(e => e === open || (entryExportState(e) !== 'exported' && !outdated.has(e)));
   const days = new Set(pending.map(e => getEntryDate(e) || 'undated'));
   const formDay = openNewUnitDay();   // a new unit on the form goes too
   if (formDay) days.add(formDay);
   return { pending, days, entries: pending };
+}
+// The copies of a unit saved twice under one id (the pre-build-89 reload bug)
+// that a newer copy of it outdates. Not pending (build 143): the export only
+// ever sends the newest copy, and once that copy was exported the older one,
+// never stamped, went alone — loto-web took its older data as the newer.
+function outdatedTwins() {
+  const newest = new Map(), out = new Set();
+  savedEquipment.forEach(e => {
+    if (!e || !e.id) return;
+    const k = String(e.id), n = newest.get(k);
+    if (!n) { newest.set(k, e); return; }
+    if (entryRecency(e).localeCompare(entryRecency(n)) > 0) { out.add(n); newest.set(k, e); } else out.add(e);
+  });
+  return out;
 }
 // The saved unit open on the form when the tech has changed it, or null.
 function openChangedEdit() {
@@ -15270,23 +15451,28 @@ async function buildAndSendExport(opts, run) {
   const formEntries = new WeakSet();
   let newFormEntry = null;   // the open form when it is a NEW unit (not an edit of a saved one)
   const formEntry = snapshotFormEntry();
+  const replacedSaved = new Set();   // the saved copy the open form stands in for
   if (formEntry) {
     const savedIdx = allEntries.findIndex(e => sameEntryId(e.id, formEntry.id));
     const isEdit = savedEquipment.some(e => sameEntryId(e.id, formEntry.id));
-    if (savedIdx >= 0) { allEntries[savedIdx] = formEntry; formEntries.add(formEntry); }
+    if (savedIdx >= 0) { replacedSaved.add(allEntries[savedIdx]); allEntries[savedIdx] = formEntry; formEntries.add(formEntry); }
     else if (!isEdit && currentEntryPassesExportFilters()) { allEntries.push(formEntry); formEntries.add(formEntry); newFormEntry = formEntry; }
   }
 
   // A unit saved TWICE under one id (the pre-b89 reload bug) ships once —
-  // its most recently saved copy — and the user is told which.
+  // its most recently saved copy — and the user is told which. Every saved
+  // copy counts, not only those this export picked (build 143): "Not yet
+  // exported" picked an older copy alone once the newest had been exported,
+  // and it went as the newest. Then none goes.
   const byId = new Map();
   allEntries.forEach(e => { if (e.id) { if (!byId.has(e.id)) byId.set(e.id, []); byId.get(e.id).push(e); } });
+  for (const [id, g] of byId) savedEquipment.forEach(s => { if (sameEntryId(s.id, id) && !g.includes(s) && !replacedSaved.has(s)) g.push(s); });
   const twins = [...byId.values()].filter(g => g.length > 1);
   if (twins.length) {
     const keep = new Set(twins.map(g => g.slice().sort((x, y) => entryRecency(y).localeCompare(entryRecency(x)))[0]));
     const names = twins.slice(0, 12).map(g => '• ' + (g[0].equipName || '(unnamed)') + ' — ' + g.length + ' copies').join('\n');
     if (!confirm('⚠ ' + twins.length + ' unit' + (twins.length === 1 ? ' is' : 's are') + ' saved TWICE under one entry id (an edit saved after an app reload, before build 89):\n\n' + names +
-      (twins.length > 12 ? '\n…' : '') + '\n\nOnly the most recently saved copy of each will be exported. Delete the copy you don\'t want afterwards (its photos stay on the device).\n\nOK = export the newest copy of each\nCancel = stop')) {
+      (twins.length > 12 ? '\n…' : '') + '\n\nOnly the most recently saved copy of each will be exported — none when that copy is not part of this export (an older copy never goes in its place). Delete the copy you don\'t want afterwards (its photos stay on the device).\n\nOK = export the newest copy of each\nCancel = stop')) {
       showToast('Export cancelled', true);
       return;
     }

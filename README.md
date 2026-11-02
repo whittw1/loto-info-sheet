@@ -56,7 +56,7 @@ Collapsible section that auto-expands when a template's diagram is available or 
 
 ### Per-Site Fields
 
-- **Building Picker Dropdown** — Since build 142, each facility's building list is imported on the device: Settings → Buildings at this facility → Import from Excel (.xlsx or .csv; the column headed Building / Bldg, a Name or Description column shown beside each). The menu lists them, with Enter Building for one not listed; a unit saves the building as listed. Kept on the device only — import it on each iPad. No list: Building is typed (as since build 63).
+- **Building Picker Dropdown** — Since build 142, each facility's building list is imported on the device: Settings → Buildings at this facility → Import from Excel (.xlsx or .csv; the column headed Building / Bldg, a Building Name, Name or Description column shown beside each). The menu lists them, with Enter Building for one not listed; a unit saves the building as listed. Kept on the device only — import it on each iPad. Since build 143 a list replaced by a new import or removed is kept (the last five per facility), and **Earlier lists…** puts one back. No list: Building is typed (as since build 63).
 - **Room Auto-Fill** — Room number persists alongside building after Save & New
 - **Misc Photos** — Additional photo capture slots beyond standard equipment/source photos
 - **Device ID Field** — Per-source identifier (e.g., Pump 3, V-201)
