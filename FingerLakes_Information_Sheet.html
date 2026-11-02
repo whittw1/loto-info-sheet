@@ -526,7 +526,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b143</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b144</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1233,7 +1233,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 143;
+const APP_BUILD = 144;
 
 // ============================================================================
 // DATA
@@ -1346,6 +1346,9 @@ const DATA = {
                 "Downstream transfer switches on other generators","PV or battery storage",
                 "Transformers with an alternate secondary feed"],
   vacuumExhaust: ["Own valve","Check valve only","Shared line, no valve","Can't see"],
+  // A medical vacuum pump's inlet relief point (build 144: "Cover" = no union or
+  // flange, but the inlet filter has a cover that opens)
+  reliefJoint: ["Yes","Cover","No"],
   drainLocations: ["On this valve","Between this valve and the equipment","On the equipment","None found"],
   yesNoCantTell: ["Yes","No","Can't tell"],
   yesNo: ["Yes","No"],
@@ -1365,6 +1368,16 @@ const DATA = {
   xfmrTempRises: ["80 C","115 C","150 C"],
   groundingChoices: ["Ground bus","Ground studs","None","Can't tell"]
 };
+
+// A medical vacuum pump's union / flange answers (build 144): the values are
+// DATA.reliefJoint's (the sheet's and app-lists.json's), the words the
+// question's (label) and the form's (form).
+const RELIEF_JOINT_WORDS = {
+  'Yes':   { label: 'Yes, a union or flange', form: 'Yes', primary: true },
+  'Cover': { label: 'No, the inlet filter has a cover that opens', form: 'Cover (the inlet filter’s cover opens)' },
+  'No':    { label: 'No union, flange or filter cover', form: 'No (no union, flange or cover)' }
+};
+const RELIEF_JOINT_CHOICES = DATA.reliefJoint.map(v => Object.assign({ value: v, label: v, form: v }, RELIEF_JOINT_WORDS[v]));
 
 // Auto-fill defaults when energy source is selected
 const SOURCE_DEFAULTS = {
@@ -1453,6 +1466,7 @@ function appListsSnapshot(build) {
       atsMakes: DATA.atsMakes.slice(),
       atsBackfeed: DATA.atsBackfeed.slice(),
       vacuumExhaust: DATA.vacuumExhaust.slice(),
+      reliefJoint: DATA.reliefJoint.slice(),   // build 144
       drainLocations: DATA.drainLocations.slice(),
       yesNoCantTell: DATA.yesNoCantTell.slice(),
       yesNo: DATA.yesNo.slice(),
@@ -3005,13 +3019,15 @@ function vacuumCoverChoicesOffered() {
 }
 // Resolves the chosen template, or 'cancel'. `picked` = the template the user
 // picked from the list ('' from the type), shown as the primary answer.
-function askVacuumCover(picked, choices) {
+// `cancelLabel` (build 144) names the way out: "Keep Vacuum Pump" for the
+// plain Vacuum Pump pick.
+function askVacuumCover(picked, choices, cancelLabel) {
   return askChoice({
     id: 'vacuum-cover', defaultValue: 'cancel', picked: picked || '',
     title: 'What does this record cover?',
     html: html`Each record prints one procedure. A medical vacuum pump that shares its receiver with other pumps gets a record of its own; the receiver with all its pumps is a different record. Survey the same pumps both ways only if the site wants both procedures. A laboratory or dental vacuum is recorded as the tank and all its pumps.`,
     choices: (choices || VACUUM_COVER_CHOICES).map(c => ({ value: c.template, label: c.label, primary: c.template === picked }))
-      .concat([{ value: 'cancel', label: picked ? 'Cancel' : 'Choose later' }])
+      .concat([{ value: 'cancel', label: cancelLabel || (picked ? 'Cancel' : 'Choose later') }])
   });
 }
 // The question, then (build 114, loto-web 2026-10-18) for the one-pump answer:
@@ -3019,8 +3035,8 @@ function askVacuumCover(picked, choices) {
 // locked out on its own only behind a valve of its own; without one the
 // receiver is shut down with it, so No records the whole system (Medical
 // Vacuum). Resolves the template, or 'cancel'.
-function askVacuumRecord(picked, choices) {
-  return askVacuumCover(picked, choices).then(t => {
+function askVacuumRecord(picked, choices, cancelLabel) {
+  return askVacuumCover(picked, choices, cancelLabel).then(t => {
     if (t !== 'Medical Vacuum Pump') return t;
     return askChoice({
       id: 'pump-inlet-valve', defaultValue: 'cancel',
@@ -3042,19 +3058,27 @@ function askVacuumRecord(picked, choices) {
 // The template list's own change (the user's pick). A vacuum template asks the
 // question first; any other pick, and every pick the app makes (pickTemplate),
 // goes straight on to handleTemplateChange.
+// The plain "Vacuum Pump" pick asks too (build 144, wilkins 2026-11-02): it
+// prints loto-web's Lab Vacuum alias, so a medical pump left on it never gets
+// its own procedure. An answer switches the template; dismissing the question
+// or "Keep Vacuum Pump" keeps the pick.
+const VACUUM_PLAIN_TEMPLATE = 'Vacuum Pump';
 function onTemplateSelectChange() {
   const sel = document.getElementById('equipTemplate');
   const picked = sel.value;
   const choices = vacuumCoverChoicesOffered();
-  if (!VACUUM_COVER_CHOICES.some(c => c.template === picked) || choices.length < 2) return handleTemplateChange();
+  const plain = picked === VACUUM_PLAIN_TEMPLATE;
+  if ((!plain && !VACUUM_COVER_CHOICES.some(c => c.template === picked)) || choices.length < 2) return handleTemplateChange();
   const before = _templateBefore;   // left as it is: "Change Template?" Cancel restores it
-  return askVacuumRecord(picked, choices).then(t => {
+  return askVacuumRecord(plain ? '' : picked, choices, plain ? 'Keep Vacuum Pump' : '').then(t => {
     const sel = document.getElementById('equipTemplate');
     const beforeValue = before ? before.value : ((editingEntry && editingEntry.template) || '');
-    // Cancel, or the template the form already has: the list goes back, nothing else changes
-    if (!t || t === 'cancel' || t === beforeValue) { restoreTemplateSelect(before); rememberTemplateBefore(); return; }
+    // Cancel keeps the plain pick, or else puts the list back
+    const next = (!t || t === 'cancel') ? (plain ? VACUUM_PLAIN_TEMPLATE : '') : t;
+    // …as does the template the form already has: nothing else changes
+    if (!next || next === beforeValue) { restoreTemplateSelect(before); rememberTemplateBefore(); return; }
     // The answer is the change (build 113: no detour through the old template first)
-    sel.value = t;
+    sel.value = next;
     handleTemplateChange();
   });
 }
@@ -3072,6 +3096,7 @@ function onTemplateSelectChange() {
 // entry.unitAnswers. Keys: shop + shopOther, changeLater (the tech's own text),
 // uvLights, confinedSpace, atsMake, atsBackfeed (a list), capacitors,
 // vacuumExhaust, reliefJoint, refrigerant + refrigerantOther, refrigerantPsi.
+// otherPower (build 144) is the form's own, never on the sheet (askOtherPower).
 // Per source: drainLocation { where, text } and lockOpen.
 let unitAnswers = {};
 
@@ -4759,10 +4784,15 @@ async function maybeAskTransformer() {
 // The tech's own note, plus the ones an answer writes by itself. loto-web shows
 // it on the unit and flags it at pre-QC; it never blocks.
 const RELIEF_JOINT_NOTE = 'No union or flange between the inlet valve and the pump: check the inlet relief step';
+const TEMPLATE_NOT_CHOSEN_NOTE = 'Template not chosen';
 function changeLaterAutoNotes(entryLike) {
   const a = entryLike.unitAnswers || {};
   const k = unitKinds(entryLike.equipType, entryLike.template, entryLike.sources);
   const notes = [];
+  // Build 144 (wilkins 2026-11-02, the vacuum type only): a Vacuum Pump saved
+  // with no template — "Choose later", then Save anyway — prints loto-web's
+  // generic procedure, which nobody chose
+  if (entryLike.equipType === 'Vacuum Pump' && !String(entryLike.template || '').trim()) notes.push(TEMPLATE_NOT_CHOSEN_NOTE);
   if (k.vacPump && a.reliefJoint === 'No') notes.push(RELIEF_JOINT_NOTE);
   // The point is named for the medium since build 122 ("No purge point found…").
   // Every "None found" that goes on the sheet: loto-web prints its stop line
@@ -4899,9 +4929,9 @@ function buildUnitQuestionsHtml(k, template, auto) {
   const dim = 'font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-dim);';
   const group = (label, inner, hint) => html`<div class="form-group"><label>${label}${hint
     ? html` <span style="${dim}">&mdash; ${hint}</span>` : ''}</label>${inner}</div>`;
-  const pick = (key, list, blank) => html`<select id="uq_${key}" onchange="setUnitAnswer(${jsArg(key)},this.value)">
+  const pick = (key, list, blank, labels) => html`<select id="uq_${key}" onchange="setUnitAnswer(${jsArg(key)},this.value)">
       <option value="">${blank || '-- Not answered --'}</option>
-      ${list.map(v => html`<option value="${v}" ${a[key] === v ? 'selected' : ''}>${v}</option>`)}
+      ${list.map(v => html`<option value="${v}" ${a[key] === v ? 'selected' : ''}>${(labels && labels[v]) || v}</option>`)}
       ${a[key] && !list.includes(a[key]) && a[key] !== 'Other' ? html`<option value="${a[key]}" selected>${a[key]}</option>` : ''}
     </select>`;
   const text = (key, placeholder, extra) => html`<input type="text" id="uq_${key}" value="${a[key] || ''}"
@@ -4929,7 +4959,11 @@ function buildUnitQuestionsHtml(k, template, auto) {
   if (k.chiller) parts.push(group('Capacitor bank?', pick('capacitors', DATA.yesNoCantTell)));
   if (k.vacPump) {
     parts.push(group('This pump\u2019s exhaust', pick('vacuumExhaust', DATA.vacuumExhaust)));
-    parts.push(group('Union or flange between the inlet valve and the pump?', pick('reliefJoint', DATA.yesNo)));
+    // build 144: Cover, and the photo it belongs in
+    const jointWords = {};
+    RELIEF_JOINT_CHOICES.forEach(c => { jointWords[c.value] = c.form; });
+    parts.push(group('Union or flange between the inlet valve and the pump?', pick('reliefJoint', DATA.reliefJoint, '', jointWords),
+      'or an inlet filter cover that opens; get it into the inlet valve’s photo'));
   }
   if (k.refrigerant) {
     parts.push(group('Refrigerant', html`<select id="uq_refrigerant" onchange="setUnitAnswer('refrigerant',this.value)">
@@ -5136,8 +5170,12 @@ function addCommonNote(id) {
 // asked for): "Own valve" adds a Vacuum Air Out ball valve row for its photo,
 // and loto-web drops the shared-exhaust CAUTION; any other answer keeps it.
 // Then the union or flange loto-web's inlet relief step loosens: Yes is the
-// default; No also writes a change-later note. Asked after the template's
-// voltage, once \u2014 a unit that already answered is not asked again.
+// default; No also writes a change-later note. Build 144 (wilkins 2026-11-02,
+// loto-web's vacuum chat): a third answer, "Cover" \u2014 no union or flange, but
+// the inlet filter has a cover that opens, which the relief step can use; it
+// writes no note, and No now means none of the three. Then any other power to
+// the pump (build 144). Asked after the template's voltage, once each \u2014 a
+// unit that already answered is not asked again.
 const VACUUM_EXHAUST_CHOICES = [
   { value: 'own', answer: 'Own valve', label: 'Its own valve', primary: true },
   { value: 'check', answer: 'Check valve only', label: 'A check valve only' },
@@ -5173,25 +5211,76 @@ function maybeAskVacuumExhaust() {
     autoSaveCurrent();
     return v;
   });
-  return exhaust.then(v => {
-    if (getTemplate() !== 'Medical Vacuum Pump' || unitAnswers.reliefJoint) return v;
-    unitAnswers.reliefJoint = 'Yes';   // the default, as on the form
-    renderUnitQuestions(true);
-    autoSaveCurrent();
-    return askChoice({
-      id: 'vacuum-relief-joint', defaultValue: 'Yes',
-      title: 'Union or flange at the inlet',
-      html: html`Is there a union or flange between the inlet valve and the pump? loto-web&rsquo;s relief step loosens it (or opens the inlet filter cover).`,
-      choices: [{ value: 'Yes', label: 'Yes', primary: true }, { value: 'No', label: 'No' }]
-    }).then(r => {
-      if (r === 'No' && getTemplate() === 'Medical Vacuum Pump') {
-        unitAnswers.reliefJoint = 'No';
-        renderUnitQuestions(true);
-        autoSaveCurrent();
-      }
-      return v;
-    });
+  return exhaust.then(v => askReliefJoint().then(() => askOtherPower()).then(() => v));
+}
+// The answers: RELIEF_JOINT_CHOICES (beside DATA).
+function askReliefJoint() {
+  if (getTemplate() !== 'Medical Vacuum Pump' || unitAnswers.reliefJoint) return Promise.resolve(null);
+  unitAnswers.reliefJoint = 'Yes';   // the default, as on the form
+  renderUnitQuestions(true);
+  autoSaveCurrent();
+  return askChoice({
+    id: 'vacuum-relief-joint', defaultValue: 'Yes',
+    title: 'Union or flange at the inlet',
+    html: html`Is there a union or flange between the inlet valve and the pump? loto-web&rsquo;s relief step loosens it. With neither, an inlet filter whose cover opens will do. Get the union, flange or filter cover into the inlet valve&rsquo;s photo (the Vacuum Air In row).`,
+    choices: RELIEF_JOINT_CHOICES.map(c => ({ value: c.value, label: c.label, primary: c.primary }))
+  }).then(r => {
+    if ((r === 'No' || r === 'Cover') && getTemplate() === 'Medical Vacuum Pump') {
+      unitAnswers.reliefJoint = r;
+      renderUnitQuestions(true);
+      autoSaveCurrent();
+    }
+    return r;
   });
+}
+// Any other power to the pump (build 144, wilkins 2026-11-02): one drive can
+// feed every pump on a receiver (KC-096..098), or a panel label says "multiple
+// supply sources" — each pump's record needs that point as an Electrical row,
+// and loto-web can't tell one is missing. Yes adds an Electrical row and opens
+// the link dialog, so pump 2 and pump 3 link to the drive's row on pump 1
+// (loto-web imports a linked row as the same device: photo, marks and ID); the
+// pump that has it fills the row in. No adds nothing. The answer stays on the
+// form (unitAnswers.otherPower, never on the sheet: the row is the data) only
+// so the question doesn't come back when the template is picked again.
+function askOtherPower() {
+  if (getTemplate() !== 'Medical Vacuum Pump' || unitAnswers.otherPower) return Promise.resolve(null);
+  return askChoice({
+    id: 'vacuum-other-power', defaultValue: 'No',
+    title: 'Other power to this pump?',
+    html: html`Any other power to this pump? A shared drive (VFD), a second disconnect, or a panel label that says &ldquo;multiple supply sources&rdquo;. Yes adds an Electrical row: link it to the drive&rsquo;s row on the pump that has it, or fill it in.`,
+    choices: [{ value: 'Yes', label: 'Yes, add an Electrical row' }, { value: 'No', label: 'No' }]
+  }).then(r => {
+    if ((r !== 'Yes' && r !== 'No') || getTemplate() !== 'Medical Vacuum Pump') return r;
+    unitAnswers.otherPower = r;
+    if (r === 'Yes') addOtherPowerRow();
+    else autoSaveCurrent();
+    return r;
+  });
+}
+// The row starts blank: a link fills only what the row left blank (applyLink),
+// so the shared device's own energy source, Device, ID, Location and
+// Verification come from pump 1's row (build 144 review: a row started at this
+// pump's voltage kept it, maybe an unconfirmed default, against the device's).
+// Closed without a link, it takes this pump's voltage for the tech to fill in
+// (settleOtherPowerRow, from closeLinkDialog).
+let _otherPowerPending = null;   // { row, energy } while its link dialog is open
+function addOtherPowerRow() {
+  const own = sources.find(s => s && !s.linkedTo && isElectricalSource(s));
+  addSource();
+  const index = sources.length - 1;
+  _otherPowerPending = { row: sources[index], energy: (own && own.energySource) || 'Electrical 208V' };
+  autoSaveCurrent();
+  showToast('Added an Electrical row for the other power — link it or fill it in');
+  showLinkDialog(index);
+  return index;
+}
+function settleOtherPowerRow() {
+  const p = _otherPowerPending;
+  _otherPowerPending = null;
+  if (!p || !sources.includes(p.row) || p.row.linkedTo || String(p.row.energySource || '').trim()) return;
+  p.row.energySource = p.energy;
+  renderSources();
+  autoSaveCurrent();
 }
 
 // ---- After a type's voltage: an ATS's two feeds, a chiller's capacitors -------
@@ -7445,10 +7534,13 @@ function closeTemplateVoltagePrompt() {
 
 // ---- Electrical-source count prompt (AHUs) --------------------------------
 // Per-template wording (build 108): a lab vacuum receiver carries several
-// pumps, each with its own disconnect, and every one must be recorded.
+// pumps, each with its own disconnect, and every one must be recorded. A
+// medical vacuum system asks the same since build 144 (wilkins 2026-11-02).
+const PUMPS_ON_RECEIVER_PROMPT = { title: 'Pumps on this receiver',
+  ask: 'How many pumps are on this receiver tank? Count every pump: each one gets its own disconnect (one Electrical source each).' };
 const TEMPLATE_ELECTRICAL_COUNT_PROMPT = {
-  'Lab Vacuum': { title: 'Pumps on this receiver',
-                  ask: 'How many pumps are on this receiver tank? Count every pump: each one gets its own disconnect (one Electrical source each).' },
+  'Lab Vacuum': PUMPS_ON_RECEIVER_PROMPT,
+  'Medical Vacuum': PUMPS_ON_RECEIVER_PROMPT,
   'Dental Vacuum': { title: 'Pumps on this tank',
                      ask: 'How many pumps are on this vacuum tank? Count every pump: each one gets its own disconnect (one Electrical source each).' },
 };
@@ -7678,10 +7770,17 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Compressed Air Out', deviceType: 'Ball Valve', quantity: 2, location: 'Below Air Dryers', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Compressed Air Out', deviceType: 'Ball Valve', quantity: 2, location: 'Above Air Dryers', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
-  // Medical Vacuum: base unit (the pump's disconnect; no Kinetic since build 107). Voltage prompt +
-  // "how many units? 1-4". Tech adds the vacuum-line source as needed.
+  // Medical Vacuum: the receiver and all its pumps (no Kinetic since build 107).
+  // Build 144 (wilkins 2026-11-02, loto-web's vacuum chat): Lab Vacuum's shape —
+  // a disconnect per pump with its Hand/Off/Auto switch (loto-web's Section 4
+  // returns it to Auto) from the count prompt's "pumps on this receiver", and
+  // the ball valve between the receiver and the hospital pipeline, which
+  // loto-web's system procedure closes, relieves behind at the receiver tank
+  // drain and slowly reopens. A one-pump answer with no valve of its own lands
+  // here too (askVacuumRecord).
   'Medical Vacuum': [
-    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'SW (Hand/Off/Auto)', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Vacuum Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Gauge/Drain', duplicate: 'No', detail: '', auto: true },
   ],
   // Lab Vacuum (build 108): one Electrical row per pump disconnect (480V
   // typical; the count prompt asks how many pumps are on the receiver — KC-LOTO-018
@@ -10181,6 +10280,7 @@ function closeLinkDialog() {
   const overlay = document.getElementById('linkDialogOverlay');
   if (overlay) overlay.remove();
   pendingLinkSourceIndex = null;
+  settleOtherPowerRow();   // build 144: an unlinked other-power row takes the pump's voltage
 }
 
 function showLinkSourcePicker(equipIndex) {
@@ -13373,8 +13473,13 @@ function collectIncompleteFields(opts) {
   if (damperAskedOnForm() && !sources.some(isDamperRow) && !unitAnswers.dampersNone) {
     missing.push('Damper actuators \u2014 add a Damper Actuator row for each one, or tick "No damper actuators on this unit"');
   }
+  const kinds = unitKinds(equipType, getTemplate(), sources);
+  // Build 144 (wilkins 2026-11-02): a medical vacuum pump whose exhaust nobody answered
+  if (kinds.vacPump && !String(unitAnswers.vacuumExhaust || '').trim()) {
+    missing.push('Medical vacuum pump \u2014 Exhaust (where this pump\u2019s exhaust goes)');
+  }
   // Build 122 (soft, like the rest): a transformer's survey
-  if (unitKinds(equipType, getTemplate(), sources).xfmr) {
+  if (kinds.xfmr) {
     if (!sources.some(isSecondaryMainRow)) missing.push('Transformer \u2014 secondary main');
     if (!sources.some(isAlternateSourceRow) && !unitAnswers.xfmrAltNone) missing.push('Transformer \u2014 alternate sources (or None found)');
     if (!xfmrNameplateText(unitAnswers)) missing.push('Transformer \u2014 nameplate');

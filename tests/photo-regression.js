@@ -123,6 +123,9 @@
 //             zeros, hidden sheets; replaced / removed building lists kept and put back; any tap on the list lets a typed
 //             box go first and follows its row; the hold stops for the tech; "Not yet exported" and the saved-twice guard;
 //             the summary counts the facility picked
+//   T437–T441 build 144 (wilkins 2026-11-02, loto-web's vacuum chat): a medical vacuum system's valve, switches and
+//             pump count; "any other power to this pump?"; the union/flange "Cover" answer and its photo hint; a
+//             Vacuum Pump with no template says so and the plain pick asks; a blank exhaust is missing at Save & New
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -5909,7 +5912,7 @@
     // the Vacuum Pump type offers it; the medical template is untouched
     const vpOffers = (EQUIPMENT_TEMPLATE_MAP['Vacuum Pump'] || []).join();
     const medOk = vpOffers === 'Vacuum Pump,Medical Vacuum,Medical Vacuum Pump,Lab Vacuum,Dental Vacuum'   // + Medical Vacuum Pump since build 111, Dental Vacuum since 114
-      && (TEMPLATE_AUTO_SOURCES['Medical Vacuum'] || []).map(x => x.energySource).join() === 'Electrical 208V';
+      && (TEMPLATE_AUTO_SOURCES['Medical Vacuum'] || []).map(x => x.energySource).join() === 'Electrical 208V,Vacuum Air In';   // + the receiver's valve since build 144
     // custom type names
     const custom = async (typed) => {
       fillFormNoSources('C-199');
@@ -7040,9 +7043,9 @@
     want(got.listCancel.asked && got.listCancel.template === 'Medical Vacuum' && got.listCancel.rows.join('|') === sysRows, 'list pick, Cancel');
     got.listTake = await pickFromList('Medical Vacuum Pump', 'Medical Vacuum Pump');
     want(got.listTake.asked && got.listTake.template === 'Medical Vacuum Pump', 'list pick, answer taken');
-    // a template that is not a vacuum one: no question
+    // the plain Vacuum Pump pick asks too since build 144 (T440); the answer is the template
     got.listOther = await pickFromList('Vacuum Pump', 'Medical Vacuum');
-    want(!got.listOther.asked && got.listOther.template === 'Vacuum Pump', 'list pick of plain Vacuum Pump');
+    want(got.listOther.asked && got.listOther.template === 'Medical Vacuum', 'list pick of plain Vacuum Pump');
     // the Lab Vacuum type offers one answer: no question
     fillFormNoSources('LV-229');
     document.getElementById('equipType').value = 'Lab Vacuum';
@@ -7599,7 +7602,8 @@
       const base = row.number - 2;
       const b = { base, at24: v(base + 24, 1), labels: {}, values: {}, src: [] };
       for (const [slot, [r, c]] of Object.entries(UNIT_SHEET_SLOTS)) { b.labels[slot] = v(base + r, c); b.values[slot] = v(base + r + 1, c); }
-      for (let n = 1; n <= 10; n++) b.src.push({ head: v(base + 2 * n + 2, 14) + '/' + v(base + 2 * n + 2, 15), es: v(base + 2 * n + 3, 1), drain: v(base + 2 * n + 3, 14), lock: v(base + 2 * n + 3, 15) });
+      for (let n = 1; n <= 10; n++) b.src.push({ head: v(base + 2 * n + 2, 14) + '/' + v(base + 2 * n + 2, 15), es: v(base + 2 * n + 3, 1), drain: v(base + 2 * n + 3, 14), lock: v(base + 2 * n + 3, 15),
+        dev: v(base + 2 * n + 3, 2), id: v(base + 2 * n + 3, 3), link: v(base + 2 * n + 3, 13) });   // build 144: device, ID, link
       out[v(base + 3, 1)] = b;
     });
     return out;
@@ -7782,6 +7786,7 @@
         if (o.id === 'pump-inlet-valve') return 'yes';
         if (o.id === 'vacuum-exhaust') return exhaust;
         if (o.id === 'vacuum-relief-joint') return joint;
+        if (o.id === 'vacuum-other-power') return 'No';   // asked last since build 144 (T438)
         return 'cancel';
       } }, async () => {
         handleEquipTypeChange();
@@ -9205,18 +9210,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 143 (was build 122\'s): APP_BUILD and the header label say 143, the service worker\'s cache is loto-collector-v7.138, Xcode\'s CURRENT_PROJECT_VERSION is 143 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 144 (was build 122\'s): APP_BUILD and the header label say 144, the service worker\'s cache is loto-collector-v7.139, Xcode\'s CURRENT_PROJECT_VERSION is 144 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 143 && !!label && +label[1] === 143, 'the build');
+    want(APP_BUILD === 144 && !!label && +label[1] === 144, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.138', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.139', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 143;,CURRENT_PROJECT_VERSION = 143;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 144;,CURRENT_PROJECT_VERSION = 144;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -14540,6 +14545,247 @@
     want(/^Looking at saved unit/.test(got.merged) && a.notes === 'from the other copy' && !formEditTarget(), 'the newer copy stays: ' + got.merged + ' / ' + JSON.stringify(a.notes));
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+
+  // ---- Build 144: medical vacuum (wilkins 2026-11-02, loto-web's vacuum chat) ----
+  // A Vacuum Pump unit taken through the type's question, the voltage and the
+  // pump's own questions; `answer(o)` answers each dialog.
+  async function vacuumUnitViaType(name, answer, voltage) {
+    fillFormNoSources(name);
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'Vacuum Pump';
+    let count = null, countButtons = 0;
+    await withDialogs({ confirm: true, choice: (o) => answer(o) }, async () => {
+      handleEquipTypeChange();
+      await sleep(0); await sleep(0);
+      if (document.getElementById('templateVoltageOverlay')) applyTemplateVoltageChoice(voltage || '480V');
+      for (let k = 0; k < 8; k++) await sleep(0);
+      const o = document.getElementById('electricalCountOverlay');
+      if (o) { count = o.textContent.replace(/\s+/g, ' ').trim(); countButtons = o.querySelectorAll('button').length; }
+    });
+    return { count, countButtons };
+  }
+  const vacuumRows = () => sources.map(x => [x.energySource, x.deviceType, x.location, x.verification].join('/'));
+
+  // T437 — D1, D2: a medical vacuum system is Lab Vacuum's shape
+  async function t437_aMedicalVacuumSystemHasItsValveAndSwitches() {
+    const N = 'T437 build 144 (D1–D2): Medical Vacuum — the receiver and all its pumps — starts with an Electrical Disconnect / SW (Hand/Off/Auto) and the receiver\'s Vacuum Air In ball valve (Gauge/Drain); its count prompt asks "How many pumps are on this receiver tank? …" (1–4) and every pump\'s row keeps SW (Hand/Off/Auto), ahead of the valve; a one-pump answer with no valve of its own gets the same';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const run = async (cover, valve) => {
+      const p = await vacuumUnitViaType('MV-437', (o) => o.id === 'vacuum-cover' ? cover : o.id === 'pump-inlet-valve' ? valve : 'cancel');
+      const first = { template: getTemplate(), rows: vacuumRows(), count: p.count, buttons: p.countButtons };
+      if (p.count) applyElectricalCountChoice(3);
+      closeAllPrompts();
+      return Object.assign(first, { three: vacuumRows() });
+    };
+    const E = 'Electrical 480V/Disconnect//SW (Hand/Off/Auto)', V = 'Vacuum Air In/Ball Valve//Gauge/Drain';
+    const ASK = 'How many pumps are on this receiver tank? Count every pump: each one gets its own disconnect (one Electrical source each).';
+    got.system = await run('Medical Vacuum');
+    want(got.system.template === 'Medical Vacuum' && got.system.rows.join('|') === [E, V].join('|'), 'the system\'s rows');
+    want(String(got.system.count).startsWith('Pumps on this receiver') && String(got.system.count).includes(ASK) && got.system.buttons === 4, 'the count prompt');
+    want(got.system.three.join('|') === [E, E, E, V].join('|'), 'three pumps: three switches, then the valve');
+    got.noValve = await run('Medical Vacuum Pump', 'no');
+    want(got.noValve.template === 'Medical Vacuum' && got.noValve.rows.join('|') === [E, V].join('|') && String(got.noValve.count).includes(ASK), 'one pump with no valve of its own');
+    want(TEMPLATE_AUTO_SOURCES['Medical Vacuum'].map(s => s.verification).join() === 'SW (Hand/Off/Auto),Gauge/Drain'
+      && TEMPLATE_ELECTRICAL_COUNT_PROMPT['Medical Vacuum'].ask === TEMPLATE_ELECTRICAL_COUNT_PROMPT['Lab Vacuum'].ask, 'the registries');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T438 — D3: any other power to a medical vacuum pump
+  async function t438_aMedicalVacuumPumpIsAskedAboutOtherPower() {
+    const N = 'T438 build 144 (D3): after its exhaust and union/flange a medical vacuum pump is asked "Any other power to this pump? …" once — Yes adds a blank row and opens the link dialog, and linking it to pump 1\'s drive row brings that row\'s energy source (its 480V, not this pump\'s 208V), Device, ID, Location and Verification, which the sheet carries with the link in column 13; closed without a link the row takes the pump\'s voltage; No adds nothing; closing the question leaves it unanswered; the answer is never on the sheet or in entries.json';
+    await resetAppState();
+    setHospitalCode('');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const p1 = mkEntry('MVP-438-1', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'VFD', deviceId: 'VFD-VP',
+      location: 'MCC-2', verification: 'Button (Hand/Off/Auto) - VFD' })] });
+    Object.assign(p1, { equipType: 'Vacuum Pump', template: 'Medical Vacuum Pump' });
+    savedEquipment = [p1]; saveAll();
+    let q = null;
+    const run = async (other) => {
+      const asked = [];
+      await vacuumUnitViaType('MVP-438-2', (o) => {
+        asked.push(o.id);
+        if (o.id === 'vacuum-cover') return 'Medical Vacuum Pump';
+        if (o.id === 'pump-inlet-valve') return 'yes';
+        if (o.id === 'vacuum-exhaust') return 'shared';
+        if (o.id === 'vacuum-relief-joint') return 'Yes';
+        if (o.id === 'vacuum-other-power') { q = o; return other; }
+        return 'cancel';
+      }, '208V');
+      closeAllPrompts();
+      return { asked: asked.filter(x => /^vacuum-(exhaust|relief|other)/.test(x)).join(), rows: vacuumRows(),
+               link: !!document.getElementById('linkDialogOverlay'), answer: unitAnswers.otherPower || '' };
+    };
+    const MVP = 'Electrical 208V/Disconnect/Panel/SW (Hand/Off/Auto)|Vacuum Air In/Ball Valve//Gauge/Drain';
+    got.yes = await run('Yes');
+    want(got.yes.asked === 'vacuum-exhaust,vacuum-relief-joint,vacuum-other-power', 'asked last: ' + got.yes.asked);
+    got.q = q ? [q.title, q.choices.map(c => c.value + '=' + c.label).join(';')].join(' | ') : null;
+    want(got.q === 'Other power to this pump? | Yes=Yes, add an Electrical row;No=No'
+      && /^Any other power to this pump\? A shared drive \(VFD\), a second disconnect, or a panel label that says &ldquo;multiple supply sources&rdquo;\./.test(q.html), 'the question');
+    want(got.yes.rows.join('|') === MVP + '|///' && got.yes.link && got.yes.answer === 'Yes', 'Yes adds a blank row and opens the link dialog');
+    const idx = sources.length - 1;
+    applyLink(0, 0);
+    const s = sources[idx];
+    got.linked = [s.energySource, s.deviceType, s.deviceId, s.location, s.verification, s.linkedTo && s.linkedTo.equipName].join('/');
+    want(got.linked === 'Electrical 480V/VFD/VFD-VP/MCC-2/Button (Hand/Off/Auto) - VFD/MVP-438-1' && !document.getElementById('linkDialogOverlay'), 'linked to pump 1\'s drive, at its voltage');
+    const again = [];
+    await withDialogs({ choice: (o) => { again.push(o.id); return 'cancel'; } }, async () => { await maybeAskVacuumExhaust(); });
+    want(again.join() === '', 'not asked again: ' + again.join());
+    const el = formEntryLike();
+    got.out = JSON.stringify(unitSheetCells(el)) + JSON.stringify(unitAnswersForJson(el));
+    want(!/otherPower|other power/i.test(got.out), 'never on the sheet or in entries.json');
+    // the sheet: the linked row is the shared drive, named in column 13
+    saveEntry();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    const B = xpath ? await sheetBlocks(u.files[xpath]) : {};
+    const r3 = ((B['MVP-438-2'] || {}).src || [])[2] || {};   // its own disconnect, the inlet valve, then this row
+    got.sheet = [r3.es, r3.dev, r3.id, r3.link].join('/');
+    want(got.sheet === 'Electrical 480V/VFD/VFD-VP/MVP-438-1 / Source #1 (Electrical 480V — VFD — (VFD-VP))', 'the sheet\'s linked row');
+    // closed without a link: the row takes this pump's voltage
+    got.unlinked = await run('Yes');
+    closeLinkDialog();
+    got.unlinked.after = vacuumRows().join('|');
+    want(got.unlinked.after === MVP + '|Electrical 208V///' && !document.getElementById('linkDialogOverlay'), 'closed without a link: the pump\'s voltage');
+    got.no = await run('No');
+    want(got.no.rows.join('|') === MVP && !got.no.link && got.no.answer === 'No', 'No adds nothing');
+    got.closed = await run('cancel');
+    want(got.closed.rows.join('|') === MVP && !got.closed.link && got.closed.answer === '', 'closed: unanswered, nothing added');
+    closeLinkDialog();
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T439 — D4: the inlet filter's cover is an answer of its own
+  async function t439_theInletFilterCoverIsAnAnswer() {
+    const N = 'T439 build 144 (D4): "Union or flange at the inlet" answers Yes / Cover ("No, the inlet filter has a cover that opens") / No and asks for the union, flange or filter cover in the inlet valve\'s photo; Cover writes no change-later note, No keeps it; the form offers the same three values; the sheet\'s Union/Flange (U4) carries "Cover", entries.json too, app-lists.json lists them';
+    await resetAppState();
+    setHospitalCode('');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    let q = null;
+    const run = async (joint) => {
+      await vacuumUnitViaType('MVP-439', (o) => {
+        if (o.id === 'vacuum-cover') return 'Medical Vacuum Pump';
+        if (o.id === 'pump-inlet-valve') return 'yes';
+        if (o.id === 'vacuum-exhaust') return 'own';
+        if (o.id === 'vacuum-relief-joint') { q = o; return joint; }
+        if (o.id === 'vacuum-other-power') return 'No';
+        return 'cancel';
+      });
+      closeAllPrompts();
+      renderUnitQuestions(true);
+      return { joint: unitAnswers.reliefJoint || '', note: changeLaterSheetText(formEntryLike()),
+               form: [...document.querySelectorAll('#uq_reliefJoint option')].map(o => o.value + '=' + o.textContent.trim()).join('|'),
+               formValue: (document.getElementById('uq_reliefJoint') || {}).value };
+    };
+    got.cover = await run('Cover');
+    got.q = q ? [q.title, q.choices.map(c => c.value + '=' + c.label).join(';')].join(' | ') : null;
+    want(got.q === 'Union or flange at the inlet | Yes=Yes, a union or flange;Cover=No, the inlet filter has a cover that opens;No=No union, flange or filter cover', 'the answers');
+    want(q && /Get the union, flange or filter cover into the inlet valve&rsquo;s photo \(the Vacuum Air In row\)\./.test(q.html), 'the photo hint');
+    want(got.cover.joint === 'Cover' && got.cover.note === '' && got.cover.formValue === 'Cover', 'Cover: no note');
+    want(got.cover.form === '=-- Not answered --|Yes=Yes|Cover=Cover (the inlet filter’s cover opens)|No=No (no union, flange or cover)', 'the form\'s three values');
+    got.no = await run('No');
+    want(got.no.joint === 'No' && got.no.note === RELIEF_JOINT_NOTE, 'No keeps the note');
+    got.closed = await run('cancel');
+    want(got.closed.joint === 'Yes' && got.closed.note === '', 'closed: the default Yes stays');
+    setUnitAnswer('reliefJoint', 'Cover');
+    want(unitAnswers.reliefJoint === 'Cover' && changeLaterSheetText(formEntryLike()) === '', 'the form\'s Cover');
+    // the export
+    const S = (es, extra) => Object.assign(mkSrc(es), { sourceId: genUuid() }, extra || {});
+    const unit = (name, joint) => Object.assign(mkEntry(name, { sources: [S('Electrical 208V', { deviceType: 'Disconnect', location: 'Panel', verification: 'SW (Hand/Off/Auto)' }),
+      S('Vacuum Air In', { deviceType: 'Ball Valve', verification: 'Gauge/Drain' })] }),
+      { equipType: 'Vacuum Pump', template: 'Medical Vacuum Pump', unitAnswers: { vacuumExhaust: 'Own valve', reliefJoint: joint } });
+    savedEquipment = [unit('MVP-439-C', 'Cover'), unit('MVP-439-N', 'No')]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    const B = xpath ? await sheetBlocks(u.files[xpath]) : {};
+    const cell = (n, s) => B[n] ? B[n].labels[s] + ':' + B[n].values[s] : 'missing';
+    got.sheet = [cell('MVP-439-C', 'U2'), cell('MVP-439-C', 'U4'), cell('MVP-439-N', 'U2'), cell('MVP-439-N', 'U4')].join('|');
+    want(got.sheet === 'Change Later:|Union/Flange:Cover|Change Later:' + RELIEF_JOINT_NOTE + '|Union/Flange:No', 'the sheet');
+    const je = {}; ((u.entriesJson && u.entriesJson.entries) || []).forEach(e => { je[e.equipName] = e; });
+    got.json = [(je['MVP-439-C'] || {}).reliefJoint, (je['MVP-439-N'] || {}).reliefJoint].join();
+    want(got.json === 'Cover,No', 'entries.json');
+    const lists = appListsSnapshot(APP_BUILD);
+    want(((lists.answers || {}).reliefJoint || []).join() === 'Yes,Cover,No', 'app-lists.json');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T440 — D5: a Vacuum Pump with no template says so; the plain pick asks
+  async function t440_aVacuumPumpWithNoTemplateSaysSo() {
+    const N = 'T440 build 144 (D5): a Vacuum Pump left with no template ("Choose later") writes the change-later note "Template not chosen" (after the tech\'s own text, " | "), gone once a template is chosen and never on another type; picking the plain "Vacuum Pump" from the list asks "What does this record cover?" with the four answers and "Keep Vacuum Pump" — an answer switches the template, Keep or closing keeps Vacuum Pump';
+    await resetAppState();
+    setHospitalCode('');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const later = async () => {
+      await vacuumUnitViaType('VP-440', () => 'cancel');
+      closeAllPrompts();
+    };
+    await later();
+    got.later = [getTemplate(), changeLaterSheetText(formEntryLike())].join('|');
+    want(got.later === '|Template not chosen', 'Choose later: the note');
+    const pickPlain = async (answer) => {
+      let asked = null;
+      await withDialogs({ confirm: true, choice: (o) => { if (o.id === 'vacuum-cover') { asked = o; return answer; } if (o.id === 'pump-inlet-valve') return 'yes'; return 'cancel'; } }, async () => {
+        rememberTemplateBefore();
+        document.getElementById('equipTemplate').value = 'Vacuum Pump';
+        await onTemplateSelectChange();
+        await sleep(0);
+      });
+      closeAllPrompts();
+      return { choices: asked ? asked.choices.map(c => c.label + (c.primary ? '*' : '')).join('|') : null, template: getTemplate(),
+               note: changeLaterSheetText(formEntryLike()) };
+    };
+    got.keep = await pickPlain('cancel');
+    want(got.keep.choices === 'Patient care: one pump on a shared receiver|Patient care: the receiver and all its pumps|Laboratory: the receiver and all its pumps|Dental: the tank and all its pumps|Keep Vacuum Pump', 'the question: ' + got.keep.choices);
+    want(got.keep.template === 'Vacuum Pump' && got.keep.note === '', 'Keep: Vacuum Pump, and the note goes');
+    await later();
+    got.answer = await pickPlain('Medical Vacuum');
+    want(got.answer.template === 'Medical Vacuum' && got.answer.note === '', 'an answer switches the template');
+    // the export
+    const unit = (name, type, template, own) => Object.assign(mkEntry(name), { equipType: type, template, unitAnswers: own ? { changeLater: own } : {} });
+    savedEquipment = [unit('VP-440-A', 'Vacuum Pump', ''), unit('VP-440-B', 'Vacuum Pump', '', 'Check the tank'),
+      unit('VP-440-C', 'Vacuum Pump', 'Lab Vacuum'), unit('P-440-D', 'Pump', '')]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    const B = xpath ? await sheetBlocks(u.files[xpath]) : {};
+    got.sheet = ['VP-440-A', 'VP-440-B', 'VP-440-C', 'P-440-D'].map(n => B[n] ? B[n].labels.U2 + ':' + B[n].values.U2 : 'missing').join('|');
+    want(got.sheet === 'Change Later:Template not chosen|Change Later:Check the tank | Template not chosen|Change Later:|Change Later:', 'the sheet');
+    const je = {}; ((u.entriesJson && u.entriesJson.entries) || []).forEach(e => { je[e.equipName] = e; });
+    got.json = JSON.stringify((je['VP-440-A'] || {}).changeLater);
+    want(got.json === '{"text":"Template not chosen","auto":true}', 'entries.json');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T441 — D7: a medical vacuum pump's blank exhaust is missing at Save & New
+  async function t441_aBlankExhaustIsMissing() {
+    const N = 'T441 build 144 (D7): Save & New lists "Medical vacuum pump — Exhaust (where this pump’s exhaust goes)" while a medical vacuum pump\'s exhaust is unanswered, and not once it is answered or on a medical vacuum system';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const MISSING = 'Medical vacuum pump — Exhaust (where this pump’s exhaust goes)';
+    await vacuumUnitViaType('MVP-441', (o) => o.id === 'vacuum-cover' ? 'Medical Vacuum Pump' : o.id === 'pump-inlet-valve' ? 'yes' : 'cancel');
+    closeAllPrompts();
+    got.blank = [getTemplate(), unitAnswers.vacuumExhaust || '', collectIncompleteFields().includes(MISSING)].join('|');
+    want(got.blank === 'Medical Vacuum Pump||true', 'blank: listed');
+    setUnitAnswer('vacuumExhaust', 'Can\'t see');
+    got.answered = collectIncompleteFields().includes(MISSING);
+    want(!got.answered, 'answered: not listed');
+    await vacuumUnitViaType('MV-441', (o) => o.id === 'vacuum-cover' ? 'Medical Vacuum' : 'cancel');
+    closeAllPrompts();
+    got.system = [getTemplate(), collectIncompleteFields().includes(MISSING)].join('|');
+    want(got.system === 'Medical Vacuum|false', 'a system: not listed');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -14719,7 +14965,9 @@
     t430_theBuildingColumnIsFoundAndBadFilesAreRefused, t431_theBuildingImportReviewFixes,
     t432_aCardOpensWhereItIsWithABoxStillFocused,
     t433_theBuildingImportReadsRealInventories, t434_aReplacedOrRemovedBuildingListIsKept,
-    t435_everyTapOnTheListLetsTheBoxGoFirst, t436_anOutdatedCopyNeverGoesAloneAndTheSummaryCountsTheFacility];
+    t435_everyTapOnTheListLetsTheBoxGoFirst, t436_anOutdatedCopyNeverGoesAloneAndTheSummaryCountsTheFacility,
+    t437_aMedicalVacuumSystemHasItsValveAndSwitches, t438_aMedicalVacuumPumpIsAskedAboutOtherPower,
+    t439_theInletFilterCoverIsAnAnswer, t440_aVacuumPumpWithNoTemplateSaysSo, t441_aBlankExhaustIsMissing];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
