@@ -15535,7 +15535,7 @@
 
   // T460 — steam at the site's own pressure (build 149)
   async function t460_aSteamRowTakesTheSitesPressure() {
-    const N = 'T460 build 149 (wilkins: "MPS could be 15 PSI in one location but 30 in another"): a steam row offers "Change pressure"; the number typed goes into the name ("MPS 30 PSI"), saved as typed, kept by the list in its class\'s place, the class\'s defaults and boiler lists still apply; blank, 0 or past 300 keeps the pressure it had; exported as the name in entries.json and the sheet; no control on other rows';
+    const N = 'T460 build 149 (wilkins: "MPS could be 15 PSI in one location but 30 in another"): a steam row\'s More menu offers "Change steam pressure" (nothing new on the card until it is used); the number typed goes into the name ("MPS 30 PSI"), saved as typed, kept by the list in its class\'s place, the class\'s defaults and boiler lists still apply (a custom "HPS …" name keeps its own); anything but a whole number 1 to 300 ("2.5", "500", "-5") keeps the pressure it had and says so as it is typed, also when the unit is saved before the box is left; exported as the name in entries.json and the sheet; no control on other rows';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -15543,21 +15543,23 @@
     const box = () => document.getElementById('src_psi_in_0');
     const type = (text) => { const el = box(); el.value = text; typeSteamPressure(0, el); return sources[0].energySource; };
     const leave = async (text) => withToasts(async () => { const el = box(); if (text !== undefined) { el.value = text; typeSteamPressure(0, el); } commitSteamPressure(0, el); });
+    const menuItem = () => [...card().querySelectorAll('.src-more-menu button')].find(b => b.textContent === 'Change steam pressure');
     // the names the app makes, and the ones it doesn't
     got.parse = ['MPS 30 PSI', 'HPS 300 PSI', 'LPS 1 PSI', 'HPS 301 PSI', 'MPS 0 PSI', 'MPS 030 PSI', 'mps 30 psi', 'MPS 30 PSIG', 'Steam 30 PSI', ' MPS 30 PSI']
       .map(n => { const p = steamPressureOf(n); return p ? p.cls + p.psi : '-'; }).join(',');
     want(got.parse === 'MPS30,HPS300,LPS1,-,-,-,-,-,-,-', 'steamPressureOf ' + got.parse);
     want(listEnergyName('HPS 125 PSI') === 'HPS 100 PSI' && listEnergyName('Electrical 480V') === 'Electrical 480V'
       && (sourceDefaultsOf('MPS 30 PSI') || {}).device === 'Gate Valve', 'the class\'s list name and defaults');
-    // a steam row at its usual pressure: only the link
+    // a steam row at its usual pressure: nothing new on the card, the item in its More menu
     fillFormNoSources('HX-460');
     addSource();
     handleEnergySourceChange(0, 'MPS 20 PSI');
-    got.start = [sources[0].deviceType, (card().querySelector('#src_psi_0') || {}).tagName || '-', !!box()].join(',');
-    want(got.start === 'Gate Valve,BUTTON,false', 'a new MPS row ' + got.start);
-    openSteamPressure(0);
-    got.opened = [!!box() && box().value, document.activeElement === box()].join(',');
-    want(got.opened === '20,true', 'Change pressure opens the box, focused ' + got.opened);
+    const slot = card().querySelector('#src_psi_0');
+    got.start = [sources[0].deviceType, slot ? slot.tagName + (slot.hidden ? ' hidden' : '') : '-', !!box(), !!menuItem()].join(',');
+    want(got.start === 'Gate Valve,SPAN hidden,false,true', 'a new MPS row ' + got.start);
+    if (menuItem()) menuItem().click();
+    got.opened = [!!box() && box().value, document.activeElement === box(), !!menuItem()].join(',');
+    want(got.opened === '20,true,true', 'Change steam pressure opens the box, focused ' + got.opened);
     // typed: saved per keystroke, never redrawn meanwhile
     const el0 = box();
     got.typed = [type('3'), type('30')].join(',');
@@ -15569,14 +15571,15 @@
     got.list = [sel.value, names.filter(v => /^MPS /.test(v)).join('|'), names.length === offeredEnergySources().length + 2].join(',');
     want(got.list === 'MPS 30 PSI,MPS 30 PSI,true' && names.indexOf('MPS 30 PSI') === offeredEnergySources().indexOf('MPS 20 PSI') + 1, 'the list ' + got.list);
     want((card().querySelector('.src-head-title') || {}).textContent === 'MPS 30 PSI · Gate Valve' && !got.leftToasts.length, 'title / toasts ' + JSON.stringify(got.leftToasts));
-    // what it can't be keeps the pressure it had, with a word
+    // what it can't be keeps the pressure it had, with one word (as typed; a blank box when left)
     got.bad = [];
-    for (const t of ['500', '', '0', 'abc']) {
-      got.bad.push(type(t));
-      const ms = await leave();
-      got.bad.push(sources[0].energySource + '/' + box().value + '/' + ms.some(m => /1 to 300 PSI .*kept MPS 30 PSI/.test(m)));
+    for (const t of ['500', '2.5', '', '0', 'abc', '-5', '1,5']) {
+      let typed = '';
+      const ms = await withToasts(async () => { typed = type(t); commitSteamPressure(0, box()); });
+      got.bad.push(t + ':' + typed + '/' + sources[0].energySource + '/' + box().value + '/' + ms.filter(m => /1 to 300 PSI .*kept MPS 30 PSI/.test(m)).length);
     }
-    want(got.bad.join(',') === 'MPS 30 PSI,MPS 30 PSI/30/true,MPS 30 PSI,MPS 30 PSI/30/true,MPS 30 PSI,MPS 30 PSI/30/true,MPS 30 PSI,MPS 30 PSI/30/true', 'refused ' + got.bad.join(','));
+    want(got.bad.join(',') === ['500', '2.5', '', '0', 'abc', '-5', '1,5'].map(t => t + ':MPS 30 PSI/MPS 30 PSI/30/1').join(','), 'refused ' + got.bad.join(','));
+    want(box().getAttribute('aria-invalid') === 'false' && (menuItem() === undefined), 'after: ' + box().getAttribute('aria-invalid') + ' menu ' + !!menuItem());
     // drawn again: the box shows at once, with the usual pressure beside it
     renderSources();
     got.redrawn = [!!box() && box().value, /usual 20/.test((document.getElementById('src_psi_0') || {}).textContent || '')].join(',');
@@ -15591,6 +15594,15 @@
     let A = saveEntry();
     got.savedTyped = A && A.sources && A.sources[0].energySource;
     want(got.savedTyped === 'MPS 45 PSI', 'saved while typing ' + got.savedTyped);
+    // a refused text, saved before the box is left: the pressure it had, and the word came as it was typed
+    fillFormNoSources('HX-460r');
+    addSource(); handleEnergySourceChange(0, 'MPS 20 PSI');
+    openSteamPressure(0);
+    got.refusedToasts = await withToasts(async () => { type('45'); type('450'); });
+    A = saveEntry();
+    got.refusedSaved = A && A.sources && A.sources[0].energySource;
+    want(got.refusedSaved === 'MPS 20 PSI' && got.refusedToasts.filter(m => /1 to 300 PSI .*kept MPS 20 PSI/.test(m)).length === 1,
+      'refused then saved ' + got.refusedSaved + ' ' + JSON.stringify(got.refusedToasts));
     // the boiler's HPS lists take any pressure; another class from the list starts at its usual pressure
     await resetAppState();
     fillFormNoSources('BLR-460');
@@ -15601,11 +15613,14 @@
     const h = sources.findIndex(x => /^HPS /.test(x.energySource || ''));
     got.boiler = h;
     if (h >= 0) {
-      const wantDev = TEMPLATE_SOURCE_DEVICE_OVERRIDES['Boiler - Natural Gas - STM']['HPS'].join();
+      const wantDev = TEMPLATE_SOURCE_DEVICE_OVERRIDES['Boiler - Natural Gas - STM']['HPS 100 PSI'].join();
       const before = [getFilteredDevices(sources[h].energySource).join(), getFilteredVerifications('Gate Valve', sources[h].energySource).join()];
       sources[h].energySource = 'HPS 125 PSI';
       const after = [getFilteredDevices('HPS 125 PSI').join(), getFilteredVerifications('Gate Valve', 'HPS 125 PSI').join()];
       want(before[0] === wantDev && after.join('|') === before.join('|'), 'the boiler\'s HPS lists ' + JSON.stringify([before, after]));
+      // a custom name that only starts with HPS is no steam supply line: its own lists, as before build 149
+      want(getFilteredDevices('HPS Condensate Return').join() === baseDevicesFor('HPS Condensate Return').join()
+        && getFilteredDevices('HPS Condensate Return').join() !== wantDev, 'a custom HPS name took the boiler\'s devices');
       handleEnergySourceChange(h, 'LPS 10 PSI');
       want(sources[h].energySource === 'LPS 10 PSI', 'picked from the list: ' + sources[h].energySource);
     } else fails.push('no HPS row on the STM boiler');

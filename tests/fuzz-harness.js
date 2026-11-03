@@ -824,6 +824,21 @@
     }],
     ['addSource', 6, () => sources.length < 12, async () => { addSource(); return 'addSource'; }],
     ['editEnergy', 6, () => sources.length > 0, async () => { const i = srcIdx(); const v = chance(0.1) ? '** Custom Energy **' : pick(DATA.energySources); handleEnergySourceChange(i, v); if (v === '** Custom Energy **') updateSourceCustomField(i, 'energySource', pick(['Hydraulic Oil', ''])); return 'energy[' + i + ']=' + v; }],
+    // a steam row's own pressure (build 149): through its box, as typed — refused text included —
+    // and left or not (a save may come first)
+    ['steamPsi', 3, () => typeof steamPressureOf === 'function' && sources.length > 0, async () => {
+      let idx = sources.map((s, i) => !s._customEnergy && steamPressureOf(s.energySource) ? i : -1).filter(i => i >= 0);
+      if (!idx.length) { const j = srcIdx(); handleEnergySourceChange(j, pick(Object.values(STEAM_LIST_NAMES))); idx = [j]; }   // steam rows are rare on the list
+      const i = pick(idx);
+      if (sources[i].collapsed) expandSource(i);
+      openSteamPressure(i);
+      const el = document.getElementById('src_psi_in_' + i);
+      if (!el) return 'steamPsi (no box) ' + i;
+      const t = pick(['15', '30', '45', '125', '250', '2.5', '500', '', '0', '20', '100', '10', 'x']);
+      el.value = t; typeSteamPressure(i, el);
+      if (chance(0.6)) commitSteamPressure(i, el);
+      return 'steamPsi[' + i + ']=' + JSON.stringify(t) + ' ' + sources[i].energySource;
+    }],
     ['editDevice', 4, () => sources.length > 0, async () => { const i = srcIdx(); const v = pick(DATA.deviceTypes); handleDeviceTypeChange(i, v); return 'device[' + i + ']=' + v; }],
     ['editField', 7, () => sources.length > 0, async () => {
       const i = srcIdx(); const f = pick(['quantity', 'location', 'verification', 'valveState', 'deviceId', 'detail', 'duplicate']);
