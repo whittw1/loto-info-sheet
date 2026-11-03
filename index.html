@@ -526,7 +526,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b144</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b146</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -555,6 +555,8 @@ if ('serviceWorker' in navigator) {
       <button id="savedFilterAll" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('all')">All</button>
       <button id="savedFilterToday" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('today')">Today</button>
       <button id="savedFilterYesterday" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('yesterday')">Yesterday</button>
+      <!-- build 145: one facility's units only (remembered on this device) -->
+      <select id="savedFacilityFilter" onchange="setSavedFacility(this.value)" aria-label="Facility" style="padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);max-width:220px;"></select>
       <input id="savedSearchInput" type="search" placeholder="Search name / room / template…" oninput="setSavedSearch(this.value)" style="flex:1 1 180px;min-width:140px;padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);">
       <span id="savedFilterSummary" style="font-size:11px;color:var(--text-dim);"></span>
       <button class="btn btn-danger btn-sm" onclick="showBulkDeleteDialog()" style="padding:5px 10px;font-size:12px;margin-left:auto;" title="Delete multiple entries by date / facility">&#128465; Bulk Delete</button>
@@ -1201,6 +1203,7 @@ function savePhotoSettings() {
   if (hc === '__custom__') hc = document.getElementById('settingsHospitalCustom').value.trim();
   setHospitalCode(hc);
   updateFacilityBadge();
+  renderSavedPanel();        // the list follows the new facility (build 145 review)
   renderBuildingOptions();   // a new facility's buildings (build 142)
   const sketchChk = document.getElementById('settingsSketchShow');
   if (sketchChk) setSketchPrefForFacility(hc, sketchChk.checked);
@@ -1233,7 +1236,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 144;
+const APP_BUILD = 146;
 
 // ============================================================================
 // DATA
@@ -1349,6 +1352,8 @@ const DATA = {
   // A medical vacuum pump's inlet relief point (build 144: "Cover" = no union or
   // flange, but the inlet filter has a cover that opens)
   reliefJoint: ["Yes","Cover","No"],
+  // build 145: an Exhaust Fan's U3 "Biohazard", loto-web's spellings (BIOHAZARD_CHOICES)
+  biohazard: ["None","AII/TB","Aerosol-generating","Lab BSL-2","Hazardous drug","Can't tell"],
   drainLocations: ["On this valve","Between this valve and the equipment","On the equipment","None found"],
   yesNoCantTell: ["Yes","No","Can't tell"],
   yesNo: ["Yes","No"],
@@ -1467,6 +1472,7 @@ function appListsSnapshot(build) {
       atsBackfeed: DATA.atsBackfeed.slice(),
       vacuumExhaust: DATA.vacuumExhaust.slice(),
       reliefJoint: DATA.reliefJoint.slice(),   // build 144
+      biohazard: DATA.biohazard.slice(),   // build 145
       drainLocations: DATA.drainLocations.slice(),
       yesNoCantTell: DATA.yesNoCantTell.slice(),
       yesNo: DATA.yesNo.slice(),
@@ -2392,6 +2398,9 @@ let savedFilter = 'all';
 // Free-text search term applied on top of savedFilter. Matches equipName,
 // equipRoom, template (case-insensitive substring). Empty string = no filter.
 let savedSearchTerm = '';
+// Build 145: the saved list's facility ('all', or a hospitalCode with '' = no
+// facility), on top of the day and the search. Remembered on this device.
+let savedFacility = (() => { try { const v = localStorage.getItem('loto_saved_facility'); return v === null ? 'all' : v; } catch (e) { return 'all'; } })();
 // Last value the equipment-type change handler wrote into the Equipment ID/Name
 // field. If the current name still equals this, switching equipment types
 // replaces the name (the user hadn't customised it). A user-edited name won't
@@ -2505,6 +2514,7 @@ function setHospitalCode(code) {
     if (code) localStorage.setItem('loto_hospital_code', code);
     else localStorage.removeItem('loto_hospital_code');
   } catch (e) { /* localStorage blocked — nothing persists, exports fall back to '' */ }
+  followSavedFacility(code);   // the saved list follows a new facility (build 145 review)
 }
 
 // ---- Per-facility Overhead Sketch preference (build 78) ----
@@ -2545,9 +2555,17 @@ function hospitalName(code) {
 }
 // The code an entry should export under: its own stamp, else the current
 // setting (covers pre-feature entries and the unsaved current-form entry).
-function entryHospitalCode(entry) {
-  return (entry && entry.hospitalCode) || getHospitalCode() || '';
+function entryHospitalCode(entry, setting) {
+  return (entry && entry.hospitalCode) || (setting !== undefined ? setting : getHospitalCode()) || '';
 }
+// { code: units } for a list of units (the setting read once), and a code's
+// name in a facility picker — the saved list's, the Export's and Bulk Delete's.
+function countByFacility(entries) {
+  const setting = getHospitalCode(), counts = {};
+  for (const e of entries) { const c = entryHospitalCode(e, setting); counts[c] = (counts[c] || 0) + 1; }
+  return counts;
+}
+function facilityLabel(code) { return code ? (hospitalName(code) || code) : '(no facility)'; }
 
 // ============================================================================
 // INIT
@@ -3095,7 +3113,8 @@ function onTemplateSelectChange() {
 // unitAnswers is the open form's copy; a saved unit holds its own in
 // entry.unitAnswers. Keys: shop + shopOther, changeLater (the tech's own text),
 // uvLights, confinedSpace, atsMake, atsBackfeed (a list), capacitors,
-// vacuumExhaust, reliefJoint, refrigerant + refrigerantOther, refrigerantPsi.
+// vacuumExhaust, reliefJoint, refrigerant + refrigerantOther, refrigerantPsi,
+// biohazard (build 145, an Exhaust Fan's; BIOHAZARD_CHOICES).
 // otherPower (build 144) is the form's own, never on the sheet (askOtherPower).
 // Per source: drainLocation { where, text } and lockOpen.
 let unitAnswers = {};
@@ -3105,7 +3124,8 @@ let unitAnswers = {};
 // their values; row 26 = "Notes:", row 27 the notes). The value sits one row
 // below its label. On a taller block both rows move down with the Tied to row,
 // and loto-web reads them from there. U1 Shop is loto-web's 2026-10-09
-// contract; U7 and U8 are spare.
+// contract; U7 is Damper Actuators or a transformer's nameplate, U8 an Exhaust
+// Fan's Biohazard (build 145) or a transformer's SPD / capacitors / grounding.
 const UNIT_SHEET_SLOTS = { U1: [24, 10], U2: [24, 11], U3: [24, 12], U4: [24, 13],
                            U5: [26, 10], U6: [26, 11], U7: [26, 12], U8: [26, 13] };
 
@@ -3165,6 +3185,7 @@ function unitKinds(type, template, srcs) {
     ats: !xfmr && (type === 'ATS' || t === 'ATS - Generic'),
     chiller: !xfmr && (type === 'Chiller' || t === 'Chiller'),
     vacPump: !xfmr && t === 'Medical Vacuum Pump',
+    exhaustFan: !xfmr && t === 'Exhaust Fan',   // build 145: the biohazard question
     xfmr: xfmr,
     refrigerant: REFRIGERANT_TEMPLATES.includes(t)
       || (srcs || []).some(s => s && /refrigerant/i.test(String(s.energySource || '')))
@@ -3365,7 +3386,7 @@ function takeNewSourceDefaults(src, before) {
   // breaker). One reset (build 126).
   const valveGone = isValveDevice(oldDevice) && !isValveDevice(src.deviceType);
   const noValve = !isValveDevice(src.deviceType) && !getFilteredDevices(es).some(isValveDevice);
-  if (valveGone || noValve || !takesValveState(es, src.deviceType)) { src.valveState = 'normal'; delete src.lockOpen; }
+  if (valveGone || noValve || !takesValveState(es, src.deviceType)) { src.valveState = 'normal'; delete src.unitValveStates; delete src.lockOpen; delete src.unitLockOpen; }
   return valveGone ? oldDevice : '';
 }
 // What a swap says: the row's photo shows the valve, not what isolates it now.
@@ -3406,7 +3427,7 @@ function noteClause(notes) {
 // relief point: a Lock Open the export writes (lockOpenSheetText). One it won't
 // (a Pump row's) hides no drain answer (build 126).
 function sourceTakesDrainLocation(src, facility) {
-  if (!src || lockOpenSheetText(src) || !drainTakingSource(src)) return false;
+  if (!src || lockOpenWholeRow(src) || !drainTakingSource(src)) return false;
   if (src.drainLocation && src.drainLocation.where) return true;
   if (nonValveDevice(src)) return false;
   return drainCodeFollowsDrain(src) || releasePromptOn(facility === undefined ? formFacilityCode() : facility);
@@ -3433,18 +3454,177 @@ function drainsToSheetText(src, facility) {
 // an Electrical row, and loto-web printed "Leave valve E-1 closed" with no breaker
 // lockout). Lock Open is for a valve: it goes exactly where the card offers it. The
 // data is untouched.
+// Column 15: "Yes" when every valve is locked open; a mixed row (build 146) one
+// part per valve, "No; Yes", unit 1 first; blank when none is.
 function lockOpenSheetText(src) {
-  return (src && src.lockOpen && sourceOffersValveState(src)) ? 'Yes' : '';
+  if (!src || !sourceOffersValveState(src)) return '';
+  const u = unitLockOpenOf(src);
+  if (!u.some(Boolean)) return '';
+  return u.every(Boolean) ? 'Yes' : u.map(on => on ? 'Yes' : 'No').join('; ');
 }
+// Every valve of the row locked open (and written so): no valve of it is isolated
+// or drains (build 146: a mixed row's other valves still are)
+function lockOpenWholeRow(src) {
+  return lockOpenSheetText(src) === 'Yes';
+}
+// "normal", "normally_closed" or (build 146) "mixed", as loto-web takes it
 function valveStateForExport(src) {
-  return (src && src.valveState && takesValveState(src.energySource, src.deviceType)) ? src.valveState : 'normal';
+  return (src && src.valveState && takesValveState(src.energySource, src.deviceType)) ? rowValveState(src) : 'normal';
+}
+// The CSV's Valve State: the export's word, a mixed row's states "; "-joined
+function csvValveState(src) {
+  const vs = valveStateForExport(src);
+  return vs === 'mixed' ? unitValveStatesOf(src).join('; ') : vs;
+}
+// Column 11: blank, "Normally Closed", or a mixed row's "Normal; Normally Closed"
+// (build 146: "Normal" is written, never a blank part)
+function valveStateSheetText(src) {
+  const vs = valveStateForExport(src);
+  if (vs !== 'mixed') return VALVE_STATE_SHEET_TEXT[vs] || '';
+  return unitValveStatesOf(src).map(s => VALVE_STATE_SHEET_TEXT[s] || 'Normal').join('; ');
+}
+const VALVE_STATE_SHEET_TEXT = { normally_closed: 'Normally Closed', normally_open: 'Normally Open' };
+
+// ---- Per-valve state on one row (build 146) -------------------------------------
+// wilkins 2026-11-02: one source with two valves, the isolation valve and its
+// normally closed bypass, took a duplicate row. A row of 2+ valves can now hold
+// a state per valve: valveState "mixed" with unitValveStates (one per valve, unit
+// 1 first: Device ID's order, photo mark #n.1, the In valve of an In/Out pair);
+// Lock Open's per-valve answers in unitLockOpen beside the row's lockOpen. A row
+// whose valves agree reads, shows and exports exactly as before, whatever it holds.
+// loto-web contract: loto-web/docs/Field_App_Per_Unit_Valve_State_Spec_2026-11-02.md.
+function sourceQty(src) {
+  return Math.max(1, parseInt(src && src.quantity, 10) || 1);
+}
+// Each valve's state, one per unit (a short list reads Normal past its end)
+function unitValveStatesOf(src) {
+  const n = sourceQty(src);
+  if (!src || src.valveState !== 'mixed') return Array(n).fill((src && src.valveState) || 'normal');
+  const list = Array.isArray(src.unitValveStates) ? src.unitValveStates : [];
+  return Array.from({ length: n }, (_, k) => list[k] === 'normally_closed' ? 'normally_closed' : 'normal');
+}
+// The row's state: a "mixed" row whose valves agree is that state
+function rowValveState(src) {
+  if (!src || src.valveState !== 'mixed') return (src && src.valveState) || 'normal';
+  const u = unitValveStatesOf(src);
+  return u.every(s => s === u[0]) ? u[0] : 'mixed';
+}
+// Each valve locked open or not. A list wins (entries.json carries a mixed row's
+// list without lockOpen); else lockOpen covers every valve.
+function unitLockOpenOf(src) {
+  const n = sourceQty(src);
+  if (src && Array.isArray(src.unitLockOpen)) return Array.from({ length: n }, (_, k) => !!src.unitLockOpen[k]);
+  return Array(n).fill(!!(src && src.lockOpen));
+}
+function lockOpenTicked(src) {
+  return !!(src && (src.lockOpen || Array.isArray(src.unitLockOpen)));
+}
+// A valve's name on the card and the mark boxes: its number, or In / Out
+function valveUnitLabel(src, k) {
+  return isInOutPair(src) ? (k ? 'Out' : 'In') : String(k + 1);
+}
+// One per valve, the LAST one the odd one out: the bypass a split pulls (build 146)
+function lastValveOdd(n, odd, rest) {
+  return Array.from({ length: n }, (_, k) => k === n - 1 ? odd : rest);
+}
+// A changed count keeps each valve's answer, a new valve starting Normal / not
+// locked; under 2 valves, or with the valves agreeing, the row holds one answer
+// again. Returns the note for what a lower count dropped.
+function settleValveUnits(src) {
+  const n = sourceQty(src);
+  const dropped = [];
+  if (src.valveState === 'mixed') {
+    const list = Array.isArray(src.unitValveStates) ? src.unitValveStates : [];
+    list.slice(n).forEach((s, k) => { if (s === 'normally_closed') dropped.push('valve ' + (n + k + 1) + ' (Normally Closed)'); });
+    src.unitValveStates = unitValveStatesOf(src);
+    const u = src.unitValveStates;
+    if (n < 2 || u.every(s => s === u[0])) { src.valveState = u[0]; delete src.unitValveStates; }
+  }
+  if (Array.isArray(src.unitLockOpen)) {
+    src.unitLockOpen.slice(n).forEach((on, k) => { if (on) dropped.push('valve ' + (n + k + 1) + ' (Locked open)'); });
+    const u = unitLockOpenOf(src);
+    delete src.unitLockOpen;
+    if (n >= 2 && !u.every(on => on === u[0])) { src.unitLockOpen = u; src.lockOpen = true; }
+    else if (u[0]) src.lockOpen = true;
+    else delete src.lockOpen;
+  }
+  return dropped.length ? 'Quantity ' + n + ' dropped ' + dropped.join(' and ') : '';
+}
+// The card's Valve State: Normal / Normally Closed, or Mixed (2+ valves) with one
+// toggle per valve (build 146). Mixed starts with the last valve Normally Closed.
+function updateValveState(index, value) {
+  const src = sources[index];
+  if (!src) return;
+  markSourceEdited(index);
+  src.valveState = value;
+  if (value === 'mixed') src.unitValveStates = lastValveOdd(sourceQty(src), 'normally_closed', 'normal');
+  else delete src.unitValveStates;
+  renderSources();
+  autoSaveCurrent();
+}
+function toggleUnitValveState(index, unit) {
+  const src = sources[index];
+  if (!src || src.valveState !== 'mixed') return;
+  markSourceEdited(index);
+  const u = unitValveStatesOf(src);
+  u[unit] = u[unit] === 'normally_closed' ? 'normal' : 'normally_closed';
+  src.unitValveStates = u;
+  renderSources();
+  autoSaveCurrent();
+}
+// "Only some valves?" under a ticked Locked open: the last valve alone to start
+function setLockOpenPerValve(index) {
+  const src = sources[index];
+  if (!src) return;
+  markSourceEdited(index);
+  src.lockOpen = true;
+  src.unitLockOpen = lastValveOdd(sourceQty(src), true, false);
+  renderSources();
+  autoSaveCurrent();
+}
+function toggleUnitLockOpen(index, unit) {
+  const src = sources[index];
+  if (!src || !Array.isArray(src.unitLockOpen)) return;
+  markSourceEdited(index);
+  const u = unitLockOpenOf(src);
+  u[unit] = !u[unit];
+  src.unitLockOpen = u;
+  // No valve left locked open: the box unticks (build 146 review — it stayed
+  // ticked with nothing on the sheet). To move the lock, tap the other valve first.
+  if (!u.some(Boolean)) { delete src.lockOpen; delete src.unitLockOpen; }
+  renderSources();
+  autoSaveCurrent();
+}
+// The toggle line: one button per valve, the odd state filled
+function valveUnitToggles(src, i, kind) {
+  const lock = kind === 'lock';
+  const u = lock ? unitLockOpenOf(src) : unitValveStatesOf(src);
+  const tags = String(src.deviceId || '').includes(';') ? splitUnitIds(src.deviceId) : [];
+  return html`<div class="valve-unit-toggles" id="src_${lock ? 'lockunits' : 'vsunits'}_${i}" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
+    ${u.map((s, k) => {
+      const on = lock ? s : s === 'normally_closed';
+      const word = lock ? (on ? 'Locked' : '—') : (on ? 'NC' : 'Normal');
+      const tag = String(tags[k] || '').trim();
+      return html`<button type="button" class="btn btn-sm ${on ? '' : 'btn-outline'}" style="${on ? 'background:#b5451b;border-color:#b5451b;color:#fff;' : ''}min-width:64px;"
+        title="Valve ${valveUnitLabel(src, k)}${tag ? ' (' + tag + ')' : ''}: tap to change"
+        onclick="${lock ? 'toggleUnitLockOpen' : 'toggleUnitValveState'}(${i},${k})">${valveUnitLabel(src, k)} ${word}</button>`;
+    })}
+  </div>`;
+}
+// The collapsed card's badge: NC on a Normally Closed row, "NC 1/2" on a mixed one
+function valveStateBadgeText(src) {
+  const vs = rowValveState(src);
+  if (vs === 'normally_closed') return 'NC';
+  if (vs !== 'mixed') return '';
+  const u = unitValveStatesOf(src);
+  return 'NC ' + u.filter(s => s === 'normally_closed').length + '/' + u.length;
 }
 // The card's note on a held answer the export won't write (build 126): it isn't
 // silently dropped. `what` is 'state' or 'lock'.
 function valveAnswerNote(src, what) {
   if (!src) return '';
-  const held = what === 'state' ? (src.valveState && src.valveState !== 'normal') : !!src.lockOpen;
-  const sent = what === 'state' ? valveStateForExport(src) === src.valveState : !!lockOpenSheetText(src);
+  const held = what === 'state' ? (src.valveState && src.valveState !== 'normal') : unitLockOpenOf(src).some(Boolean);
+  const sent = what === 'state' ? takesValveState(src.energySource, src.deviceType) : !!lockOpenSheetText(src);
   if (!held || sent) return '';
   const es = String(src.energySource || '').trim(), dev = String(src.deviceType || '').trim();
   const why = !takesValveState(es, dev)
@@ -3558,6 +3738,7 @@ function updateLockOpen(index, checked) {
   if (!src) return;
   markSourceEdited(index);
   if (checked) src.lockOpen = true; else delete src.lockOpen;
+  delete src.unitLockOpen;   // ticked or not, every valve (build 146: "Only some valves?" splits it)
   renderSources();
   autoSaveCurrent();
 }
@@ -4846,6 +5027,41 @@ function changeLaterSheetText(entryLike) {
   return [own].concat(changeLaterAutoNotes(entryLike)).filter(Boolean).join(' | ');
 }
 
+// ---- An exhaust fan's biohazard (build 145, wilkins 2026-11-02) ---------------
+// loto-web classes a unit's biological exposure (Equipment.bio_hazard_class,
+// its bio_control_library) and prints the matrix's EXPOSURE CONTROLS band from
+// it. Kitchen and toilet exhaust is not biological, AII/TB and lab exhaust is
+// (wilkins 2026-09-14), so the tech answers it on every Exhaust Fan. `sheet` is
+// the "Biohazard" value on the sheet (slot U8), `code` loto-web's class
+// (entries.json), `cautions` the procedure's two Section 2 CAUTIONs, which the
+// form shows once a hazard is picked. Labels and cautions word for word as
+// wilkins approved them through loto-web (2026-11-02), keyed by the spellings in
+// DATA.biohazard (app-lists.json), whose order the menu follows.
+const BIOHAZARD_INFO = {
+  "None": { code: "NONE", label: "None (kitchen, toilet, general exhaust)" },
+  "AII/TB": { code: "AII_TB", label: "AII / TB isolation room exhaust",
+    cautions: ["This fan exhausts airborne infection isolation (AII / TB) rooms. Shutting it down can reverse the rooms' negative pressure and push contaminated air into the corridors. Before shutdown, coordinate with Infection Control, Industrial Hygiene and Facility Safety: the served rooms must be vacated and posted, or an approved temporary HEPA negative-air unit placed in service and verified. Industrial Hygiene sets how long the fan keeps running after the rooms are vacated, before it is shut down.",
+      "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with infectious aerosol (M. tuberculosis). Anyone opening them wears a respirator selected by Industrial Hygiene in addition to the basic LOTO PPE. Decontaminate interior surfaces with an EPA-registered tuberculocidal disinfectant before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."] },
+  "Aerosol-generating": { code: "AEROSOL_GEN", label: "Aerosol-generating procedure room exhaust (bronchoscopy, autopsy)",
+    cautions: ["This fan exhausts rooms where aerosol-generating procedures are performed (bronchoscopy, sputum induction, autopsy). Shutting it down can reverse the rooms' negative pressure and push contaminated air into the corridors. Before shutdown, coordinate with Infection Control, Industrial Hygiene and Facility Safety: the served rooms must be vacated and posted, or an approved temporary HEPA negative-air unit placed in service and verified. Industrial Hygiene sets how long the fan keeps running after the rooms are vacated, before it is shut down.",
+      "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with infectious aerosol. Anyone opening them wears a respirator selected by Industrial Hygiene in addition to the basic LOTO PPE. Decontaminate interior surfaces with an EPA-registered hospital disinfectant, per the Infection Control protocol, before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."] },
+  "Lab BSL-2": { code: "LAB_BSL2", label: "Lab exhaust (biosafety cabinet / hood, BSL-2)",
+    cautions: ["This fan exhausts laboratory biological safety cabinets and hoods (BSL-2). Shutting it down removes their containment exhaust and can reverse the laboratory's pressure to the corridor. Before shutdown, coordinate with the Laboratory Biosafety Officer, Infection Control, Industrial Hygiene and Facility Safety: work in the served cabinets and hoods must stop and the laboratory be cleared and posted, or an approved temporary exhaust arrangement placed in service and verified. Industrial Hygiene sets how long the fan keeps running after work stops, before it is shut down.",
+      "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with BSL-2 biological agents and laboratory chemical residue. Anyone opening them wears a respirator selected by Industrial Hygiene, and gloves Industrial Hygiene selects for the laboratory chemicals in use, in addition to the basic LOTO PPE. Decontaminate interior surfaces with the disinfectant the laboratory's biosafety manual specifies before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."] },
+  "Hazardous drug": { code: "CYTO", label: "Pharmacy hazardous-drug exhaust (USP <800>)",
+    cautions: ["This fan exhausts pharmacy hazardous-drug compounding (USP <800>). Shutting it down removes the negative pressure and exhaust of the compounding room and its hoods. Before shutdown, coordinate with the Pharmacy designated person, Industrial Hygiene and Facility Safety: compounding must stop and the room be cleared and posted. Industrial Hygiene sets how long the fan keeps running after compounding stops, before it is shut down.",
+      "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with hazardous (antineoplastic) drug residue, a chemical hazard with no safe skin-contact level. Anyone opening them wears the respirator, gloves and gown selected by Industrial Hygiene and the Pharmacy designated person, in addition to the basic LOTO PPE. Decontaminate interior surfaces with the pharmacy's USP <800> deactivation / decontamination agents before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as hazardous-drug waste, not regulated medical waste."] },
+  "Can't tell": { code: "", label: "Can't tell" }
+};
+const BIOHAZARD_CHOICES = DATA.biohazard.map(v => Object.assign({ sheet: v }, BIOHAZARD_INFO[v] || { code: '', label: v }));
+function biohazardChoice(value) { return BIOHAZARD_CHOICES.find(c => c.sheet === value) || null; }
+// The hazard a saved or open unit carries, or null (None, Can't tell, not asked)
+function unitBiohazard(entryLike) {
+  if (!unitKinds(entryLike.equipType, entryLike.template, entryLike.sources).exhaustFan) return null;
+  const c = biohazardChoice((entryLike.unitAnswers || {}).biohazard);
+  return c && c.cautions ? c : null;
+}
+
 // ---- The sheet cells and the entries.json keys ------------------------------
 // { U1: [label, value], \u2026 } \u2014 only the slots this unit has (UNIT_SHEET_SLOTS).
 function unitSheetCells(entryLike) {
@@ -4871,6 +5087,9 @@ function unitSheetCells(entryLike) {
   }
   // Build 120: "No damper actuators on this unit" (P1), only while it has none
   else if (a.dampersNone && !(entryLike.sources || []).some(isDamperRow)) cells.U7 = ['Damper Actuators', 'None'];
+  // Build 145: an Exhaust Fan's biohazard in a slot of its own (U8 is a
+  // transformer's otherwise), so no other kind's answer can take its place
+  if (k.exhaustFan) cells.U8 = ['Biohazard', a.biohazard || ''];
   return cells;
 }
 // The same answers as entries.json keys (backup only: loto-web imports the sheet).
@@ -4881,7 +5100,7 @@ function unitAnswersForJson(entryLike) {
   const out = { shop: byLabel['Shop'],
                 changeLater: { text: byLabel['Change Later'], auto: changeLaterAutoNotes(entryLike).length > 0 } };
   [['UV Lights', 'uvLights'], ['Confined Space', 'confinedSpace'], ['ATS Make', 'atsMake'],
-   ['Capacitors', 'capacitors'], ['Exhaust', 'vacuumExhaust'], ['Union/Flange', 'reliefJoint'],
+   ['Capacitors', 'capacitors'], ['Exhaust', 'vacuumExhaust'], ['Union/Flange', 'reliefJoint'], ['Biohazard', 'biohazard'],
    // build 122: a transformer's survey, as the sheet carries it
    ['Alternate Sources', 'alternateSources'], ['Terminal Access', 'terminalAccess'],
    ['Transformer Nameplate', 'transformerNameplate'], ['SPD / Capacitors / Grounding', 'spdCapacitorsGrounding']]
@@ -4889,6 +5108,9 @@ function unitAnswersForJson(entryLike) {
   if ('Backfeed' in byLabel) out.atsBackfeed = atsBackfeedList(entryLike.unitAnswers || {});
   if ('Refrigerant' in byLabel) out.refrigerant = { type: byLabel['Refrigerant'], psi: byLabel['Refrigerant PSI'] };
   if ('Damper Actuators' in byLabel) out.dampersNone = true;   // build 120
+  // build 145: loto-web's class code, left out while unanswered or Can't tell (its 2026-11-02 contract)
+  const bio = 'Biohazard' in byLabel ? biohazardChoice(byLabel['Biohazard']) : null;
+  if (bio && bio.code) out.bioHazardClass = bio.code;
   // build 122: "No arc flash label on this equipment" on the types that ask
   if (arcFlashAskedFor(entryLike.equipType, entryLike.template) && (entryLike.unitAnswers || {}).arcFlashNone) out.arcFlashNone = true;
   return out;
@@ -4915,13 +5137,23 @@ function renderUnitQuestions(force) {
   const key = JSON.stringify([k, defaultShopFor(el.template, el.sources), auto, damperAskedOnForm(), (el.sources || []).some(isDamperRow), xfmrRows]);
   if (!force && key === _unitQKey) return;
   _unitQKey = key;
+  // The box a tech is typing in keeps its focus through the redraw — but only a
+  // keyboard box still on the screen, and without scrolling to it (build 145).
+  // wilkins 2026-11-02: on an AHU, after scrolling up to the Kinetic rows "it
+  // jumps down to the bottom". A pick in UV lights or Confined space redraws this
+  // box, the old focus() put the new select in focus, and the iPad scrolled the
+  // page back down to it on the next scroll (reproduced in the iOS Simulator:
+  // 2369 → 4803 px). A pick is done once made, so a select or checkbox is let go.
+  // (A desktop mouse user keeps a select's focus too, for the Tab order.)
   const active = document.activeElement;
-  const keep = (active && active.id && box.contains(active))
+  const r = active && active.getBoundingClientRect ? active.getBoundingClientRect() : null;
+  const keep = (active && active.id && box.contains(active) && (isKeyboardBox(active) || desktopPointer())
+    && r && r.bottom > 0 && r.top < window.innerHeight)
     ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
   box.innerHTML = buildUnitQuestionsHtml(k, el.template, auto);
   if (keep) {
     const again = document.getElementById(keep.id);
-    if (again) { again.focus(); try { if (keep.start != null) again.setSelectionRange(keep.start, keep.end); } catch (e) {} }
+    if (again) { again.focus({ preventScroll: true }); try { if (keep.start != null) again.setSelectionRange(keep.start, keep.end); } catch (e) {} }
   }
 }
 function buildUnitQuestionsHtml(k, template, auto) {
@@ -4964,6 +5196,17 @@ function buildUnitQuestionsHtml(k, template, auto) {
     RELIEF_JOINT_CHOICES.forEach(c => { jointWords[c.value] = c.form; });
     parts.push(group('Union or flange between the inlet valve and the pump?', pick('reliefJoint', DATA.reliefJoint, '', jointWords),
       'or an inlet filter cover that opens; get it into the inlet valve’s photo'));
+  }
+  if (k.exhaustFan) {   // build 145
+    const words = {};
+    BIOHAZARD_CHOICES.forEach(c => { words[c.sheet] = c.label; });
+    const hazard = unitBiohazard({ equipType: getEquipType(), template, sources, unitAnswers: a });
+    parts.push(group('Biohazard?', pick('biohazard', DATA.biohazard, '', words), 'what the rooms this fan exhausts are used for'));
+    // the class's two Section 2 CAUTIONs, across the whole section
+    if (hazard) parts.push(html`<div class="form-group" style="grid-column:1 / -1;"><div id="uq_biohazardWarning" role="note"
+        style="padding:10px 12px;border:2px solid #c2410c;border-radius:8px;background:rgba(194,65,12,0.12);color:var(--text);font-size:13px;line-height:1.45;">
+        <div style="font-weight:700;margin-bottom:4px;">&#9763; BIOHAZARD &mdash; the procedure prints:</div>
+        ${hazard.cautions.map(t => html`<p style="margin:6px 0 0;">CAUTION: ${t}</p>`)}</div></div>`);
   }
   if (k.refrigerant) {
     parts.push(group('Refrigerant', html`<select id="uq_refrigerant" onchange="setUnitAnswer('refrigerant',this.value)">
@@ -5039,6 +5282,7 @@ function xfmrQuestionsHtml(a, group, pick, text, dim) {
   return out;
 }
 function setUnitAnswer(key, value) {
+  const shapeBefore = unitQuestionsShape();
   if (value) unitAnswers[key] = value; else delete unitAnswers[key];
   // The row an answer stands for follows it, as the prompts do: "Own valve"
   // adds the exhaust row and any other exhaust answer takes an untouched one
@@ -5059,8 +5303,26 @@ function setUnitAnswer(key, value) {
       renderSources();
     }
   }
-  renderUnitQuestions(true);
+  // Redrawn only when the pick changes the section (an Other box, the biohazard
+  // warning, a change-later note); otherwise the select just used stays as it
+  // is, focus and all (build 145 review), and shows a pick made by code.
+  if (unitQuestionsShape() !== shapeBefore) renderUnitQuestions(true);
+  else {
+    renderUnitQuestions(false);
+    const sel = document.getElementById('uq_' + key);
+    if (sel && sel.tagName === 'SELECT' && sel.value !== (value || '')) sel.value = value || '';
+  }
   autoSaveCurrent();
+}
+// The section as it would be drawn, less what a select or checkbox shows.
+function unitQuestionsShape() {
+  const el = formEntryLike();
+  return String(buildUnitQuestionsHtml(unitKinds(el.equipType, el.template, el.sources), el.template, changeLaterAutoNotes(el)))
+    .replace(/\s+(selected|checked)(="[^"]*")?(?=[\s>])/g, '').replace(/\s+>/g, '>');
+}
+// A mouse on a desktop (hover and a fine pointer), not a finger on the iPad.
+function desktopPointer() {
+  try { return window.matchMedia('(hover: hover) and (pointer: fine)').matches; } catch (e) { return false; }
 }
 // Take away the first row matching test that the app added and nobody has
 // touched since (no edit, no Device ID, no photo); photos stay with their rows.
@@ -8629,7 +8891,7 @@ function buildSourceCard(src, i) {
         <div class="source-summary" onclick="expandSource(${i})">
           <span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
           <div class="source-summary-text">
-            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${src.valveState==='normally_closed' ? raw(' <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">NC</span>') : ''}${photoData && photoData.dbKey && fittingMarks(photoData, src).length ? raw(' <span title="Valve location marked">&#128205;</span>') : ''}${src.linkedTo ? raw(' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>') : ''}${summaryLinkChips(src)}
+            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${valveStateBadgeText(src) ? html` <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">${valveStateBadgeText(src)}</span>` : ''}${photoData && photoData.dbKey && fittingMarks(photoData, src).length ? raw(' <span title="Valve location marked">&#128205;</span>') : ''}${src.linkedTo ? raw(' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>') : ''}${summaryLinkChips(src)}
             ${src.deviceType ? html` &mdash; ${src.deviceType}` : ''}${src.deviceId ? html` <span style="color:#7eb8da;">(${src.deviceId})</span>` : ''}
             ${src.location ? html` &mdash; ${src.location}` : ''}
             ${src.detail ? html` <span style="color:var(--accent);font-weight:600;font-family:monospace;">(${src.detail})</span>` : ''}
@@ -8885,18 +9147,22 @@ function buildSourceCard(src, i) {
               ${sourceTakesValveState(src) ? html`<div class="form-group" id="valveStateGroup_${i}">
                 <label>Valve State</label>
                 ${valveAnswerNote(src, 'state') ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${valveAnswerNote(src, 'state')}</div>` : ''}
-                <select onchange="updateSource(${i},'valveState',this.value)" id="src_valvestate_${i}">
+                <select onchange="updateValveState(${i},this.value)" id="src_valvestate_${i}">
                   ${DATA.valveStateOptions.map(o => html`<option value="${o.value}" ${(src.valveState||'normal')===o.value?'selected':''}>${o.label}</option>`)}
-                  ${src.valveState && !DATA.valveStateOptions.some(o => o.value === src.valveState) ? html`<option value="${src.valveState}" selected>${src.valveState}</option>` : ''}
+                  ${(sourceQty(src) >= 2 || src.valveState === 'mixed') ? html`<option value="mixed" ${src.valveState === 'mixed' ? 'selected' : ''}>Mixed (set each valve)</option>` : ''}
+                  ${src.valveState && src.valveState !== 'mixed' && !DATA.valveStateOptions.some(o => o.value === src.valveState) ? html`<option value="${src.valveState}" selected>${src.valveState}</option>` : ''}
                 </select>
+                ${src.valveState === 'mixed' ? valveUnitToggles(src, i, 'state') : ''}
               </div>` : html`<div id="valveStateGroup_${i}" style="display:none;"></div>`}
-              ${(sourceOffersValveState(src) || src.lockOpen) ? html`<div class="form-group" id="lockOpenGroup_${i}">
+              ${(sourceOffersValveState(src) || lockOpenTicked(src)) ? html`<div class="form-group" id="lockOpenGroup_${i}">
                 <label>Locked open</label>
                 ${valveAnswerNote(src, 'lock') ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${valveAnswerNote(src, 'lock')}</div>` : ''}
                 <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;font-size:14px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500;">
-                  <input type="checkbox" class="painted-check" id="src_lockopen_${i}" ${src.lockOpen ? 'checked' : ''} onchange="updateLockOpen(${i},this.checked)">
+                  <input type="checkbox" class="painted-check" id="src_lockopen_${i}" ${lockOpenTicked(src) ? 'checked' : ''} onchange="updateLockOpen(${i},this.checked)">
                   Opened and locked open during lockout (rare)
                 </label>
+                ${Array.isArray(src.unitLockOpen) ? valveUnitToggles(src, i, 'lock')
+                  : (src.lockOpen && sourceQty(src) >= 2) ? html`<button type="button" class="btn btn-sm btn-outline" id="src_lockperunit_${i}" style="margin-top:6px;align-self:flex-start;" onclick="setLockOpenPerValve(${i})">Only some valves?</button>` : ''}
               </div>` : html`<div id="lockOpenGroup_${i}" style="display:none;"></div>`}
               ${sourceTakesDrainLocation(src) ? (() => {
                 // Build 122: the point and its choices follow the medium; a fuel oil or
@@ -9095,8 +9361,11 @@ function updateSource(index, field, value) {
     // The user has taken manual control of the count — never auto-reset it later.
     delete sources[index]._autoQty2;
     reconcileSourceMarks(index);
+    // …each valve keeps its own state; a lower count says what it dropped (build 146)
+    const droppedNote = settleValveUnits(sources[index]);
     // Re-render so the "Split 1" button appears/disappears (only shown when quantity >= 2)
     renderSources();
+    if (droppedNote) showToast(droppedNote, true);
     return;
   }
   // A damper actuator's choices name each row's source, device and location
@@ -9604,6 +9873,10 @@ function splitSource(index) {
   const pairRef = pair ? photos['source_' + index] : null;
   const pairInMark = (pairRef && pairRef.marksFor && pairRef.marksFor.inOut) ? cleanValveMarks(pairRef.marks).slice(0, 1) : [];
   const takesState = sourceOffersValveState(src);
+  // A row holding a state per valve (build 146): the split-off valve takes the
+  // LAST valve's state and Lock Open, the original keeps the others, in order
+  const mixedState = src.valveState === 'mixed', perValveLock = Array.isArray(src.unitLockOpen);
+  const unitStates = unitValveStatesOf(src), unitLocks = unitLockOpenOf(src);
 
   // Original keeps the remaining valves
   src.quantity = qty - 1;
@@ -9612,7 +9885,13 @@ function splitSource(index) {
   // New quantity-1 source, copied from the original but as its own photographable valve
   const newSrc = JSON.parse(JSON.stringify(src));
   newSrc.quantity   = 1;
-  newSrc.valveState = (pair || !takesState) ? (src.valveState || 'normal') : 'normally_closed';
+  newSrc.valveState = mixedState ? unitStates[qty - 1]
+    : (pair || !takesState) ? (src.valveState || 'normal') : 'normally_closed';
+  delete newSrc.unitValveStates; delete newSrc.unitLockOpen;
+  if (perValveLock) { if (unitLocks[qty - 1]) newSrc.lockOpen = true; else delete newSrc.lockOpen; }
+  if (mixedState) src.unitValveStates = unitStates.slice(0, qty - 1);
+  if (perValveLock) src.unitLockOpen = unitLocks.slice(0, qty - 1);
+  settleValveUnits(src);
   // …each half then settles (build 123 review): "Vacuum In/Out" splits into an
   // inlet that keeps its vent answer and an exhaust that takes no question
   let pairNote = '';
@@ -9778,10 +10057,13 @@ function handleEnergySourceChange(index, value) {
       if (sources[index].quantity === 2) sources[index].quantity = 1;
       delete sources[index]._autoQty2;
     }
+    // …and each valve's own answer follows the count (build 146 review: an In/Out
+    // row's Out valve left a Qty 1 row "Mixed", its Normally Closed dropped unsaid)
+    const valveNote = settleValveUnits(sources[index]);
     // Fewer devices, or now an In/Out pair: the marks tapped before no longer
     // say which valve is which (build 95 — marksFit).
     reconcileSourceMarks(index);
-    if (drainNote) showToast(drainNote, true);
+    if (drainNote || valveNote) showToast([drainNote, valveNote].filter(Boolean).join('\n'), true);
     // Re-render to update device + verification dropdowns
     renderSources();
     autoSaveCurrent();
@@ -9968,6 +10250,21 @@ function whileKeyboardCloses(fn, delays) {
     if (ms) setTimeout(run, ms); else requestAnimationFrame(run);
   });
 }
+// A box still in focus once the page has scrolled it off the screen is let go
+// (build 145 review). The iPad scrolls the page back to a box the app put in
+// focus by code (Custom… boxes, a redraw's restore) on the next scroll — the
+// AHU "jumps down to the bottom" — and the tech has moved on from it anyway.
+let _offScreenCheck = 0;
+window.addEventListener('scroll', () => {
+  if (_offScreenCheck) return;
+  _offScreenCheck = requestAnimationFrame(() => {
+    _offScreenCheck = 0;
+    const a = document.activeElement;
+    if (!a || !/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.closest('.dialog-overlay')) return;
+    const r = a.getBoundingClientRect();
+    if (r.height && (r.bottom < 0 || r.top > window.innerHeight)) a.blur();
+  });
+}, { passive: true });
 document.addEventListener('click', e => {
   const t = e.target;
   if (!t || !t.closest || !t.closest('#sourcesContainer, .add-source-btn')) return;
@@ -10081,16 +10378,19 @@ function applyCopySource(entryIndex, sourceIndex) {
   // /_customLoc markers so custom-typed values still show as "custom".
   const carry = [
     'energySource','deviceType','quantity','location','verification',
-    'duplicate','valveState','detail','_customEnergy','_customDevice','_customLoc',
+    'duplicate','valveState','unitValveStates','detail','_customEnergy','_customDevice','_customLoc',
   ];
   for (const k of carry) {
     if (src[k] !== undefined) dest[k] = src[k];
   }
+  if (dest.valveState === 'mixed' && Array.isArray(dest.unitValveStates)) dest.unitValveStates = dest.unitValveStates.slice();
+  else delete dest.unitValveStates;   // per-valve states only with a mixed state (build 146)
   // …and is that source, not the role this row had (build 122 second review): a
   // copied Location that says a role still reads as one, as typed
   delete dest.role; delete dest.altKind; delete dest.feeds;
   // …and keeps its drain answer only where its new source takes the question (build 123 review)
   const drainNote = settleSourceEnergy(dest, before);   // its code came with the source
+  const valveNote = settleValveUnits(dest);   // …and its own per-valve Lock Open, to the copied count (build 146 review)
   // Duplicate follows THIS source's own photo (build 109): a copy never brings
   // the other source's photo. A reused photo here makes it an automatic Yes;
   // the other source's automatic Yes stays automatic, and renderSources then
@@ -10118,7 +10418,7 @@ function applyCopySource(entryIndex, sourceIndex) {
   renderSources();
   autoSaveCurrent();
   showToast(`Copied source #${sourceIndex + 1} from "${entry.equipName || '(unnamed)'}"` + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '')
-    + noteClause(drainNote), marksCleared || !!drainNote);
+    + noteClause([drainNote, valveNote]), marksCleared || !!drainNote || !!valveNote);
 }
 
 function closeCopySourceDialog() {
@@ -10365,6 +10665,8 @@ function applyLink(equipIndex, sourceIndex) {
     mine.quantity = parseInt(src.quantity, 10) || 1;
   }
   const drainNotes = tookEnergy ? settleSourceChange(mine, '', photos, 'source_' + pendingLinkSourceIndex) : [];   // build 123 review
+  const valveNote = settleValveUnits(mine);   // the target's count: each valve's answer follows it (build 146 review)
+  if (valveNote) drainNotes.push(valveNote);
   const marksCleared = reconcileSourceMarks(pendingLinkSourceIndex, true);
   mine.userEdited = true;
   sources[pendingLinkSourceIndex].linkedTo = {
@@ -11064,6 +11366,15 @@ const VALVE_MARK_COLORS = {
   'source-electrical': '#ff6b6b', 'source-steam': '#ffb36b', 'source-water': '#6bd5ff',
   'source-gas': '#fff06b', 'source-default': '#ffff00'
 };
+// On a mixed row (build 146) a box says which valve is the odd one: "#3.2 NC",
+// "#3.2 Locked" (short: the box is 0.32 of the photo wide)
+function valveMarkStateText(src, k) {
+  if (!src) return '';
+  let t = '';
+  if (rowValveState(src) === 'mixed' && unitValveStatesOf(src)[k] === 'normally_closed') t += ' NC';
+  if (Array.isArray(src.unitLockOpen) && /; /.test(lockOpenSheetText(src)) && unitLockOpenOf(src)[k]) t += ' Locked';
+  return t;
+}
 // One box + block arrow as SVG, in the photo box's pixel space. The arrow is
 // Excel's preset (shaft half its thickness, head half its short side) — what
 // loto-web draws.
@@ -11232,7 +11543,7 @@ function openValveMarkDialog(slotId, opts) {
     let out = '';
     g.items.forEach((it, k) => {
       const other = sources[it.srcIndex];
-      const label = '#' + (it.srcIndex + 1) + (isInOutPair(other) ? (it.sub ? ' Out' : ' In') : (it.qty > 1 ? '.' + (it.sub + 1) : ''));
+      const label = '#' + (it.srcIndex + 1) + (isInOutPair(other) ? (it.sub ? ' Out' : ' In') : (it.qty > 1 ? '.' + (it.sub + 1) : '')) + valveMarkStateText(other, it.sub);
       out += valveMarkShapeSvg(g.layout[k], w, h, label,
         it.mine ? color : (VALVE_MARK_COLORS[getSourceColorClass(other && other.energySource)] || '#ffff00'),
         it.mine ? 0.92 : 0.4);
@@ -13478,6 +13789,10 @@ function collectIncompleteFields(opts) {
   if (kinds.vacPump && !String(unitAnswers.vacuumExhaust || '').trim()) {
     missing.push('Medical vacuum pump \u2014 Exhaust (where this pump\u2019s exhaust goes)');
   }
+  // Build 145 (wilkins 2026-11-02): an exhaust fan nobody asked about biohazard
+  if (kinds.exhaustFan && !String(unitAnswers.biohazard || '').trim()) {
+    missing.push('Exhaust fan \u2014 Biohazard (what the rooms it exhausts are used for)');
+  }
   // Build 122 (soft, like the rest): a transformer's survey
   if (kinds.xfmr) {
     if (!sources.some(isSecondaryMainRow)) missing.push('Transformer \u2014 secondary main');
@@ -13795,6 +14110,7 @@ function performSaveAndNew() {
   }
   editingEntry = null;
   clearTombstones([entryId]);
+  followSavedFacility(entryHospitalCode(entry));   // the list shows where it went (build 145 review)
   saveAll();
   startNextUnit();   // the blank form (with the carried-over building/room) is what survives a reload
   showToast(`\u2714 Saved "${equipName}" \u2014 ${savedEquipment.length} total`);   // plain text: the toast shows text, not HTML (build 94)
@@ -14103,6 +14419,39 @@ function setSavedSearch(value) {
   savedSearchTerm = (value || '').trim().toLowerCase();
   renderSavedPanel();
 }
+function setSavedFacility(value) {
+  savedFacility = value == null ? 'all' : String(value);
+  try { localStorage.setItem('loto_saved_facility', savedFacility); } catch (e) {}
+  renderSavedPanel();
+}
+// The facility the list shows: the remembered one while any unit is saved
+// under it, else all (that facility's units were deleted or moved away).
+function activeSavedFacility(counts) {
+  counts = counts || countByFacility(savedEquipment);
+  return savedFacility !== 'all' && counts[savedFacility] ? savedFacility : 'all';
+}
+// The list follows the facility a unit was just saved under, and a new
+// facility in Settings (build 145 review: a remembered filter hid them).
+function followSavedFacility(code) {
+  if (savedFacility === 'all' || savedFacility === (code || '')) return;
+  savedFacility = code || '';
+  try { localStorage.setItem('loto_saved_facility', savedFacility); } catch (e) {}
+}
+// Rebuilt only when its choices change (build 145 review): a redraw while the
+// picker is open would close it under the tech's finger.
+function populateSavedFacilityFilter(active, counts) {
+  const sel = document.getElementById('savedFacilityFilter');
+  if (!sel) return;
+  const opts = [['all', `All facilities (${savedEquipment.length})`]].concat(Object.keys(counts)
+    .sort((a, b) => facilityLabel(a).localeCompare(facilityLabel(b))).map(c => [c, `${facilityLabel(c)} (${counts[c]})`]));
+  const sig = JSON.stringify(opts);
+  if (sel.dataset.sig !== sig) {
+    sel.innerHTML = '';
+    opts.forEach(([value, text]) => { const o = document.createElement('option'); o.value = value; o.textContent = text; sel.appendChild(o); });
+    sel.dataset.sig = sig;
+  }
+  if (sel.value !== active) sel.value = active;
+}
 function matchesSavedSearch(entry) {
   if (!savedSearchTerm) return true;
   const haystack = [
@@ -14154,18 +14503,27 @@ function renderSavedPanel() {
     savedFilter === 'today'     ? isSurveyedToday
     : savedFilter === 'yesterday' ? isSurveyedYesterday
     : () => true;
+  // each unit's facility worked out once (the setting read once)
+  const setting = getHospitalCode();
+  const codes = savedEquipment.map(e => entryHospitalCode(e, setting));
+  const counts = {};
+  codes.forEach(c => { counts[c] = (counts[c] || 0) + 1; });
+  const facility = activeSavedFacility(counts);
+  populateSavedFacilityFilter(facility, counts);
+  const here = (i) => facility === 'all' || codes[i] === facility;
+  const scoped = savedEquipment.filter((e, i) => here(i));
   const visible = savedEquipment
     .map((entry, i) => ({ entry, i }))
-    .filter(({ entry }) => matchesFilter(entry) && matchesSavedSearch(entry));
+    .filter(({ entry, i }) => here(i) && matchesFilter(entry) && matchesSavedSearch(entry));
 
   const summary = document.getElementById('savedFilterSummary');
   if (summary) {
-    const todayCount     = savedEquipment.filter(isSurveyedToday).length;
-    const yesterdayCount = savedEquipment.filter(isSurveyedYesterday).length;
+    const todayCount     = scoped.filter(isSurveyedToday).length;
+    const yesterdayCount = scoped.filter(isSurveyedYesterday).length;
     const parts = [
       `${todayCount} today`,
       `${yesterdayCount} yesterday`,
-      `${savedEquipment.length} total`,
+      facility === 'all' ? `${savedEquipment.length} total` : `${scoped.length} here of ${savedEquipment.length}`,
     ];
     if (savedSearchTerm) parts.push(`${visible.length} match`);
     summary.textContent = parts.join(' · ');
@@ -14173,6 +14531,7 @@ function renderSavedPanel() {
 
   if (visible.length === 0) {
     const parts = [];
+    if (facility !== 'all') parts.push(facilityLabel(facility));
     if (savedFilter !== 'all') parts.push(`"${savedFilter === 'today' ? 'Today' : 'Yesterday'}"`);
     if (savedSearchTerm) parts.push(`search "${savedSearchTerm}"`);
     const summary = parts.length ? parts.join(' + ') : 'the current filters';
@@ -14194,10 +14553,13 @@ function renderSavedPanel() {
     // Marked for the office (build 118), so the tech can find it again
     const officeNote = changeLaterSheetText(entry);
     const officeBadge = officeNote ? html` <span class="office-mark-badge" style="background:#7a5a00;color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="${officeNote}">&#9998; FOR THE OFFICE</span>` : '';
+    // An exhaust fan marked biohazard (build 145)
+    const hazard = unitBiohazard(entry);
+    const bioBadge = hazard ? html` <span class="biohazard-badge" style="background:#c2410c;color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="${hazard.label}">&#9763; BIOHAZARD</span>` : '';
     return html`
     <div class="saved-item" style="${isEditing ? 'border:2px solid var(--accent);background:rgba(74,144,217,0.08);' : ''}">
       <div class="saved-item-info">
-        <div class="saved-item-name">${entry.equipName}${isEditing ? raw(' <span style="background:var(--accent);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">EDITING</span>') : ''}${photoSuspect ? raw(' <span style="background:rgba(200,40,40,0.92);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="This entry\'s photo was shared with other equipment in the old photo store — verify it shows THIS unit (Settings → Photo Store Report).">&#9888; PHOTO SUSPECT</span>') : ''}${twinBadge}${officeBadge}</div>
+        <div class="saved-item-name">${entry.equipName}${isEditing ? raw(' <span style="background:var(--accent);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">EDITING</span>') : ''}${photoSuspect ? raw(' <span style="background:rgba(200,40,40,0.92);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="This entry\'s photo was shared with other equipment in the old photo store — verify it shows THIS unit (Settings → Photo Store Report).">&#9888; PHOTO SUSPECT</span>') : ''}${twinBadge}${officeBadge}${bioBadge}</div>
         <div class="saved-item-detail">
           ${entry.equipType || 'No type'} &#183; ${entry.template || 'No template'}
           &#183; ${entry.sources.length} source${entry.sources.length !== 1 ? 's' : ''}
@@ -14411,7 +14773,7 @@ function deleteSaved(index) {
 // ---- Bulk delete ----------------------------------------------------------
 function showBulkDeleteDialog() {
   if (savedEquipment.length === 0) { showToast('No saved equipment to delete', true); return; }
-  populateBulkDeleteFilters();
+  populateBulkDeleteFilters(activeSavedFacility());   // the list's facility, as the list shows it (build 145 review)
   const input = document.getElementById('bulkDeleteConfirmInput');
   if (input) input.value = '';
   updateBulkDeleteSummary();
@@ -14421,7 +14783,7 @@ function closeBulkDeleteDialog() {
   const o = document.getElementById('bulkDeleteOverlay');
   if (o) o.style.display = 'none';
 }
-function populateBulkDeleteFilters() {
+function populateBulkDeleteFilters(preferFacility) {
   const dsel = document.getElementById('bulkDeleteDateFilter');
   if (dsel) {
     const counts = {}; let undated = 0;
@@ -14433,20 +14795,19 @@ function populateBulkDeleteFilters() {
     if (undated>0) { const o=document.createElement('option'); o.value='undated'; o.textContent=`Undated \u2014 ${undated} entr${undated===1?'y':'ies'}`; dsel.appendChild(o); }
     dsel.value = 'all';
   }
-  populateBulkDeleteFacility();
+  populateBulkDeleteFacility(preferFacility);
 }
-function populateBulkDeleteFacility() {
+function populateBulkDeleteFacility(preferFacility) {
   const sel = document.getElementById('bulkDeleteFacilityFilter');
   if (!sel) return;
-  const prev = sel.value;
+  const prev = preferFacility != null ? preferFacility : sel.value;
   const dsel = document.getElementById('bulkDeleteDateFilter');
   const scoped = filterEntriesByExportDate(dsel ? dsel.value : 'all');
-  const counts = {};
-  for (const e of scoped) { const c = entryHospitalCode(e); counts[c] = (counts[c]||0)+1; }
+  const counts = countByFacility(scoped);
   const codes = Object.keys(counts).sort();
   const total = scoped.length;
   sel.innerHTML = `<option value="all">All facilities \u2014 ${total} entr${total===1?'y':'ies'}</option>`;
-  codes.forEach(c => { const o=document.createElement('option'); o.value=c; const n=c?(hospitalName(c)||c):'(no facility)'; o.textContent=`${n} \u2014 ${counts[c]} entr${counts[c]===1?'y':'ies'}`; sel.appendChild(o); });
+  codes.forEach(c => { const o=document.createElement('option'); o.value=c; o.textContent=`${facilityLabel(c)} \u2014 ${counts[c]} entr${counts[c]===1?'y':'ies'}`; sel.appendChild(o); });
   sel.value = codes.includes(prev) ? prev : 'all';
 }
 function getBulkDeleteTargets() {
@@ -14734,7 +15095,7 @@ async function executeDuplicate(index, withPhotos) {
   // mark: that note is about the unit it was written on. Nor (build 122) what
   // was looked for on that unit and not found: its arc flash label and a
   // transformer's other sources.
-  { const a = Object.assign({}, entry.unitAnswers || {}); delete a.changeLater; delete a.arcFlashNone; delete a.xfmrAltNone; loadUnitAnswers(a); }
+  { const a = Object.assign({}, entry.unitAnswers || {}); delete a.changeLater; delete a.arcFlashNone; delete a.xfmrAltNone; delete a.biohazard; loadUnitAnswers(a); }
 
   // Restore template — check if it's a custom value
   const templateSel = document.getElementById('equipTemplate');
@@ -15178,19 +15539,14 @@ function populateExportFacilityFilter() {
   // would actually export, not all-time totals.
   const dateSel = document.getElementById('exportDateFilter');
   const scoped = filterEntriesByExportDate(dateSel ? dateSel.value : 'all');
-  const counts = {};
-  for (const entry of scoped) {
-    const code = entryHospitalCode(entry);
-    counts[code] = (counts[code] || 0) + 1;
-  }
+  const counts = countByFacility(scoped);
   const codes = Object.keys(counts).sort();
   const total = scoped.length;
   sel.innerHTML = `<option value="all">All facilities \u2014 ${total} entr${total === 1 ? 'y' : 'ies'}</option>`;
   codes.forEach(code => {
     const opt = document.createElement('option');
     opt.value = code;
-    const name = code ? (hospitalName(code) || code) : '(no facility)';
-    opt.textContent = `${name} \u2014 ${counts[code]} entr${counts[code] === 1 ? 'y' : 'ies'}`;
+    opt.textContent = `${facilityLabel(code)} \u2014 ${counts[code]} entr${counts[code] === 1 ? 'y' : 'ies'}`;
     sel.appendChild(opt);
   });
   sel.value = codes.includes(prev) ? prev : 'all';
@@ -15917,7 +16273,7 @@ async function buildAndSendExport(opts, run) {
         quote(entry.tiedToName || ''), quote(entry.notes || ''),
         i + 1, quote(src.energySource), quote(src.deviceType), quote(src.deviceId || ''), src.quantity,
         quote(sourceLocationForExport(src)), effectiveDuplicate(src, (entry.photos || {})['source_' + i]), quote(src.verification),
-        quote(valveStateForExport(src)),
+        quote(csvValveState(src)),
         quote(map.sourceHs[i] || ''), quote(src.detail || ''),
         quote(linkedStr),
         quote(map.mainH || ''),
@@ -15951,7 +16307,7 @@ async function buildAndSendExport(opts, run) {
         location: sourceLocationForExport(src),   // a role row keeps its prefix (build 122)
         // an automatic Yes holds only with its borrowed photo (build 110)
         duplicate: effectiveDuplicate(src, ref),
-        valveState: valveStateForExport(src),   // always present for downstream (loto-web); none on a source that takes no valve (build 125 review)
+        valveState: valveStateForExport(src),   // always present for downstream (loto-web); none on a source that takes no valve (build 125 review); "mixed" (build 146)
         photoFile: map.sourceHs[i] ? 'photos/' + map.sourceHs[i] : '',
         // when its photo was taken (build 109), as in the JPEG's EXIF
         photoCapturedAt: cap.capturedAt || '',
@@ -15979,7 +16335,14 @@ async function buildAndSendExport(opts, run) {
       // The drain answer only where the sheet carries it (build 123 review): never one
       // kept on an Electrical or exhaust row
       if (!sourceTakesDrainLocation(src, entryHospitalCode(entry))) delete out.drainLocation;
-      if (!lockOpenSheetText(src)) delete out.lockOpen;   // …and Lock Open only where col 15 carries it (build 125 review)
+      // Lock Open only where col 15 carries it (build 125 review): true on every
+      // valve, a mixed row's unitLockOpen and no lockOpen (build 146, loto-web's
+      // contract); a mixed state's unitValveStates beside valveState "mixed"
+      const lockText = lockOpenSheetText(src);
+      delete out.lockOpen; delete out.unitLockOpen;
+      if (lockText === 'Yes') out.lockOpen = true;
+      else if (lockText) out.unitLockOpen = unitLockOpenOf(src);
+      if (out.valveState === 'mixed') out.unitValveStates = unitValveStatesOf(src); else delete out.unitValveStates;
       return out;
     });
     const miscOut = miscFileNames[ei]
@@ -16090,7 +16453,6 @@ async function buildAndSendExport(opts, run) {
       const thinBorder = { style: 'thin', color: { argb: 'FF000000' } };
       const allBorders = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
 
-      const VALVE_STATE_SHEET_TEXT = { normally_closed: 'Normally Closed', normally_open: 'Normally Open' };
       // Every column the sheet defines above is styled: a fixed 21 left build
       // 130's column 22 bare (review 2026-10-28).
       function applyRow(row, font, fill, borders) {
@@ -16224,7 +16586,8 @@ async function buildAndSendExport(opts, run) {
             // Valve state (build 91). The office imports THIS sheet, and it had
             // no valve state: a Normally Closed valve arrived as an ordinary one
             // and the procedure said to open it at restore. Blank = normal.
-            src ? (VALVE_STATE_SHEET_TEXT[valveStateForExport(src)] || '') : '',
+            // A mixed row (build 146): one part per valve, "Normal; Normally Closed"
+            src ? valveStateSheetText(src) : '',
             // Valve mark (build 92): where the tech tapped the valve in THIS
             // row's photo — "x,y" fractions, qty-N rows "x,y; x,y". loto-web
             // starts the box + arrow there. Blank without a photo.
