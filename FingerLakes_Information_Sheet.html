@@ -4962,13 +4962,22 @@ function renderUnitQuestions(force) {
   const key = JSON.stringify([k, defaultShopFor(el.template, el.sources), auto, damperAskedOnForm(), (el.sources || []).some(isDamperRow), xfmrRows]);
   if (!force && key === _unitQKey) return;
   _unitQKey = key;
+  // The box a tech is typing in keeps its focus through the redraw — but only a
+  // keyboard box still on the screen, and without scrolling to it (build 145).
+  // wilkins 2026-11-02: on an AHU, after scrolling up to the Kinetic rows "it
+  // jumps down to the bottom". A pick in UV lights or Confined space redraws this
+  // box, the old focus() put the new select in focus, and the iPad scrolled the
+  // page back down to it on the next scroll (reproduced in the iOS Simulator:
+  // 2369 → 4803 px). A pick is done once made, so a select or checkbox is let go.
   const active = document.activeElement;
-  const keep = (active && active.id && box.contains(active))
+  const r = active && active.getBoundingClientRect ? active.getBoundingClientRect() : null;
+  const keep = (active && active.id && box.contains(active) && isKeyboardBox(active)
+    && r && r.bottom > 0 && r.top < window.innerHeight)
     ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
   box.innerHTML = buildUnitQuestionsHtml(k, el.template, auto);
   if (keep) {
     const again = document.getElementById(keep.id);
-    if (again) { again.focus(); try { if (keep.start != null) again.setSelectionRange(keep.start, keep.end); } catch (e) {} }
+    if (again) { again.focus({ preventScroll: true }); try { if (keep.start != null) again.setSelectionRange(keep.start, keep.end); } catch (e) {} }
   }
 }
 function buildUnitQuestionsHtml(k, template, auto) {

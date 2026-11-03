@@ -14416,6 +14416,7 @@
       await sleep(80);
       document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
       window.scrollBy(0, 150);
+      await sleep(100);   // the iOS web view applies a scripted scroll a moment later
       const flicked = window.scrollY;
       await sleep(500);
       got.touched = [flicked, window.scrollY].join(' | ');
@@ -14424,10 +14425,13 @@
       await sleep(700);
       window.scrollTo(0, document.getElementById('sourcesContainer').getBoundingClientRect().top + window.scrollY - 40);
       const sel = cardAt(11).querySelector('select');
-      if (sel) sel.focus();
+      // as a tap leaves it (build 145): a focus() that scrolls makes the iOS web
+      // view scroll back to the select on the next scroll, whatever the app does
+      if (sel) sel.focus({ preventScroll: true });
       expandSource(5);
       await sleep(80);
       window.scrollBy(0, 150);
+      await sleep(100);
       const scrolled = window.scrollY;
       await sleep(500);
       got.select = [!!sel, scrolled, window.scrollY].join(' | ');
@@ -14909,6 +14913,56 @@
     want(got.dup === 'Exhaust Fan||true', 'a Duplicate starts unanswered');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T445 — build 145: wilkins 2026-11-02, "when there are multiple energy sources
+  // and I scroll to the beginning of them (for kinetic, for example), then it
+  // jumps down to the bottom" — on air handlers
+  async function t445_aPickInTheUnitQuestionsIsLetGo() {
+    const N = 'T445 build 145: a pick in an AHU\'s UV lights or Confined space redraws the unit questions without putting the new select in focus, so a later redraw and a scroll up to the first source stay where they are (the iPad scrolled back down to the select); a text box being typed in keeps its focus and caret through a redraw while it is on the screen, and is let go, not scrolled to, once the tech has scrolled away';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const ae = () => { const a = document.activeElement; return a ? (a.id || a.tagName) : '-'; };
+    fillFormNoSources('AHU-445');
+    document.getElementById('equipType').value = 'Air Handler'; filterTemplateDropdown('Air Handler');
+    document.getElementById('equipTemplate').value = 'AHU - HHW';
+    for (let k = 0; k < 12; k++) sources.push(Object.assign(mkSrc('Electrical'), { location: 'Panel ' + k, collapsed: k < 9 }));
+    sources.forEach(ensureSourceId); renderSources(); renderUnitQuestions(true);
+    const listTop = () => document.getElementById('sourcesContainer').getBoundingClientRect().top + window.scrollY - 40;
+    try {
+      for (const [key, value] of [['uvLights', 'Yes'], ['confinedSpace', 'No']]) {
+        const sel = document.getElementById('uq_' + key);
+        sel.scrollIntoView({ block: 'center' }); await sleep(250); sel.focus();
+        sel.value = value; sel.dispatchEvent(new Event('change'));
+        const after = ae();
+        window.scrollTo(0, listTop()); await sleep(250);   // the iOS web view scrolls a moment later
+        const y0 = Math.round(window.scrollY);
+        renderUnitQuestions(true);   // a later redraw (a source changed)
+        await sleep(50);
+        window.scrollBy(0, -150);    // the tech scrolls on up
+        await sleep(600);
+        got[key] = [unitAnswers[key], after, y0 - 150, Math.round(window.scrollY)].join('|');
+        want(unitAnswers[key] === value && after !== 'uq_' + key && Math.abs(window.scrollY - (y0 - 150)) <= 1,
+          key + ': let go, the page stays: ' + got[key]);
+      }
+      // typing in Mark for the office: kept through a redraw on the screen
+      const ta = document.getElementById('uq_changeLater');
+      ta.scrollIntoView({ block: 'center' }); await sleep(250); ta.focus();
+      ta.value = 'Panel locked'; ta.dispatchEvent(new Event('input')); ta.setSelectionRange(5, 5);
+      const yT = Math.round(window.scrollY);
+      renderUnitQuestions(true);
+      got.typing = [ae(), document.activeElement.selectionStart, Math.round(window.scrollY) - yT].join('|');
+      want(got.typing === 'uq_changeLater|5|0', 'typing on the screen keeps its focus and caret: ' + got.typing);
+      // scrolled away with it still in focus (the iPad keeps it): let go, never scrolled to
+      window.scrollTo(0, listTop()); await sleep(250);
+      const y1 = Math.round(window.scrollY);
+      renderUnitQuestions(true);
+      await sleep(50);
+      got.away = [ae(), y1, Math.round(window.scrollY), unitAnswers.changeLater].join('|');
+      want(ae() !== 'uq_changeLater' && Math.abs(window.scrollY - y1) <= 1 && unitAnswers.changeLater === 'Panel locked',
+        'scrolled away: let go, the page stays, the text kept: ' + got.away);
+    } finally { window.scrollTo(0, 0); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -15091,7 +15145,7 @@
     t435_everyTapOnTheListLetsTheBoxGoFirst, t436_anOutdatedCopyNeverGoesAloneAndTheSummaryCountsTheFacility,
     t437_aMedicalVacuumSystemHasItsValveAndSwitches, t438_aMedicalVacuumPumpIsAskedAboutOtherPower,
     t439_theInletFilterCoverIsAnAnswer, t440_aVacuumPumpWithNoTemplateSaysSo, t441_aBlankExhaustIsMissing,
-    t442_theSavedListShowsOneFacility, t443_anExhaustFanAsksAboutBiohazard, t444_theBiohazardTravelsInU3];
+    t442_theSavedListShowsOneFacility, t443_anExhaustFanAsksAboutBiohazard, t444_theBiohazardTravelsInU3, t445_aPickInTheUnitQuestionsIsLetGo];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
