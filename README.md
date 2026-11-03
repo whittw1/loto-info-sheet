@@ -21,6 +21,7 @@ A progressive web app (PWA) for field data collection of Lockout/Tagout (LOTO) i
 - **Energy Source Tracking** — Any number of sources per equipment (the Information Sheet block grows past 10) with 40+ energy types (Electrical 120V–4160V, Steam, Glycol, Hydraulic, etc.), device types, quantities, and verification methods
 - **Photo Capture** — Three equipment photo slots (Main, Data Plate, EE Number) plus per-source photos, with configurable resolution and compression (default 2560 × 1440; the limit turns with the photo, so a portrait shot keeps its long side); each new photo carries the time it was taken inside the JPEG (EXIF — no location); tap existing photo to view before retaking
 - **Templates** — Pre-configured templates (AHU variants, Pumps, Boilers, Chillers, Elevators, ATS models, Water Heater variants, etc.) that auto-populate energy sources; supports custom templates
+- **Exhaust fan biohazard** (build 145) — every Exhaust Fan asks **Biohazard?** (None · AII / TB isolation room · aerosol-generating procedure room · lab BSL-2 · pharmacy hazardous drug · Can't tell). A hazard shows the two Section 2 CAUTIONs loto-web prints in the procedure (wording approved by wilkins 2026-11-02) and a ☣ BIOHAZARD badge on the saved unit; Save & New lists a fan left unanswered
 - **Conditional Dropdown Filtering** — Device types filter based on selected energy source (e.g., steam shows valves only, electrical shows breakers/disconnects). Verification methods filter based on device type with temperature variants (Hot/CHW) auto-resolved from energy source
 - **Template Filtering by Equipment Type** — Template dropdown shows only relevant templates for the selected equipment type (e.g., Air Handler shows only AHU templates, ATS shows only ATS variants)
 - **Custom Source Keyword Matching** — Custom energy sources (e.g., "HV Water") are matched by keyword to determine appropriate devices, verifications, and label prefixes
@@ -181,7 +182,7 @@ Form Inputs ──► localStorage (auto-saved as JSON)
 ### UI Layout
 
 - **Header** — App title, version badge, navigation (List, Settings, Import, Backup, Export)
-- **Saved Equipment Panel** — Collapsible sidebar listing previously saved entries with edit/duplicate/delete. Entries currently being edited show an **EDITING** badge.
+- **Saved Equipment Panel** — Collapsible sidebar listing previously saved entries with edit/duplicate/delete. Entries currently being edited show an **EDITING** badge. Show All / Today / Yesterday, a search, and (since build 145) a **Facility** menu that shows one facility's units only — remembered on the device, it follows a unit saved under another facility and a new facility in Settings, and Bulk Delete opens on it.
 - **Equipment Form** — 2-column grid for equipment metadata fields (type, name, building, room, template, tied-to)
 - **Photo Grid** — 3-column capture grid (Main, Data Plate, EE Number) with view-before-retake
 - **Energy Sources** — Dynamic collapsible cards with add/remove/duplicate/reorder/link controls; conditional device and verification dropdowns. Since build 138 an open card is in sections (what it is; where it's isolated and verified; a Drive, Valve or Damper band; the photo), with Link, Copy, Duplicate, Split and Remove under **More**; a drive's card shows the feeder row that feeds it and the feeder's card its drive, each with **Go to**
