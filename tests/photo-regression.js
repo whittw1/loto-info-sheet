@@ -129,6 +129,7 @@
 //   T450–T456 build 146 (wilkins 2026-11-02: an isolation valve and its normally closed bypass on one source): a
 //             state per valve on a Qty 2+ row ("Mixed" + one toggle per valve), Lock Open per valve, the sheet / CSV /
 //             entries.json lists, a changed count, Split 1 out, Duplicate / Copy Source / a source change, the mark boxes
+//   T457      build 146 review: an automatic In/Out count, the last locked valve tapped off, Copy Source's count
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -9218,18 +9219,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 145 (was build 122\'s): APP_BUILD and the header label say 145, the service worker\'s cache is loto-collector-v7.140, Xcode\'s CURRENT_PROJECT_VERSION is 145 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 146 (was build 122\'s): APP_BUILD and the header label say 146, the service worker\'s cache is loto-collector-v7.141, Xcode\'s CURRENT_PROJECT_VERSION is 146 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 145 && !!label && +label[1] === 145, 'the build');
+    want(APP_BUILD === 146 && !!label && +label[1] === 146, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.140', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.141', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 145;,CURRENT_PROJECT_VERSION = 145;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 146;,CURRENT_PROJECT_VERSION = 146;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -15278,7 +15279,7 @@
 
   // T456 — the mark boxes and the toggles name the valves
   async function t456_theMarkBoxesNameTheOddValve() {
-    const N = 'T456 build 146: on a mixed row the valve-mark box of its Normally Closed valve reads "… NC" and of a locked-open one "… Locked open", others and every row whose valves agree unchanged; an In/Out pair\'s toggles read "In Normal" / "Out NC"';
+    const N = 'T456 build 146: on a mixed row the valve-mark box of its Normally Closed valve reads "… NC" and of a locked-open one "… Locked", others and every row whose valves agree unchanged; an In/Out pair\'s toggles read "In Normal" / "Out NC"';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -15286,13 +15287,38 @@
     const allNc = vsRow('HHW In', 'Ball Valve', { quantity: 2, valveState: 'normally_closed' });
     const lock = vsRow('HHW In', 'Ball Valve', { quantity: 2, lockOpen: true, unitLockOpen: [true, false] });
     got.marks = [valveMarkStateText(mixed, 0), valveMarkStateText(mixed, 1), valveMarkStateText(allNc, 1), valveMarkStateText(lock, 0), valveMarkStateText(lock, 1)].map(x => x || '-').join('|');
-    want(got.marks === '-| NC|-| Locked open|-', 'boxes ' + got.marks);
+    want(got.marks === '-| NC|-| Locked|-', 'boxes ' + got.marks);
     formOfType('AHU-456', 'Air Handler', 'AHU - Steam');
     sources = [vsRow('CHW In/Out', 'Ball Valve', { quantity: 2 })];
     renderSources();
     updateValveState(0, 'mixed');
     got.pair = toggleTexts('src_vsunits_0');
     want(got.pair === 'In Normal/Out NC', 'In/Out toggles ' + got.pair);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T457 — the build 146 review: every count change settles the per-valve answers
+  async function t457_everyCountChangeSettlesThePerValveAnswers() {
+    const N = 'T457 build 146 review: a mixed "CHW In/Out" (automatic Qty 2, Out Normally Closed) re-picked as "CHW In" drops to Qty 1 as a Normal row and says "dropped valve 2 (Normally Closed)" (it stayed "Mixed" at Qty 1, the NC gone unsaid); tapping the last locked valve off unticks Locked open; Copy Source of a Qty 2 row onto a Qty 3 row locked at valve 3 drops that lock and says so';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const saved = mkEntry('SRC-457', { sources: [vsRow('CHW In', 'Ball Valve', { quantity: 2, collapsed: true })] });
+    savedEquipment = [saved]; saveAll();
+    formOfType('AHU-457', 'Air Handler', 'AHU - Steam');
+    sources = [vsRow('CHW In/Out', 'Ball Valve', { quantity: 2, _autoQty2: true, valveState: 'mixed', unitValveStates: ['normal', 'normally_closed'] }),
+               vsRow('HHW In', 'Ball Valve', { quantity: 2, lockOpen: true, unitLockOpen: [false, true] }),
+               vsRow('LPS 10 PSI', 'Gate Valve', { quantity: 3, lockOpen: true, unitLockOpen: [false, false, true] })];
+    renderSources();
+    let t = await withToasts(async () => handleEnergySourceChange(0, 'CHW In'));
+    got.pair = [sources[0].quantity, sources[0].valveState, 'unitValveStates' in sources[0], t.some(m => /dropped valve 2 \(Normally Closed\)/.test(m))].join();
+    want(got.pair === '1,normal,false,true', 'In/Out re-picked ' + got.pair + ' ' + JSON.stringify(t));
+    toggleUnitLockOpen(1, 1);
+    got.lockOff = ['lockOpen' in sources[1], 'unitLockOpen' in sources[1], document.getElementById('src_lockopen_1').checked].join();
+    want(got.lockOff === 'false,false,false', 'last lock off ' + got.lockOff);
+    t = await withToasts(async () => { showCopySourceDialog(2); applyCopySource(0, 0); closeCopySourceDialog(); });
+    got.copy = [sources[2].quantity, 'lockOpen' in sources[2], 'unitLockOpen' in sources[2], t.some(m => /dropped valve 3 \(Locked open\)/.test(m))].join();
+    want(got.copy === '2,false,false,true', 'Copy Source ' + got.copy + ' ' + JSON.stringify(t));
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -15481,7 +15507,7 @@
     t446_aBoxLeftInFocusOffTheScreenIsLetGo, t447_bulkDeleteAndSavesFollowTheListsFacility, t448_theBiohazardHasASlotOfItsOwnAndAPickIsNotRedrawn,
     t450_aMixedRowSetsEachValveOnTheCard, t451_aMixedRowExportsEachValvesState, t452_lockOpenIsSetPerValve,
     t453_aChangedCountKeepsEachValvesAnswer, t454_splitTakesTheLastValveAsItIs, t455_perValveAnswersFollowTheRow,
-    t456_theMarkBoxesNameTheOddValve];
+    t456_theMarkBoxesNameTheOddValve, t457_everyCountChangeSettlesThePerValveAnswers];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

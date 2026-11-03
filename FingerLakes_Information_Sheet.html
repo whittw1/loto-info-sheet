@@ -3471,6 +3471,11 @@ function lockOpenWholeRow(src) {
 function valveStateForExport(src) {
   return (src && src.valveState && takesValveState(src.energySource, src.deviceType)) ? rowValveState(src) : 'normal';
 }
+// The CSV's Valve State: the export's word, a mixed row's states "; "-joined
+function csvValveState(src) {
+  const vs = valveStateForExport(src);
+  return vs === 'mixed' ? unitValveStatesOf(src).join('; ') : vs;
+}
 // Column 11: blank, "Normally Closed", or a mixed row's "Normal; Normally Closed"
 // (build 146: "Normal" is written, never a blank part)
 function valveStateSheetText(src) {
@@ -3584,6 +3589,9 @@ function toggleUnitLockOpen(index, unit) {
   const u = unitLockOpenOf(src);
   u[unit] = !u[unit];
   src.unitLockOpen = u;
+  // No valve left locked open: the box unticks (build 146 review — it stayed
+  // ticked with nothing on the sheet). To move the lock, tap the other valve first.
+  if (!u.some(Boolean)) { delete src.lockOpen; delete src.unitLockOpen; }
   renderSources();
   autoSaveCurrent();
 }
@@ -10049,10 +10057,13 @@ function handleEnergySourceChange(index, value) {
       if (sources[index].quantity === 2) sources[index].quantity = 1;
       delete sources[index]._autoQty2;
     }
+    // …and each valve's own answer follows the count (build 146 review: an In/Out
+    // row's Out valve left a Qty 1 row "Mixed", its Normally Closed dropped unsaid)
+    const valveNote = settleValveUnits(sources[index]);
     // Fewer devices, or now an In/Out pair: the marks tapped before no longer
     // say which valve is which (build 95 — marksFit).
     reconcileSourceMarks(index);
-    if (drainNote) showToast(drainNote, true);
+    if (drainNote || valveNote) showToast([drainNote, valveNote].filter(Boolean).join('\n'), true);
     // Re-render to update device + verification dropdowns
     renderSources();
     autoSaveCurrent();
@@ -10379,6 +10390,7 @@ function applyCopySource(entryIndex, sourceIndex) {
   delete dest.role; delete dest.altKind; delete dest.feeds;
   // …and keeps its drain answer only where its new source takes the question (build 123 review)
   const drainNote = settleSourceEnergy(dest, before);   // its code came with the source
+  const valveNote = settleValveUnits(dest);   // …and its own per-valve Lock Open, to the copied count (build 146 review)
   // Duplicate follows THIS source's own photo (build 109): a copy never brings
   // the other source's photo. A reused photo here makes it an automatic Yes;
   // the other source's automatic Yes stays automatic, and renderSources then
@@ -10406,7 +10418,7 @@ function applyCopySource(entryIndex, sourceIndex) {
   renderSources();
   autoSaveCurrent();
   showToast(`Copied source #${sourceIndex + 1} from "${entry.equipName || '(unnamed)'}"` + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '')
-    + noteClause(drainNote), marksCleared || !!drainNote);
+    + noteClause([drainNote, valveNote]), marksCleared || !!drainNote || !!valveNote);
 }
 
 function closeCopySourceDialog() {
@@ -10653,6 +10665,8 @@ function applyLink(equipIndex, sourceIndex) {
     mine.quantity = parseInt(src.quantity, 10) || 1;
   }
   const drainNotes = tookEnergy ? settleSourceChange(mine, '', photos, 'source_' + pendingLinkSourceIndex) : [];   // build 123 review
+  const valveNote = settleValveUnits(mine);   // the target's count: each valve's answer follows it (build 146 review)
+  if (valveNote) drainNotes.push(valveNote);
   const marksCleared = reconcileSourceMarks(pendingLinkSourceIndex, true);
   mine.userEdited = true;
   sources[pendingLinkSourceIndex].linkedTo = {
@@ -11352,17 +11366,18 @@ const VALVE_MARK_COLORS = {
   'source-electrical': '#ff6b6b', 'source-steam': '#ffb36b', 'source-water': '#6bd5ff',
   'source-gas': '#fff06b', 'source-default': '#ffff00'
 };
-// One box + block arrow as SVG, in the photo box's pixel space. The arrow is
-// Excel's preset (shaft half its thickness, head half its short side) — what
-// loto-web draws.
-// On a mixed row (build 146) a box says which valve is the odd one: "#3.2 NC"
+// On a mixed row (build 146) a box says which valve is the odd one: "#3.2 NC",
+// "#3.2 Locked" (short: the box is 0.32 of the photo wide)
 function valveMarkStateText(src, k) {
   if (!src) return '';
   let t = '';
   if (rowValveState(src) === 'mixed' && unitValveStatesOf(src)[k] === 'normally_closed') t += ' NC';
-  if (Array.isArray(src.unitLockOpen) && /; /.test(lockOpenSheetText(src)) && unitLockOpenOf(src)[k]) t += ' Locked open';
+  if (Array.isArray(src.unitLockOpen) && /; /.test(lockOpenSheetText(src)) && unitLockOpenOf(src)[k]) t += ' Locked';
   return t;
 }
+// One box + block arrow as SVG, in the photo box's pixel space. The arrow is
+// Excel's preset (shaft half its thickness, head half its short side) — what
+// loto-web draws.
 function valveMarkShapeSvg(ov, w, h, label, color, opacity) {
   const G = VALVE_MARK_GEOM;
   const vert = ov.arrow_dir === 'up' || ov.arrow_dir === 'down';
@@ -16258,7 +16273,7 @@ async function buildAndSendExport(opts, run) {
         quote(entry.tiedToName || ''), quote(entry.notes || ''),
         i + 1, quote(src.energySource), quote(src.deviceType), quote(src.deviceId || ''), src.quantity,
         quote(sourceLocationForExport(src)), effectiveDuplicate(src, (entry.photos || {})['source_' + i]), quote(src.verification),
-        quote(valveStateForExport(src) === 'mixed' ? unitValveStatesOf(src).join('; ') : valveStateForExport(src)),
+        quote(csvValveState(src)),
         quote(map.sourceHs[i] || ''), quote(src.detail || ''),
         quote(linkedStr),
         quote(map.mainH || ''),
@@ -16320,13 +16335,14 @@ async function buildAndSendExport(opts, run) {
       // The drain answer only where the sheet carries it (build 123 review): never one
       // kept on an Electrical or exhaust row
       if (!sourceTakesDrainLocation(src, entryHospitalCode(entry))) delete out.drainLocation;
-      if (!lockOpenSheetText(src)) delete out.lockOpen;   // …and Lock Open only where col 15 carries it (build 125 review)
-      // A mixed row (build 146): unitValveStates with valveState "mixed"; Lock Open
-      // true on every valve, else unitLockOpen and no lockOpen (loto-web's contract)
+      // Lock Open only where col 15 carries it (build 125 review): true on every
+      // valve, a mixed row's unitLockOpen and no lockOpen (build 146, loto-web's
+      // contract); a mixed state's unitValveStates beside valveState "mixed"
+      const lockText = lockOpenSheetText(src);
+      delete out.lockOpen; delete out.unitLockOpen;
+      if (lockText === 'Yes') out.lockOpen = true;
+      else if (lockText) out.unitLockOpen = unitLockOpenOf(src);
       if (out.valveState === 'mixed') out.unitValveStates = unitValveStatesOf(src); else delete out.unitValveStates;
-      delete out.unitLockOpen;
-      if (lockOpenSheetText(src) === 'Yes') out.lockOpen = true;
-      else if (lockOpenSheetText(src)) { delete out.lockOpen; out.unitLockOpen = unitLockOpenOf(src); }
       return out;
     });
     const miscOut = miscFileNames[ei]
