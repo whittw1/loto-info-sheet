@@ -215,6 +215,8 @@
     miscPhotos = [];
     sources = [];
     if (typeof unitAnswers !== 'undefined') unitAnswers = {};   // build 118: the answers for loto-web
+    // build 145: the saved list shows every facility again
+    if (typeof savedFacility !== 'undefined') { savedFacility = 'all'; try { localStorage.removeItem('loto_saved_facility'); } catch (e) {} }
     try { clearSketchState(); } catch (e) {}
     // remove dialogs the previous test opened — but never the static ones
     // (Export / Bulk delete / Settings live in the HTML and are only hidden)
@@ -14786,6 +14788,42 @@
     want(got.system === 'Medical Vacuum|false', 'a system: not listed');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T442 — build 145: the saved list by facility (wilkins 2026-11-02: "I don't
+  // want to see all previous equipment")
+  async function t442_theSavedListShowsOneFacility() {
+    const N = 'T442 build 145: the saved list\'s Facility picker shows only that facility\'s units (with Today / Yesterday and the search on top), counts each facility, is remembered across a relaunch, and falls back to all facilities once none of its units is left';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const A = mkEntry('ATL-442'); A.hospitalCode = 'Atlanta'; A.surveyDate = dayAgo(0);
+    const A2 = mkEntry('ATL2-442'); A2.hospitalCode = 'Atlanta'; A2.surveyDate = dayAgo(1);
+    const K = mkEntry('KC-442'); K.hospitalCode = 'Kansas City'; K.surveyDate = dayAgo(0);
+    savedEquipment = [A, A2, K]; saveAll();
+    if (!savedPanelOpen) toggleSavedPanel();
+    const names = () => (document.getElementById('savedPanelBody').textContent.match(/[A-Z0-9]+-442/g) || []).sort().join(',');
+    const sel = document.getElementById('savedFacilityFilter');
+    renderSavedPanel();
+    got.options = [...sel.options].map(o => o.value + '=' + o.textContent).join(' | ');
+    want(got.options === 'all=All facilities (3) | Atlanta=Atlanta VA Medical Center (2) | Kansas City=Kansas City VA Medical Center (1)', 'options');
+    got.all = names(); want(got.all === 'ATL-442,ATL2-442,KC-442', 'all facilities');
+    sel.value = 'Atlanta'; sel.dispatchEvent(new Event('change'));
+    got.atlanta = names(); want(got.atlanta === 'ATL-442,ATL2-442', 'Atlanta only');
+    got.summary = document.getElementById('savedFilterSummary').textContent;
+    want(got.summary === '1 today · 1 yesterday · 2 here of 3', 'summary counts the facility');
+    setSavedFilter('today'); got.atlToday = names(); want(got.atlToday === 'ATL-442', 'Atlanta + Today');
+    setSavedFilter('all');
+    setSavedSearch('kc'); got.noMatch = document.getElementById('savedPanelBody').textContent;
+    want(/Atlanta VA Medical Center/.test(got.noMatch) && /search "kc"/.test(got.noMatch), 'the empty message names the facility');
+    setSavedSearch('');
+    got.stored = localStorage.getItem('loto_saved_facility'); want(got.stored === 'Atlanta', 'remembered');
+    // a relaunch reads it back
+    savedFacility = (() => { try { const v = localStorage.getItem('loto_saved_facility'); return v === null ? 'all' : v; } catch (e) { return 'all'; } })();
+    renderSavedPanel(); got.relaunch = [sel.value, names()].join('|'); want(got.relaunch === 'Atlanta|ATL-442,ATL2-442', 'after a relaunch');
+    // its units gone: every facility again, the choice kept for later
+    savedEquipment = [K]; saveAll(); renderSavedPanel();
+    got.gone = [sel.value, names(), savedFacility].join('|'); want(got.gone === 'all|KC-442|Atlanta', 'no Atlanta units left');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -14967,7 +15005,8 @@
     t433_theBuildingImportReadsRealInventories, t434_aReplacedOrRemovedBuildingListIsKept,
     t435_everyTapOnTheListLetsTheBoxGoFirst, t436_anOutdatedCopyNeverGoesAloneAndTheSummaryCountsTheFacility,
     t437_aMedicalVacuumSystemHasItsValveAndSwitches, t438_aMedicalVacuumPumpIsAskedAboutOtherPower,
-    t439_theInletFilterCoverIsAnAnswer, t440_aVacuumPumpWithNoTemplateSaysSo, t441_aBlankExhaustIsMissing];
+    t439_theInletFilterCoverIsAnAnswer, t440_aVacuumPumpWithNoTemplateSaysSo, t441_aBlankExhaustIsMissing,
+    t442_theSavedListShowsOneFacility];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

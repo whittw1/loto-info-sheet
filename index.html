@@ -555,6 +555,8 @@ if ('serviceWorker' in navigator) {
       <button id="savedFilterAll" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('all')">All</button>
       <button id="savedFilterToday" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('today')">Today</button>
       <button id="savedFilterYesterday" class="btn btn-sm" style="padding:5px 12px;font-size:12px;" onclick="setSavedFilter('yesterday')">Yesterday</button>
+      <!-- build 145: one facility's units only (remembered on this device) -->
+      <select id="savedFacilityFilter" onchange="setSavedFacility(this.value)" aria-label="Facility" style="padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);max-width:220px;"></select>
       <input id="savedSearchInput" type="search" placeholder="Search name / room / template…" oninput="setSavedSearch(this.value)" style="flex:1 1 180px;min-width:140px;padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);">
       <span id="savedFilterSummary" style="font-size:11px;color:var(--text-dim);"></span>
       <button class="btn btn-danger btn-sm" onclick="showBulkDeleteDialog()" style="padding:5px 10px;font-size:12px;margin-left:auto;" title="Delete multiple entries by date / facility">&#128465; Bulk Delete</button>
@@ -2392,6 +2394,9 @@ let savedFilter = 'all';
 // Free-text search term applied on top of savedFilter. Matches equipName,
 // equipRoom, template (case-insensitive substring). Empty string = no filter.
 let savedSearchTerm = '';
+// Build 145: the saved list's facility ('all', or a hospitalCode with '' = no
+// facility), on top of the day and the search. Remembered on this device.
+let savedFacility = (() => { try { const v = localStorage.getItem('loto_saved_facility'); return v === null ? 'all' : v; } catch (e) { return 'all'; } })();
 // Last value the equipment-type change handler wrote into the Equipment ID/Name
 // field. If the current name still equals this, switching equipment types
 // replaces the name (the user hadn't customised it). A user-edited name won't
@@ -14103,6 +14108,30 @@ function setSavedSearch(value) {
   savedSearchTerm = (value || '').trim().toLowerCase();
   renderSavedPanel();
 }
+function setSavedFacility(value) {
+  savedFacility = value == null ? 'all' : String(value);
+  try { localStorage.setItem('loto_saved_facility', savedFacility); } catch (e) {}
+  renderSavedPanel();
+}
+// The facility the list shows: the remembered one while any unit is saved
+// under it, else all (that facility's units were deleted or moved away).
+function activeSavedFacility() {
+  return savedFacility !== 'all' && savedEquipment.some(e => entryHospitalCode(e) === savedFacility) ? savedFacility : 'all';
+}
+function savedFacilityLabel(code) { return code ? (hospitalName(code) || code) : '(no facility)'; }
+function populateSavedFacilityFilter(active) {
+  const sel = document.getElementById('savedFacilityFilter');
+  if (!sel) return;
+  const counts = {};
+  savedEquipment.forEach(e => { const c = entryHospitalCode(e); counts[c] = (counts[c] || 0) + 1; });
+  const total = savedEquipment.length;
+  sel.innerHTML = '';
+  const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; sel.appendChild(o); };
+  add('all', `All facilities (${total})`);
+  Object.keys(counts).sort((a, b) => savedFacilityLabel(a).localeCompare(savedFacilityLabel(b)))
+    .forEach(c => add(c, `${savedFacilityLabel(c)} (${counts[c]})`));
+  sel.value = active;
+}
 function matchesSavedSearch(entry) {
   if (!savedSearchTerm) return true;
   const haystack = [
@@ -14154,18 +14183,22 @@ function renderSavedPanel() {
     savedFilter === 'today'     ? isSurveyedToday
     : savedFilter === 'yesterday' ? isSurveyedYesterday
     : () => true;
+  const facility = activeSavedFacility();
+  populateSavedFacilityFilter(facility);
+  const atFacility = facility === 'all' ? () => true : (entry => entryHospitalCode(entry) === facility);
+  const scoped = savedEquipment.filter(atFacility);
   const visible = savedEquipment
     .map((entry, i) => ({ entry, i }))
-    .filter(({ entry }) => matchesFilter(entry) && matchesSavedSearch(entry));
+    .filter(({ entry }) => atFacility(entry) && matchesFilter(entry) && matchesSavedSearch(entry));
 
   const summary = document.getElementById('savedFilterSummary');
   if (summary) {
-    const todayCount     = savedEquipment.filter(isSurveyedToday).length;
-    const yesterdayCount = savedEquipment.filter(isSurveyedYesterday).length;
+    const todayCount     = scoped.filter(isSurveyedToday).length;
+    const yesterdayCount = scoped.filter(isSurveyedYesterday).length;
     const parts = [
       `${todayCount} today`,
       `${yesterdayCount} yesterday`,
-      `${savedEquipment.length} total`,
+      facility === 'all' ? `${savedEquipment.length} total` : `${scoped.length} here of ${savedEquipment.length}`,
     ];
     if (savedSearchTerm) parts.push(`${visible.length} match`);
     summary.textContent = parts.join(' · ');
@@ -14173,6 +14206,7 @@ function renderSavedPanel() {
 
   if (visible.length === 0) {
     const parts = [];
+    if (facility !== 'all') parts.push(savedFacilityLabel(facility));
     if (savedFilter !== 'all') parts.push(`"${savedFilter === 'today' ? 'Today' : 'Yesterday'}"`);
     if (savedSearchTerm) parts.push(`search "${savedSearchTerm}"`);
     const summary = parts.length ? parts.join(' + ') : 'the current filters';
