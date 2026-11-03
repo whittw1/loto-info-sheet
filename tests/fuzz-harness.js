@@ -834,7 +834,7 @@
       openSteamPressure(i);
       const el = document.getElementById('src_psi_in_' + i);
       if (!el) return 'steamPsi (no box) ' + i;
-      const t = pick(['15', '30', '45', '125', '250', '2.5', '500', '', '0', '20', '100', '10', 'x']);
+      const t = pick(['15', '30', '45', '50', '125', '250', '2.5', '500', '', '0', '20', '100', '10', 'x']);
       el.value = t; typeSteamPressure(i, el);
       if (chance(0.6)) commitSteamPressure(i, el);
       return 'steamPsi[' + i + ']=' + JSON.stringify(t) + ' ' + sources[i].energySource;

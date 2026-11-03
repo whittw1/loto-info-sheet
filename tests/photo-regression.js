@@ -9981,12 +9981,15 @@
     // save hook asks it (no ID prefix) — the app's one rule for its card, a source change and the export
     check('valveState', fx.valveState || [], c => ({ ok: takesValveState(c.energySource, c.deviceType) === c.takes, what: JSON.stringify([c.energySource, c.deviceType]) + ' app ' + takesValveState(c.energySource, c.deviceType) + ' loto-web ' + c.takes }));
     want((fx.valveState || []).length >= 35, 'the fixture carries loto-web\'s valve-state cases');
-    // A typed steam pressure (build 149): every steam name the app makes prints, through loto-web's
-    // _energy_source_mapping and its shipped Mapping Sheet, the pressure typed, with an S ID
+    // A typed steam pressure (build 149): every steam name the box makes prints, through loto-web's
+    // _energy_source_mapping and its shipped Mapping Sheet, the pressure typed, with an S ID; a name
+    // loto-web prints at another pressure ("MPS 50 PSI" → 30 PSI, wilkins: "Leave it") the box refuses,
+    // and only those (a sheet row fixed later shows here as one refused for nothing)
     check('steam', fx.steam || [], c => {
       const p = steamPressureOf(c.energySource);
-      return { ok: !!p && c.code === 'S' && prefixByEnergyName(c.energySource) === 'S' && c.psi === p.psi,
-        what: c.energySource + ' prints ' + JSON.stringify(c.printed) + ' (' + c.code + ')' };
+      const made = !!p && steamNameFromBox(p.cls, String(p.psi)) === c.energySource;
+      return { ok: !!p && c.code === 'S' && prefixByEnergyName(c.energySource) === 'S' && (c.psi === p.psi) === made,
+        what: c.energySource + ' prints ' + JSON.stringify(c.printed) + ' (' + c.code + '), the box ' + (made ? 'makes' : 'refuses') + ' it' };
     });
     want((fx.steam || []).length >= 15, 'the fixture carries the typed steam pressures');
     // A state and Lock Open per valve (build 146): columns 11 and 15 as the app writes each case's
@@ -15580,6 +15583,11 @@
     }
     want(got.bad.join(',') === ['500', '2.5', '', '0', 'abc', '-5', '1,5'].map(t => t + ':MPS 30 PSI/MPS 30 PSI/30/1').join(','), 'refused ' + got.bad.join(','));
     want(box().getAttribute('aria-invalid') === 'false' && (menuItem() === undefined), 'after: ' + box().getAttribute('aria-invalid') + ' menu ' + !!menuItem());
+    // a name loto-web prints otherwise: MPS 50 PSI is its 30 PSI row (wilkins 2026-11-03, "Leave it")
+    got.mps50 = await withToasts(async () => { type('50'); commitSteamPressure(0, box()); });
+    want(sources[0].energySource === 'MPS 30 PSI' && got.mps50.length === 1 && /loto-web prints MPS 50 PSI as 30 PSI .*kept MPS 30 PSI\. Tell the office this line is 50 PSI/.test(got.mps50[0]),
+      'MPS 50 ' + sources[0].energySource + ' ' + JSON.stringify(got.mps50));
+    want(steamNameFromBox('HPS', '50') === 'HPS 50 PSI' && steamNameFromBox('LPS', '50') === 'LPS 50 PSI', '50 under another class');
     // drawn again: the box shows at once, with the usual pressure beside it
     renderSources();
     got.redrawn = [!!box() && box().value, /usual 20/.test((document.getElementById('src_psi_0') || {}).textContent || '')].join(',');
