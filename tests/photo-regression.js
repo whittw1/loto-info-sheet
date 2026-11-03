@@ -126,6 +126,9 @@
 //   T437–T441 build 144 (wilkins 2026-11-02, loto-web's vacuum chat): a medical vacuum system's valve, switches and
 //             pump count; "any other power to this pump?"; the union/flange "Cover" answer and its photo hint; a
 //             Vacuum Pump with no template says so and the plain pick asks; a blank exhaust is missing at Save & New
+//   T450–T456 build 146 (wilkins 2026-11-02: an isolation valve and its normally closed bypass on one source): a
+//             state per valve on a Qty 2+ row ("Mixed" + one toggle per valve), Lock Open per valve, the sheet / CSV /
+//             entries.json lists, a changed count, Split 1 out, Duplicate / Copy Source / a source change, the mark boxes
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -15083,6 +15086,216 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
   // ---------- runner --------------------------------------------------------
+  // T450–T456 build 146 (wilkins 2026-11-02: an isolation valve and its normally closed
+  // bypass on one source took a duplicate row): a state per valve on one Qty 2+ row, and
+  // Lock Open per valve (loto-web's spec Field_App_Per_Unit_Valve_State_Spec_2026-11-02.md).
+  const vsRow = (es, dev, extra) => Object.assign(mkSrc(es), { sourceId: genUuid(), deviceType: dev, verification: /LPS|HHW/.test(es) ? 'Temp Only - Hot' : 'Temp Only - CHW', collapsed: false }, extra || {});
+  const toggleTexts = (id) => Array.from(document.querySelectorAll('#' + id + ' button')).map(b => b.textContent.replace(/\s+/g, ' ').trim()).join('/');
+
+  // T450 — the card: Mixed at 2+ valves, one toggle per valve, nothing new on other rows
+  async function t450_aMixedRowSetsEachValveOnTheCard() {
+    const N = 'T450 build 146: a Qty 2 CHW Ball Valve row offers Valve State "Mixed (set each valve)", a Qty 1 row does not; picking Mixed makes valve 2 Normally Closed with one toggle per valve ("1 Normal", "2 NC") in the Valve State box and the card badge "NC 1/2"; a toggle flips its valve (both NC: the badge says NC); Normal again drops the list; a Qty 2 Normal row shows no toggle line and no "Only some valves?"';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    formOfType('AHU-450', 'Air Handler', 'AHU - Steam');
+    sources = [vsRow('CHW In', 'Ball Valve', { quantity: 2 }), vsRow('HHW In', 'Ball Valve', { quantity: 1 })];
+    renderSources();
+    const opts = i => Array.from((document.getElementById('src_valvestate_' + i) || { options: [] }).options).map(o => o.value).join('/');
+    got.opts = opts(0) + ' | ' + opts(1);
+    want(got.opts === 'normal/normally_closed/mixed | normal/normally_closed', 'options ' + got.opts);
+    got.clean = [!!document.getElementById('src_vsunits_0'), !!document.getElementById('src_lockperunit_0'), !!document.getElementById('src_lockunits_0')].join();
+    want(got.clean === 'false,false,false', 'a Normal Qty 2 row shows ' + got.clean);
+    updateValveState(0, 'mixed');
+    got.mixed = [JSON.stringify(sources[0].unitValveStates), document.getElementById('src_valvestate_0').value, toggleTexts('src_vsunits_0'), valveStateBadgeText(sources[0])].join(' ');
+    want(got.mixed === '["normal","normally_closed"] mixed 1 Normal/2 NC NC 1/2', 'mixed ' + got.mixed);
+    sources[0].collapsed = true; renderSources();   // the badge is on the collapsed card, in the list
+    got.header = />NC 1\/2</.test(document.body.innerHTML);
+    want(got.header, 'no "NC 1/2" badge on the collapsed card');
+    sources[0].collapsed = false; renderSources();
+    document.querySelector('#src_vsunits_0 button').click();
+    got.flip1 = [toggleTexts('src_vsunits_0'), valveStateBadgeText(sources[0]), valveStateForExport(sources[0])].join(' ');
+    want(got.flip1 === '1 NC/2 NC NC normally_closed', 'after valve 1 ' + got.flip1);
+    document.querySelectorAll('#src_vsunits_0 button')[1].click();
+    got.flip2 = [toggleTexts('src_vsunits_0'), valveStateBadgeText(sources[0]), valveStateForExport(sources[0])].join(' ');
+    want(got.flip2 === '1 NC/2 Normal NC 1/2 mixed', 'after valve 2 ' + got.flip2);
+    updateValveState(0, 'normal');
+    got.back = [sources[0].valveState, 'unitValveStates' in sources[0], !!document.getElementById('src_vsunits_0'), valveStateBadgeText(sources[0]) || '-'].join();
+    want(got.back === 'normal,false,false,-', 'back to Normal ' + got.back);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T451 — the sheet, the CSV and entries.json carry each valve's state
+  async function t451_aMixedRowExportsEachValvesState() {
+    const N = 'T451 build 146 (loto-web\'s contract): a mixed Qty 2 row exports col 11 "Normal; Normally Closed", the CSV "normal; normally_closed" and entries.json valveState "mixed" with unitValveStates; a Qty 2 Normally Closed row and a mixed row whose valves agree export as before (col 11 "Normally Closed", no unitValveStates); a Normal row holding an old list exports none; a row that takes no valve state exports none';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const e = mkEntry('AHU-451', { sources: [
+      vsRow('CHW In', 'Ball Valve', { quantity: 2, valveState: 'mixed', unitValveStates: ['normal', 'normally_closed'], collapsed: true }),
+      vsRow('HHW In', 'Ball Valve', { quantity: 2, valveState: 'normally_closed', collapsed: true }),
+      vsRow('LPS 10 PSI', 'Gate Valve', { quantity: 2, valveState: 'mixed', unitValveStates: ['normally_closed', 'normally_closed'], collapsed: true }),
+      vsRow('HHW Out', 'Ball Valve', { quantity: 2, valveState: 'normal', unitValveStates: ['normal', 'normally_closed'], collapsed: true }),
+      vsRow('Electrical 480V', 'Breaker', { quantity: 2, verification: 'Controls', valveState: 'mixed', unitValveStates: ['normal', 'normally_closed'], collapsed: true })] });
+    savedEquipment = [e]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const names = ['CHW In', 'HHW In', 'LPS 10 PSI', 'HHW Out', 'Electrical 480V'];
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+    const col11 = {};
+    wb.worksheets[0].eachRow(row => { const a = String(row.getCell(1).value || ''); if (names.includes(a)) col11[a] = String(row.getCell(11).value || ''); });
+    got.xlsx = names.map(n => col11[n] || '-').join(' | ');
+    want(got.xlsx === 'Normal; Normally Closed | Normally Closed | Normally Closed | - | -', 'col 11 ' + got.xlsx);
+    const js = u.entriesJson.entries[0].sources;
+    got.json = js.map(s => s.valveState + (s.unitValveStates ? JSON.stringify(s.unitValveStates) : '')).join(' | ');
+    want(got.json === 'mixed["normal","normally_closed"] | normally_closed | normally_closed | normal | normal', 'entries.json ' + got.json);
+    const cpath = Object.keys(u.files).find(p => /\.csv$/.test(p));
+    const lines = new TextDecoder().decode(u.files[cpath]).split('\n').filter(Boolean);
+    const vc = csvFields(lines[0]).findIndex(h => /^valve state$/i.test(h));
+    got.csv = names.map(n => { const l = lines.find(x => csvFields(x).includes(n)); return l ? csvFields(l)[vc] : 'no row'; }).join(' | ');
+    want(vc >= 0 && got.csv === 'normal; normally_closed | normally_closed | normally_closed | normal | normal', 'CSV ' + got.csv);
+    got.kept = JSON.stringify(savedEquipment[0].sources[4].unitValveStates);
+    want(got.kept === '["normal","normally_closed"]', 'the saved data changed: ' + got.kept);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T452 — Lock Open per valve: "Only some valves?", col 15, entries.json, the drain question
+  async function t452_lockOpenIsSetPerValve() {
+    const N = 'T452 build 146 (loto-web: Lock Open on a Qty 2 row locks open every valve, a missed isolation once only the bypass is meant): Locked open ticked on a Qty 2 valve row offers "Only some valves?" (never unticked, never on Qty 1); it makes valve 2 alone locked ("1 —", "2 Locked"), col 15 "No; Yes", entries.json unitLockOpen [false,true] and no lockOpen, and the drain question stays (valve 1 drains); every valve locked writes "Yes" + lockOpen as before and asks no drain; an entries.json row (unitLockOpen, no lockOpen) reads back per valve; unticking clears both';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      formOfType('AHU-452', 'Air Handler', 'AHU - Steam');
+      sources = [vsRow('CHW In', 'Ball Valve', { quantity: 2 }), vsRow('HHW In', 'Ball Valve', { quantity: 1, lockOpen: true }),
+                 vsRow('LPS 10 PSI', 'Gate Valve', { quantity: 2, lockOpen: true, unitLockOpen: [false, true] })];
+      renderSources();
+      got.offer0 = [!!document.getElementById('src_lockperunit_0'), !!document.getElementById('src_lockperunit_1')].join();
+      want(got.offer0 === 'false,false', 'unticked / Qty 1 offer ' + got.offer0);
+      updateLockOpen(0, true);
+      const offer = document.getElementById('src_lockperunit_0');
+      got.offer = !!offer;
+      want(got.offer, 'no "Only some valves?" on a ticked Qty 2 row');
+      if (offer) offer.click();
+      got.some = [JSON.stringify(sources[0].unitLockOpen), toggleTexts('src_lockunits_0'), lockOpenSheetText(sources[0]), document.getElementById('src_lockopen_0').checked, sourceTakesDrainLocation(sources[0], 'Atlanta')].join(' ');
+      want(got.some === '[false,true] 1 —/2 Locked No; Yes true true', 'some ' + got.some);
+      document.querySelector('#src_lockunits_0 button').click();
+      got.all = [lockOpenSheetText(sources[0]), sourceTakesDrainLocation(sources[0], 'Atlanta')].join();
+      want(got.all === 'Yes,false', 'every valve ' + got.all);
+      document.querySelector('#src_lockunits_0 button').click();
+      updateLockOpen(2, false);
+      got.off = ['lockOpen' in sources[2], 'unitLockOpen' in sources[2], !!document.getElementById('src_lockunits_2')].join();
+      want(got.off === 'false,false,false', 'unticked ' + got.off);
+      savedEquipment = [Object.assign(mkEntry('AHU-452', { sources: JSON.parse(JSON.stringify(sources)) }), { hospitalCode: 'Atlanta' })]; saveAll();
+      const { zip } = await runExport({ confirmResponse: true });
+      const u = zip ? await unzipExport(zip.blob) : null;
+      const js = (u && u.entriesJson.entries[0].sources) || [];
+      got.json = js.map(s => (s.lockOpen === true ? 'lockOpen' : '-') + (s.unitLockOpen ? JSON.stringify(s.unitLockOpen) : '')).join(' | ');
+      want(got.json === '-[false,true] | lockOpen | -', 'entries.json ' + got.json);
+      const xpath = u && Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+      const col15 = {};
+      if (xpath) { const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]); wb.worksheets[0].eachRow(row => { const a = String(row.getCell(1).value || ''); if (['CHW In', 'HHW In', 'LPS 10 PSI'].includes(a)) col15[a] = String(row.getCell(15).value || ''); }); }
+      got.xlsx = ['CHW In', 'HHW In', 'LPS 10 PSI'].map(a => col15[a] || '-').join(' | ');
+      want(got.xlsx === 'No; Yes | Yes | -', 'col 15 ' + got.xlsx);
+      const back = js[0] ? Object.assign({}, js[0]) : {};
+      got.back = [JSON.stringify(unitLockOpenOf(back)), lockOpenTicked(back), lockOpenSheetText(back)].join(' ');
+      want(got.back === '[false,true] true No; Yes', 'read back ' + got.back);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T453 — a changed count keeps each valve's answer and says what it dropped
+  async function t453_aChangedCountKeepsEachValvesAnswer() {
+    const N = 'T453 build 146: a mixed row going from Qty 2 to 3 keeps valve 1 and 2 and adds valve 3 Normal; [Normal, Normal, NC] at Qty 2 becomes Normal and the toast names "valve 3 (Normally Closed)"; per-valve Lock Open [—, Locked, —] at Qty 2 stays per valve and at Qty 1 is gone ("valve 2 (Locked open)")';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    formOfType('AHU-453', 'Air Handler', 'AHU - Steam');
+    sources = [vsRow('CHW In', 'Ball Valve', { quantity: 2, valveState: 'mixed', unitValveStates: ['normal', 'normally_closed'] }),
+               vsRow('HHW In', 'Ball Valve', { quantity: 3, valveState: 'mixed', unitValveStates: ['normal', 'normal', 'normally_closed'], lockOpen: true, unitLockOpen: [false, true, false] })];
+    renderSources();
+    let t = await withToasts(async () => updateSource(0, 'quantity', '3'));
+    got.up = [sources[0].valveState, JSON.stringify(sources[0].unitValveStates), t.filter(m => /dropped/.test(m)).length].join(' ');
+    want(got.up === 'mixed ["normal","normally_closed","normal"] 0', 'Qty 2→3 ' + got.up);
+    t = await withToasts(async () => updateSource(1, 'quantity', '2'));
+    got.down = [sources[1].valveState, 'unitValveStates' in sources[1], JSON.stringify(sources[1].unitLockOpen), !!sources[1].lockOpen, t.find(m => /dropped/.test(m)) || ''].join(' ');
+    want(got.down === 'normal false [false,true] true Quantity 2 dropped valve 3 (Normally Closed)', 'Qty 3→2 ' + got.down);
+    t = await withToasts(async () => updateSource(1, 'quantity', '1'));
+    got.one = ['lockOpen' in sources[1], 'unitLockOpen' in sources[1], t.find(m => /dropped/.test(m)) || ''].join(' ');
+    want(got.one === 'false false Quantity 1 dropped valve 2 (Locked open)', 'Qty 2→1 ' + got.one);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T454 — Split 1 out takes the last valve as it is
+  async function t454_splitTakesTheLastValveAsItIs() {
+    const N = 'T454 build 146: Split 1 out of a mixed [Normal, NC] row leaves a Normal row and a Normally Closed one; of [NC, Normal] with Lock Open [—, Locked] a Normally Closed row (not locked) and a Normal, locked open one; of a Qty 2 Normal row (no states set) a Normally Closed one, as before';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    formOfType('AHU-454', 'Air Handler', 'AHU - Steam');
+    sources = [vsRow('CHW In', 'Ball Valve', { quantity: 2, valveState: 'mixed', unitValveStates: ['normal', 'normally_closed'] }),
+               vsRow('HHW In', 'Ball Valve', { quantity: 2, valveState: 'mixed', unitValveStates: ['normally_closed', 'normal'], lockOpen: true, unitLockOpen: [false, true] }),
+               vsRow('LPS 10 PSI', 'Gate Valve', { quantity: 2 })];
+    renderSources();
+    await withToasts(async () => { splitSource(2); splitSource(1); splitSource(0); });
+    const d = s => [s.energySource, s.quantity, s.valveState, 'unitValveStates' in s ? 'list' : '', s.lockOpen ? 'locked' : '', 'unitLockOpen' in s ? 'llist' : ''].filter(x => x !== '').join(':');
+    got.rows = sources.map(d).join(' | ');
+    want(got.rows === 'CHW In:1:normal | CHW In:1:normally_closed | HHW In:1:normally_closed | HHW In:1:normal:locked | LPS 10 PSI:1:normal | LPS 10 PSI:1:normally_closed', got.rows);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T455 — a source change clears the per-valve answers; Duplicate and Copy Source carry them
+  async function t455_perValveAnswersFollowTheRow() {
+    const N = 'T455 build 146: a mixed row with per-valve Lock Open re-picked as Electrical 480V drops both lists; Duplicate and Copy Source carry a mixed row\'s states as their own list (a later toggle on the copy never changes the original or the saved unit)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const saved = mkEntry('SRC-455', { sources: [vsRow('CHW In', 'Ball Valve', { quantity: 2, valveState: 'mixed', unitValveStates: ['normal', 'normally_closed'], collapsed: true })] });
+    savedEquipment = [saved]; saveAll();
+    formOfType('AHU-455', 'Air Handler', 'AHU - Steam');
+    sources = [vsRow('CHW In', 'Ball Valve', { quantity: 2, valveState: 'mixed', unitValveStates: ['normal', 'normally_closed'], lockOpen: true, unitLockOpen: [false, true] }),
+               vsRow('HHW In', 'Ball Valve', { quantity: 2 })];
+    renderSources();
+    duplicateSource(0);
+    toggleUnitValveState(1, 0);
+    got.dup = JSON.stringify(sources[0].unitValveStates) + ' ' + JSON.stringify(sources[1].unitValveStates);
+    want(got.dup === '["normal","normally_closed"] ["normally_closed","normally_closed"]', 'Duplicate ' + got.dup);
+    showCopySourceDialog(2);
+    applyCopySource(0, 0);
+    closeCopySourceDialog();
+    toggleUnitValveState(2, 1);
+    got.copy = [sources[2].valveState, JSON.stringify(sources[2].unitValveStates), JSON.stringify(savedEquipment[0].sources[0].unitValveStates)].join(' ');
+    want(got.copy === 'mixed ["normal","normal"] ["normal","normally_closed"]', 'Copy Source ' + got.copy);
+    await withToasts(async () => handleEnergySourceChange(0, 'Electrical 480V'));
+    got.change = [sources[0].valveState, 'unitValveStates' in sources[0], 'lockOpen' in sources[0], 'unitLockOpen' in sources[0]].join();
+    want(got.change === 'normal,false,false,false', 'source change ' + got.change);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T456 — the mark boxes and the toggles name the valves
+  async function t456_theMarkBoxesNameTheOddValve() {
+    const N = 'T456 build 146: on a mixed row the valve-mark box of its Normally Closed valve reads "… NC" and of a locked-open one "… Locked open", others and every row whose valves agree unchanged; an In/Out pair\'s toggles read "In Normal" / "Out NC"';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const mixed = vsRow('CHW In', 'Ball Valve', { quantity: 2, valveState: 'mixed', unitValveStates: ['normal', 'normally_closed'] });
+    const allNc = vsRow('HHW In', 'Ball Valve', { quantity: 2, valveState: 'normally_closed' });
+    const lock = vsRow('HHW In', 'Ball Valve', { quantity: 2, lockOpen: true, unitLockOpen: [true, false] });
+    got.marks = [valveMarkStateText(mixed, 0), valveMarkStateText(mixed, 1), valveMarkStateText(allNc, 1), valveMarkStateText(lock, 0), valveMarkStateText(lock, 1)].map(x => x || '-').join('|');
+    want(got.marks === '-| NC|-| Locked open|-', 'boxes ' + got.marks);
+    formOfType('AHU-456', 'Air Handler', 'AHU - Steam');
+    sources = [vsRow('CHW In/Out', 'Ball Valve', { quantity: 2 })];
+    renderSources();
+    updateValveState(0, 'mixed');
+    got.pair = toggleTexts('src_vsunits_0');
+    want(got.pair === 'In Normal/Out NC', 'In/Out toggles ' + got.pair);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
     t9_removeMiscThenDiscard, t10_reattachOrphans, t11_duplicateSourceThenRetakeCopy,
@@ -15265,7 +15478,10 @@
     t437_aMedicalVacuumSystemHasItsValveAndSwitches, t438_aMedicalVacuumPumpIsAskedAboutOtherPower,
     t439_theInletFilterCoverIsAnAnswer, t440_aVacuumPumpWithNoTemplateSaysSo, t441_aBlankExhaustIsMissing,
     t442_theSavedListShowsOneFacility, t443_anExhaustFanAsksAboutBiohazard, t444_theBiohazardTravelsInU3, t445_aPickInTheUnitQuestionsIsLetGo,
-    t446_aBoxLeftInFocusOffTheScreenIsLetGo, t447_bulkDeleteAndSavesFollowTheListsFacility, t448_theBiohazardHasASlotOfItsOwnAndAPickIsNotRedrawn];
+    t446_aBoxLeftInFocusOffTheScreenIsLetGo, t447_bulkDeleteAndSavesFollowTheListsFacility, t448_theBiohazardHasASlotOfItsOwnAndAPickIsNotRedrawn,
+    t450_aMixedRowSetsEachValveOnTheCard, t451_aMixedRowExportsEachValvesState, t452_lockOpenIsSetPerValve,
+    t453_aChangedCountKeepsEachValvesAnswer, t454_splitTakesTheLastValveAsItIs, t455_perValveAnswersFollowTheRow,
+    t456_theMarkBoxesNameTheOddValve];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

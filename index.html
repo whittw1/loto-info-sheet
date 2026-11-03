@@ -526,7 +526,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b145</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b146</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1236,7 +1236,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 145;
+const APP_BUILD = 146;
 
 // ============================================================================
 // DATA
@@ -3386,7 +3386,7 @@ function takeNewSourceDefaults(src, before) {
   // breaker). One reset (build 126).
   const valveGone = isValveDevice(oldDevice) && !isValveDevice(src.deviceType);
   const noValve = !isValveDevice(src.deviceType) && !getFilteredDevices(es).some(isValveDevice);
-  if (valveGone || noValve || !takesValveState(es, src.deviceType)) { src.valveState = 'normal'; delete src.lockOpen; }
+  if (valveGone || noValve || !takesValveState(es, src.deviceType)) { src.valveState = 'normal'; delete src.unitValveStates; delete src.lockOpen; delete src.unitLockOpen; }
   return valveGone ? oldDevice : '';
 }
 // What a swap says: the row's photo shows the valve, not what isolates it now.
@@ -3427,7 +3427,7 @@ function noteClause(notes) {
 // relief point: a Lock Open the export writes (lockOpenSheetText). One it won't
 // (a Pump row's) hides no drain answer (build 126).
 function sourceTakesDrainLocation(src, facility) {
-  if (!src || lockOpenSheetText(src) || !drainTakingSource(src)) return false;
+  if (!src || lockOpenWholeRow(src) || !drainTakingSource(src)) return false;
   if (src.drainLocation && src.drainLocation.where) return true;
   if (nonValveDevice(src)) return false;
   return drainCodeFollowsDrain(src) || releasePromptOn(facility === undefined ? formFacilityCode() : facility);
@@ -3454,18 +3454,169 @@ function drainsToSheetText(src, facility) {
 // an Electrical row, and loto-web printed "Leave valve E-1 closed" with no breaker
 // lockout). Lock Open is for a valve: it goes exactly where the card offers it. The
 // data is untouched.
+// Column 15: "Yes" when every valve is locked open; a mixed row (build 146) one
+// part per valve, "No; Yes", unit 1 first; blank when none is.
 function lockOpenSheetText(src) {
-  return (src && src.lockOpen && sourceOffersValveState(src)) ? 'Yes' : '';
+  if (!src || !sourceOffersValveState(src)) return '';
+  const u = unitLockOpenOf(src);
+  if (!u.some(Boolean)) return '';
+  return u.every(Boolean) ? 'Yes' : u.map(on => on ? 'Yes' : 'No').join('; ');
 }
+// Every valve of the row locked open (and written so): no valve of it is isolated
+// or drains (build 146: a mixed row's other valves still are)
+function lockOpenWholeRow(src) {
+  return lockOpenSheetText(src) === 'Yes';
+}
+// "normal", "normally_closed" or (build 146) "mixed", as loto-web takes it
 function valveStateForExport(src) {
-  return (src && src.valveState && takesValveState(src.energySource, src.deviceType)) ? src.valveState : 'normal';
+  return (src && src.valveState && takesValveState(src.energySource, src.deviceType)) ? rowValveState(src) : 'normal';
+}
+// Column 11: blank, "Normally Closed", or a mixed row's "Normal; Normally Closed"
+// (build 146: "Normal" is written, never a blank part)
+function valveStateSheetText(src) {
+  const vs = valveStateForExport(src);
+  if (vs !== 'mixed') return VALVE_STATE_SHEET_TEXT[vs] || '';
+  return unitValveStatesOf(src).map(s => VALVE_STATE_SHEET_TEXT[s] || 'Normal').join('; ');
+}
+const VALVE_STATE_SHEET_TEXT = { normally_closed: 'Normally Closed', normally_open: 'Normally Open' };
+
+// ---- Per-valve state on one row (build 146) -------------------------------------
+// wilkins 2026-11-02: one source with two valves, the isolation valve and its
+// normally closed bypass, took a duplicate row. A row of 2+ valves can now hold
+// a state per valve: valveState "mixed" with unitValveStates (one per valve, unit
+// 1 first: Device ID's order, photo mark #n.1, the In valve of an In/Out pair);
+// Lock Open's per-valve answers in unitLockOpen beside the row's lockOpen. A row
+// whose valves agree reads, shows and exports exactly as before, whatever it holds.
+// loto-web contract: loto-web/docs/Field_App_Per_Unit_Valve_State_Spec_2026-11-02.md.
+function sourceQty(src) {
+  return Math.max(1, parseInt(src && src.quantity, 10) || 1);
+}
+// Each valve's state, one per unit (a short list reads Normal past its end)
+function unitValveStatesOf(src) {
+  const n = sourceQty(src);
+  if (!src || src.valveState !== 'mixed') return Array(n).fill((src && src.valveState) || 'normal');
+  const list = Array.isArray(src.unitValveStates) ? src.unitValveStates : [];
+  return Array.from({ length: n }, (_, k) => list[k] === 'normally_closed' ? 'normally_closed' : 'normal');
+}
+// The row's state: a "mixed" row whose valves agree is that state
+function rowValveState(src) {
+  if (!src || src.valveState !== 'mixed') return (src && src.valveState) || 'normal';
+  const u = unitValveStatesOf(src);
+  return u.every(s => s === u[0]) ? u[0] : 'mixed';
+}
+// Each valve locked open or not. A list wins (entries.json carries a mixed row's
+// list without lockOpen); else lockOpen covers every valve.
+function unitLockOpenOf(src) {
+  const n = sourceQty(src);
+  if (src && Array.isArray(src.unitLockOpen)) return Array.from({ length: n }, (_, k) => !!src.unitLockOpen[k]);
+  return Array(n).fill(!!(src && src.lockOpen));
+}
+function lockOpenTicked(src) {
+  return !!(src && (src.lockOpen || Array.isArray(src.unitLockOpen)));
+}
+// A valve's name on the card and the mark boxes: its number, or In / Out
+function valveUnitLabel(src, k) {
+  return isInOutPair(src) ? (k ? 'Out' : 'In') : String(k + 1);
+}
+// One per valve, the LAST one the odd one out: the bypass a split pulls (build 146)
+function lastValveOdd(n, odd, rest) {
+  return Array.from({ length: n }, (_, k) => k === n - 1 ? odd : rest);
+}
+// A changed count keeps each valve's answer, a new valve starting Normal / not
+// locked; under 2 valves, or with the valves agreeing, the row holds one answer
+// again. Returns the note for what a lower count dropped.
+function settleValveUnits(src) {
+  const n = sourceQty(src);
+  const dropped = [];
+  if (src.valveState === 'mixed') {
+    const list = Array.isArray(src.unitValveStates) ? src.unitValveStates : [];
+    list.slice(n).forEach((s, k) => { if (s === 'normally_closed') dropped.push('valve ' + (n + k + 1) + ' (Normally Closed)'); });
+    src.unitValveStates = unitValveStatesOf(src);
+    const u = src.unitValveStates;
+    if (n < 2 || u.every(s => s === u[0])) { src.valveState = u[0]; delete src.unitValveStates; }
+  }
+  if (Array.isArray(src.unitLockOpen)) {
+    src.unitLockOpen.slice(n).forEach((on, k) => { if (on) dropped.push('valve ' + (n + k + 1) + ' (Locked open)'); });
+    const u = unitLockOpenOf(src);
+    delete src.unitLockOpen;
+    if (n >= 2 && !u.every(on => on === u[0])) { src.unitLockOpen = u; src.lockOpen = true; }
+    else if (u[0]) src.lockOpen = true;
+    else delete src.lockOpen;
+  }
+  return dropped.length ? 'Quantity ' + n + ' dropped ' + dropped.join(' and ') : '';
+}
+// The card's Valve State: Normal / Normally Closed, or Mixed (2+ valves) with one
+// toggle per valve (build 146). Mixed starts with the last valve Normally Closed.
+function updateValveState(index, value) {
+  const src = sources[index];
+  if (!src) return;
+  markSourceEdited(index);
+  src.valveState = value;
+  if (value === 'mixed') src.unitValveStates = lastValveOdd(sourceQty(src), 'normally_closed', 'normal');
+  else delete src.unitValveStates;
+  renderSources();
+  autoSaveCurrent();
+}
+function toggleUnitValveState(index, unit) {
+  const src = sources[index];
+  if (!src || src.valveState !== 'mixed') return;
+  markSourceEdited(index);
+  const u = unitValveStatesOf(src);
+  u[unit] = u[unit] === 'normally_closed' ? 'normal' : 'normally_closed';
+  src.unitValveStates = u;
+  renderSources();
+  autoSaveCurrent();
+}
+// "Only some valves?" under a ticked Locked open: the last valve alone to start
+function setLockOpenPerValve(index) {
+  const src = sources[index];
+  if (!src) return;
+  markSourceEdited(index);
+  src.lockOpen = true;
+  src.unitLockOpen = lastValveOdd(sourceQty(src), true, false);
+  renderSources();
+  autoSaveCurrent();
+}
+function toggleUnitLockOpen(index, unit) {
+  const src = sources[index];
+  if (!src || !Array.isArray(src.unitLockOpen)) return;
+  markSourceEdited(index);
+  const u = unitLockOpenOf(src);
+  u[unit] = !u[unit];
+  src.unitLockOpen = u;
+  renderSources();
+  autoSaveCurrent();
+}
+// The toggle line: one button per valve, the odd state filled
+function valveUnitToggles(src, i, kind) {
+  const lock = kind === 'lock';
+  const u = lock ? unitLockOpenOf(src) : unitValveStatesOf(src);
+  const tags = String(src.deviceId || '').includes(';') ? splitUnitIds(src.deviceId) : [];
+  return html`<div class="valve-unit-toggles" id="src_${lock ? 'lockunits' : 'vsunits'}_${i}" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
+    ${u.map((s, k) => {
+      const on = lock ? s : s === 'normally_closed';
+      const word = lock ? (on ? 'Locked' : '—') : (on ? 'NC' : 'Normal');
+      const tag = String(tags[k] || '').trim();
+      return html`<button type="button" class="btn btn-sm ${on ? '' : 'btn-outline'}" style="${on ? 'background:#b5451b;border-color:#b5451b;color:#fff;' : ''}min-width:64px;"
+        title="Valve ${valveUnitLabel(src, k)}${tag ? ' (' + tag + ')' : ''}: tap to change"
+        onclick="${lock ? 'toggleUnitLockOpen' : 'toggleUnitValveState'}(${i},${k})">${valveUnitLabel(src, k)} ${word}</button>`;
+    })}
+  </div>`;
+}
+// The collapsed card's badge: NC on a Normally Closed row, "NC 1/2" on a mixed one
+function valveStateBadgeText(src) {
+  const vs = rowValveState(src);
+  if (vs === 'normally_closed') return 'NC';
+  if (vs !== 'mixed') return '';
+  const u = unitValveStatesOf(src);
+  return 'NC ' + u.filter(s => s === 'normally_closed').length + '/' + u.length;
 }
 // The card's note on a held answer the export won't write (build 126): it isn't
 // silently dropped. `what` is 'state' or 'lock'.
 function valveAnswerNote(src, what) {
   if (!src) return '';
-  const held = what === 'state' ? (src.valveState && src.valveState !== 'normal') : !!src.lockOpen;
-  const sent = what === 'state' ? valveStateForExport(src) === src.valveState : !!lockOpenSheetText(src);
+  const held = what === 'state' ? (src.valveState && src.valveState !== 'normal') : unitLockOpenOf(src).some(Boolean);
+  const sent = what === 'state' ? takesValveState(src.energySource, src.deviceType) : !!lockOpenSheetText(src);
   if (!held || sent) return '';
   const es = String(src.energySource || '').trim(), dev = String(src.deviceType || '').trim();
   const why = !takesValveState(es, dev)
@@ -3579,6 +3730,7 @@ function updateLockOpen(index, checked) {
   if (!src) return;
   markSourceEdited(index);
   if (checked) src.lockOpen = true; else delete src.lockOpen;
+  delete src.unitLockOpen;   // ticked or not, every valve (build 146: "Only some valves?" splits it)
   renderSources();
   autoSaveCurrent();
 }
@@ -8731,7 +8883,7 @@ function buildSourceCard(src, i) {
         <div class="source-summary" onclick="expandSource(${i})">
           <span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
           <div class="source-summary-text">
-            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${src.valveState==='normally_closed' ? raw(' <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">NC</span>') : ''}${photoData && photoData.dbKey && fittingMarks(photoData, src).length ? raw(' <span title="Valve location marked">&#128205;</span>') : ''}${src.linkedTo ? raw(' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>') : ''}${summaryLinkChips(src)}
+            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${valveStateBadgeText(src) ? html` <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">${valveStateBadgeText(src)}</span>` : ''}${photoData && photoData.dbKey && fittingMarks(photoData, src).length ? raw(' <span title="Valve location marked">&#128205;</span>') : ''}${src.linkedTo ? raw(' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>') : ''}${summaryLinkChips(src)}
             ${src.deviceType ? html` &mdash; ${src.deviceType}` : ''}${src.deviceId ? html` <span style="color:#7eb8da;">(${src.deviceId})</span>` : ''}
             ${src.location ? html` &mdash; ${src.location}` : ''}
             ${src.detail ? html` <span style="color:var(--accent);font-weight:600;font-family:monospace;">(${src.detail})</span>` : ''}
@@ -8987,18 +9139,22 @@ function buildSourceCard(src, i) {
               ${sourceTakesValveState(src) ? html`<div class="form-group" id="valveStateGroup_${i}">
                 <label>Valve State</label>
                 ${valveAnswerNote(src, 'state') ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${valveAnswerNote(src, 'state')}</div>` : ''}
-                <select onchange="updateSource(${i},'valveState',this.value)" id="src_valvestate_${i}">
+                <select onchange="updateValveState(${i},this.value)" id="src_valvestate_${i}">
                   ${DATA.valveStateOptions.map(o => html`<option value="${o.value}" ${(src.valveState||'normal')===o.value?'selected':''}>${o.label}</option>`)}
-                  ${src.valveState && !DATA.valveStateOptions.some(o => o.value === src.valveState) ? html`<option value="${src.valveState}" selected>${src.valveState}</option>` : ''}
+                  ${(sourceQty(src) >= 2 || src.valveState === 'mixed') ? html`<option value="mixed" ${src.valveState === 'mixed' ? 'selected' : ''}>Mixed (set each valve)</option>` : ''}
+                  ${src.valveState && src.valveState !== 'mixed' && !DATA.valveStateOptions.some(o => o.value === src.valveState) ? html`<option value="${src.valveState}" selected>${src.valveState}</option>` : ''}
                 </select>
+                ${src.valveState === 'mixed' ? valveUnitToggles(src, i, 'state') : ''}
               </div>` : html`<div id="valveStateGroup_${i}" style="display:none;"></div>`}
-              ${(sourceOffersValveState(src) || src.lockOpen) ? html`<div class="form-group" id="lockOpenGroup_${i}">
+              ${(sourceOffersValveState(src) || lockOpenTicked(src)) ? html`<div class="form-group" id="lockOpenGroup_${i}">
                 <label>Locked open</label>
                 ${valveAnswerNote(src, 'lock') ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${valveAnswerNote(src, 'lock')}</div>` : ''}
                 <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;font-size:14px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500;">
-                  <input type="checkbox" class="painted-check" id="src_lockopen_${i}" ${src.lockOpen ? 'checked' : ''} onchange="updateLockOpen(${i},this.checked)">
+                  <input type="checkbox" class="painted-check" id="src_lockopen_${i}" ${lockOpenTicked(src) ? 'checked' : ''} onchange="updateLockOpen(${i},this.checked)">
                   Opened and locked open during lockout (rare)
                 </label>
+                ${Array.isArray(src.unitLockOpen) ? valveUnitToggles(src, i, 'lock')
+                  : (src.lockOpen && sourceQty(src) >= 2) ? html`<button type="button" class="btn btn-sm btn-outline" id="src_lockperunit_${i}" style="margin-top:6px;align-self:flex-start;" onclick="setLockOpenPerValve(${i})">Only some valves?</button>` : ''}
               </div>` : html`<div id="lockOpenGroup_${i}" style="display:none;"></div>`}
               ${sourceTakesDrainLocation(src) ? (() => {
                 // Build 122: the point and its choices follow the medium; a fuel oil or
@@ -9197,8 +9353,11 @@ function updateSource(index, field, value) {
     // The user has taken manual control of the count — never auto-reset it later.
     delete sources[index]._autoQty2;
     reconcileSourceMarks(index);
+    // …each valve keeps its own state; a lower count says what it dropped (build 146)
+    const droppedNote = settleValveUnits(sources[index]);
     // Re-render so the "Split 1" button appears/disappears (only shown when quantity >= 2)
     renderSources();
+    if (droppedNote) showToast(droppedNote, true);
     return;
   }
   // A damper actuator's choices name each row's source, device and location
@@ -9706,6 +9865,10 @@ function splitSource(index) {
   const pairRef = pair ? photos['source_' + index] : null;
   const pairInMark = (pairRef && pairRef.marksFor && pairRef.marksFor.inOut) ? cleanValveMarks(pairRef.marks).slice(0, 1) : [];
   const takesState = sourceOffersValveState(src);
+  // A row holding a state per valve (build 146): the split-off valve takes the
+  // LAST valve's state and Lock Open, the original keeps the others, in order
+  const mixedState = src.valveState === 'mixed', perValveLock = Array.isArray(src.unitLockOpen);
+  const unitStates = unitValveStatesOf(src), unitLocks = unitLockOpenOf(src);
 
   // Original keeps the remaining valves
   src.quantity = qty - 1;
@@ -9714,7 +9877,13 @@ function splitSource(index) {
   // New quantity-1 source, copied from the original but as its own photographable valve
   const newSrc = JSON.parse(JSON.stringify(src));
   newSrc.quantity   = 1;
-  newSrc.valveState = (pair || !takesState) ? (src.valveState || 'normal') : 'normally_closed';
+  newSrc.valveState = mixedState ? unitStates[qty - 1]
+    : (pair || !takesState) ? (src.valveState || 'normal') : 'normally_closed';
+  delete newSrc.unitValveStates; delete newSrc.unitLockOpen;
+  if (perValveLock) { if (unitLocks[qty - 1]) newSrc.lockOpen = true; else delete newSrc.lockOpen; }
+  if (mixedState) src.unitValveStates = unitStates.slice(0, qty - 1);
+  if (perValveLock) src.unitLockOpen = unitLocks.slice(0, qty - 1);
+  settleValveUnits(src);
   // …each half then settles (build 123 review): "Vacuum In/Out" splits into an
   // inlet that keeps its vent answer and an exhaust that takes no question
   let pairNote = '';
@@ -10198,11 +10367,13 @@ function applyCopySource(entryIndex, sourceIndex) {
   // /_customLoc markers so custom-typed values still show as "custom".
   const carry = [
     'energySource','deviceType','quantity','location','verification',
-    'duplicate','valveState','detail','_customEnergy','_customDevice','_customLoc',
+    'duplicate','valveState','unitValveStates','detail','_customEnergy','_customDevice','_customLoc',
   ];
   for (const k of carry) {
     if (src[k] !== undefined) dest[k] = src[k];
   }
+  if (dest.valveState === 'mixed' && Array.isArray(dest.unitValveStates)) dest.unitValveStates = dest.unitValveStates.slice();
+  else delete dest.unitValveStates;   // per-valve states only with a mixed state (build 146)
   // …and is that source, not the role this row had (build 122 second review): a
   // copied Location that says a role still reads as one, as typed
   delete dest.role; delete dest.altKind; delete dest.feeds;
@@ -11184,6 +11355,14 @@ const VALVE_MARK_COLORS = {
 // One box + block arrow as SVG, in the photo box's pixel space. The arrow is
 // Excel's preset (shaft half its thickness, head half its short side) — what
 // loto-web draws.
+// On a mixed row (build 146) a box says which valve is the odd one: "#3.2 NC"
+function valveMarkStateText(src, k) {
+  if (!src) return '';
+  let t = '';
+  if (rowValveState(src) === 'mixed' && unitValveStatesOf(src)[k] === 'normally_closed') t += ' NC';
+  if (Array.isArray(src.unitLockOpen) && /; /.test(lockOpenSheetText(src)) && unitLockOpenOf(src)[k]) t += ' Locked open';
+  return t;
+}
 function valveMarkShapeSvg(ov, w, h, label, color, opacity) {
   const G = VALVE_MARK_GEOM;
   const vert = ov.arrow_dir === 'up' || ov.arrow_dir === 'down';
@@ -11349,7 +11528,7 @@ function openValveMarkDialog(slotId, opts) {
     let out = '';
     g.items.forEach((it, k) => {
       const other = sources[it.srcIndex];
-      const label = '#' + (it.srcIndex + 1) + (isInOutPair(other) ? (it.sub ? ' Out' : ' In') : (it.qty > 1 ? '.' + (it.sub + 1) : ''));
+      const label = '#' + (it.srcIndex + 1) + (isInOutPair(other) ? (it.sub ? ' Out' : ' In') : (it.qty > 1 ? '.' + (it.sub + 1) : '')) + valveMarkStateText(other, it.sub);
       out += valveMarkShapeSvg(g.layout[k], w, h, label,
         it.mine ? color : (VALVE_MARK_COLORS[getSourceColorClass(other && other.energySource)] || '#ffff00'),
         it.mine ? 0.92 : 0.4);
@@ -16079,7 +16258,7 @@ async function buildAndSendExport(opts, run) {
         quote(entry.tiedToName || ''), quote(entry.notes || ''),
         i + 1, quote(src.energySource), quote(src.deviceType), quote(src.deviceId || ''), src.quantity,
         quote(sourceLocationForExport(src)), effectiveDuplicate(src, (entry.photos || {})['source_' + i]), quote(src.verification),
-        quote(valveStateForExport(src)),
+        quote(valveStateForExport(src) === 'mixed' ? unitValveStatesOf(src).join('; ') : valveStateForExport(src)),
         quote(map.sourceHs[i] || ''), quote(src.detail || ''),
         quote(linkedStr),
         quote(map.mainH || ''),
@@ -16113,7 +16292,7 @@ async function buildAndSendExport(opts, run) {
         location: sourceLocationForExport(src),   // a role row keeps its prefix (build 122)
         // an automatic Yes holds only with its borrowed photo (build 110)
         duplicate: effectiveDuplicate(src, ref),
-        valveState: valveStateForExport(src),   // always present for downstream (loto-web); none on a source that takes no valve (build 125 review)
+        valveState: valveStateForExport(src),   // always present for downstream (loto-web); none on a source that takes no valve (build 125 review); "mixed" (build 146)
         photoFile: map.sourceHs[i] ? 'photos/' + map.sourceHs[i] : '',
         // when its photo was taken (build 109), as in the JPEG's EXIF
         photoCapturedAt: cap.capturedAt || '',
@@ -16142,6 +16321,12 @@ async function buildAndSendExport(opts, run) {
       // kept on an Electrical or exhaust row
       if (!sourceTakesDrainLocation(src, entryHospitalCode(entry))) delete out.drainLocation;
       if (!lockOpenSheetText(src)) delete out.lockOpen;   // …and Lock Open only where col 15 carries it (build 125 review)
+      // A mixed row (build 146): unitValveStates with valveState "mixed"; Lock Open
+      // true on every valve, else unitLockOpen and no lockOpen (loto-web's contract)
+      if (out.valveState === 'mixed') out.unitValveStates = unitValveStatesOf(src); else delete out.unitValveStates;
+      delete out.unitLockOpen;
+      if (lockOpenSheetText(src) === 'Yes') out.lockOpen = true;
+      else if (lockOpenSheetText(src)) { delete out.lockOpen; out.unitLockOpen = unitLockOpenOf(src); }
       return out;
     });
     const miscOut = miscFileNames[ei]
@@ -16252,7 +16437,6 @@ async function buildAndSendExport(opts, run) {
       const thinBorder = { style: 'thin', color: { argb: 'FF000000' } };
       const allBorders = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
 
-      const VALVE_STATE_SHEET_TEXT = { normally_closed: 'Normally Closed', normally_open: 'Normally Open' };
       // Every column the sheet defines above is styled: a fixed 21 left build
       // 130's column 22 bare (review 2026-10-28).
       function applyRow(row, font, fill, borders) {
@@ -16386,7 +16570,8 @@ async function buildAndSendExport(opts, run) {
             // Valve state (build 91). The office imports THIS sheet, and it had
             // no valve state: a Normally Closed valve arrived as an ordinary one
             // and the procedure said to open it at restore. Blank = normal.
-            src ? (VALVE_STATE_SHEET_TEXT[valveStateForExport(src)] || '') : '',
+            // A mixed row (build 146): one part per valve, "Normal; Normally Closed"
+            src ? valveStateSheetText(src) : '',
             // Valve mark (build 92): where the tech tapped the valve in THIS
             // row's photo — "x,y" fractions, qty-N rows "x,y; x,y". loto-web
             // starts the box + arrow there. Blank without a photo.
