@@ -138,6 +138,10 @@
 //   T460      build 149 (wilkins 2026-11-03): steam at the site's own pressure — "Change pressure" on a steam row,
 //             the number in the name ("MPS 30 PSI"), the list, defaults and boiler lists by its class, refused
 //             values keep the pressure it had, saved while typing, exported as the name
+//   T461      build 150 (wilkins 2026-11-03): Cancel edit of a changed unit goes on to a new unit at the saved
+//             unit's building and room (it wiped them), autosaved; a Discard of a new unit still clears the form
+//   T462      build 150 (wilkins 2026-11-03): a Dental Vacuum's pumps on ONE Electrical line, Quantity = pumps, from
+//             the count prompt's own buttons; saved and exported as Qty n; Lab / Medical Vacuum keep a line per pump
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -7327,7 +7331,7 @@
 
   // T236 — a fourth answer, dental; the one-pump answer asks for the pump's own valve
   async function t236_dentalVacuumAndThePumpsOwnValve() {
-    const N = 'T236 the vacuum question has a fourth answer, "Dental: the tank and all its pumps" → Dental Vacuum (an Electrical 208V Disconnect / SW (Hand/Off/Auto) per pump from "How many pumps are on this vacuum tank?" and the tank\'s Vacuum Air In ball valve); "one pump on a shared receiver" asks "Is there a valve between the receiver and this pump?" — Yes gives Medical Vacuum Pump, No Medical Vacuum (and says so), Cancel no template; the same from the list; custom "Dental Vac Pump" → Dental Vacuum; the export says "Dental Vacuum"';
+    const N = 'T236 the vacuum question has a fourth answer, "Dental: the tank and all its pumps" → Dental Vacuum (an Electrical 208V Disconnect / SW (Hand/Off/Auto) line, Quantity = the pumps since build 150, from "How many pumps are on this vacuum tank?" and the tank\'s Vacuum Air In ball valve); "one pump on a shared receiver" asks "Is there a valve between the receiver and this pump?" — Yes gives Medical Vacuum Pump, No Medical Vacuum (and says so), Cancel no template; the same from the list; custom "Dental Vac Pump" → Dental Vacuum; the export says "Dental Vacuum"';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -7349,7 +7353,7 @@
           await sleep(0);
           const o = document.getElementById('electricalCountOverlay');
           countText = o ? o.textContent.replace(/\s+/g, ' ').trim() : '';
-          if (o) applyElectricalCountChoice(2);
+          if (o) pickElectricalCount(2);   // the prompt's own "2" (build 150: dental goes on one line)
         });
       });
       closeAllPrompts();
@@ -7357,7 +7361,8 @@
     };
     got.dental = await viaType('Dental Vacuum');
     want(got.dental.template === 'Dental Vacuum' && !got.dental.valveAsked && /pumps are on this vacuum tank/i.test(got.dental.countText)
-      && got.dental.rows.join('|') === 'Electrical 208V/Disconnect/SW (Hand/Off/Auto)|Electrical 208V/Disconnect/SW (Hand/Off/Auto)|Vacuum Air In/Ball Valve/Gauge/Drain', 'dental');
+      && got.dental.rows.join('|') === 'Electrical 208V/Disconnect/SW (Hand/Off/Auto)|Vacuum Air In/Ball Valve/Gauge/Drain'
+      && sourceQty(sources[0]) === 2, 'dental');   // one line, Quantity 2, since build 150 (T462)
     got.yes = await viaType('Medical Vacuum Pump', 'yes');
     want(got.yes.valveAsked && got.yes.template === 'Medical Vacuum Pump', 'one pump, its own valve');
     got.no = await viaType('Medical Vacuum Pump', 'no');
@@ -7408,6 +7413,119 @@
     }
     got.export = { json: je.template, sheet };
     want(je.template === 'Dental Vacuum' && sheet.join() === 'Dental Vacuum', 'export');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // ==========================================================================
+  // BUILD 150 — Cancel edit keeps the location; a dental vacuum's pumps on one line
+  // ==========================================================================
+
+  // T461 — Cancel edit goes on to a new unit where the saved one is
+  async function t461_cancelEditKeepsTheBuildingAndRoom() {
+    const N = 'T461 build 150 (wilkins: after cancelling an edit the next unit\'s location had to be entered again): Cancel edit of a changed unit leaves a blank new unit at the saved unit\'s building and room — not the dropped edit\'s — and the autosave holds them; the saved unit is untouched; "No" keeps the edit; Close on an unchanged unit still keeps them; a Discard of a new unit still clears the whole form';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const place = () => [document.getElementById('equipName').value, getBuilding(), document.getElementById('equipRoom').value].join(' | ');
+    fillForm('E-461', { building: 'Bldg 7', room: 'R-461' });
+    const A = saveEntry();
+    const before = JSON.stringify(A);
+    // a change, then Cancel edit → "No": still the edit
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(A)); });
+    document.getElementById('equipNotes').value = 'changed'; autoSaveCurrent();
+    await withDialogs({ confirm: false }, async () => { discardForm(); });
+    got.no = [!!formEditTarget(), document.getElementById('equipNotes').value].join(' | ');
+    want(!!formEditTarget() && document.getElementById('equipNotes').value === 'changed', '"No" left the edit: ' + got.no);
+    // the location changed on the form too: Cancel edit keeps the SAVED unit's
+    document.getElementById('equipRoom').value = 'R-999'; setBuilding('Bldg 9'); autoSaveCurrent();
+    const { log } = await withDialogs({ confirm: true }, async () => { discardForm(); });
+    got.cancel = [log.length, !!formEditTarget(), place(), document.getElementById('equipNotes').value].join(' | ');
+    want(log.length === 1 && /Cancel the edit/.test(log[0]), 'it asked: ' + log.join(' | '));
+    want(!formEditTarget() && place() === ' | Bldg 7 | R-461' && !document.getElementById('equipNotes').value && !sources.length, 'a new unit at the saved unit\'s place: ' + got.cancel);
+    const wip = buildWipState();
+    got.wip = [wip.equipBuilding, wip.equipRoom].join(' | ');
+    want(wip.equipBuilding === 'Bldg 7' && wip.equipRoom === 'R-461', 'the autosave: ' + got.wip);
+    want(savedEquipment.length === 1 && JSON.stringify(savedEquipment[0]) === before, 'the saved unit changed');
+    // unchanged: Close keeps them (build 139), from another place
+    setBuilding('Bldg 1'); document.getElementById('equipRoom').value = 'R-1';
+    await withDialogs({ confirm: true }, async () => { editSaved(0); });
+    const closed = await withDialogs({ confirm: false }, async () => { discardForm(); });
+    got.close = [closed.log.length, place()].join(' | ');
+    want(!closed.log.length && place() === ' | Bldg 7 | R-461', 'Close: ' + got.close);
+    // a new unit's Discard clears the form, building and room too (as before)
+    fillForm('N-461', { building: 'Bldg 8', room: 'R-8' });
+    await withDialogs({ confirm: true }, async () => { discardForm(); });
+    got.discard = place();
+    want(got.discard === ' |  | ', 'Discard of a new unit: ' + got.discard);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T462 — a dental vacuum's pumps on one Electrical line
+  async function t462_aDentalVacuumsPumpsAreOneLine() {
+    const N = 'T462 build 150 (wilkins: a dental vacuum\'s pumps are tied together — one Electrical line, Quantity = pumps): the count prompt says so; its "2" leaves ONE Electrical 208V Disconnect line of Quantity 2 beside the Vacuum Air In valve, with no other question, and says "2 pumps: 1 Electrical line (Qty 2)"; "1" leaves Quantity 1; saved and exported as Qty 2 (entries.json, sheet); a Lab Vacuum and a Medical Vacuum still get a line per pump';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const elec = () => sources.filter(x => /^Electrical/.test(x.energySource || ''));
+    const shape = () => sources.map(x => x.energySource + ' ' + x.deviceType + ' x' + sourceQty(x)).join(',');
+    const vacuum = async (name, answer, n) => {
+      fillFormNoSources(name);
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = 'Vacuum Pump';
+      let text = '', button = false, otherPrompt = false;
+      const toasts = await withToasts(async () => {
+        await withDialogs({ confirm: true, choice: (o) => o.id === 'vacuum-cover' ? answer : 'cancel' }, async () => {
+          handleEquipTypeChange();
+          await sleep(0); await sleep(0);
+          if (document.getElementById('templateVoltageOverlay')) applyTemplateVoltageChoice('208V');
+          await sleep(0);
+          const o = document.getElementById('electricalCountOverlay');
+          text = o ? o.textContent.replace(/\s+/g, ' ').trim() : '';
+          const b = o && [...o.querySelectorAll('button')].find(x => x.textContent.trim() === String(n));
+          button = !!b;
+          if (b) b.click();
+          otherPrompt = !!document.getElementById('drivesTogetherOverlay') || !!document.getElementById('electricalCountOverlay');
+        });
+      });
+      closeAllPrompts();
+      return { template: getTemplate(), shape: shape(), text, button, otherPrompt, toasts };
+    };
+    got.two = await vacuum('DV-462', 'Dental Vacuum', 2);
+    want(got.two.template === 'Dental Vacuum' && got.two.button && !got.two.otherPrompt, 'the prompt: ' + JSON.stringify(got.two));
+    want(/one Electrical line, Quantity = the number of pumps/.test(got.two.text) && /If one disconnect shuts off every pump, tap 1/.test(got.two.text), 'the prompt says so: ' + got.two.text);
+    want(got.two.shape === 'Electrical 208V Disconnect x2,Vacuum Air In Ball Valve x1', 'Dental, 2: ' + got.two.shape);
+    want(got.two.toasts.some(m => /^2 pumps: 1 Electrical line \(Qty 2\)/.test(m)), 'the toast: ' + JSON.stringify(got.two.toasts));
+    // saved and exported as one line of Quantity 2
+    updateSource(sources.indexOf(elec()[0]), 'deviceId', 'Pump 1; Pump 2');
+    const A = saveEntry();
+    got.saved = ((A && A.sources) || []).filter(x => /^Electrical/.test(x.energySource || '')).map(x => x.deviceType + ' x' + x.quantity).join(',');
+    want(got.saved === 'Disconnect x2', 'saved ' + got.saved);
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (zip) {
+      const u = await unzipExport(zip.blob);
+      const je = jsonEntryFor(u.entriesJson, A);
+      got.json = je ? (je.sources || []).filter(x => /^Electrical/.test(x.energySource || '')).map(x => x.deviceType + ' x' + x.quantity + ' ' + x.deviceId).join(',') : null;
+      want(got.json === 'Disconnect x2 Pump 1; Pump 2', 'entries.json ' + got.json);
+      const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+      if (xpath) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        const rows = [];
+        wb.worksheets[0].eachRow(row => { if (String(row.getCell(1).value || '') === 'Electrical 208V') rows.push(String(row.getCell(2).value) + ' x' + String(row.getCell(4).value)); });
+        got.sheet = rows.join(',');
+        want(got.sheet === 'Disconnect x2', 'sheet ' + got.sheet);
+      } else fails.push('no XLSX in the ZIP');
+    } else fails.push('no zip: ' + confirms.join(' | '));
+    // a count of 1
+    await resetAppState();
+    got.one = (await vacuum('DV-462b', 'Dental Vacuum', 1)).shape;
+    want(got.one === 'Electrical 208V Disconnect x1,Vacuum Air In Ball Valve x1', 'Dental, 1: ' + got.one);
+    // the lab and medical systems keep a line per pump
+    await resetAppState();
+    got.lab = (await vacuum('LV-462', 'Lab Vacuum', 2)).shape;
+    want(/^Electrical 208V Disconnect x1,Electrical 208V Disconnect x1,Vacuum Air In/.test(got.lab), 'Lab: ' + got.lab);
+    await resetAppState();
+    got.medical = (await vacuum('MV-462', 'Medical Vacuum', 2)).shape;
+    want(/^Electrical 208V Disconnect x1,Electrical 208V Disconnect x1,Vacuum Air In/.test(got.medical), 'Medical: ' + got.medical);
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -9227,18 +9345,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 149 (was build 122\'s): APP_BUILD and the header label say 149, the service worker\'s cache is loto-collector-v7.144, Xcode\'s CURRENT_PROJECT_VERSION is 149 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 150 (was build 122\'s): APP_BUILD and the header label say 150, the service worker\'s cache is loto-collector-v7.145, Xcode\'s CURRENT_PROJECT_VERSION is 150 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 149 && !!label && +label[1] === 149, 'the build');
+    want(APP_BUILD === 150 && !!label && +label[1] === 150, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.144', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.145', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 149;,CURRENT_PROJECT_VERSION = 149;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 150;,CURRENT_PROJECT_VERSION = 150;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -15854,7 +15972,7 @@
     t453_aChangedCountKeepsEachValvesAnswer, t454_splitTakesTheLastValveAsItIs, t455_perValveAnswersFollowTheRow,
     t456_theMarkBoxesNameTheOddValve, t457_everyCountChangeSettlesThePerValveAnswers,
     t458_aBypassDriveWithAKeypadHasItsOwnVerification, t459_anAhusDrivesTogetherAreOneLine,
-    t460_aSteamRowTakesTheSitesPressure];
+    t460_aSteamRowTakesTheSitesPressure, t461_cancelEditKeepsTheBuildingAndRoom, t462_aDentalVacuumsPumpsAreOneLine];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
