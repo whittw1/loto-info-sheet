@@ -14824,6 +14824,79 @@
     got.gone = [sel.value, names(), savedFacility].join('|'); want(got.gone === 'all|KC-442|Atlanta', 'no Atlanta units left');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T443–T444 — build 145: an exhaust fan's biohazard (wilkins 2026-11-02; the
+  // sheet contract agreed with loto-web the same day)
+  function exhaustFanOnForm(name) {
+    fillFormNoSources(name);
+    document.getElementById('equipType').value = 'Exhaust Fan';
+    filterTemplateDropdown('Exhaust Fan');
+    document.getElementById('equipTemplate').value = 'Exhaust Fan';
+    renderUnitQuestions(true);
+  }
+  async function t443_anExhaustFanAsksAboutBiohazard() {
+    const N = 'T443 build 145: an Exhaust Fan asks "Biohazard?" in loto-web\'s six spellings, shows the class\'s warning once a hazard is picked (never for None or Can\'t tell), Save & New lists it while unanswered, the saved card carries a BIOHAZARD badge, and no other kind of unit asks';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const MISSING = 'Exhaust fan — Biohazard (what the rooms it exhausts are used for)';
+    got.vocab = JSON.stringify(BIOHAZARD_CHOICES.map(c => c.sheet)) === JSON.stringify(DATA.biohazard)
+      && JSON.stringify(DATA.biohazard) === JSON.stringify(['None', 'AII/TB', 'Aerosol-generating', 'Lab BSL-2', 'Hazardous drug', 'Can\'t tell']);
+    want(got.vocab, 'the six spellings, in DATA\'s order');
+    exhaustFanOnForm('EF-443');
+    const sel = () => document.getElementById('uq_biohazard');
+    const warning = () => (document.getElementById('uq_biohazardWarning') || {}).textContent || '';
+    got.options = sel() ? [...sel().options].map(o => o.value).join('|') : 'no question';
+    want(got.options === '|' + DATA.biohazard.join('|'), 'the question and its choices');
+    got.blankListed = collectIncompleteFields().includes(MISSING); want(got.blankListed, 'blank: listed');
+    setUnitAnswer('biohazard', 'AII/TB');
+    got.aii = warning(); want(/AIRBORNE INFECTIOUS ISOLATION EXHAUST/.test(got.aii), 'AII/TB shows its warning');
+    got.aiiListed = collectIncompleteFields().includes(MISSING); want(!got.aiiListed, 'answered: not listed');
+    setUnitAnswer('biohazard', 'Hazardous drug');
+    got.cyto = warning(); want(/HAZARDOUS DRUG RESIDUE/.test(got.cyto), 'Hazardous drug shows its own warning');
+    for (const v of ['None', 'Can\'t tell']) {
+      setUnitAnswer('biohazard', v);
+      got[v] = [warning(), collectIncompleteFields().includes(MISSING)].join('|');
+      want(got[v] === '|false', v + ': no warning, not listed');
+    }
+    // another kind of unit is never asked
+    document.getElementById('equipType').value = 'Air Handler'; filterTemplateDropdown('Air Handler');
+    document.getElementById('equipTemplate').value = 'AHU - HHW'; renderUnitQuestions(true);
+    got.ahu = [!!sel(), collectIncompleteFields().includes(MISSING)].join('|'); want(got.ahu === 'false|false', 'an AHU: not asked');
+    // the saved list's badge: a hazard on an exhaust fan only
+    const A = mkEntry('EFA-443'); Object.assign(A, { equipType: 'Exhaust Fan', template: 'Exhaust Fan', unitAnswers: { biohazard: 'AII/TB' } });
+    const B = mkEntry('EFB-443'); Object.assign(B, { equipType: 'Exhaust Fan', template: 'Exhaust Fan', unitAnswers: { biohazard: 'None' } });
+    const C = mkEntry('AHU-443'); Object.assign(C, { equipType: 'Air Handler', template: 'AHU - HHW', unitAnswers: { biohazard: 'AII/TB' } });
+    savedEquipment = [A, B, C]; saveAll(); if (!savedPanelOpen) toggleSavedPanel(); renderSavedPanel();
+    got.badges = [...document.querySelectorAll('#savedPanelBody .biohazard-badge')].map(b => b.closest('.saved-item').querySelector('.saved-item-name').textContent.replace(/\s.*$/s, '')).join(',');
+    want(got.badges === 'EFA-443', 'one badge, on the AII/TB fan');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  async function t444_theBiohazardTravelsInU3() {
+    const N = 'T444 build 145: an Exhaust Fan\'s Biohazard rides under its label in U3 (blank when unanswered, Can\'t tell as written) and entries.json carries loto-web\'s class code only for a class; a unit of another kind writes no Biohazard; a Duplicate starts unanswered';
+    await resetAppState();
+    setHospitalCode('');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const fan = (name, v) => { const e = mkEntry(name); Object.assign(e, { equipType: 'Exhaust Fan', template: 'Exhaust Fan', unitAnswers: v ? { biohazard: v } : {} }); return e; };
+    const ahu = mkEntry('AHU-444'); Object.assign(ahu, { equipType: 'Air Handler', template: 'AHU - HHW', unitAnswers: { biohazard: 'AII/TB' } });
+    savedEquipment = [fan('EF1-444', 'AII/TB'), fan('EF2-444', 'None'), fan('EF3-444', 'Can\'t tell'), fan('EF4-444', ''), fan('EF5-444', 'Lab BSL-2'), ahu]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const xpath = Object.keys(u.files).find(q => /Information_Sheet_.*\.xlsx$/.test(q));
+    const Bk = xpath ? await sheetBlocks(u.files[xpath]) : {};
+    const u3 = (name) => { const b = Bk[name]; return b ? b.labels.U3 + ':' + b.values.U3 : 'missing'; };
+    got.u3 = ['EF1-444', 'EF2-444', 'EF3-444', 'EF4-444', 'EF5-444', 'AHU-444'].map(u3).join('|');
+    want(got.u3 === 'Biohazard:AII/TB|Biohazard:None|Biohazard:Can\'t tell|Biohazard:|Biohazard:Lab BSL-2|UV Lights:', 'U3 cells');
+    const je = (name) => (u.entriesJson.entries || []).find(e => e.equipName === name) || {};
+    got.json = ['EF1-444', 'EF2-444', 'EF3-444', 'EF4-444', 'EF5-444', 'AHU-444'].map(n => ('bioHazardClass' in je(n) ? je(n).bioHazardClass : '-') + '/' + (je(n).biohazard == null ? '-' : je(n).biohazard)).join('|');
+    want(got.json === 'AII_TB/AII/TB|NONE/None|-/Can\'t tell|-/|LAB_BSL2/Lab BSL-2|-/-', 'entries.json');
+    // a Duplicate is another fan: answered for itself
+    await withDialogs({ confirm: true }, async () => { await executeDuplicate(0, false); });
+    got.dup = [getTemplate(), unitAnswers.biohazard || '', collectIncompleteFields().includes('Exhaust fan — Biohazard (what the rooms it exhausts are used for)')].join('|');
+    want(got.dup === 'Exhaust Fan||true', 'a Duplicate starts unanswered');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   // ---------- runner --------------------------------------------------------
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
@@ -15006,7 +15079,7 @@
     t435_everyTapOnTheListLetsTheBoxGoFirst, t436_anOutdatedCopyNeverGoesAloneAndTheSummaryCountsTheFacility,
     t437_aMedicalVacuumSystemHasItsValveAndSwitches, t438_aMedicalVacuumPumpIsAskedAboutOtherPower,
     t439_theInletFilterCoverIsAnAnswer, t440_aVacuumPumpWithNoTemplateSaysSo, t441_aBlankExhaustIsMissing,
-    t442_theSavedListShowsOneFacility];
+    t442_theSavedListShowsOneFacility, t443_anExhaustFanAsksAboutBiohazard, t444_theBiohazardTravelsInU3];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

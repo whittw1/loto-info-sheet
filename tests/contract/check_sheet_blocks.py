@@ -47,6 +47,7 @@ ANSWER_KEYS = {
     "Capacitors": lambda e: e.get("capacitors"),
     "Exhaust": lambda e: e.get("vacuumExhaust"),
     "Union/Flange": lambda e: e.get("reliefJoint"),
+    "Biohazard": lambda e: e.get("biohazard"),
     "Refrigerant": lambda e: (e.get("refrigerant") or {}).get("type"),
     "Refrigerant PSI": lambda e: (e.get("refrigerant") or {}).get("psi"),
     "Damper Actuators": lambda e: "None" if e.get("dampersNone") else None,

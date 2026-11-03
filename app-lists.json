@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 144,
+  "build": 145,
   "hospitals": [
     {
       "code": "Marion",
@@ -467,6 +467,14 @@
       "Yes",
       "Cover",
       "No"
+    ],
+    "biohazard": [
+      "None",
+      "AII/TB",
+      "Aerosol-generating",
+      "Lab BSL-2",
+      "Hazardous drug",
+      "Can't tell"
     ],
     "drainLocations": [
       "On this valve",

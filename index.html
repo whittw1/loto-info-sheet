@@ -526,7 +526,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b144</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b145</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1235,7 +1235,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 144;
+const APP_BUILD = 145;
 
 // ============================================================================
 // DATA
@@ -1351,6 +1351,8 @@ const DATA = {
   // A medical vacuum pump's inlet relief point (build 144: "Cover" = no union or
   // flange, but the inlet filter has a cover that opens)
   reliefJoint: ["Yes","Cover","No"],
+  // build 145: an Exhaust Fan's U3 "Biohazard", loto-web's spellings (BIOHAZARD_CHOICES)
+  biohazard: ["None","AII/TB","Aerosol-generating","Lab BSL-2","Hazardous drug","Can't tell"],
   drainLocations: ["On this valve","Between this valve and the equipment","On the equipment","None found"],
   yesNoCantTell: ["Yes","No","Can't tell"],
   yesNo: ["Yes","No"],
@@ -1469,6 +1471,7 @@ function appListsSnapshot(build) {
       atsBackfeed: DATA.atsBackfeed.slice(),
       vacuumExhaust: DATA.vacuumExhaust.slice(),
       reliefJoint: DATA.reliefJoint.slice(),   // build 144
+      biohazard: DATA.biohazard.slice(),   // build 145
       drainLocations: DATA.drainLocations.slice(),
       yesNoCantTell: DATA.yesNoCantTell.slice(),
       yesNo: DATA.yesNo.slice(),
@@ -3100,7 +3103,8 @@ function onTemplateSelectChange() {
 // unitAnswers is the open form's copy; a saved unit holds its own in
 // entry.unitAnswers. Keys: shop + shopOther, changeLater (the tech's own text),
 // uvLights, confinedSpace, atsMake, atsBackfeed (a list), capacitors,
-// vacuumExhaust, reliefJoint, refrigerant + refrigerantOther, refrigerantPsi.
+// vacuumExhaust, reliefJoint, refrigerant + refrigerantOther, refrigerantPsi,
+// biohazard (build 145, an Exhaust Fan's; BIOHAZARD_CHOICES).
 // otherPower (build 144) is the form's own, never on the sheet (askOtherPower).
 // Per source: drainLocation { where, text } and lockOpen.
 let unitAnswers = {};
@@ -3170,6 +3174,7 @@ function unitKinds(type, template, srcs) {
     ats: !xfmr && (type === 'ATS' || t === 'ATS - Generic'),
     chiller: !xfmr && (type === 'Chiller' || t === 'Chiller'),
     vacPump: !xfmr && t === 'Medical Vacuum Pump',
+    exhaustFan: !xfmr && t === 'Exhaust Fan',   // build 145: the biohazard question
     xfmr: xfmr,
     refrigerant: REFRIGERANT_TEMPLATES.includes(t)
       || (srcs || []).some(s => s && /refrigerant/i.test(String(s.energySource || '')))
@@ -4851,6 +4856,34 @@ function changeLaterSheetText(entryLike) {
   return [own].concat(changeLaterAutoNotes(entryLike)).filter(Boolean).join(' | ');
 }
 
+// ---- An exhaust fan's biohazard (build 145, wilkins 2026-11-02) ---------------
+// loto-web classes a unit's biological exposure (Equipment.bio_hazard_class,
+// its bio_control_library) and prints the matrix's EXPOSURE CONTROLS band from
+// it. Kitchen and toilet exhaust is not biological, AII/TB and lab exhaust is
+// (wilkins 2026-09-14), so the tech answers it on every Exhaust Fan. `sheet` is
+// the U3 "Biohazard" value, `code` loto-web's class (entries.json), `warning`
+// what the form shows once a hazard is picked. The words are loto-web's;
+// the spellings are DATA.biohazard's (app-lists.json), in the same order.
+const BIOHAZARD_CHOICES = [
+  { sheet: 'None', code: 'NONE', label: 'None \u2014 kitchen, toilet or general exhaust' },
+  { sheet: 'AII/TB', code: 'AII_TB', label: 'AII / TB isolation room exhaust',
+    warning: 'BIOLOGICAL HAZARD \u2014 AIRBORNE INFECTIOUS ISOLATION EXHAUST' },
+  { sheet: 'Aerosol-generating', code: 'AEROSOL_GEN', label: 'Aerosol-generating procedure room exhaust',
+    warning: 'BIOLOGICAL HAZARD \u2014 AEROSOL-GENERATING PROCEDURE EXHAUST' },
+  { sheet: 'Lab BSL-2', code: 'LAB_BSL2', label: 'Lab exhaust (biosafety cabinet or hood, BSL-2)',
+    warning: 'BIOLOGICAL HAZARD \u2014 LABORATORY (BSL-2) EXHAUST' },
+  { sheet: 'Hazardous drug', code: 'CYTO', label: 'Pharmacy hazardous-drug exhaust (USP <800>)',
+    warning: 'HAZARDOUS DRUG RESIDUE \u2014 PHARMACY COMPOUNDING EXHAUST' },
+  { sheet: 'Can\'t tell', code: '', label: 'Can\'t tell' }
+];
+function biohazardChoice(value) { return BIOHAZARD_CHOICES.find(c => c.sheet === value) || null; }
+// The hazard a saved or open unit carries, or null (None, Can't tell, not asked)
+function unitBiohazard(entryLike) {
+  if (!unitKinds(entryLike.equipType, entryLike.template, entryLike.sources).exhaustFan) return null;
+  const c = biohazardChoice((entryLike.unitAnswers || {}).biohazard);
+  return c && c.warning ? c : null;
+}
+
 // ---- The sheet cells and the entries.json keys ------------------------------
 // { U1: [label, value], \u2026 } \u2014 only the slots this unit has (UNIT_SHEET_SLOTS).
 function unitSheetCells(entryLike) {
@@ -4861,6 +4894,7 @@ function unitSheetCells(entryLike) {
   else if (k.ats) { cells.U3 = ['ATS Make', a.atsMake || '']; cells.U4 = ['Backfeed', atsBackfeedList(a).join('; ')]; }
   else if (k.chiller) cells.U3 = ['Capacitors', a.capacitors || ''];
   else if (k.vacPump) { cells.U3 = ['Exhaust', a.vacuumExhaust || '']; cells.U4 = ['Union/Flange', a.reliefJoint || '']; }
+  else if (k.exhaustFan) cells.U3 = ['Biohazard', a.biohazard || ''];   // build 145
   else if (k.xfmr) {   // build 122 (spec §1.3)
     cells.U3 = ['Alternate Sources', xfmrAltSheetText(entryLike)];
     cells.U4 = ['Terminal Access', xfmrTerminalText(a)];
@@ -4886,7 +4920,7 @@ function unitAnswersForJson(entryLike) {
   const out = { shop: byLabel['Shop'],
                 changeLater: { text: byLabel['Change Later'], auto: changeLaterAutoNotes(entryLike).length > 0 } };
   [['UV Lights', 'uvLights'], ['Confined Space', 'confinedSpace'], ['ATS Make', 'atsMake'],
-   ['Capacitors', 'capacitors'], ['Exhaust', 'vacuumExhaust'], ['Union/Flange', 'reliefJoint'],
+   ['Capacitors', 'capacitors'], ['Exhaust', 'vacuumExhaust'], ['Union/Flange', 'reliefJoint'], ['Biohazard', 'biohazard'],
    // build 122: a transformer's survey, as the sheet carries it
    ['Alternate Sources', 'alternateSources'], ['Terminal Access', 'terminalAccess'],
    ['Transformer Nameplate', 'transformerNameplate'], ['SPD / Capacitors / Grounding', 'spdCapacitorsGrounding']]
@@ -4894,6 +4928,9 @@ function unitAnswersForJson(entryLike) {
   if ('Backfeed' in byLabel) out.atsBackfeed = atsBackfeedList(entryLike.unitAnswers || {});
   if ('Refrigerant' in byLabel) out.refrigerant = { type: byLabel['Refrigerant'], psi: byLabel['Refrigerant PSI'] };
   if ('Damper Actuators' in byLabel) out.dampersNone = true;   // build 120
+  // build 145: loto-web's class code, left out while unanswered or Can't tell (its 2026-11-02 contract)
+  const bio = 'Biohazard' in byLabel ? biohazardChoice(byLabel['Biohazard']) : null;
+  if (bio && bio.code) out.bioHazardClass = bio.code;
   // build 122: "No arc flash label on this equipment" on the types that ask
   if (arcFlashAskedFor(entryLike.equipType, entryLike.template) && (entryLike.unitAnswers || {}).arcFlashNone) out.arcFlashNone = true;
   return out;
@@ -4969,6 +5006,14 @@ function buildUnitQuestionsHtml(k, template, auto) {
     RELIEF_JOINT_CHOICES.forEach(c => { jointWords[c.value] = c.form; });
     parts.push(group('Union or flange between the inlet valve and the pump?', pick('reliefJoint', DATA.reliefJoint, '', jointWords),
       'or an inlet filter cover that opens; get it into the inlet valve’s photo'));
+  }
+  if (k.exhaustFan) {   // build 145
+    const words = {};
+    BIOHAZARD_CHOICES.forEach(c => { words[c.sheet] = c.label; });
+    const hazard = unitBiohazard({ equipType: getEquipType(), template, sources, unitAnswers: a });
+    parts.push(group('Biohazard?', html`${pick('biohazard', DATA.biohazard, '', words)}${hazard
+      ? html`<div id="uq_biohazardWarning" role="alert" style="margin-top:8px;padding:10px 12px;border:2px solid #c2410c;border-radius:8px;background:rgba(194,65,12,0.12);color:var(--text);font-size:13px;font-weight:700;line-height:1.4;">&#9763; ${hazard.warning}</div>` : ''}`,
+      'what the rooms this fan exhausts are used for'));
   }
   if (k.refrigerant) {
     parts.push(group('Refrigerant', html`<select id="uq_refrigerant" onchange="setUnitAnswer('refrigerant',this.value)">
@@ -13483,6 +13528,10 @@ function collectIncompleteFields(opts) {
   if (kinds.vacPump && !String(unitAnswers.vacuumExhaust || '').trim()) {
     missing.push('Medical vacuum pump \u2014 Exhaust (where this pump\u2019s exhaust goes)');
   }
+  // Build 145 (wilkins 2026-11-02): an exhaust fan nobody asked about biohazard
+  if (kinds.exhaustFan && !String(unitAnswers.biohazard || '').trim()) {
+    missing.push('Exhaust fan \u2014 Biohazard (what the rooms it exhausts are used for)');
+  }
   // Build 122 (soft, like the rest): a transformer's survey
   if (kinds.xfmr) {
     if (!sources.some(isSecondaryMainRow)) missing.push('Transformer \u2014 secondary main');
@@ -14228,10 +14277,13 @@ function renderSavedPanel() {
     // Marked for the office (build 118), so the tech can find it again
     const officeNote = changeLaterSheetText(entry);
     const officeBadge = officeNote ? html` <span class="office-mark-badge" style="background:#7a5a00;color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="${officeNote}">&#9998; FOR THE OFFICE</span>` : '';
+    // An exhaust fan marked biohazard (build 145)
+    const hazard = unitBiohazard(entry);
+    const bioBadge = hazard ? html` <span class="biohazard-badge" style="background:#c2410c;color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="${hazard.label}">&#9763; BIOHAZARD</span>` : '';
     return html`
     <div class="saved-item" style="${isEditing ? 'border:2px solid var(--accent);background:rgba(74,144,217,0.08);' : ''}">
       <div class="saved-item-info">
-        <div class="saved-item-name">${entry.equipName}${isEditing ? raw(' <span style="background:var(--accent);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">EDITING</span>') : ''}${photoSuspect ? raw(' <span style="background:rgba(200,40,40,0.92);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="This entry\'s photo was shared with other equipment in the old photo store — verify it shows THIS unit (Settings → Photo Store Report).">&#9888; PHOTO SUSPECT</span>') : ''}${twinBadge}${officeBadge}</div>
+        <div class="saved-item-name">${entry.equipName}${isEditing ? raw(' <span style="background:var(--accent);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">EDITING</span>') : ''}${photoSuspect ? raw(' <span style="background:rgba(200,40,40,0.92);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="This entry\'s photo was shared with other equipment in the old photo store — verify it shows THIS unit (Settings → Photo Store Report).">&#9888; PHOTO SUSPECT</span>') : ''}${twinBadge}${officeBadge}${bioBadge}</div>
         <div class="saved-item-detail">
           ${entry.equipType || 'No type'} &#183; ${entry.template || 'No template'}
           &#183; ${entry.sources.length} source${entry.sources.length !== 1 ? 's' : ''}
@@ -14768,7 +14820,7 @@ async function executeDuplicate(index, withPhotos) {
   // mark: that note is about the unit it was written on. Nor (build 122) what
   // was looked for on that unit and not found: its arc flash label and a
   // transformer's other sources.
-  { const a = Object.assign({}, entry.unitAnswers || {}); delete a.changeLater; delete a.arcFlashNone; delete a.xfmrAltNone; loadUnitAnswers(a); }
+  { const a = Object.assign({}, entry.unitAnswers || {}); delete a.changeLater; delete a.arcFlashNone; delete a.xfmrAltNone; delete a.biohazard; loadUnitAnswers(a); }
 
   // Restore template — check if it's a custom value
   const templateSel = document.getElementById('equipTemplate');
