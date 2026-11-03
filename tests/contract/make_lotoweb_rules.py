@@ -16,6 +16,7 @@ It only reads loto-web; it writes nothing there.
 """
 import json
 import os
+import re
 import sys
 from types import SimpleNamespace as NS
 
@@ -31,6 +32,8 @@ from app.services.unit_ids import unit_ids  # noqa: E402
 from app.services import label_wait as lw  # noqa: E402
 from app.services import drain_location as dl  # noqa: E402
 from app.services import valve_state as vs  # noqa: E402
+from app.services import procedure_generator as pgm  # noqa: E402
+from app.services.procedure_generator import MappingService  # noqa: E402
 
 
 def row(es="Electrical 480V", dev="Breaker", did="", qty=1, loc=""):
@@ -185,7 +188,34 @@ VALVE_STATE = [
     # loto-web's own word-start cases (2026-10-26)
     ("Geothermal Water In", "Ball Valve", None), ("Geothermal Supply", "Gate Valve", None), ("Geothermal Water In", "Ball Valve", "W"),
     ("Thermal Energy", "", None), ("DHW-Electric", "Breaker", None),
+    # steam at a typed pressure (field app build 149)
+    ("MPS 30 PSI", "Gate Valve", None), ("HPS 125 PSI", "Gate Valve w/Cable", None), ("LPS 15 PSI", "Ball Valve", "S"),
 ]
+
+# Steam at a typed pressure (field app build 149): the names the app makes,
+# "LPS|MPS|HPS <1-300> PSI", as loto-web's generator resolves them against its
+# shipped Mapping Sheet (_energy_source_mapping): the ID prefix and the pressure
+# Section 1 prints. The app's T290 asserts each prints the pressure typed, with
+# an S ID. A sheet row keyed by a name wins over the name's own number, so a row
+# whose text names another pressure shows here.
+STEAM = ["LPS 10 PSI", "LPS 1 PSI", "LPS 5 PSI", "LPS 15 PSI", "LPS 20 PSI", "MPS 20 PSI", "MPS 15 PSI", "MPS 30 PSI",
+         "MPS 40 PSI", "MPS 50 PSI", "MPS 60 PSI", "HPS 100 PSI", "HPS 60 PSI", "HPS 90 PSI", "HPS 125 PSI",
+         "HPS 150 PSI", "HPS 250 PSI", "HPS 300 PSI"]
+
+
+def steam_answers():
+    ms = MappingService()
+    ms.init_from_file(os.path.join(LOTO_WEB, "data", "mapping", "Mapping_Sheet.xlsx"))
+    sheet = ms.mappings["energy_sources"]
+    out = []
+    for name in STEAM:
+        m = pgm._energy_source_mapping(sheet, name) or {}
+        printed = str(m.get("procedure_source") or "")
+        psi = re.search(r"(\d+(?:\.\d+)?)\s*PSI", printed, re.I)
+        temp = re.search(r"@\s*(\d+)\s*F", printed)
+        out.append({"energySource": name, "code": str(m.get("code") or ""), "printed": printed,
+                    "psi": float(psi.group(1)) if psi else None, "tempF": int(temp.group(1)) if temp else None})
+    return out
 
 UNITS = {
     "two tagged drives, one feeder each": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-2"),
@@ -322,6 +352,7 @@ def main():
         "lockCells": [{"unitLockOpen": a, "quantity": q, "text": t,
                        "parsed": vs.parse_cell("lock_open", t, q),
                        "warns": bool(vs.cell_problem("lock_open", t, q))} for a, q, t in LOCK_CELLS],
+        "steam": steam_answers(),
     }
     out = os.path.join(HERE, "lotoweb-rules.json")
     with open(out, "w", encoding="utf-8") as f:

@@ -2664,6 +2664,27 @@
    "code": null,
    "takes": false,
    "takesWithCode": false
+  },
+  {
+   "energySource": "MPS 30 PSI",
+   "deviceType": "Gate Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "HPS 125 PSI",
+   "deviceType": "Gate Valve w/Cable",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "LPS 15 PSI",
+   "deviceType": "Ball Valve",
+   "code": "S",
+   "takes": true,
+   "takesWithCode": true
   }
  ],
  "valveCells": [
@@ -2996,6 +3017,134 @@
     "no"
    ],
    "warns": true
+  }
+ ],
+ "steam": [
+  {
+   "energySource": "LPS 10 PSI",
+   "code": "S",
+   "printed": "Steam\n10 PSI @ 240 F",
+   "psi": 10.0,
+   "tempF": 240
+  },
+  {
+   "energySource": "LPS 1 PSI",
+   "code": "S",
+   "printed": "Steam\n1 PSI @ 215 F",
+   "psi": 1.0,
+   "tempF": 215
+  },
+  {
+   "energySource": "LPS 5 PSI",
+   "code": "S",
+   "printed": "Steam\n5 PSI @ 227 F",
+   "psi": 5.0,
+   "tempF": 227
+  },
+  {
+   "energySource": "LPS 15 PSI",
+   "code": "S",
+   "printed": "Steam\n15 PSI @ 250 F",
+   "psi": 15.0,
+   "tempF": 250
+  },
+  {
+   "energySource": "LPS 20 PSI",
+   "code": "S",
+   "printed": "Steam\n20 PSI @ 250 F",
+   "psi": 20.0,
+   "tempF": 250
+  },
+  {
+   "energySource": "MPS 20 PSI",
+   "code": "S",
+   "printed": "Steam\n20 PSI @ 250 F",
+   "psi": 20.0,
+   "tempF": 250
+  },
+  {
+   "energySource": "MPS 15 PSI",
+   "code": "S",
+   "printed": "Steam\n15 PSI @ 250 F",
+   "psi": 15.0,
+   "tempF": 250
+  },
+  {
+   "energySource": "MPS 30 PSI",
+   "code": "S",
+   "printed": "Steam\n30 PSI @ 275 F",
+   "psi": 30.0,
+   "tempF": 275
+  },
+  {
+   "energySource": "MPS 40 PSI",
+   "code": "S",
+   "printed": "Steam\n40 PSI @ 287 F",
+   "psi": 40.0,
+   "tempF": 287
+  },
+  {
+   "energySource": "MPS 50 PSI",
+   "code": "S",
+   "printed": "Steam\n30 PSI @ 275 F",
+   "psi": 30.0,
+   "tempF": 275
+  },
+  {
+   "energySource": "MPS 60 PSI",
+   "code": "S",
+   "printed": "Steam\n60 PSI @ 307 F",
+   "psi": 60.0,
+   "tempF": 307
+  },
+  {
+   "energySource": "HPS 100 PSI",
+   "code": "S",
+   "printed": "Steam \n100 PSI @ 350 F",
+   "psi": 100.0,
+   "tempF": 350
+  },
+  {
+   "energySource": "HPS 60 PSI",
+   "code": "S",
+   "printed": "Steam\n60 PSI @ 307 F",
+   "psi": 60.0,
+   "tempF": 307
+  },
+  {
+   "energySource": "HPS 90 PSI",
+   "code": "S",
+   "printed": "Steam\n90 PSI @ 331 F",
+   "psi": 90.0,
+   "tempF": 331
+  },
+  {
+   "energySource": "HPS 125 PSI",
+   "code": "S",
+   "printed": "Steam\n125 PSI @ 353 F",
+   "psi": 125.0,
+   "tempF": 353
+  },
+  {
+   "energySource": "HPS 150 PSI",
+   "code": "S",
+   "printed": "Steam\n150 PSI @ 366 F",
+   "psi": 150.0,
+   "tempF": 366
+  },
+  {
+   "energySource": "HPS 250 PSI",
+   "code": "S",
+   "printed": "Steam\n250 PSI @ 406 F",
+   "psi": 250.0,
+   "tempF": 406
+  },
+  {
+   "energySource": "HPS 300 PSI",
+   "code": "S",
+   "printed": "Steam\n300 PSI @ 422 F",
+   "psi": 300.0,
+   "tempF": 422
   }
  ]
 }

@@ -135,6 +135,9 @@
 //   T459      build 148 (wilkins 2026-11-03): an AHU's 2 fans whose VFDs sit together — "Drives Together?" after
 //             the count, one VFD line of Qty 2 beside 2 Kinetic rows, saved and exported; Separate / tap outside as before;
 //             a closed card of Quantity 2+ reads "×2"
+//   T460      build 149 (wilkins 2026-11-03): steam at the site's own pressure — "Change pressure" on a steam row,
+//             the number in the name ("MPS 30 PSI"), the list, defaults and boiler lists by its class, refused
+//             values keep the pressure it had, saved while typing, exported as the name
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -9224,18 +9227,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 148 (was build 122\'s): APP_BUILD and the header label say 148, the service worker\'s cache is loto-collector-v7.143, Xcode\'s CURRENT_PROJECT_VERSION is 148 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 149 (was build 122\'s): APP_BUILD and the header label say 149, the service worker\'s cache is loto-collector-v7.144, Xcode\'s CURRENT_PROJECT_VERSION is 149 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 148 && !!label && +label[1] === 148, 'the build');
+    want(APP_BUILD === 149 && !!label && +label[1] === 149, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.143', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.144', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 148;,CURRENT_PROJECT_VERSION = 148;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 149;,CURRENT_PROJECT_VERSION = 149;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -9978,6 +9981,14 @@
     // save hook asks it (no ID prefix) — the app's one rule for its card, a source change and the export
     check('valveState', fx.valveState || [], c => ({ ok: takesValveState(c.energySource, c.deviceType) === c.takes, what: JSON.stringify([c.energySource, c.deviceType]) + ' app ' + takesValveState(c.energySource, c.deviceType) + ' loto-web ' + c.takes }));
     want((fx.valveState || []).length >= 35, 'the fixture carries loto-web\'s valve-state cases');
+    // A typed steam pressure (build 149): every steam name the app makes prints, through loto-web's
+    // _energy_source_mapping and its shipped Mapping Sheet, the pressure typed, with an S ID
+    check('steam', fx.steam || [], c => {
+      const p = steamPressureOf(c.energySource);
+      return { ok: !!p && c.code === 'S' && prefixByEnergyName(c.energySource) === 'S' && c.psi === p.psi,
+        what: c.energySource + ' prints ' + JSON.stringify(c.printed) + ' (' + c.code + ')' };
+    });
+    want((fx.steam || []).length >= 15, 'the fixture carries the typed steam pressures');
     // A state and Lock Open per valve (build 146): columns 11 and 15 as the app writes each case's
     // states, and loto-web's valve_state.parse_cell reading them back, with no import warning. Held
     // either way: as one row answer and, when the valves agree, as a "mixed" list that agrees.
@@ -15522,6 +15533,117 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T460 — steam at the site's own pressure (build 149)
+  async function t460_aSteamRowTakesTheSitesPressure() {
+    const N = 'T460 build 149 (wilkins: "MPS could be 15 PSI in one location but 30 in another"): a steam row offers "Change pressure"; the number typed goes into the name ("MPS 30 PSI"), saved as typed, kept by the list in its class\'s place, the class\'s defaults and boiler lists still apply; blank, 0 or past 300 keeps the pressure it had; exported as the name in entries.json and the sheet; no control on other rows';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const card = () => document.querySelectorAll('#sourcesContainer > .source-card')[0];
+    const box = () => document.getElementById('src_psi_in_0');
+    const type = (text) => { const el = box(); el.value = text; typeSteamPressure(0, el); return sources[0].energySource; };
+    const leave = async (text) => withToasts(async () => { const el = box(); if (text !== undefined) { el.value = text; typeSteamPressure(0, el); } commitSteamPressure(0, el); });
+    // the names the app makes, and the ones it doesn't
+    got.parse = ['MPS 30 PSI', 'HPS 300 PSI', 'LPS 1 PSI', 'HPS 301 PSI', 'MPS 0 PSI', 'MPS 030 PSI', 'mps 30 psi', 'MPS 30 PSIG', 'Steam 30 PSI', ' MPS 30 PSI']
+      .map(n => { const p = steamPressureOf(n); return p ? p.cls + p.psi : '-'; }).join(',');
+    want(got.parse === 'MPS30,HPS300,LPS1,-,-,-,-,-,-,-', 'steamPressureOf ' + got.parse);
+    want(listEnergyName('HPS 125 PSI') === 'HPS 100 PSI' && listEnergyName('Electrical 480V') === 'Electrical 480V'
+      && (sourceDefaultsOf('MPS 30 PSI') || {}).device === 'Gate Valve', 'the class\'s list name and defaults');
+    // a steam row at its usual pressure: only the link
+    fillFormNoSources('HX-460');
+    addSource();
+    handleEnergySourceChange(0, 'MPS 20 PSI');
+    got.start = [sources[0].deviceType, (card().querySelector('#src_psi_0') || {}).tagName || '-', !!box()].join(',');
+    want(got.start === 'Gate Valve,BUTTON,false', 'a new MPS row ' + got.start);
+    openSteamPressure(0);
+    got.opened = [!!box() && box().value, document.activeElement === box()].join(',');
+    want(got.opened === '20,true', 'Change pressure opens the box, focused ' + got.opened);
+    // typed: saved per keystroke, never redrawn meanwhile
+    const el0 = box();
+    got.typed = [type('3'), type('30')].join(',');
+    want(got.typed === 'MPS 3 PSI,MPS 30 PSI' && box() === el0 && sources[0].userEdited, 'typing ' + got.typed);
+    // left: the list names it in MPS's place (no second entry), the title follows
+    got.leftToasts = await leave();
+    const sel = document.getElementById('src_energy_0');
+    const names = [...sel.options].map(o => o.value);
+    got.list = [sel.value, names.filter(v => /^MPS /.test(v)).join('|'), names.length === offeredEnergySources().length + 2].join(',');
+    want(got.list === 'MPS 30 PSI,MPS 30 PSI,true' && names.indexOf('MPS 30 PSI') === offeredEnergySources().indexOf('MPS 20 PSI') + 1, 'the list ' + got.list);
+    want((card().querySelector('.src-head-title') || {}).textContent === 'MPS 30 PSI · Gate Valve' && !got.leftToasts.length, 'title / toasts ' + JSON.stringify(got.leftToasts));
+    // what it can't be keeps the pressure it had, with a word
+    got.bad = [];
+    for (const t of ['500', '', '0', 'abc']) {
+      got.bad.push(type(t));
+      const ms = await leave();
+      got.bad.push(sources[0].energySource + '/' + box().value + '/' + ms.some(m => /1 to 300 PSI .*kept MPS 30 PSI/.test(m)));
+    }
+    want(got.bad.join(',') === 'MPS 30 PSI,MPS 30 PSI/30/true,MPS 30 PSI,MPS 30 PSI/30/true,MPS 30 PSI,MPS 30 PSI/30/true,MPS 30 PSI,MPS 30 PSI/30/true', 'refused ' + got.bad.join(','));
+    // drawn again: the box shows at once, with the usual pressure beside it
+    renderSources();
+    got.redrawn = [!!box() && box().value, /usual 20/.test((document.getElementById('src_psi_0') || {}).textContent || '')].join(',');
+    want(got.redrawn === '30,true', 'redrawn ' + got.redrawn);
+    // the closed card says it
+    sources[0].collapsed = true; renderSources();
+    got.closed = ((card().querySelector('.source-summary-text strong') || {}).textContent || '').trim();
+    want(got.closed === 'MPS 30 PSI', 'closed card ' + got.closed);
+    sources[0].collapsed = false; renderSources();
+    // typed, not left, then saved (a tap on Save & New may not take the focus)
+    type('45');
+    let A = saveEntry();
+    got.savedTyped = A && A.sources && A.sources[0].energySource;
+    want(got.savedTyped === 'MPS 45 PSI', 'saved while typing ' + got.savedTyped);
+    // the boiler's HPS lists take any pressure; another class from the list starts at its usual pressure
+    await resetAppState();
+    fillFormNoSources('BLR-460');
+    document.getElementById('equipType').value = 'Boiler';
+    filterTemplateDropdown('Boiler');
+    await withDialogs({ confirm: true }, async () => { pickTemplate('Boiler - Natural Gas - STM'); });
+    closeAllPrompts();
+    const h = sources.findIndex(x => /^HPS /.test(x.energySource || ''));
+    got.boiler = h;
+    if (h >= 0) {
+      const wantDev = TEMPLATE_SOURCE_DEVICE_OVERRIDES['Boiler - Natural Gas - STM']['HPS'].join();
+      const before = [getFilteredDevices(sources[h].energySource).join(), getFilteredVerifications('Gate Valve', sources[h].energySource).join()];
+      sources[h].energySource = 'HPS 125 PSI';
+      const after = [getFilteredDevices('HPS 125 PSI').join(), getFilteredVerifications('Gate Valve', 'HPS 125 PSI').join()];
+      want(before[0] === wantDev && after.join('|') === before.join('|'), 'the boiler\'s HPS lists ' + JSON.stringify([before, after]));
+      handleEnergySourceChange(h, 'LPS 10 PSI');
+      want(sources[h].energySource === 'LPS 10 PSI', 'picked from the list: ' + sources[h].energySource);
+    } else fails.push('no HPS row on the STM boiler');
+    // no control on another row, nor on a custom one typed like steam
+    await resetAppState();
+    fillFormNoSources('AHU-460');
+    addSource(); handleEnergySourceChange(0, 'Electrical 480V');
+    addSource(); handleEnergySourceChange(1, '** Custom Energy **');
+    updateSourceCustomField(1, 'energySource', 'MPS 30 PSI'); commitCustomEnergy(1); renderSources();
+    got.others = [!!document.getElementById('src_psi_0'), !!document.getElementById('src_psi_1'), document.getElementById('src_energy_1').value].join(',');
+    want(got.others === 'false,false,** Custom Energy **', 'other rows ' + got.others);
+    // saved and exported as the name, in entries.json and the sheet's column 1
+    await resetAppState();
+    fillFormNoSources('HX-460b');
+    addSource(); handleEnergySourceChange(0, 'HPS 100 PSI');
+    openSteamPressure(0); type('125'); await leave();
+    addSource(); handleEnergySourceChange(1, 'LPS 10 PSI');
+    A = saveEntry();
+    got.saved = ((A && A.sources) || []).map(x => x.energySource).join(',');
+    want(got.saved === 'HPS 125 PSI,LPS 10 PSI', 'saved ' + got.saved);
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (zip) {
+      const u = await unzipExport(zip.blob);
+      const je = jsonEntryFor(u.entriesJson, A);
+      got.json = je ? (je.sources || []).map(x => x.energySource).join(',') : null;
+      want(got.json === 'HPS 125 PSI,LPS 10 PSI', 'entries.json ' + got.json);
+      const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+      if (xpath) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        const rows = [];
+        wb.worksheets[0].eachRow(row => { const v = String(row.getCell(1).value || ''); if (/PSI$/.test(v)) rows.push(v); });
+        got.sheet = rows.join(',');
+        want(got.sheet === 'HPS 125 PSI,LPS 10 PSI', 'sheet ' + got.sheet);
+      } else fails.push('no XLSX in the ZIP');
+    } else fails.push('no zip: ' + confirms.join(' | '));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
     t9_removeMiscThenDiscard, t10_reattachOrphans, t11_duplicateSourceThenRetakeCopy,
@@ -15708,7 +15830,8 @@
     t450_aMixedRowSetsEachValveOnTheCard, t451_aMixedRowExportsEachValvesState, t452_lockOpenIsSetPerValve,
     t453_aChangedCountKeepsEachValvesAnswer, t454_splitTakesTheLastValveAsItIs, t455_perValveAnswersFollowTheRow,
     t456_theMarkBoxesNameTheOddValve, t457_everyCountChangeSettlesThePerValveAnswers,
-    t458_aBypassDriveWithAKeypadHasItsOwnVerification, t459_anAhusDrivesTogetherAreOneLine];
+    t458_aBypassDriveWithAKeypadHasItsOwnVerification, t459_anAhusDrivesTogetherAreOneLine,
+    t460_aSteamRowTakesTheSitesPressure];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
