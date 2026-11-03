@@ -217,6 +217,7 @@
     if (typeof unitAnswers !== 'undefined') unitAnswers = {};   // build 118: the answers for loto-web
     // build 145: the saved list shows every facility again
     if (typeof savedFacility !== 'undefined') { savedFacility = 'all'; try { localStorage.removeItem('loto_saved_facility'); } catch (e) {} }
+    if (typeof savedPanelOpen !== 'undefined' && savedPanelOpen) toggleSavedPanel();   // build 145 review: tests left it open
     try { clearSketchState(); } catch (e) {}
     // remove dialogs the previous test opened — but never the static ones
     // (Export / Bulk delete / Settings live in the HTML and are only hidden)
@@ -7982,7 +7983,8 @@
     want(got.formShows === 'Boiler Plant|No|Panel locked', 'the form shows the answers');
     // the section follows a template change made without redrawing the rows, and
     // the box being typed in keeps its focus and caret through the rebuild
-    if (ta) { ta.focus(); ta.setSelectionRange(5, 5); }
+    // on the screen, as the tech typing has it (build 145: one off the screen is let go)
+    if (ta) { ta.scrollIntoView({ block: 'center' }); await sleep(250); ta.focus({ preventScroll: true }); ta.setSelectionRange(5, 5); }
     keepTemplateOption('Chiller'); document.getElementById('equipTemplate').value = 'Chiller';
     autoSaveCurrent();
     got.follows = [!!document.getElementById('uq_capacitors'), !!document.getElementById('uq_refrigerant'), !document.getElementById('uq_uvLights') ? 'noUV' : 'uv',
@@ -14888,7 +14890,7 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
   async function t444_theBiohazardTravelsInU3() {
-    const N = 'T444 build 145: an Exhaust Fan\'s Biohazard rides under its label in U3 (blank when unanswered, Can\'t tell as written) and entries.json carries loto-web\'s class code only for a class; a unit of another kind writes no Biohazard; a Duplicate starts unanswered';
+    const N = 'T444 build 145: an Exhaust Fan\'s Biohazard rides under its label in U8 (blank when unanswered, Can\'t tell as written) and entries.json carries loto-web\'s class code only for a class; a unit of another kind writes no Biohazard; a Duplicate starts unanswered';
     await resetAppState();
     setHospitalCode('');
     const fails = [], got = {};
@@ -14901,9 +14903,9 @@
     const u = await unzipExport(zip.blob);
     const xpath = Object.keys(u.files).find(q => /Information_Sheet_.*\.xlsx$/.test(q));
     const Bk = xpath ? await sheetBlocks(u.files[xpath]) : {};
-    const u3 = (name) => { const b = Bk[name]; return b ? b.labels.U3 + ':' + b.values.U3 : 'missing'; };
-    got.u3 = ['EF1-444', 'EF2-444', 'EF3-444', 'EF4-444', 'EF5-444', 'AHU-444'].map(u3).join('|');
-    want(got.u3 === 'Biohazard:AII/TB|Biohazard:None|Biohazard:Can\'t tell|Biohazard:|Biohazard:Lab BSL-2|UV Lights:', 'U3 cells');
+    const u8 = (name) => { const b = Bk[name]; return b ? b.labels.U8 + ':' + b.values.U8 : 'missing'; };
+    got.u8 = ['EF1-444', 'EF2-444', 'EF3-444', 'EF4-444', 'EF5-444', 'AHU-444'].map(u8).join('|');
+    want(got.u8 === 'Biohazard:AII/TB|Biohazard:None|Biohazard:Can\'t tell|Biohazard:|Biohazard:Lab BSL-2|:', 'U8 cells (since the review: a slot of its own)');
     const je = (name) => (u.entriesJson.entries || []).find(e => e.equipName === name) || {};
     got.json = ['EF1-444', 'EF2-444', 'EF3-444', 'EF4-444', 'EF5-444', 'AHU-444'].map(n => ('bioHazardClass' in je(n) ? je(n).bioHazardClass : '-') + '/' + (je(n).biohazard == null ? '-' : je(n).biohazard)).join('|');
     want(got.json === 'AII_TB/AII/TB|NONE/None|-/Can\'t tell|-/|LAB_BSL2/Lab BSL-2|-/-', 'entries.json');
@@ -14931,22 +14933,28 @@
     try {
       for (const [key, value] of [['uvLights', 'Yes'], ['confinedSpace', 'No']]) {
         const sel = document.getElementById('uq_' + key);
-        sel.scrollIntoView({ block: 'center' }); await sleep(250); sel.focus();
+        sel.scrollIntoView({ block: 'center' }); await sleep(250); sel.focus({ preventScroll: true });
         sel.value = value; sel.dispatchEvent(new Event('change'));
-        const after = ae();
+        // the review: a pick that changes nothing else is not redrawn (the select stays itself)
+        const same = document.getElementById('uq_' + key) === sel;
+        // a redraw while it is on the screen keeps a select's focus only for a mouse
+        renderUnitQuestions(true);
+        const kept = ae() === 'uq_' + key;
         window.scrollTo(0, listTop()); await sleep(250);   // the iOS web view scrolls a moment later
         const y0 = Math.round(window.scrollY);
+        const away = ae();
         renderUnitQuestions(true);   // a later redraw (a source changed)
         await sleep(50);
         window.scrollBy(0, -150);    // the tech scrolls on up
         await sleep(600);
-        got[key] = [unitAnswers[key], after, y0 - 150, Math.round(window.scrollY)].join('|');
-        want(unitAnswers[key] === value && after !== 'uq_' + key && Math.abs(window.scrollY - (y0 - 150)) <= 1,
-          key + ': let go, the page stays: ' + got[key]);
+        got[key] = [unitAnswers[key], same, kept, away, Math.abs(y0 - listTop()) <= 2, y0 - 150, Math.round(window.scrollY)].join('|');
+        want(unitAnswers[key] === value && same && kept === desktopPointer() && away !== 'uq_' + key
+          && Math.abs(y0 - listTop()) <= 2 && Math.abs(window.scrollY - (y0 - 150)) <= 1,
+          key + ': not redrawn, let go off the screen, the page stays: ' + got[key]);
       }
       // typing in Mark for the office: kept through a redraw on the screen
       const ta = document.getElementById('uq_changeLater');
-      ta.scrollIntoView({ block: 'center' }); await sleep(250); ta.focus();
+      ta.scrollIntoView({ block: 'center' }); await sleep(250); ta.focus({ preventScroll: true });
       ta.value = 'Panel locked'; ta.dispatchEvent(new Event('input')); ta.setSelectionRange(5, 5);
       const yT = Math.round(window.scrollY);
       renderUnitQuestions(true);
@@ -14957,10 +14965,121 @@
       const y1 = Math.round(window.scrollY);
       renderUnitQuestions(true);
       await sleep(50);
-      got.away = [ae(), y1, Math.round(window.scrollY), unitAnswers.changeLater].join('|');
-      want(ae() !== 'uq_changeLater' && Math.abs(window.scrollY - y1) <= 1 && unitAnswers.changeLater === 'Panel locked',
-        'scrolled away: let go, the page stays, the text kept: ' + got.away);
+      got.away = [ae(), Math.abs(y1 - listTop()) <= 2, Math.round(window.scrollY) - y1, unitAnswers.changeLater].join('|');
+      want(ae() !== 'uq_changeLater' && Math.abs(y1 - listTop()) <= 2 && Math.abs(window.scrollY - y1) <= 1 && unitAnswers.changeLater === 'Panel locked',
+        'scrolled away: where it was scrolled to, let go, the page stays, the text kept: ' + got.away);
     } finally { window.scrollTo(0, 0); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  // T446–T448 — build 145's xhigh code review
+  async function t446_aBoxLeftInFocusOffTheScreenIsLetGo() {
+    const N = 'T446 build 145 review: a box still in focus once a scroll has taken it off the screen is let go — a Custom Location box the app put in focus in the last card, then the tech scrolls up to the first source — and the page stays where the tech scrolled it; one still on the screen, or in a dialog, keeps its focus';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const ae = () => { const a = document.activeElement; return a ? (a.id || a.tagName) : '-'; };
+    fillFormNoSources('AHU-446');
+    for (let k = 0; k < 12; k++) sources.push(Object.assign(mkSrc('Electrical'), { location: 'Panel ' + k, collapsed: k < 11 }));
+    sources.forEach(ensureSourceId); renderSources();
+    const listTop = () => document.getElementById('sourcesContainer').getBoundingClientRect().top + window.scrollY - 40;
+    try {
+      const loc = document.getElementById('src_loc_11');
+      loc.scrollIntoView({ block: 'center' }); await sleep(250);
+      handleLocationChange(11, '** Custom Location **');   // the app focuses the box it shows
+      const box = document.getElementById('src_loc_custom_11');
+      got.focused = ae();
+      want(!!box && got.focused === 'src_loc_custom_11', 'the custom box is in focus: ' + got.focused);
+      document.execCommand('insertText', false, 'Roof disconnect');
+      // a small scroll that keeps it on the screen: kept
+      window.scrollBy(0, 40); await sleep(250);
+      got.small = ae();
+      want(got.small === 'src_loc_custom_11', 'still on the screen: kept: ' + got.small);
+      // up to the first source: let go, and no scroll back
+      window.scrollTo(0, listTop()); await sleep(250);
+      const y0 = Math.round(window.scrollY);
+      window.scrollBy(0, -100); await sleep(600);
+      got.away = [ae(), Math.abs(y0 - listTop()) <= 2, Math.round(window.scrollY) - (y0 - 100), sources[11].location].join('|');
+      want(ae() !== 'src_loc_custom_11' && Math.abs(y0 - listTop()) <= 2 && Math.abs(window.scrollY - (y0 - 100)) <= 1 && sources[11].location === 'Roof disconnect',
+        'off the screen: let go, the page stays, the text kept: ' + got.away);
+      // a box in a dialog (fixed on the screen) is never let go by a page scroll
+      const ov = document.createElement('div'); ov.className = 'dialog-overlay'; ov.style.cssText = 'position:fixed;inset:0;display:flex;';
+      ov.innerHTML = '<input id="t446dlg" type="text" style="margin:auto;">'; document.body.appendChild(ov);
+      document.getElementById('t446dlg').focus({ preventScroll: true });
+      window.scrollBy(0, 300); await sleep(250);
+      got.dialog = ae();
+      ov.remove();
+      want(got.dialog === 't446dlg', 'a dialog box keeps its focus: ' + got.dialog);
+    } finally { window.scrollTo(0, 0); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  async function t447_bulkDeleteAndSavesFollowTheListsFacility() {
+    const N = 'T447 build 145 review: Bulk Delete opens on the facility the saved list shows; a unit saved under another facility, and a new facility in Settings, turn the list to it; the Facility menu is not rebuilt when its choices are the same';
+    await resetAppState();
+    setHospitalCode('Atlanta');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const A = mkEntry('ATL-447'); A.hospitalCode = 'Atlanta';
+    const K = mkEntry('KC-447'); K.hospitalCode = 'Kansas City';
+    savedEquipment = [A, K]; saveAll();
+    setSavedFacility('Kansas City');
+    showBulkDeleteDialog();
+    got.bulk = [document.getElementById('bulkDeleteFacilityFilter').value, getBulkDeleteTargets().map(e => e.equipName).join(',')].join('|');
+    closeBulkDeleteDialog();
+    want(got.bulk === 'Kansas City|KC-447', 'Bulk Delete opens on the list\'s facility: ' + got.bulk);
+    // the menu kept as it is while its choices don't change
+    const sel = document.getElementById('savedFacilityFilter');
+    const first = sel.options[1];
+    renderSavedPanel();
+    got.sameNodes = sel.options[1] === first;
+    want(got.sameNodes, 'not rebuilt when nothing changed');
+    // Save & New under Atlanta (the setting) turns the list to Atlanta
+    fillForm('ATL2-447');
+    await withDialogs({ confirm: true, choice: () => 'cancel' }, async () => {
+      await saveAndNew();
+      if (document.getElementById('incompleteWarningOverlay')) { closeIncompleteWarning(); await performSaveAndNew(); }   // Save anyway
+    });
+    closeAllPrompts();
+    got.saved = savedEquipment.map(e => e.equipName).join(',');
+    got.afterSave = [savedFacility, sel.value].join('|');
+    want(got.afterSave === 'Atlanta|Atlanta', 'a save under Atlanta shows Atlanta: ' + got.afterSave);
+    // a new facility in Settings: the list follows it
+    setHospitalCode('Kansas City'); renderSavedPanel();
+    got.afterSettings = [savedFacility, sel.value].join('|');
+    want(got.afterSettings === 'Kansas City|Kansas City', 'Settings to Kansas City shows Kansas City: ' + got.afterSettings);
+    setHospitalCode('');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+  async function t448_theBiohazardHasASlotOfItsOwnAndAPickIsNotRedrawn() {
+    const N = 'T448 build 145 review: an Air Handler typed with the Exhaust Fan template keeps both its UV Lights (U3) and its Biohazard (U8) on the sheet and its class in entries.json; the warning is a note, not an alert; a pick that changes nothing else leaves the select itself (not redrawn) and a pick made by code shows in it; a pick that shows a box (Shop: Other) redraws';
+    await resetAppState();
+    setHospitalCode('');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const E = mkEntry('AHUEF-448'); Object.assign(E, { equipType: 'Air Handler', template: 'Exhaust Fan', unitAnswers: { uvLights: 'Yes', biohazard: 'AII/TB' } });
+    savedEquipment = [E]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const xpath = Object.keys(u.files).find(q => /Information_Sheet_.*\.xlsx$/.test(q));
+    const b = (xpath ? await sheetBlocks(u.files[xpath]) : {})['AHUEF-448'];
+    const je = (u.entriesJson.entries || [])[0] || {};
+    got.cells = b ? [b.labels.U3 + ':' + b.values.U3, b.labels.U8 + ':' + b.values.U8, je.bioHazardClass].join('|') : 'missing';
+    want(got.cells === 'UV Lights:Yes|Biohazard:AII/TB|AII_TB', 'both answers travel: ' + got.cells);
+    // the form
+    exhaustFanOnForm('EF-448');
+    setUnitAnswer('biohazard', 'Lab BSL-2');
+    got.role = (document.getElementById('uq_biohazardWarning') || {}).getAttribute ? document.getElementById('uq_biohazardWarning').getAttribute('role') : 'none';
+    want(got.role === 'note', 'the warning is a note: ' + got.role);
+    const shop = document.getElementById('uq_shop');
+    setUnitAnswer('shop', 'HVAC Shop');
+    got.notRedrawn = [document.getElementById('uq_shop') === shop, document.getElementById('uq_shop').value].join('|');
+    want(got.notRedrawn === 'true|HVAC Shop', 'a pick by code shows in the same select: ' + got.notRedrawn);
+    setUnitAnswer('shop', 'Other');
+    got.other = [document.getElementById('uq_shop') !== shop, !!document.getElementById('uq_shopOther')].join('|');
+    want(got.other === 'true|true', 'Shop: Other redraws and shows its box: ' + got.other);
+    setUnitAnswer('biohazard', 'None');
+    got.cleared = !document.getElementById('uq_biohazardWarning');
+    want(got.cleared, 'None takes the warning away');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
   // ---------- runner --------------------------------------------------------
@@ -15145,7 +15264,8 @@
     t435_everyTapOnTheListLetsTheBoxGoFirst, t436_anOutdatedCopyNeverGoesAloneAndTheSummaryCountsTheFacility,
     t437_aMedicalVacuumSystemHasItsValveAndSwitches, t438_aMedicalVacuumPumpIsAskedAboutOtherPower,
     t439_theInletFilterCoverIsAnAnswer, t440_aVacuumPumpWithNoTemplateSaysSo, t441_aBlankExhaustIsMissing,
-    t442_theSavedListShowsOneFacility, t443_anExhaustFanAsksAboutBiohazard, t444_theBiohazardTravelsInU3, t445_aPickInTheUnitQuestionsIsLetGo];
+    t442_theSavedListShowsOneFacility, t443_anExhaustFanAsksAboutBiohazard, t444_theBiohazardTravelsInU3, t445_aPickInTheUnitQuestionsIsLetGo,
+    t446_aBoxLeftInFocusOffTheScreenIsLetGo, t447_bulkDeleteAndSavesFollowTheListsFacility, t448_theBiohazardHasASlotOfItsOwnAndAPickIsNotRedrawn];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

@@ -1203,6 +1203,7 @@ function savePhotoSettings() {
   if (hc === '__custom__') hc = document.getElementById('settingsHospitalCustom').value.trim();
   setHospitalCode(hc);
   updateFacilityBadge();
+  renderSavedPanel();        // the list follows the new facility (build 145 review)
   renderBuildingOptions();   // a new facility's buildings (build 142)
   const sketchChk = document.getElementById('settingsSketchShow');
   if (sketchChk) setSketchPrefForFacility(hc, sketchChk.checked);
@@ -2513,6 +2514,7 @@ function setHospitalCode(code) {
     if (code) localStorage.setItem('loto_hospital_code', code);
     else localStorage.removeItem('loto_hospital_code');
   } catch (e) { /* localStorage blocked — nothing persists, exports fall back to '' */ }
+  followSavedFacility(code);   // the saved list follows a new facility (build 145 review)
 }
 
 // ---- Per-facility Overhead Sketch preference (build 78) ----
@@ -2553,9 +2555,17 @@ function hospitalName(code) {
 }
 // The code an entry should export under: its own stamp, else the current
 // setting (covers pre-feature entries and the unsaved current-form entry).
-function entryHospitalCode(entry) {
-  return (entry && entry.hospitalCode) || getHospitalCode() || '';
+function entryHospitalCode(entry, setting) {
+  return (entry && entry.hospitalCode) || (setting !== undefined ? setting : getHospitalCode()) || '';
 }
+// { code: units } for a list of units (the setting read once), and a code's
+// name in a facility picker — the saved list's, the Export's and Bulk Delete's.
+function countByFacility(entries) {
+  const setting = getHospitalCode(), counts = {};
+  for (const e of entries) { const c = entryHospitalCode(e, setting); counts[c] = (counts[c] || 0) + 1; }
+  return counts;
+}
+function facilityLabel(code) { return code ? (hospitalName(code) || code) : '(no facility)'; }
 
 // ============================================================================
 // INIT
@@ -3114,7 +3124,8 @@ let unitAnswers = {};
 // their values; row 26 = "Notes:", row 27 the notes). The value sits one row
 // below its label. On a taller block both rows move down with the Tied to row,
 // and loto-web reads them from there. U1 Shop is loto-web's 2026-10-09
-// contract; U7 and U8 are spare.
+// contract; U7 is Damper Actuators or a transformer's nameplate, U8 an Exhaust
+// Fan's Biohazard (build 145) or a transformer's SPD / capacitors / grounding.
 const UNIT_SHEET_SLOTS = { U1: [24, 10], U2: [24, 11], U3: [24, 12], U4: [24, 13],
                            U5: [26, 10], U6: [26, 11], U7: [26, 12], U8: [26, 13] };
 
@@ -4861,26 +4872,28 @@ function changeLaterSheetText(entryLike) {
 // its bio_control_library) and prints the matrix's EXPOSURE CONTROLS band from
 // it. Kitchen and toilet exhaust is not biological, AII/TB and lab exhaust is
 // (wilkins 2026-09-14), so the tech answers it on every Exhaust Fan. `sheet` is
-// the U3 "Biohazard" value, `code` loto-web's class (entries.json), `cautions`
-// the procedure's two Section 2 CAUTIONs, which the form shows once a hazard is
-// picked. Labels and cautions word for word as wilkins approved them through
-// loto-web (2026-11-02); the spellings are DATA.biohazard's (app-lists.json).
-const BIOHAZARD_CHOICES = [
-  { sheet: "None", code: "NONE", label: "None (kitchen, toilet, general exhaust)" },
-  { sheet: "AII/TB", code: "AII_TB", label: "AII / TB isolation room exhaust",
+// the "Biohazard" value on the sheet (slot U8), `code` loto-web's class
+// (entries.json), `cautions` the procedure's two Section 2 CAUTIONs, which the
+// form shows once a hazard is picked. Labels and cautions word for word as
+// wilkins approved them through loto-web (2026-11-02), keyed by the spellings in
+// DATA.biohazard (app-lists.json), whose order the menu follows.
+const BIOHAZARD_INFO = {
+  "None": { code: "NONE", label: "None (kitchen, toilet, general exhaust)" },
+  "AII/TB": { code: "AII_TB", label: "AII / TB isolation room exhaust",
     cautions: ["This fan exhausts airborne infection isolation (AII / TB) rooms. Shutting it down can reverse the rooms' negative pressure and push contaminated air into the corridors. Before shutdown, coordinate with Infection Control, Industrial Hygiene and Facility Safety: the served rooms must be vacated and posted, or an approved temporary HEPA negative-air unit placed in service and verified. Industrial Hygiene sets how long the fan keeps running after the rooms are vacated, before it is shut down.",
       "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with infectious aerosol (M. tuberculosis). Anyone opening them wears a respirator selected by Industrial Hygiene in addition to the basic LOTO PPE. Decontaminate interior surfaces with an EPA-registered tuberculocidal disinfectant before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."] },
-  { sheet: "Aerosol-generating", code: "AEROSOL_GEN", label: "Aerosol-generating procedure room exhaust (bronchoscopy, autopsy)",
+  "Aerosol-generating": { code: "AEROSOL_GEN", label: "Aerosol-generating procedure room exhaust (bronchoscopy, autopsy)",
     cautions: ["This fan exhausts rooms where aerosol-generating procedures are performed (bronchoscopy, sputum induction, autopsy). Shutting it down can reverse the rooms' negative pressure and push contaminated air into the corridors. Before shutdown, coordinate with Infection Control, Industrial Hygiene and Facility Safety: the served rooms must be vacated and posted, or an approved temporary HEPA negative-air unit placed in service and verified. Industrial Hygiene sets how long the fan keeps running after the rooms are vacated, before it is shut down.",
       "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with infectious aerosol. Anyone opening them wears a respirator selected by Industrial Hygiene in addition to the basic LOTO PPE. Decontaminate interior surfaces with an EPA-registered hospital disinfectant, per the Infection Control protocol, before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."] },
-  { sheet: "Lab BSL-2", code: "LAB_BSL2", label: "Lab exhaust (biosafety cabinet / hood, BSL-2)",
+  "Lab BSL-2": { code: "LAB_BSL2", label: "Lab exhaust (biosafety cabinet / hood, BSL-2)",
     cautions: ["This fan exhausts laboratory biological safety cabinets and hoods (BSL-2). Shutting it down removes their containment exhaust and can reverse the laboratory's pressure to the corridor. Before shutdown, coordinate with the Laboratory Biosafety Officer, Infection Control, Industrial Hygiene and Facility Safety: work in the served cabinets and hoods must stop and the laboratory be cleared and posted, or an approved temporary exhaust arrangement placed in service and verified. Industrial Hygiene sets how long the fan keeps running after work stops, before it is shut down.",
       "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with BSL-2 biological agents and laboratory chemical residue. Anyone opening them wears a respirator selected by Industrial Hygiene, and gloves Industrial Hygiene selects for the laboratory chemicals in use, in addition to the basic LOTO PPE. Decontaminate interior surfaces with the disinfectant the laboratory's biosafety manual specifies before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."] },
-  { sheet: "Hazardous drug", code: "CYTO", label: "Pharmacy hazardous-drug exhaust (USP <800>)",
+  "Hazardous drug": { code: "CYTO", label: "Pharmacy hazardous-drug exhaust (USP <800>)",
     cautions: ["This fan exhausts pharmacy hazardous-drug compounding (USP <800>). Shutting it down removes the negative pressure and exhaust of the compounding room and its hoods. Before shutdown, coordinate with the Pharmacy designated person, Industrial Hygiene and Facility Safety: compounding must stop and the room be cleared and posted. Industrial Hygiene sets how long the fan keeps running after compounding stops, before it is shut down.",
       "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with hazardous (antineoplastic) drug residue, a chemical hazard with no safe skin-contact level. Anyone opening them wears the respirator, gloves and gown selected by Industrial Hygiene and the Pharmacy designated person, in addition to the basic LOTO PPE. Decontaminate interior surfaces with the pharmacy's USP <800> deactivation / decontamination agents before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as hazardous-drug waste, not regulated medical waste."] },
-  { sheet: "Can't tell", code: "", label: "Can't tell" }
-];
+  "Can't tell": { code: "", label: "Can't tell" }
+};
+const BIOHAZARD_CHOICES = DATA.biohazard.map(v => Object.assign({ sheet: v }, BIOHAZARD_INFO[v] || { code: '', label: v }));
 function biohazardChoice(value) { return BIOHAZARD_CHOICES.find(c => c.sheet === value) || null; }
 // The hazard a saved or open unit carries, or null (None, Can't tell, not asked)
 function unitBiohazard(entryLike) {
@@ -4899,7 +4912,6 @@ function unitSheetCells(entryLike) {
   else if (k.ats) { cells.U3 = ['ATS Make', a.atsMake || '']; cells.U4 = ['Backfeed', atsBackfeedList(a).join('; ')]; }
   else if (k.chiller) cells.U3 = ['Capacitors', a.capacitors || ''];
   else if (k.vacPump) { cells.U3 = ['Exhaust', a.vacuumExhaust || '']; cells.U4 = ['Union/Flange', a.reliefJoint || '']; }
-  else if (k.exhaustFan) cells.U3 = ['Biohazard', a.biohazard || ''];   // build 145
   else if (k.xfmr) {   // build 122 (spec §1.3)
     cells.U3 = ['Alternate Sources', xfmrAltSheetText(entryLike)];
     cells.U4 = ['Terminal Access', xfmrTerminalText(a)];
@@ -4915,6 +4927,9 @@ function unitSheetCells(entryLike) {
   }
   // Build 120: "No damper actuators on this unit" (P1), only while it has none
   else if (a.dampersNone && !(entryLike.sources || []).some(isDamperRow)) cells.U7 = ['Damper Actuators', 'None'];
+  // Build 145: an Exhaust Fan's biohazard in a slot of its own (U8 is a
+  // transformer's otherwise), so no other kind's answer can take its place
+  if (k.exhaustFan) cells.U8 = ['Biohazard', a.biohazard || ''];
   return cells;
 }
 // The same answers as entries.json keys (backup only: loto-web imports the sheet).
@@ -4969,9 +4984,10 @@ function renderUnitQuestions(force) {
   // box, the old focus() put the new select in focus, and the iPad scrolled the
   // page back down to it on the next scroll (reproduced in the iOS Simulator:
   // 2369 → 4803 px). A pick is done once made, so a select or checkbox is let go.
+  // (A desktop mouse user keeps a select's focus too, for the Tab order.)
   const active = document.activeElement;
   const r = active && active.getBoundingClientRect ? active.getBoundingClientRect() : null;
-  const keep = (active && active.id && box.contains(active) && isKeyboardBox(active)
+  const keep = (active && active.id && box.contains(active) && (isKeyboardBox(active) || desktopPointer())
     && r && r.bottom > 0 && r.top < window.innerHeight)
     ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
   box.innerHTML = buildUnitQuestionsHtml(k, el.template, auto);
@@ -5027,7 +5043,7 @@ function buildUnitQuestionsHtml(k, template, auto) {
     const hazard = unitBiohazard({ equipType: getEquipType(), template, sources, unitAnswers: a });
     parts.push(group('Biohazard?', pick('biohazard', DATA.biohazard, '', words), 'what the rooms this fan exhausts are used for'));
     // the class's two Section 2 CAUTIONs, across the whole section
-    if (hazard) parts.push(html`<div class="form-group" style="grid-column:1 / -1;"><div id="uq_biohazardWarning" role="alert"
+    if (hazard) parts.push(html`<div class="form-group" style="grid-column:1 / -1;"><div id="uq_biohazardWarning" role="note"
         style="padding:10px 12px;border:2px solid #c2410c;border-radius:8px;background:rgba(194,65,12,0.12);color:var(--text);font-size:13px;line-height:1.45;">
         <div style="font-weight:700;margin-bottom:4px;">&#9763; BIOHAZARD &mdash; the procedure prints:</div>
         ${hazard.cautions.map(t => html`<p style="margin:6px 0 0;">CAUTION: ${t}</p>`)}</div></div>`);
@@ -5106,6 +5122,7 @@ function xfmrQuestionsHtml(a, group, pick, text, dim) {
   return out;
 }
 function setUnitAnswer(key, value) {
+  const shapeBefore = unitQuestionsShape();
   if (value) unitAnswers[key] = value; else delete unitAnswers[key];
   // The row an answer stands for follows it, as the prompts do: "Own valve"
   // adds the exhaust row and any other exhaust answer takes an untouched one
@@ -5126,8 +5143,26 @@ function setUnitAnswer(key, value) {
       renderSources();
     }
   }
-  renderUnitQuestions(true);
+  // Redrawn only when the pick changes the section (an Other box, the biohazard
+  // warning, a change-later note); otherwise the select just used stays as it
+  // is, focus and all (build 145 review), and shows a pick made by code.
+  if (unitQuestionsShape() !== shapeBefore) renderUnitQuestions(true);
+  else {
+    renderUnitQuestions(false);
+    const sel = document.getElementById('uq_' + key);
+    if (sel && sel.tagName === 'SELECT' && sel.value !== (value || '')) sel.value = value || '';
+  }
   autoSaveCurrent();
+}
+// The section as it would be drawn, less what a select or checkbox shows.
+function unitQuestionsShape() {
+  const el = formEntryLike();
+  return String(buildUnitQuestionsHtml(unitKinds(el.equipType, el.template, el.sources), el.template, changeLaterAutoNotes(el)))
+    .replace(/\s+(selected|checked)(="[^"]*")?(?=[\s>])/g, '').replace(/\s+>/g, '>');
+}
+// A mouse on a desktop (hover and a fine pointer), not a finger on the iPad.
+function desktopPointer() {
+  try { return window.matchMedia('(hover: hover) and (pointer: fine)').matches; } catch (e) { return false; }
 }
 // Take away the first row matching test that the app added and nobody has
 // touched since (no edit, no Device ID, no photo); photos stay with their rows.
@@ -10035,6 +10070,21 @@ function whileKeyboardCloses(fn, delays) {
     if (ms) setTimeout(run, ms); else requestAnimationFrame(run);
   });
 }
+// A box still in focus once the page has scrolled it off the screen is let go
+// (build 145 review). The iPad scrolls the page back to a box the app put in
+// focus by code (Custom… boxes, a redraw's restore) on the next scroll — the
+// AHU "jumps down to the bottom" — and the tech has moved on from it anyway.
+let _offScreenCheck = 0;
+window.addEventListener('scroll', () => {
+  if (_offScreenCheck) return;
+  _offScreenCheck = requestAnimationFrame(() => {
+    _offScreenCheck = 0;
+    const a = document.activeElement;
+    if (!a || !/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.closest('.dialog-overlay')) return;
+    const r = a.getBoundingClientRect();
+    if (r.height && (r.bottom < 0 || r.top > window.innerHeight)) a.blur();
+  });
+}, { passive: true });
 document.addEventListener('click', e => {
   const t = e.target;
   if (!t || !t.closest || !t.closest('#sourcesContainer, .add-source-btn')) return;
@@ -13866,6 +13916,7 @@ function performSaveAndNew() {
   }
   editingEntry = null;
   clearTombstones([entryId]);
+  followSavedFacility(entryHospitalCode(entry));   // the list shows where it went (build 145 review)
   saveAll();
   startNextUnit();   // the blank form (with the carried-over building/room) is what survives a reload
   showToast(`\u2714 Saved "${equipName}" \u2014 ${savedEquipment.length} total`);   // plain text: the toast shows text, not HTML (build 94)
@@ -14181,22 +14232,31 @@ function setSavedFacility(value) {
 }
 // The facility the list shows: the remembered one while any unit is saved
 // under it, else all (that facility's units were deleted or moved away).
-function activeSavedFacility() {
-  return savedFacility !== 'all' && savedEquipment.some(e => entryHospitalCode(e) === savedFacility) ? savedFacility : 'all';
+function activeSavedFacility(counts) {
+  counts = counts || countByFacility(savedEquipment);
+  return savedFacility !== 'all' && counts[savedFacility] ? savedFacility : 'all';
 }
-function savedFacilityLabel(code) { return code ? (hospitalName(code) || code) : '(no facility)'; }
-function populateSavedFacilityFilter(active) {
+// The list follows the facility a unit was just saved under, and a new
+// facility in Settings (build 145 review: a remembered filter hid them).
+function followSavedFacility(code) {
+  if (savedFacility === 'all' || savedFacility === (code || '')) return;
+  savedFacility = code || '';
+  try { localStorage.setItem('loto_saved_facility', savedFacility); } catch (e) {}
+}
+// Rebuilt only when its choices change (build 145 review): a redraw while the
+// picker is open would close it under the tech's finger.
+function populateSavedFacilityFilter(active, counts) {
   const sel = document.getElementById('savedFacilityFilter');
   if (!sel) return;
-  const counts = {};
-  savedEquipment.forEach(e => { const c = entryHospitalCode(e); counts[c] = (counts[c] || 0) + 1; });
-  const total = savedEquipment.length;
-  sel.innerHTML = '';
-  const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; sel.appendChild(o); };
-  add('all', `All facilities (${total})`);
-  Object.keys(counts).sort((a, b) => savedFacilityLabel(a).localeCompare(savedFacilityLabel(b)))
-    .forEach(c => add(c, `${savedFacilityLabel(c)} (${counts[c]})`));
-  sel.value = active;
+  const opts = [['all', `All facilities (${savedEquipment.length})`]].concat(Object.keys(counts)
+    .sort((a, b) => facilityLabel(a).localeCompare(facilityLabel(b))).map(c => [c, `${facilityLabel(c)} (${counts[c]})`]));
+  const sig = JSON.stringify(opts);
+  if (sel.dataset.sig !== sig) {
+    sel.innerHTML = '';
+    opts.forEach(([value, text]) => { const o = document.createElement('option'); o.value = value; o.textContent = text; sel.appendChild(o); });
+    sel.dataset.sig = sig;
+  }
+  if (sel.value !== active) sel.value = active;
 }
 function matchesSavedSearch(entry) {
   if (!savedSearchTerm) return true;
@@ -14249,13 +14309,18 @@ function renderSavedPanel() {
     savedFilter === 'today'     ? isSurveyedToday
     : savedFilter === 'yesterday' ? isSurveyedYesterday
     : () => true;
-  const facility = activeSavedFacility();
-  populateSavedFacilityFilter(facility);
-  const atFacility = facility === 'all' ? () => true : (entry => entryHospitalCode(entry) === facility);
-  const scoped = savedEquipment.filter(atFacility);
+  // each unit's facility worked out once (the setting read once)
+  const setting = getHospitalCode();
+  const codes = savedEquipment.map(e => entryHospitalCode(e, setting));
+  const counts = {};
+  codes.forEach(c => { counts[c] = (counts[c] || 0) + 1; });
+  const facility = activeSavedFacility(counts);
+  populateSavedFacilityFilter(facility, counts);
+  const here = (i) => facility === 'all' || codes[i] === facility;
+  const scoped = savedEquipment.filter((e, i) => here(i));
   const visible = savedEquipment
     .map((entry, i) => ({ entry, i }))
-    .filter(({ entry }) => atFacility(entry) && matchesFilter(entry) && matchesSavedSearch(entry));
+    .filter(({ entry, i }) => here(i) && matchesFilter(entry) && matchesSavedSearch(entry));
 
   const summary = document.getElementById('savedFilterSummary');
   if (summary) {
@@ -14272,7 +14337,7 @@ function renderSavedPanel() {
 
   if (visible.length === 0) {
     const parts = [];
-    if (facility !== 'all') parts.push(savedFacilityLabel(facility));
+    if (facility !== 'all') parts.push(facilityLabel(facility));
     if (savedFilter !== 'all') parts.push(`"${savedFilter === 'today' ? 'Today' : 'Yesterday'}"`);
     if (savedSearchTerm) parts.push(`search "${savedSearchTerm}"`);
     const summary = parts.length ? parts.join(' + ') : 'the current filters';
@@ -14514,7 +14579,7 @@ function deleteSaved(index) {
 // ---- Bulk delete ----------------------------------------------------------
 function showBulkDeleteDialog() {
   if (savedEquipment.length === 0) { showToast('No saved equipment to delete', true); return; }
-  populateBulkDeleteFilters();
+  populateBulkDeleteFilters(activeSavedFacility());   // the list's facility, as the list shows it (build 145 review)
   const input = document.getElementById('bulkDeleteConfirmInput');
   if (input) input.value = '';
   updateBulkDeleteSummary();
@@ -14524,7 +14589,7 @@ function closeBulkDeleteDialog() {
   const o = document.getElementById('bulkDeleteOverlay');
   if (o) o.style.display = 'none';
 }
-function populateBulkDeleteFilters() {
+function populateBulkDeleteFilters(preferFacility) {
   const dsel = document.getElementById('bulkDeleteDateFilter');
   if (dsel) {
     const counts = {}; let undated = 0;
@@ -14536,20 +14601,19 @@ function populateBulkDeleteFilters() {
     if (undated>0) { const o=document.createElement('option'); o.value='undated'; o.textContent=`Undated \u2014 ${undated} entr${undated===1?'y':'ies'}`; dsel.appendChild(o); }
     dsel.value = 'all';
   }
-  populateBulkDeleteFacility();
+  populateBulkDeleteFacility(preferFacility);
 }
-function populateBulkDeleteFacility() {
+function populateBulkDeleteFacility(preferFacility) {
   const sel = document.getElementById('bulkDeleteFacilityFilter');
   if (!sel) return;
-  const prev = sel.value;
+  const prev = preferFacility != null ? preferFacility : sel.value;
   const dsel = document.getElementById('bulkDeleteDateFilter');
   const scoped = filterEntriesByExportDate(dsel ? dsel.value : 'all');
-  const counts = {};
-  for (const e of scoped) { const c = entryHospitalCode(e); counts[c] = (counts[c]||0)+1; }
+  const counts = countByFacility(scoped);
   const codes = Object.keys(counts).sort();
   const total = scoped.length;
   sel.innerHTML = `<option value="all">All facilities \u2014 ${total} entr${total===1?'y':'ies'}</option>`;
-  codes.forEach(c => { const o=document.createElement('option'); o.value=c; const n=c?(hospitalName(c)||c):'(no facility)'; o.textContent=`${n} \u2014 ${counts[c]} entr${counts[c]===1?'y':'ies'}`; sel.appendChild(o); });
+  codes.forEach(c => { const o=document.createElement('option'); o.value=c; o.textContent=`${facilityLabel(c)} \u2014 ${counts[c]} entr${counts[c]===1?'y':'ies'}`; sel.appendChild(o); });
   sel.value = codes.includes(prev) ? prev : 'all';
 }
 function getBulkDeleteTargets() {
@@ -15281,19 +15345,14 @@ function populateExportFacilityFilter() {
   // would actually export, not all-time totals.
   const dateSel = document.getElementById('exportDateFilter');
   const scoped = filterEntriesByExportDate(dateSel ? dateSel.value : 'all');
-  const counts = {};
-  for (const entry of scoped) {
-    const code = entryHospitalCode(entry);
-    counts[code] = (counts[code] || 0) + 1;
-  }
+  const counts = countByFacility(scoped);
   const codes = Object.keys(counts).sort();
   const total = scoped.length;
   sel.innerHTML = `<option value="all">All facilities \u2014 ${total} entr${total === 1 ? 'y' : 'ies'}</option>`;
   codes.forEach(code => {
     const opt = document.createElement('option');
     opt.value = code;
-    const name = code ? (hospitalName(code) || code) : '(no facility)';
-    opt.textContent = `${name} \u2014 ${counts[code]} entr${counts[code] === 1 ? 'y' : 'ies'}`;
+    opt.textContent = `${facilityLabel(code)} \u2014 ${counts[code]} entr${counts[code] === 1 ? 'y' : 'ies'}`;
     sel.appendChild(opt);
   });
   sel.value = codes.includes(prev) ? prev : 'all';
