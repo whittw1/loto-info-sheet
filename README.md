@@ -82,7 +82,7 @@ Collapsible section that auto-expands when a template's diagram is available or 
 |---|---|
 | Breaker | Meter, Controls, SW (On/Off), SW (Hand/Off/Auto), Button (Start/Stop), Button (Other) |
 | Disconnect | Controls, Meter, SW (On/Off), SW (Hand/Off/Auto), SW (H/O/A), SW (Other), Button (Start/Stop), Button (Other) |
-| VFD | Controls, Meter, SW (Hand/Off/Auto), SW (H/O/A), SW (Drive/Off/Bypass), SW (VFD/Off/Bypass), SW (Other), Button (Start/Stop) - VFD, Button (Hand/Off/Auto) - VFD, Button (Other) |
+| VFD | Controls, Meter, SW (Hand/Off/Auto), SW (H/O/A), SW (Drive/Off/Bypass), SW (VFD/Off/Bypass), SW (Drive/Off/Bypass) + Button (H/O/A) - VFD (a bypass drive verified at its selector and its keypad, build 147), SW (Other), Button (Start/Stop) - VFD, Button (Hand/Off/Auto) - VFD, Button (Other) |
 | Switch | Controls, Meter, SW (On/Off), SW (Hand/Off/Auto), Button (Start/Stop), Button (Other) |
 | Plug | Controls |
 | All Valves + Ckt Setter + Chain | Gauge/Drain, GaugeOnly, Drain Only (with Hot/CHW variants from energy source) + Temp Only - Hot for hot sources |
@@ -185,7 +185,7 @@ Form Inputs ──► localStorage (auto-saved as JSON)
 - **Saved Equipment Panel** — Collapsible sidebar listing previously saved entries with edit/duplicate/delete. Entries currently being edited show an **EDITING** badge. Show All / Today / Yesterday, a search, and (since build 145) a **Facility** menu that shows one facility's units only — remembered on the device, it follows a unit saved under another facility and a new facility in Settings, and Bulk Delete opens on it.
 - **Equipment Form** — 2-column grid for equipment metadata fields (type, name, building, room, template, tied-to)
 - **Photo Grid** — 3-column capture grid (Main, Data Plate, EE Number) with view-before-retake
-- **Energy Sources** — Dynamic collapsible cards with add/remove/duplicate/reorder/link controls; conditional device and verification dropdowns. Since build 138 an open card is in sections (what it is; where it's isolated and verified; a Drive, Valve or Damper band; the photo), with Link, Copy, Duplicate, Split and Remove under **More**; a drive's card shows the feeder row that feeds it and the feeder's card its drive, each with **Go to**
+- **Energy Sources** — Dynamic collapsible cards with add/remove/duplicate/reorder/link controls; conditional device and verification dropdowns. Since build 138 an open card is in sections (what it is; where it's isolated and verified; a Drive, Valve or Damper band; the photo), with Link, Copy, Duplicate, Split and Remove under **More**; a drive's card shows the feeder row that feeds it and the feeder's card its drive, each with **Go to**. Since build 148 a closed card of Quantity 2+ reads **×2**, and an AHU's count of 2 asks **Drives Together?** (one VFD line of Quantity 2, or a line each)
 - **Overhead Sketch** — Collapsible section with SVG diagram + canvas drawing layer + draggable energy labels
 - **Misc Photos** — Additional photos beyond the standard equipment/source slots (up to 30 a unit since build 137)
 - **Notes Section** — Free-text area per equipment entry. **+ NOTE** / **+ CAUTION** start a line that loto-web prints in the procedure's Section 2 as written; on an AHU, a **+ Common note…** menu adds a stock NOTE line (the duct smoke damper, build 136) to reword for the unit
