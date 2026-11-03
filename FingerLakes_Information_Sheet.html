@@ -4861,27 +4861,32 @@ function changeLaterSheetText(entryLike) {
 // its bio_control_library) and prints the matrix's EXPOSURE CONTROLS band from
 // it. Kitchen and toilet exhaust is not biological, AII/TB and lab exhaust is
 // (wilkins 2026-09-14), so the tech answers it on every Exhaust Fan. `sheet` is
-// the U3 "Biohazard" value, `code` loto-web's class (entries.json), `warning`
-// what the form shows once a hazard is picked. The words are loto-web's;
-// the spellings are DATA.biohazard's (app-lists.json), in the same order.
+// the U3 "Biohazard" value, `code` loto-web's class (entries.json), `cautions`
+// the procedure's two Section 2 CAUTIONs, which the form shows once a hazard is
+// picked. Labels and cautions word for word as wilkins approved them through
+// loto-web (2026-11-02); the spellings are DATA.biohazard's (app-lists.json).
 const BIOHAZARD_CHOICES = [
-  { sheet: 'None', code: 'NONE', label: 'None \u2014 kitchen, toilet or general exhaust' },
-  { sheet: 'AII/TB', code: 'AII_TB', label: 'AII / TB isolation room exhaust',
-    warning: 'BIOLOGICAL HAZARD \u2014 AIRBORNE INFECTIOUS ISOLATION EXHAUST' },
-  { sheet: 'Aerosol-generating', code: 'AEROSOL_GEN', label: 'Aerosol-generating procedure room exhaust',
-    warning: 'BIOLOGICAL HAZARD \u2014 AEROSOL-GENERATING PROCEDURE EXHAUST' },
-  { sheet: 'Lab BSL-2', code: 'LAB_BSL2', label: 'Lab exhaust (biosafety cabinet or hood, BSL-2)',
-    warning: 'BIOLOGICAL HAZARD \u2014 LABORATORY (BSL-2) EXHAUST' },
-  { sheet: 'Hazardous drug', code: 'CYTO', label: 'Pharmacy hazardous-drug exhaust (USP <800>)',
-    warning: 'HAZARDOUS DRUG RESIDUE \u2014 PHARMACY COMPOUNDING EXHAUST' },
-  { sheet: 'Can\'t tell', code: '', label: 'Can\'t tell' }
+  { sheet: "None", code: "NONE", label: "None (kitchen, toilet, general exhaust)" },
+  { sheet: "AII/TB", code: "AII_TB", label: "AII / TB isolation room exhaust",
+    cautions: ["This fan exhausts airborne infection isolation (AII / TB) rooms. Shutting it down can reverse the rooms' negative pressure and push contaminated air into the corridors. Before shutdown, coordinate with Infection Control, Industrial Hygiene and Facility Safety: the served rooms must be vacated and posted, or an approved temporary HEPA negative-air unit placed in service and verified. Industrial Hygiene sets how long the fan keeps running after the rooms are vacated, before it is shut down.",
+      "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with infectious aerosol (M. tuberculosis). Anyone opening them wears a respirator selected by Industrial Hygiene in addition to the basic LOTO PPE. Decontaminate interior surfaces with an EPA-registered tuberculocidal disinfectant before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."] },
+  { sheet: "Aerosol-generating", code: "AEROSOL_GEN", label: "Aerosol-generating procedure room exhaust (bronchoscopy, autopsy)",
+    cautions: ["This fan exhausts rooms where aerosol-generating procedures are performed (bronchoscopy, sputum induction, autopsy). Shutting it down can reverse the rooms' negative pressure and push contaminated air into the corridors. Before shutdown, coordinate with Infection Control, Industrial Hygiene and Facility Safety: the served rooms must be vacated and posted, or an approved temporary HEPA negative-air unit placed in service and verified. Industrial Hygiene sets how long the fan keeps running after the rooms are vacated, before it is shut down.",
+      "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with infectious aerosol. Anyone opening them wears a respirator selected by Industrial Hygiene in addition to the basic LOTO PPE. Decontaminate interior surfaces with an EPA-registered hospital disinfectant, per the Infection Control protocol, before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."] },
+  { sheet: "Lab BSL-2", code: "LAB_BSL2", label: "Lab exhaust (biosafety cabinet / hood, BSL-2)",
+    cautions: ["This fan exhausts laboratory biological safety cabinets and hoods (BSL-2). Shutting it down removes their containment exhaust and can reverse the laboratory's pressure to the corridor. Before shutdown, coordinate with the Laboratory Biosafety Officer, Infection Control, Industrial Hygiene and Facility Safety: work in the served cabinets and hoods must stop and the laboratory be cleared and posted, or an approved temporary exhaust arrangement placed in service and verified. Industrial Hygiene sets how long the fan keeps running after work stops, before it is shut down.",
+      "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with BSL-2 biological agents and laboratory chemical residue. Anyone opening them wears a respirator selected by Industrial Hygiene, and gloves Industrial Hygiene selects for the laboratory chemicals in use, in addition to the basic LOTO PPE. Decontaminate interior surfaces with the disinfectant the laboratory's biosafety manual specifies before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."] },
+  { sheet: "Hazardous drug", code: "CYTO", label: "Pharmacy hazardous-drug exhaust (USP <800>)",
+    cautions: ["This fan exhausts pharmacy hazardous-drug compounding (USP <800>). Shutting it down removes the negative pressure and exhaust of the compounding room and its hoods. Before shutdown, coordinate with the Pharmacy designated person, Industrial Hygiene and Facility Safety: compounding must stop and the room be cleared and posted. Industrial Hygiene sets how long the fan keeps running after compounding stops, before it is shut down.",
+      "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with hazardous (antineoplastic) drug residue, a chemical hazard with no safe skin-contact level. Anyone opening them wears the respirator, gloves and gown selected by Industrial Hygiene and the Pharmacy designated person, in addition to the basic LOTO PPE. Decontaminate interior surfaces with the pharmacy's USP <800> deactivation / decontamination agents before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as hazardous-drug waste, not regulated medical waste."] },
+  { sheet: "Can't tell", code: "", label: "Can't tell" }
 ];
 function biohazardChoice(value) { return BIOHAZARD_CHOICES.find(c => c.sheet === value) || null; }
 // The hazard a saved or open unit carries, or null (None, Can't tell, not asked)
 function unitBiohazard(entryLike) {
   if (!unitKinds(entryLike.equipType, entryLike.template, entryLike.sources).exhaustFan) return null;
   const c = biohazardChoice((entryLike.unitAnswers || {}).biohazard);
-  return c && c.warning ? c : null;
+  return c && c.cautions ? c : null;
 }
 
 // ---- The sheet cells and the entries.json keys ------------------------------
@@ -5011,9 +5016,12 @@ function buildUnitQuestionsHtml(k, template, auto) {
     const words = {};
     BIOHAZARD_CHOICES.forEach(c => { words[c.sheet] = c.label; });
     const hazard = unitBiohazard({ equipType: getEquipType(), template, sources, unitAnswers: a });
-    parts.push(group('Biohazard?', html`${pick('biohazard', DATA.biohazard, '', words)}${hazard
-      ? html`<div id="uq_biohazardWarning" role="alert" style="margin-top:8px;padding:10px 12px;border:2px solid #c2410c;border-radius:8px;background:rgba(194,65,12,0.12);color:var(--text);font-size:13px;font-weight:700;line-height:1.4;">&#9763; ${hazard.warning}</div>` : ''}`,
-      'what the rooms this fan exhausts are used for'));
+    parts.push(group('Biohazard?', pick('biohazard', DATA.biohazard, '', words), 'what the rooms this fan exhausts are used for'));
+    // the class's two Section 2 CAUTIONs, across the whole section
+    if (hazard) parts.push(html`<div class="form-group" style="grid-column:1 / -1;"><div id="uq_biohazardWarning" role="alert"
+        style="padding:10px 12px;border:2px solid #c2410c;border-radius:8px;background:rgba(194,65,12,0.12);color:var(--text);font-size:13px;line-height:1.45;">
+        <div style="font-weight:700;margin-bottom:4px;">&#9763; BIOHAZARD &mdash; the procedure prints:</div>
+        ${hazard.cautions.map(t => html`<p style="margin:6px 0 0;">CAUTION: ${t}</p>`)}</div></div>`);
   }
   if (k.refrigerant) {
     parts.push(group('Refrigerant', html`<select id="uq_refrigerant" onchange="setUnitAnswer('refrigerant',this.value)">

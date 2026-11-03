@@ -5625,6 +5625,7 @@
     document.getElementById('equipType').value = 'Exhaust Fan';
     filterTemplateDropdown('Exhaust Fan');
     document.getElementById('equipTemplate').value = 'Exhaust Fan';
+    unitAnswers.biohazard = 'None';   // build 145 asks it on every Exhaust Fan (T443)
     sources.forEach(ensureSourceId);
     renderSources();
     await captureInto('source_0', await makePhotoFile('t193-src'));
@@ -9212,18 +9213,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 144 (was build 122\'s): APP_BUILD and the header label say 144, the service worker\'s cache is loto-collector-v7.139, Xcode\'s CURRENT_PROJECT_VERSION is 144 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 145 (was build 122\'s): APP_BUILD and the header label say 145, the service worker\'s cache is loto-collector-v7.140, Xcode\'s CURRENT_PROJECT_VERSION is 145 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 144 && !!label && +label[1] === 144, 'the build');
+    want(APP_BUILD === 145 && !!label && +label[1] === 145, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.139', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.140', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 144;,CURRENT_PROJECT_VERSION = 144;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 145;,CURRENT_PROJECT_VERSION = 145;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -14847,12 +14848,23 @@
     const warning = () => (document.getElementById('uq_biohazardWarning') || {}).textContent || '';
     got.options = sel() ? [...sel().options].map(o => o.value).join('|') : 'no question';
     want(got.options === '|' + DATA.biohazard.join('|'), 'the question and its choices');
+    // wilkins' approved labels (loto-web, 2026-11-02)
+    got.labels = sel() ? [...sel().options].slice(1).map(o => o.textContent).join(' | ') : '';
+    want(got.labels === 'None (kitchen, toilet, general exhaust) | AII / TB isolation room exhaust | Aerosol-generating procedure room exhaust (bronchoscopy, autopsy) | Lab exhaust (biosafety cabinet / hood, BSL-2) | Pharmacy hazardous-drug exhaust (USP <800>) | Can\'t tell', 'the approved labels');
     got.blankListed = collectIncompleteFields().includes(MISSING); want(got.blankListed, 'blank: listed');
     setUnitAnswer('biohazard', 'AII/TB');
-    got.aii = warning(); want(/AIRBORNE INFECTIOUS ISOLATION EXHAUST/.test(got.aii), 'AII/TB shows its warning');
+    got.aii = warning();
+    const paras = () => [...document.querySelectorAll('#uq_biohazardWarning p')].map(x => x.textContent);
+    got.aiiParas = paras().map(t => t.slice(0, 60));
+    want(paras().length === 2 && paras()[0].startsWith('CAUTION: This fan exhausts airborne infection isolation (AII / TB) rooms. Shutting it down')
+      && paras()[1].startsWith('CAUTION: The fan wheel, housing interior') && /tuberculocidal disinfectant before contact/.test(paras()[1]),
+      'AII/TB shows its two Section 2 cautions, shutdown first');
     got.aiiListed = collectIncompleteFields().includes(MISSING); want(!got.aiiListed, 'answered: not listed');
     setUnitAnswer('biohazard', 'Hazardous drug');
-    got.cyto = warning(); want(/HAZARDOUS DRUG RESIDUE/.test(got.cyto), 'Hazardous drug shows its own warning');
+    got.cyto = paras().map(t => t.slice(0, 60));
+    want(paras().length === 2 && /pharmacy hazardous-drug compounding \(USP <800>\)/.test(paras()[0]) && /hazardous-drug waste, not regulated medical waste\.$/.test(paras()[1]),
+      'Hazardous drug shows its own cautions');
+    delete got.aii;
     for (const v of ['None', 'Can\'t tell']) {
       setUnitAnswer('biohazard', v);
       got[v] = [warning(), collectIncompleteFields().includes(MISSING)].join('|');
