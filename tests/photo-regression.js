@@ -9913,7 +9913,7 @@
 
   // T290 — the app's rules agree with loto-web's own functions
   async function t290_theAppsRulesAgreeWithLotoWeb() {
-    const N = 'T290 build 122 whole review: the app decides as loto-web\'s own functions do (tests/contract/lotoweb-rules.json, written by make_lotoweb_rules.py from _is_drive_feeder, _is_vfd_device, _is_vfd_dc_bus, names_tag, unit_ids, role_of_location, feeders_for, label_wait.asked, the col 18 / 19 parsers, feeders_cover_drives , medium_kind and valve_state.takes_valve_state): every feeder, drive and DC-bus case, every tag match, every unit\'s Device ID, every transformer role, and for every drive of every unit the same drives — the app never calling a drive fed that loto-web leaves not identified (it may ask more: a second untagged drive on one feeder)';
+    const N = 'T290 build 122 whole review: the app decides as loto-web\'s own functions do (tests/contract/lotoweb-rules.json, written by make_lotoweb_rules.py from _is_drive_feeder, _is_vfd_device, _is_vfd_dc_bus, names_tag, unit_ids, role_of_location, feeders_for, label_wait.asked, the col 18 / 19 parsers, feeders_cover_drives , medium_kind and valve_state.takes_valve_state): every feeder, drive and DC-bus case, every tag match, every unit\'s Device ID, every transformer role, and for every drive of every unit the same drives — the app never calling a drive fed that loto-web leaves not identified (it may ask more: a second untagged drive on one feeder); since build 146, columns 11 and 15 per valve as the app writes them, read back by valve_state.parse_cell with no warning';
     const fails = [], got = { counts: {} };
     const want = (ok, what) => { if (!ok) fails.push(what); };
     let fx = null;
@@ -9973,6 +9973,26 @@
     // save hook asks it (no ID prefix) — the app's one rule for its card, a source change and the export
     check('valveState', fx.valveState || [], c => ({ ok: takesValveState(c.energySource, c.deviceType) === c.takes, what: JSON.stringify([c.energySource, c.deviceType]) + ' app ' + takesValveState(c.energySource, c.deviceType) + ' loto-web ' + c.takes }));
     want((fx.valveState || []).length >= 35, 'the fixture carries loto-web\'s valve-state cases');
+    // A state and Lock Open per valve (build 146): columns 11 and 15 as the app writes each case's
+    // states, and loto-web's valve_state.parse_cell reading them back, with no import warning. Held
+    // either way: as one row answer and, when the valves agree, as a "mixed" list that agrees.
+    // The cases typed by hand (no states) are loto-web's to read: the app never writes them.
+    const valveRow = (q, extra) => Object.assign({ energySource: 'CHW In', deviceType: 'Ball Valve', quantity: q }, extra);
+    check('valveCells', (fx.valveCells || []).filter(c => c.unitValveStates), c => {
+      const u = c.unitValveStates, agree = u.every(x => x === u[0]);
+      const texts = [valveStateSheetText(valveRow(c.quantity, { valveState: 'mixed', unitValveStates: u }))];
+      if (agree) texts.push(valveStateSheetText(valveRow(c.quantity, { valveState: u[0] })));
+      return { ok: texts.every(t => t === c.text) && JSON.stringify(c.parsed) === JSON.stringify(u) && !c.warns,
+        what: 'states ' + JSON.stringify(u) + ': app writes ' + JSON.stringify(texts) + ' (fixture ' + JSON.stringify(c.text) + '), loto-web reads ' + JSON.stringify(c.parsed) + (c.warns ? ' and warns' : '') };
+    });
+    check('lockCells', (fx.lockCells || []).filter(c => c.unitLockOpen), c => {
+      const u = c.unitLockOpen, agree = u.every(x => x === u[0]);
+      const texts = [lockOpenSheetText(valveRow(c.quantity, { lockOpen: true, unitLockOpen: u }))];
+      if (agree) texts.push(lockOpenSheetText(valveRow(c.quantity, u[0] ? { lockOpen: true } : {})));
+      return { ok: texts.every(t => t === c.text) && JSON.stringify(c.parsed) === JSON.stringify(u.map(x => x ? 'yes' : 'no')) && !c.warns,
+        what: 'locks ' + JSON.stringify(u) + ': app writes ' + JSON.stringify(texts) + ' (fixture ' + JSON.stringify(c.text) + '), loto-web reads ' + JSON.stringify(c.parsed) + (c.warns ? ' and warns' : '') };
+    });
+    want((fx.valveCells || []).filter(c => c.unitValveStates).length >= 7 && (fx.lockCells || []).filter(c => c.unitLockOpen).length >= 6, 'the fixture carries loto-web\'s per-valve cell cases');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
   // T291 — a feeder is what loto-web calls one

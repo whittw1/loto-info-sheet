@@ -2665,5 +2665,337 @@
    "takes": false,
    "takesWithCode": false
   }
+ ],
+ "valveCells": [
+  {
+   "unitValveStates": [
+    "normal",
+    "normal"
+   ],
+   "quantity": 2,
+   "text": "",
+   "parsed": [
+    "normal",
+    "normal"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": [
+    "normally_closed",
+    "normally_closed"
+   ],
+   "quantity": 2,
+   "text": "Normally Closed",
+   "parsed": [
+    "normally_closed",
+    "normally_closed"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": [
+    "normal",
+    "normally_closed"
+   ],
+   "quantity": 2,
+   "text": "Normal; Normally Closed",
+   "parsed": [
+    "normal",
+    "normally_closed"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": [
+    "normally_closed",
+    "normal"
+   ],
+   "quantity": 2,
+   "text": "Normally Closed; Normal",
+   "parsed": [
+    "normally_closed",
+    "normal"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": [
+    "normal",
+    "normally_closed",
+    "normal"
+   ],
+   "quantity": 3,
+   "text": "Normal; Normally Closed; Normal",
+   "parsed": [
+    "normal",
+    "normally_closed",
+    "normal"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": [
+    "normally_closed"
+   ],
+   "quantity": 1,
+   "text": "Normally Closed",
+   "parsed": [
+    "normally_closed"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": [
+    "normal"
+   ],
+   "quantity": 1,
+   "text": "",
+   "parsed": [
+    "normal"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "Normally Open",
+   "parsed": [
+    "normal",
+    "normal"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "normally-closed",
+   "parsed": [
+    "normally_closed",
+    "normally_closed"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "NORMALLY_CLOSED; normal",
+   "parsed": [
+    "normally_closed",
+    "normal"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "; Normally Closed",
+   "parsed": [
+    "normal",
+    "normally_closed"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "Normal",
+   "parsed": [
+    "normal",
+    "normal"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "NC",
+   "parsed": [
+    "unknown",
+    "unknown"
+   ],
+   "warns": true
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "Normal; NC",
+   "parsed": [
+    "normal",
+    "unknown"
+   ],
+   "warns": true
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "Normal; Normal; Normally Closed",
+   "parsed": [
+    "normal",
+    "normal"
+   ],
+   "warns": true
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 3,
+   "text": "Normal; Normally Closed",
+   "parsed": [
+    "normal",
+    "normally_closed",
+    "normal"
+   ],
+   "warns": true
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "Closed",
+   "parsed": [
+    "unknown",
+    "unknown"
+   ],
+   "warns": true
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 1,
+   "text": "Normally Closed; Normal",
+   "parsed": [
+    "normally_closed"
+   ],
+   "warns": true
+  }
+ ],
+ "lockCells": [
+  {
+   "unitLockOpen": [
+    false,
+    false
+   ],
+   "quantity": 2,
+   "text": "",
+   "parsed": [
+    "no",
+    "no"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": [
+    true,
+    true
+   ],
+   "quantity": 2,
+   "text": "Yes",
+   "parsed": [
+    "yes",
+    "yes"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": [
+    false,
+    true
+   ],
+   "quantity": 2,
+   "text": "No; Yes",
+   "parsed": [
+    "no",
+    "yes"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": [
+    true,
+    false
+   ],
+   "quantity": 2,
+   "text": "Yes; No",
+   "parsed": [
+    "yes",
+    "no"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": [
+    false,
+    true,
+    false
+   ],
+   "quantity": 3,
+   "text": "No; Yes; No",
+   "parsed": [
+    "no",
+    "yes",
+    "no"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": [
+    true
+   ],
+   "quantity": 1,
+   "text": "Yes",
+   "parsed": [
+    "yes"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": null,
+   "quantity": 2,
+   "text": "yes;",
+   "parsed": [
+    "yes",
+    "no"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": null,
+   "quantity": 2,
+   "text": "Y",
+   "parsed": [
+    "unknown",
+    "unknown"
+   ],
+   "warns": true
+  },
+  {
+   "unitLockOpen": null,
+   "quantity": 2,
+   "text": "No; Y",
+   "parsed": [
+    "no",
+    "unknown"
+   ],
+   "warns": true
+  },
+  {
+   "unitLockOpen": null,
+   "quantity": 2,
+   "text": "No",
+   "parsed": [
+    "no",
+    "no"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": null,
+   "quantity": 3,
+   "text": "No; Yes",
+   "parsed": [
+    "no",
+    "yes",
+    "no"
+   ],
+   "warns": true
+  }
  ]
 }

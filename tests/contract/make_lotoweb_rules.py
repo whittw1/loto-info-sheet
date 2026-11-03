@@ -266,6 +266,38 @@ def unit_answers(rows):
     return out
 
 
+# valve_state.parse_cell (loto-web 2026-11-02): columns 11 "Valve State" and 15 "Lock Open"
+# per unit. Each case: what the app holds (the per-unit states, or None for a cell typed
+# by hand), the row's quantity, the text in the cell, then loto-web's reading of it
+# ("parsed", one entry per unit) and whether its import warns ("warns": unreadable text or
+# a per-unit list whose count isn't the quantity). The app must write exactly `text`
+# for the states it holds, and loto-web must read them back.
+VALVE_CELLS = [
+    # the app's own exports
+    (["normal", "normal"], 2, ""),
+    (["normally_closed", "normally_closed"], 2, "Normally Closed"),
+    (["normal", "normally_closed"], 2, "Normal; Normally Closed"),
+    (["normally_closed", "normal"], 2, "Normally Closed; Normal"),
+    (["normal", "normally_closed", "normal"], 3, "Normal; Normally Closed; Normal"),
+    (["normally_closed"], 1, "Normally Closed"),
+    (["normal"], 1, ""),
+    # text a person might type, read by loto-web only
+    (None, 2, "Normally Open"), (None, 2, "normally-closed"), (None, 2, "NORMALLY_CLOSED; normal"),
+    (None, 2, "; Normally Closed"), (None, 2, "Normal"), (None, 2, "NC"), (None, 2, "Normal; NC"),
+    (None, 2, "Normal; Normal; Normally Closed"), (None, 3, "Normal; Normally Closed"),
+    (None, 2, "Closed"), (None, 1, "Normally Closed; Normal"),
+]
+LOCK_CELLS = [
+    ([False, False], 2, ""),
+    ([True, True], 2, "Yes"),
+    ([False, True], 2, "No; Yes"),
+    ([True, False], 2, "Yes; No"),
+    ([False, True, False], 3, "No; Yes; No"),
+    ([True], 1, "Yes"),
+    (None, 2, "yes;"), (None, 2, "Y"), (None, 2, "No; Y"), (None, 2, "No"), (None, 3, "No; Yes"),
+]
+
+
 def main():
     data = {
         "_about": "Written by tests/contract/make_lotoweb_rules.py from loto-web's own functions; asserted by the app's T290.",
@@ -284,6 +316,12 @@ def main():
         "voltCells": [{"dcBusV": a, "quantity": q, "text": t, "parsed": lw.parse_volts_cell(t, q)} for a, q, t in VOLT_CELLS],
         "valveState": [{"energySource": e, "deviceType": d, "code": c, "takes": bool(vs.takes_valve_state(e, d)),
                         "takesWithCode": bool(vs.takes_valve_state(e, d, c))} for e, d, c in VALVE_STATE],
+        "valveCells": [{"unitValveStates": a, "quantity": q, "text": t,
+                        "parsed": vs.parse_cell("normally_closed", t, q),
+                        "warns": bool(vs.cell_problem("normally_closed", t, q))} for a, q, t in VALVE_CELLS],
+        "lockCells": [{"unitLockOpen": a, "quantity": q, "text": t,
+                       "parsed": vs.parse_cell("lock_open", t, q),
+                       "warns": bool(vs.cell_problem("lock_open", t, q))} for a, q, t in LOCK_CELLS],
     }
     out = os.path.join(HERE, "lotoweb-rules.json")
     with open(out, "w", encoding="utf-8") as f:
