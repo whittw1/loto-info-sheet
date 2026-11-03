@@ -363,6 +363,10 @@ if ('serviceWorker' in navigator) {
   .src-head { display: flex; align-items: center; min-width: 0; }
   .src-head-title { display: block; }
   .src-head-sub { display: block; font-size: 12px; font-weight: 500; color: var(--text-dim); margin-top: 2px; }
+  /* A steam row's pressure (build 149), once it is another than the list's */
+  .src-psi { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-dim); }
+  .src-psi input { width: 5.5em; }
+  .src-psi input[aria-invalid="true"] { border-color: var(--danger); }
   .src-head-btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
   .src-head-btns .src-move { background: var(--card); border: 1px solid var(--border); color: var(--text-dim); padding: 6px 10px; }
   .src-head-btns .src-move:disabled { color: #555; }
@@ -526,7 +530,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b148</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b149</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1236,7 +1240,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 148;
+const APP_BUILD = 149;
 
 // ============================================================================
 // DATA
@@ -1410,6 +1414,37 @@ const SOURCE_DEFAULTS = {
   'Battery 48V DC':     { device: 'Bag', location: 'On Equipment', verification: 'Controls' },
   'Battery 125V DC':    { device: 'Bag', location: 'On Equipment', verification: 'Controls' },
 };
+
+// Steam at the site's own pressure (build 149, wilkins 2026-11-03: "MPS could be
+// 15 PSI in one location but 30 in another"). The list keeps one entry per class
+// at its usual pressure; a steam row's card offers "Change pressure", and the
+// number typed goes into the name itself, "MPS 30 PSI". The name is all loto-web
+// reads: procedure_generator's _steam_name_mapping prints a pressure in the name
+// as "Steam / 30 PSI @ 274 F" (the saturated temperature) unless its Mapping
+// Sheet has a row for that pressure. Nothing else is stored, so the exports and
+// the sheet keep their shape. Whole numbers 1 to 300: 300 is the top of
+// loto-web's steam table (_STEAM_SAT_F), which prints 422 F for anything above.
+const STEAM_PSI_MAX = 300;
+const STEAM_NAME_RE = /^(LPS|MPS|HPS) ([1-9]\d{0,2}) PSI$/;
+// The list's entry per class and its usual pressure, from the list itself:
+// { LPS: 'LPS 10 PSI', … } and { LPS: 10, … }
+const STEAM_LIST_NAMES = {}, STEAM_USUAL_PSI = {};
+DATA.energySources.forEach(s => { const m = STEAM_NAME_RE.exec(s); if (m) { STEAM_LIST_NAMES[m[1]] = s; STEAM_USUAL_PSI[m[1]] = +m[2]; } });
+// { cls, psi } for a steam name the app makes ("MPS 30 PSI"), else null.
+function steamPressureOf(energySource) {
+  const m = STEAM_NAME_RE.exec(String(energySource || ''));
+  return m && +m[2] <= STEAM_PSI_MAX ? { cls: m[1], psi: +m[2] } : null;
+}
+// The list entry a steam name stands for ("MPS 30 PSI" → "MPS 20 PSI"); any other
+// name is its own.
+function listEnergyName(energySource) {
+  const p = steamPressureOf(energySource);
+  return p ? STEAM_LIST_NAMES[p.cls] : energySource;
+}
+// A source's defaults, a typed steam pressure's from its class.
+function sourceDefaultsOf(energySource) {
+  return SOURCE_DEFAULTS[energySource] || SOURCE_DEFAULTS[listEnergyName(energySource)];
+}
 
 // Device → Verification mapping (filtered by device type + energy source temperature variant)
 const DEVICE_VERIFICATION_MAP = {
@@ -1837,7 +1872,7 @@ function sourceExpectsPhoto(src) {
   if (!src || src.duplicate === 'Yes' || src.linkedTo) return false;
   const noPhotoFromKind = isPhotoToggleable(src.energySource)
     ? !!src.noPhoto
-    : !!(src.noPhoto || (SOURCE_DEFAULTS[src.energySource] && SOURCE_DEFAULTS[src.energySource].noPhoto));
+    : !!(src.noPhoto || (sourceDefaultsOf(src.energySource) && sourceDefaultsOf(src.energySource).noPhoto));
   return !noPhotoFromKind || shouldAllowPhotoForSource(getEquipType(), src.energySource);
 }
 // A photo slot is taken when it holds a stored photo (not one whose save failed).
@@ -2012,9 +2047,10 @@ function templateSourceOverride(table, energySource) {
   const tmpl = (typeof getTemplate === 'function') ? getTemplate() : '';
   const map = table[tmpl];
   if (!map) return null;
+  const es = listEnergyName(energySource);   // a typed steam pressure takes its list entry's (build 149)
   let best = null, bestLen = 0;
   for (const [prefix, list] of Object.entries(map)) {
-    if (energySource.startsWith(prefix) && prefix.length > bestLen) { best = list; bestLen = prefix.length; }
+    if (es.startsWith(prefix) && prefix.length > bestLen) { best = list; bestLen = prefix.length; }
   }
   return best;
 }
@@ -3362,7 +3398,7 @@ function takeNewSourceDefaults(src, before) {
   const setCode = (code) => { src.verification = code; delete src._drainDefault; };
   const setDevice = (d) => { src.deviceType = d; delete src._customDevice; };
   const oldDevice = String(src.deviceType || '');
-  const def = SOURCE_DEFAULTS[es] || {}, wasDef = SOURCE_DEFAULTS[was] || {};
+  const def = sourceDefaultsOf(es) || {}, wasDef = sourceDefaultsOf(was) || {};
   if (wasDef.device && !isValveDevice(wasDef.device) && oldDevice === wasDef.device && def.device !== wasDef.device) setDevice(def.device || '');
   if (wasDef.verification && String(src.verification || '').trim() === wasDef.verification
       && !getFilteredVerifications(src.deviceType, es).includes(wasDef.verification)) setCode(def.verification || '');
@@ -3755,6 +3791,98 @@ function offeredEnergySources() {
   // Damper Actuator only where the unit is asked about dampers (build 120)
   if (!damperAskedOnForm()) list = list.filter(s => s !== 'Damper Actuator');
   return list;
+}
+// …with a steam row's typed pressure in its class's place (build 149): the list
+// reads "MPS 30 PSI" where "MPS 20 PSI" stands.
+function energyChoicesFor(src) {
+  const list = offeredEnergySources();
+  const mine = src && !src._customEnergy && steamPressureOf(src.energySource) ? src.energySource : '';
+  return mine ? list.map(s => s === listEnergyName(mine) ? mine : s) : list;
+}
+
+// ---- Steam pressure (build 149) -----------------------------------------------
+// A steam row at its class's usual pressure shows nothing new: "Change steam
+// pressure" is in its More menu (wilkins' rule: nothing on a row that doesn't
+// use it). The box shows once the pressure is another. It saves as it is typed
+// and is never redrawn meanwhile (as the MCC ID box): a tap on Save & New doesn't
+// always take the focus on the iPad. Text that is no whole number from 1 to 300
+// keeps the pressure the row had, and says so as it is typed, not when the box is
+// left (review: a save or a redraw may come first, and "2.5" was read as 25).
+function steamPressureAtUsual(src) {
+  const p = src && !src._customEnergy && steamPressureOf(src.energySource);
+  return !!p && p.psi === STEAM_USUAL_PSI[p.cls];
+}
+function steamPressureControl(src, i, open) {
+  const p = src && !src._customEnergy && steamPressureOf(src.energySource);
+  if (!p) return '';
+  const usual = STEAM_USUAL_PSI[p.cls];
+  if (!open && p.psi === usual) return html`<span id="src_psi_${i}" hidden></span>`;
+  return html`<div class="src-psi" id="src_psi_${i}">
+    <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" id="src_psi_in_${i}" value="${p.psi}" data-was="${src.energySource}"
+      aria-label="${p.cls} pressure (PSI)" oninput="typeSteamPressure(${i},this)" onchange="commitSteamPressure(${i},this)">
+    <span>PSI${p.psi !== usual ? html` &middot; usual ${usual}` : ''}</span></div>`;
+}
+function openSteamPressure(index) {
+  const slot = document.getElementById('src_psi_' + index);
+  if (!sources[index] || !slot) return;
+  const open = document.getElementById('src_psi_in_' + index);
+  if (open) { open.focus(); return; }   // the box is up already
+  const t = document.createElement('div');
+  t.innerHTML = String(steamPressureControl(sources[index], index, true));
+  if (!t.firstElementChild) return;
+  slot.replaceWith(t.firstElementChild);
+  const el = document.getElementById('src_psi_in_' + index);
+  if (el) { el.focus(); el.select(); }
+}
+// Names loto-web prints at another pressure, which the box never makes: its
+// Mapping Sheet keeps "MPS 50 PSI" at "30 PSI @ 275 F" for the sources recorded
+// under that name before build 149 (wilkins 2026-08-12; kept 2026-11-03, "Leave
+// it"). T290 checks loto-web's answer for each typed name against this list.
+const STEAM_NAMES_PRINTED_OTHERWISE = { 'MPS 50 PSI': '30 PSI' };
+// The name a box's text asks for ("MPS 50 PSI"), or '' for no whole number.
+function steamNameAskedIn(cls, text) {
+  const t = String(text || '').trim();
+  return /^\d{1,3}$/.test(t) ? cls + ' ' + (+t) + ' PSI' : '';
+}
+// The steam name a box's text makes, or '' when it makes none: anything but a
+// whole number from 1 to 300, or a name loto-web prints otherwise.
+function steamNameFromBox(cls, text) {
+  const name = steamNameAskedIn(cls, text);
+  return steamPressureOf(name) && !STEAM_NAMES_PRINTED_OTHERWISE[name] ? name : '';
+}
+function steamPressureRefusedNote(kept, cls, text) {
+  const asked = steamNameAskedIn(cls, text), other = STEAM_NAMES_PRINTED_OTHERWISE[asked];
+  if (other) return 'loto-web prints ' + asked + ' as ' + other + ' (the office keeps that name for it) \u2014 kept ' + kept + '. Tell the office this line is ' + steamPressureOf(asked).psi + ' PSI.';
+  return 'Steam pressure is a whole number from 1 to ' + STEAM_PSI_MAX + ' PSI \u2014 kept ' + kept;
+}
+function typeSteamPressure(index, el) {
+  const src = sources[index], p = src && steamPressureOf(src.energySource);
+  if (!p) return;
+  const typed = steamNameFromBox(p.cls, el.value);
+  const refused = !typed && String(el.value).trim() !== '';   // blank: still being typed
+  el.setAttribute('aria-invalid', refused ? 'true' : 'false');
+  const name = typed || el.dataset.was;
+  if (refused) showToast(steamPressureRefusedNote(steamPressureOf(name) ? name : src.energySource, p.cls, el.value), true);
+  if (!steamPressureOf(name) || name === src.energySource) return;
+  markSourceEdited(index);
+  src.energySource = name;
+  autoSaveCurrent();
+}
+function commitSteamPressure(index, el) {
+  const src = sources[index], p = src && steamPressureOf(src.energySource);
+  if (!p) return;
+  const name = steamNameFromBox(p.cls, el.value);
+  const next = name || (steamPressureOf(el.dataset.was) ? el.dataset.was : src.energySource);
+  // a refused text was told as it was typed; a box left blank is told now
+  if (!name && el.getAttribute('aria-invalid') !== 'true') showToast(steamPressureRefusedNote(next, p.cls, el.value), true);
+  if (next !== src.energySource) { markSourceEdited(index); src.energySource = next; autoSaveCurrent(); }
+  const now = steamPressureOf(src.energySource), usual = STEAM_USUAL_PSI[now.cls];
+  el.value = now.psi;
+  el.dataset.was = src.energySource;
+  el.setAttribute('aria-invalid', 'false');
+  const note = el.nextElementSibling;   // "PSI · usual 20", as the card draws it
+  if (note) note.textContent = 'PSI' + (now.psi !== usual ? ' \u00b7 usual ' + usual : '');
+  refreshSourceDependents(index);
 }
 
 // ---- Drive feeder -------------------------------------------------------------
@@ -9014,6 +9142,7 @@ function buildSourceCard(src, i) {
       ` : '';
       const isFirstExp = i === 0;
       const isLastExp = i === sources.length - 1;
+      const energyChoices = energyChoicesFor(src);   // a typed steam pressure in its class's place (build 149)
       const role = sourceRoleOf(src);
       // The tech's Duplicate answer, as tap buttons under the photo (build 138: a
       // dropdown beside Quantity, far from the photo it is about).
@@ -9035,6 +9164,7 @@ function buildSourceCard(src, i) {
                 <button type="button" onclick="closeSrcMenus();showLinkDialog(${i})">${src.linkedTo ? '🔗 Linked — change or unlink' : '🔗 Link to another unit’s source'}</button>
                 <button type="button" onclick="closeSrcMenus();showCopySourceDialog(${i})" title="Copy source config from a saved entry">Copy from a saved unit&hellip;</button>
                 <button type="button" onclick="closeSrcMenus();duplicateSource(${i})">Duplicate this source</button>
+                ${steamPressureAtUsual(src) ? html`<button type="button" onclick="closeSrcMenus();openSteamPressure(${i})">Change steam pressure</button>` : ''}
                 ${src.quantity >= 2 ? html`<button type="button" onclick="closeSrcMenus();splitSource(${i})" title="Pull one valve out as its own quantity-1 source (own photo + valve state)">Split 1 out</button>` : ''}
                 <button type="button" class="danger" onclick="closeSrcMenus();removeSource(${i})">Remove this source</button>
               </div>
@@ -9052,10 +9182,11 @@ function buildSourceCard(src, i) {
                 <label>Energy Source</label>
                 <select onchange="handleEnergySourceChange(${i},this.value)" id="src_energy_${i}">
                   <option value="">-- Select --</option>
-                  ${offeredEnergySources().map(s => html`<option value="${s}" ${src.energySource===s&&!src._customEnergy?'selected':''}>${s}</option>`)}
-                  ${src.energySource && !src._customEnergy && !offeredEnergySources().includes(src.energySource) ? html`<option value="${src.energySource}" selected>${src.energySource}</option>` : ''}
+                  ${energyChoices.map(s => html`<option value="${s}" ${src.energySource===s&&!src._customEnergy?'selected':''}>${s}</option>`)}
+                  ${src.energySource && !src._customEnergy && !energyChoices.includes(src.energySource) ? html`<option value="${src.energySource}" selected>${src.energySource}</option>` : ''}
                   <option value="** Custom Energy **" ${src._customEnergy?'selected':''}>Custom...</option>
                 </select>
+                ${steamPressureControl(src, i)}
               </div>
               ${src._customEnergy ? html`<div class="form-group" id="customEnergyGroup_${i}">
                 <label>Custom Energy Source</label>
@@ -9342,7 +9473,12 @@ function refreshSourceDependents(index) {
     }
   };
   const swapNode = (a, b) => { if (a && b && a.outerHTML !== b.outerHTML) a.replaceWith(b); };
+  swapInner('src_energy_' + index);   // a typed steam pressure names its list entry (build 149)
   swapInner('src_device_' + index);
+  // …and the More menu's items follow the row (build 149: "Change steam pressure"
+  // only while the row is at its class's usual pressure); it is shut when used
+  const ma = live.querySelector('#srcMore_' + index + ' .src-more-menu'), mb = fresh.querySelector('#srcMore_' + index + ' .src-more-menu');
+  if (ma && mb && ma.innerHTML !== mb.innerHTML) ma.innerHTML = mb.innerHTML;
   // Verification: the same <select> → its options; a different control (the
   // drain / gauge boxes ⇄ the list) → the whole field, which is not being typed in
   const groupOf = (root) => { const el = root.querySelector('#src_ver_' + index) || root.querySelector('.simple-verif-check'); return el ? el.closest('.form-group') : null; };
@@ -9387,8 +9523,8 @@ function updateSource(index, field, value) {
   sources[index][field] = value;
   if (field === 'deviceId') refreshAfterRetag(syncFeederTags(sources), index);   // a retagged drive renames itself in its feeder (build 122)
   if (field === 'verification') delete sources[index]._drainDefault;   // the tech picked the code
-  if (field === 'energySource' && value && SOURCE_DEFAULTS[value]) {
-    const defaults = SOURCE_DEFAULTS[value];
+  if (field === 'energySource' && value && sourceDefaultsOf(value)) {
+    const defaults = sourceDefaultsOf(value);
     if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
     if (!sources[index].location) sources[index].location = value === 'Kinetic' ? kineticDefaultLocation() : defaults.location;
     if (!sources[index].verification) { sources[index].verification = defaults.verification; noteDefaultDrain(sources[index]); }
@@ -10049,7 +10185,7 @@ const CONDENSATE_AUTO_EQUIP = ['Air Handler','Heat Exchanger','Domestic Water He
 function applyNoPhotoDefault(index) {
   const src = sources[index];
   if (!src) return;
-  const d = SOURCE_DEFAULTS[src.energySource];
+  const d = sourceDefaultsOf(src.energySource);
   const hasPhoto = !!(photos['source_' + index] && photos['source_' + index].dbKey);
   src.noPhoto = !!(d && d.noPhoto && !shouldAllowPhotoForSource(getEquipType(), src.energySource)) && !hasPhoto;
 }
@@ -10093,8 +10229,8 @@ function handleEnergySourceChange(index, value) {
       }
     }
     // Auto-fill defaults for special energy sources
-    if (value && SOURCE_DEFAULTS[value]) {
-      const defaults = SOURCE_DEFAULTS[value];
+    if (value && sourceDefaultsOf(value)) {
+      const defaults = sourceDefaultsOf(value);
       if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
       if (!sources[index].location) sources[index].location = value === 'Kinetic' ? kineticDefaultLocation() : defaults.location;
       if (!sources[index].verification) { sources[index].verification = defaults.verification; noteDefaultDrain(sources[index]); }
