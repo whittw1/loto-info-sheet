@@ -526,7 +526,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b147</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b148</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1236,7 +1236,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 147;
+const APP_BUILD = 148;
 
 // ============================================================================
 // DATA
@@ -7595,7 +7595,7 @@ function applyTemplate(val) {
     //  - Templates whose voltage is fixed by design (Air Dryer = 120V plug)
     let voltageAsked = false;
     if (!EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT.has(equipType) && !TEMPLATE_SKIPS_VOLTAGE_PROMPT.has(val)) {
-      const hasAutoElectrical = sources.some(s => s.auto && /^Electrical(?:\s|$)/.test(s.energySource || ''));
+      const hasAutoElectrical = sources.some(isAutoElectricalRow);
       if (hasAutoElectrical && getElectricalVoltageOptions(val).length) {
         promptForTemplateVoltage(val);
         voltageAsked = true;
@@ -7764,7 +7764,7 @@ function applyTemplateVoltageChoice(voltage) {
   // voltage. Non-auto sources (user-added) are left alone.
   let updated = 0;
   for (const src of sources) {
-    if (src.auto && /^Electrical(?:\s|$)/.test(src.energySource || '')) {
+    if (isAutoElectricalRow(src)) {
       src.energySource = 'Electrical ' + voltage;
       updated++;
     }
@@ -7821,7 +7821,7 @@ function promptForElectricalCount(template, max) {
   overlay.id = 'electricalCountOverlay';
   overlay.onclick = (e) => { if (e.target === overlay) closeElectricalCountPrompt(); };  // dismiss = keep 1
   const buttons = [];
-  for (let i = 1; i <= max; i++) buttons.push(html`<button class="btn btn-primary" onclick="applyElectricalCountChoice(${i})" style="flex:1;padding:16px;font-size:20px;">${i}</button>`);
+  for (let i = 1; i <= max; i++) buttons.push(html`<button class="btn btn-primary" onclick="pickElectricalCount(${i})" style="flex:1;padding:16px;font-size:20px;">${i}</button>`);
   const hint = max > 2 ? 'e.g. duplex / triplex / quadruplex units' : 'e.g. dual supply / return fans';
   const own = TEMPLATE_ELECTRICAL_COUNT_PROMPT[template];
   overlay.innerHTML = html`
@@ -7838,46 +7838,101 @@ function closeElectricalCountPrompt() {
   const o = document.getElementById('electricalCountOverlay');
   if (o) o.remove();
 }
+// The template's own Electrical row(s): what the voltage and count prompts set.
+function isAutoElectricalRow(s) { return !!s && !!s.auto && /^Electrical(?:\s|$)/.test(s.energySource || ''); }
+// An AHU's drives together (build 148, wilkins 2026-11-03): the fans' VFDs
+// often sit side by side, and then they are one line of Quantity 2, not two
+// lines. A count of 2+ on an AHU whose drive row is a VFD asks which; any other
+// count applies at once. The Kinetic rows stay one per fan either way. loto-web
+// already reads a Qty 2 VFD line as two drives (an E row, an ES row and a
+// Device ID position each), so nothing changes there.
+function pickElectricalCount(n) {
+  const line = sources.find(isAutoElectricalRow);
+  if (n > 1 && /^AHU\b/.test(getTemplate()) && line && isDriveDevice(line.deviceType)) promptDrivesTogether(n);
+  else applyElectricalCountChoice(n);
+}
+function promptDrivesTogether(n) {
+  closeElectricalCountPrompt();
+  closeDrivesTogetherPrompt();
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'drivesTogetherOverlay';
+  overlay.onclick = (e) => { if (e.target === overlay) applyElectricalCountChoice(n); };  // dismiss = separate lines, as before build 148
+  overlay.innerHTML = html`
+    <div class="dialog" style="max-width:360px;">
+      <h3 style="margin:0 0 6px 0;color:var(--accent);">Drives Together?</h3>
+      <p style="margin:0 0 16px 0;color:var(--text-dim);font-size:14px;">Are the ${n} VFDs together in one place? Together puts them on one line, Quantity ${n}. The ${n} Kinetic (fan) sources stay separate either way.</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <button class="btn btn-primary" onclick="applyElectricalCountChoice(${n}, { together: true })" style="padding:12px;font-size:16px;">Together: 1 line, Qty ${n}</button>
+        <button class="btn btn-primary" onclick="applyElectricalCountChoice(${n})" style="padding:12px;font-size:16px;">Separate: ${n} lines</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+}
+function closeDrivesTogetherPrompt() {
+  const o = document.getElementById('drivesTogetherOverlay');
+  if (o) o.remove();
+}
 // Ensure exactly n AUTO electrical sources (duplicates the existing one).
 // Usually runs at fresh-template setup, but photos must follow their sources
 // whenever it runs: inserts/removals go through rebindSourcePhotos, and a
 // source that already has a photo is never removed to reach the count.
-function applyElectricalCountChoice(n) {
+// opts.together (build 148): the n drives on ONE line, its Quantity n.
+function applyElectricalCountChoice(n, opts) {
   closeElectricalCountPrompt();
-  const isAutoElec = s => s.auto && /^Electrical(?:\s|$)/.test(s.energySource || '');
-  const current = sources.filter(isAutoElec).length;
+  closeDrivesTogetherPrompt();
+  const together = !!(opts && opts.together) && n > 1;
+  const current = sources.filter(isAutoElectricalRow).length;
   if (current === 0) return;
   const prev = sources.slice();
   const photographed = sourcesWithPhotos();
+  // A Quantity this prompt set (_drivesTogether) goes back to 1 before the line
+  // is copied or stands alone; a Quantity the user picked stays (updateSource).
+  const line1 = sources.find(isAutoElectricalRow);
+  if (line1._drivesTogether) { if (sourceQty(line1) > 1) line1.quantity = 1; delete line1._drivesTogether; }
+  const lines = together ? 1 : n;
   let blocked = 0;
-  if (n > current) {
-    const base = sources.find(isAutoElec);
+  if (lines > current) {
     let lastIdx = -1;
-    sources.forEach((s, i) => { if (isAutoElec(s)) lastIdx = i; });
+    sources.forEach((s, i) => { if (isAutoElectricalRow(s)) lastIdx = i; });
     const adds = [];
-    for (let k = 0; k < (n - current); k++) {
-      const c = countCopyOf(base);
+    for (let k = 0; k < (lines - current); k++) {
+      const c = countCopyOf(line1);
       adds.push(c);
     }
     sources.splice(lastIdx + 1, 0, ...adds);
-  } else if (n < current) {
-    let toRemove = current - n;
-    const first = sources.findIndex(isAutoElec);   // the first one stays (build 113)
+  } else if (lines < current) {
+    let toRemove = current - lines;
+    const first = sources.findIndex(isAutoElectricalRow);   // the first one stays (build 113)
     for (let i = sources.length - 1; i > first && toRemove > 0; i--) {
-      if (isAutoElec(sources[i]) && countMayRemove(sources[i], photographed)) { sources.splice(i, 1); toRemove--; }
+      if (isAutoElectricalRow(sources[i]) && countMayRemove(sources[i], photographed)) { sources.splice(i, 1); toRemove--; }
     }
     blocked = toRemove;
   }
+  // Drives together: the one line counts them. Not while a kept line still
+  // stands beside it, which would count a drive twice.
+  if (together && !blocked) { line1.quantity = n; line1._drivesTogether = true; }
   // An AHU's count is its fans (build 112, loto-web 2026-10-18): one Kinetic
   // row per fan, as loto-web's pre-QC wants a K row for every drive. The
   // second reads "At Return Fan" (kineticDefaultLocation).
   const fans = /^AHU\b/.test(getTemplate()) ? matchAutoKineticRows(n, photographed) : null;
   rebindSourcePhotos(prev);
+  // a photo's marks name one device per unit (build 95)
+  const marksNote = reconcileSourceMarks(sources.indexOf(line1), true);
   renderSources();
   autoSaveCurrent();
-  if (blocked) showToast(`Kept ${blocked} electrical source${blocked > 1 ? 's' : ''} you filled in or photographed — remove it manually if it doesn't apply`, true);
+  // Together but a kept line stands beside it (build 148 review): it says the
+  // drives stayed apart, so removing that line never leaves one drive of two.
+  if (blocked) showToast(`Kept ${blocked} electrical source${blocked > 1 ? 's' : ''} you filled in or photographed — ` +
+    (together ? `the drives stay on separate lines; to put them on one line, remove it and set Quantity to ${n}` : `remove it manually if it doesn't apply`), true);
   else if (fans && fans.blocked) showToast(`Kept ${fans.blocked} Kinetic source${fans.blocked > 1 ? 's' : ''} you filled in or photographed — remove it manually if it doesn't apply`, true);
-  else showToast(fans && fans.rows ? `${n} fan${n > 1 ? 's' : ''}: ${n} electrical and ${n} Kinetic source${n > 1 ? 's' : ''}` : `${n} electrical source${n > 1 ? 's' : ''}`, false);
+  else {
+    const fanRows = fans && fans.rows ? `${n} fan${n > 1 ? 's' : ''}: ` : '';
+    const what = together ? `1 VFD line (Qty ${n})` : `${n} electrical` + (fanRows ? '' : ` source${n > 1 ? 's' : ''}`);
+    showToast(fanRows + what + (fanRows ? ` and ${n} Kinetic source${n > 1 ? 's' : ''}` : '') + (marksNote ? '\n' + MARKS_CLEARED_NOTE : ''), !!marksNote);
+  }
 }
 // The count prompt's copy of a row: another disconnect / fan, so its own row and
 // id, and nothing the user typed on the first — no tag, no edit mark (build 113:
@@ -7894,6 +7949,7 @@ function countCopyOf(base) {
   delete c.poweredBy;     // …nor traced to its power (build 130)
   delete c.labelWait; delete c.dcBusV;   // …nor its label (build 121)
   delete c.driveIsolates;   // …nor its drive's disconnect (build 122)
+  delete c._drivesTogether;   // …nor the count prompt's Quantity (build 148)
   return c;
 }
 // A lower count removes only rows that hold nothing of the user's (build 113):
@@ -8891,12 +8947,13 @@ function buildSourceCard(src, i) {
       const autoBadge = src.auto ? raw('<span class="auto-badge">AUTO</span>') : '';
       const isFirst = i === 0;
       const isLast = i === sources.length - 1;
+      const qty = sourceQty(src);   // Quantity 2+ reads "×2" (build 148)
       card.innerHTML = html`
         <div class="source-summary" onclick="expandSource(${i})">
           <span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
           <div class="source-summary-text">
             <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${valveStateBadgeText(src) ? html` <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">${valveStateBadgeText(src)}</span>` : ''}${photoData && photoData.dbKey && fittingMarks(photoData, src).length ? raw(' <span title="Valve location marked">&#128205;</span>') : ''}${src.linkedTo ? raw(' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>') : ''}${summaryLinkChips(src)}
-            ${src.deviceType ? html` &mdash; ${src.deviceType}` : ''}${src.deviceId ? html` <span style="color:#7eb8da;">(${src.deviceId})</span>` : ''}
+            ${src.deviceType ? html` &mdash; ${src.deviceType}` : ''}${qty > 1 ? html` <span class="src-qty" style="font-weight:700;">&times;${qty}</span>` : ''}${src.deviceId ? html` <span style="color:#7eb8da;">(${src.deviceId})</span>` : ''}
             ${src.location ? html` &mdash; ${src.location}` : ''}
             ${src.detail ? html` <span style="color:var(--accent);font-weight:600;font-family:monospace;">(${src.detail})</span>` : ''}
             ${src.linkedTo ? html`<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">→ ${src.linkedTo.equipName} / ${src.linkedTo.sourceLabel}</div>` : ''}
@@ -9364,6 +9421,7 @@ function updateSource(index, field, value) {
   if (field === 'quantity') {
     // The user has taken manual control of the count — never auto-reset it later.
     delete sources[index]._autoQty2;
+    delete sources[index]._drivesTogether;   // build 148
     reconcileSourceMarks(index);
     // …each valve keeps its own state; a lower count says what it dropped (build 146)
     const droppedNote = settleValveUnits(sources[index]);
@@ -9885,6 +9943,7 @@ function splitSource(index) {
   // Original keeps the remaining valves
   src.quantity = qty - 1;
   src.userEdited = true;
+  delete src._drivesTogether;   // the user's count now (build 148)
 
   // New quantity-1 source, copied from the original but as its own photographable valve
   const newSrc = JSON.parse(JSON.stringify(src));

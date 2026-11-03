@@ -132,6 +132,9 @@
 //   T457      build 146 review: an automatic In/Out count, the last locked valve tapped off, Copy Source's count
 //   T458      build 147 (wilkins 2026-11-02, a Danfoss bypass drive): the VFD row's "SW (Drive/Off/Bypass) + Button
 //             (H/O/A) - VFD" verification, offered on VFD rows only, saved and exported word for word
+//   T459      build 148 (wilkins 2026-11-03): an AHU's 2 fans whose VFDs sit together — "Drives Together?" after
+//             the count, one VFD line of Qty 2 beside 2 Kinetic rows, saved and exported; Separate / tap outside as before;
+//             a closed card of Quantity 2+ reads "×2"
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -334,7 +337,7 @@
   // Close every prompt overlay a template/type change may have opened
   // (voltage, electrical count, template pick) without applying a choice.
   function closeAllPrompts() {
-    ['templateVoltageOverlay', 'electricalCountOverlay', 'templatePromptOverlay', 'voltageOverlay', 'templateConfirmOverlay']
+    ['templateVoltageOverlay', 'electricalCountOverlay', 'drivesTogetherOverlay', 'templatePromptOverlay', 'voltageOverlay', 'templateConfirmOverlay']
       .forEach(id => { const o = document.getElementById(id); if (o) o.remove(); });
   }
 
@@ -9221,18 +9224,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 147 (was build 122\'s): APP_BUILD and the header label say 147, the service worker\'s cache is loto-collector-v7.142, Xcode\'s CURRENT_PROJECT_VERSION is 147 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 148 (was build 122\'s): APP_BUILD and the header label say 148, the service worker\'s cache is loto-collector-v7.143, Xcode\'s CURRENT_PROJECT_VERSION is 148 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 147 && !!label && +label[1] === 147, 'the build');
+    want(APP_BUILD === 148 && !!label && +label[1] === 148, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.142', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.143', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 147;,CURRENT_PROJECT_VERSION = 147;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 148;,CURRENT_PROJECT_VERSION = 148;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -15388,6 +15391,137 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T459 — an AHU's drives together on one line (build 148)
+  async function t459_anAhusDrivesTogetherAreOneLine() {
+    const N = 'T459 build 148 (wilkins: an AHU\'s two VFDs often sit together, one line of Qty 2): after 2 on an AHU\'s count, "Drives Together?" asks; Together leaves ONE VFD line, Quantity 2, beside 2 Kinetic rows (supply and return fan), its closed card reads ×2, saved and on the sheet / entries.json as Qty 2; Separate and a tap outside give 2 lines as before; a re-pick undoes the Quantity it set but never one the user picked; Together beside a filled-in line keeps the drives apart and says so; a count of 1, a non-VFD drive row and a vacuum system do not ask';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const elec = () => sources.filter(x => x.auto && /^Electrical/.test(x.energySource || ''));
+    const kin = () => sources.filter(x => x.energySource === 'Kinetic');
+    const shape = () => elec().map(x => x.deviceType + ' x' + sourceQty(x)).join(',') + ' | ' + kin().map(x => x.location).join(',');
+    const asked = () => !!document.getElementById('drivesTogetherOverlay');
+    const ahu = async (name) => {
+      fillFormNoSources(name);
+      document.getElementById('equipType').value = 'Air Handler';
+      filterTemplateDropdown('Air Handler');
+      await withDialogs({ confirm: true }, async () => {
+        pickTemplate('AHU - Steam');
+        if (document.getElementById('templateVoltageOverlay')) applyTemplateVoltageChoice('480V');
+      });
+    };
+    const tap = (label) => {
+      const o = document.getElementById('drivesTogetherOverlay');
+      const b = o && [...o.querySelectorAll('button')].find(x => x.textContent.startsWith(label));
+      if (b) b.click();
+      return !!b;
+    };
+    // the count prompt's own "2" button asks
+    await ahu('AHU-459');
+    const two = [...document.querySelectorAll('#electricalCountOverlay button')].find(b => b.textContent.trim() === '2');
+    got.countButton = !!two;
+    if (two) two.click();
+    got.asked = asked();
+    want(got.countButton && got.asked, 'the count prompt\'s 2 did not ask (button ' + got.countButton + ')');
+    got.together = await withToasts(async () => { want(tap('Together'), 'no Together button'); });
+    got.togetherShape = shape();
+    want(got.togetherShape === 'VFD x2 | At Supply Fan,At Return Fan', 'Together ' + got.togetherShape);
+    // the closed card says ×2 on the drive line, nothing on a Quantity 1 row
+    sources.forEach(x => { x.collapsed = true; });
+    renderSources();
+    got.closed = [...document.querySelectorAll('#sourcesContainer .source-card')].map(c => { const q = c.querySelector('.src-qty'); return q ? q.textContent.trim() : '-'; }).join(',');
+    want(got.closed === sources.map(x => sourceQty(x) > 1 ? '\u00d72' : '-').join(',') && got.closed.split(',').filter(t => t === '\u00d72').length === 1, 'the closed cards ' + got.closed);
+    want(!asked() && !document.getElementById('electricalCountOverlay'), 'a prompt stayed open');
+    want(got.together.some(m => /1 VFD line \(Qty 2\) and 2 Kinetic/.test(m)), 'toast ' + JSON.stringify(got.together));
+    // saved and exported as one line of Quantity 2
+    updateSource(sources.indexOf(elec()[0]), 'deviceId', 'VFD-SF; VFD-RF');
+    const A = saveEntry();
+    got.saved = ((A && A.sources) || []).filter(x => /^Electrical/.test(x.energySource || '')).map(x => x.deviceType + ' x' + x.quantity).join(',');
+    want(got.saved === 'VFD x2', 'saved ' + got.saved);
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (zip) {
+      const u = await unzipExport(zip.blob);
+      const je = jsonEntryFor(u.entriesJson, A);
+      got.json = je ? (je.sources || []).filter(x => /^Electrical/.test(x.energySource || '')).map(x => x.deviceType + ' x' + x.quantity + ' ' + x.deviceId).join(',') : null;
+      want(got.json === 'VFD x2 VFD-SF; VFD-RF', 'entries.json ' + got.json);
+      const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+      if (xpath) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        const rows = [];
+        wb.worksheets[0].eachRow(row => { if (String(row.getCell(1).value || '') === 'Electrical 480V') rows.push(String(row.getCell(2).value) + ' x' + String(row.getCell(4).value)); });
+        got.sheet = rows.join(',');
+        want(got.sheet === 'VFD x2', 'sheet ' + got.sheet);
+      } else fails.push('no XLSX in the ZIP');
+    } else fails.push('no zip: ' + confirms.join(' | '));
+    // Separate, and a tap outside, as before build 148
+    await resetAppState();
+    await ahu('AHU-459b');
+    pickElectricalCount(2);
+    tap('Separate');
+    got.separate = shape();
+    want(got.separate === 'VFD x1,VFD x1 | At Supply Fan,At Return Fan', 'Separate ' + got.separate);
+    await resetAppState();
+    await ahu('AHU-459c');
+    pickElectricalCount(2);
+    const o = document.getElementById('drivesTogetherOverlay');
+    if (o) o.onclick({ target: o });
+    got.outside = shape();
+    want(!asked() && got.outside === 'VFD x1,VFD x1 | At Supply Fan,At Return Fan', 'tap outside ' + got.outside);
+    // a re-pick undoes the Quantity the prompt set…
+    await resetAppState();
+    await ahu('AHU-459d');
+    closeAllPrompts();
+    applyElectricalCountChoice(2, { together: true });
+    applyElectricalCountChoice(2);
+    got.repickSeparate = shape();
+    applyElectricalCountChoice(2, { together: true });
+    got.repickTogether = shape();
+    applyElectricalCountChoice(1);
+    got.repickOne = shape();
+    want(got.repickSeparate === 'VFD x1,VFD x1 | At Supply Fan,At Return Fan' && got.repickTogether === 'VFD x2 | At Supply Fan,At Return Fan'
+      && got.repickOne === 'VFD x1 | At Supply Fan', 're-pick ' + [got.repickSeparate, got.repickTogether, got.repickOne].join(' / '));
+    // …but never one the user picked
+    applyElectricalCountChoice(2, { together: true });
+    updateSource(sources.indexOf(elec()[0]), 'quantity', 3);
+    applyElectricalCountChoice(1);
+    got.userQty = shape();
+    want(got.userQty === 'VFD x3 | At Supply Fan', 'the user\'s Quantity ' + got.userQty);
+    // Together beside a filled-in line it may not remove: the drives stay apart, and
+    // the toast says so (removing that line must not leave one drive of two)
+    await resetAppState();
+    await ahu('AHU-459f');
+    closeAllPrompts();
+    applyElectricalCountChoice(2);
+    updateSource(sources.indexOf(elec()[1]), 'deviceId', 'VFD-RF');
+    got.keptToasts = await withToasts(async () => { applyElectricalCountChoice(2, { together: true }); });
+    got.kept = shape();
+    want(got.kept === 'VFD x1,VFD x1 | At Supply Fan,At Return Fan' && got.keptToasts.some(m => /drives stay on separate lines.*Quantity to 2/.test(m)),
+      'Together beside a kept line ' + got.kept + ' ' + JSON.stringify(got.keptToasts));
+    // no question: a count of 1, a drive row that is not a VFD, a vacuum system
+    await resetAppState();
+    await ahu('AHU-459e');
+    closeAllPrompts();
+    pickElectricalCount(1);
+    got.one = [asked(), shape()];
+    closeAllPrompts();
+    updateSource(sources.indexOf(elec()[0]), 'deviceType', 'Disconnect');
+    pickElectricalCount(2);
+    got.disconnect = [asked(), shape()];
+    closeAllPrompts();
+    await resetAppState();
+    fillFormNoSources('MV-459');
+    document.getElementById('equipTemplate').value = 'Medical Vacuum';
+    await withDialogs({ confirm: true }, async () => { handleTemplateChange(); });
+    closeAllPrompts();
+    pickElectricalCount(2);
+    got.vacuum = [asked(), elec().length];
+    closeAllPrompts();
+    want(got.one.join() === 'false,VFD x1 | At Supply Fan', 'a count of 1 ' + got.one.join());
+    want(got.disconnect.join() === 'false,Disconnect x1,Disconnect x1 | At Supply Fan,At Return Fan', 'a Disconnect row ' + got.disconnect.join());
+    want(got.vacuum.join() === 'false,2', 'a vacuum system ' + got.vacuum.join());
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
     t9_removeMiscThenDiscard, t10_reattachOrphans, t11_duplicateSourceThenRetakeCopy,
@@ -15574,7 +15708,7 @@
     t450_aMixedRowSetsEachValveOnTheCard, t451_aMixedRowExportsEachValvesState, t452_lockOpenIsSetPerValve,
     t453_aChangedCountKeepsEachValvesAnswer, t454_splitTakesTheLastValveAsItIs, t455_perValveAnswersFollowTheRow,
     t456_theMarkBoxesNameTheOddValve, t457_everyCountChangeSettlesThePerValveAnswers,
-    t458_aBypassDriveWithAKeypadHasItsOwnVerification];
+    t458_aBypassDriveWithAKeypadHasItsOwnVerification, t459_anAhusDrivesTogetherAreOneLine];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

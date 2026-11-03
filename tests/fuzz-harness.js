@@ -194,7 +194,8 @@
         switch (id) {
           case 'voltageOverlay': chance(0.85) ? applyVoltageChoice(pick(['120V', '208V', '480V'])) : closeVoltageDialog(); break;
           case 'templateVoltageOverlay': chance(0.7) ? applyTemplateVoltageChoice(pick(getElectricalVoltageOptions(getTemplate()) || ['208V'])) : keepDefaultVoltage(); break;
-          case 'electricalCountOverlay': chance(0.8) ? applyElectricalCountChoice(randInt(1, 3)) : closeElectricalCountPrompt(); break;
+          case 'electricalCountOverlay': chance(0.8) ? pickElectricalCount(randInt(1, 3)) : closeElectricalCountPrompt(); break;
+          case 'drivesTogetherOverlay': chance(0.85) ? pick(Array.from(o.querySelectorAll('button'))).click() : o.onclick({ target: o }); break;
           case 'templateConfirmOverlay': chance(0.7) ? confirmTemplateChange(document.getElementById('equipTemplate').value) : cancelTemplateChange(); break;
           case 'templatePromptOverlay': {
             const btns = Array.from(o.querySelectorAll('button[onclick*="applyTemplatePromptChoice"]'));
