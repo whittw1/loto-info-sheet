@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 146,
+  "build": 147,
   "hospitals": [
     {
       "code": "Marion",
@@ -385,6 +385,7 @@
     "SW (Drive/Off/Bypass)",
     "SW (VFD/Off/Bypass)",
     "SW (Other)",
+    "SW (Drive/Off/Bypass) + Button (H/O/A) - VFD",
     "Screen",
     "Button (Start/Stop)",
     "Button (Start/Stop) - VFD",

@@ -130,6 +130,8 @@
 //             state per valve on a Qty 2+ row ("Mixed" + one toggle per valve), Lock Open per valve, the sheet / CSV /
 //             entries.json lists, a changed count, Split 1 out, Duplicate / Copy Source / a source change, the mark boxes
 //   T457      build 146 review: an automatic In/Out count, the last locked valve tapped off, Copy Source's count
+//   T458      build 147 (wilkins 2026-11-02, a Danfoss bypass drive): the VFD row's "SW (Drive/Off/Bypass) + Button
+//             (H/O/A) - VFD" verification, offered on VFD rows only, saved and exported word for word
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -9219,18 +9221,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 146 (was build 122\'s): APP_BUILD and the header label say 146, the service worker\'s cache is loto-collector-v7.141, Xcode\'s CURRENT_PROJECT_VERSION is 146 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 147 (was build 122\'s): APP_BUILD and the header label say 147, the service worker\'s cache is loto-collector-v7.142, Xcode\'s CURRENT_PROJECT_VERSION is 147 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 146 && !!label && +label[1] === 146, 'the build');
+    want(APP_BUILD === 147 && !!label && +label[1] === 147, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.141', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.142', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 146;,CURRENT_PROJECT_VERSION = 146;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 147;,CURRENT_PROJECT_VERSION = 147;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -15342,6 +15344,50 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T458 — a bypass drive with its own keypad (build 147)
+  async function t458_aBypassDriveWithAKeypadHasItsOwnVerification() {
+    const N = 'T458 build 147 (wilkins: a Danfoss bypass drive is verified at the Drive/Off/Bypass switch AND the keypad\'s Hand button, which no one choice said): a VFD row offers "SW (Drive/Off/Bypass) + Button (H/O/A) - VFD" (a breaker or disconnect row does not), the card\'s Verification list shows it, and it is saved, on the sheet\'s Verification column and in entries.json word for word';
+    const CODE = 'SW (Drive/Off/Bypass) + Button (H/O/A) - VFD';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    got.offered = ['VFD', 'Breaker', 'Disconnect'].map(d => getFilteredVerifications(d, 'Electrical 480V').includes(CODE));
+    want(got.offered.join() === 'true,false,false', 'offered on VFD / Breaker / Disconnect ' + got.offered.join());
+    got.lists = [DATA.verificationTypes.includes(CODE), appListsSnapshot(APP_BUILD).verifications.includes(CODE)];
+    want(got.lists.join() === 'true,true', 'in DATA / app-lists ' + got.lists.join());
+    formOfType('AHU-458', 'Air Handler', 'AHU - Steam');
+    sources = [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'VFD', deviceId: 'VFD-1', location: 'Mech Rm 2', verification: '', collapsed: false })];
+    renderSources();
+    const sel = document.getElementById('src_ver_0');
+    got.option = !!(sel && [...sel.options].some(o => o.value === CODE));
+    want(got.option, 'the card\'s Verification list lacks it');
+    if (sel) { sel.value = CODE; sel.dispatchEvent(new Event('change')); }
+    got.picked = sources[0].verification;
+    want(got.picked === CODE, 'picked ' + JSON.stringify(got.picked));
+    const A = saveEntry();
+    got.saved = ((A && A.sources) || []).map(x => x.verification).join('|');
+    want(got.saved === CODE, 'saved ' + JSON.stringify(got.saved));
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); return record(N, false, 'FAILED: ' + fails.join('; ')); }
+    const u = await unzipExport(zip.blob);
+    const je = jsonEntryFor(u.entriesJson, A);
+    got.json = je ? (je.sources || []).map(x => x.verification).join('|') : null;
+    want(got.json === CODE, 'entries.json ' + JSON.stringify(got.json));
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      let label = null, cell = null;
+      wb.worksheets[0].eachRow(row => {
+        const a = String(row.getCell(1).value || '');
+        if (a === 'Energy Source #1' && label === null) label = String(row.getCell(9).value || '');
+        if (a === 'Electrical 480V' && cell === null) cell = String(row.getCell(9).value || '');
+      });
+      got.sheet = [label, cell];
+      want(/Verification/.test(label || '') && cell === CODE, 'sheet column 9 ' + JSON.stringify(got.sheet));
+    } else fails.push('no XLSX in the ZIP');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
     t9_removeMiscThenDiscard, t10_reattachOrphans, t11_duplicateSourceThenRetakeCopy,
@@ -15527,7 +15573,8 @@
     t446_aBoxLeftInFocusOffTheScreenIsLetGo, t447_bulkDeleteAndSavesFollowTheListsFacility, t448_theBiohazardHasASlotOfItsOwnAndAPickIsNotRedrawn,
     t450_aMixedRowSetsEachValveOnTheCard, t451_aMixedRowExportsEachValvesState, t452_lockOpenIsSetPerValve,
     t453_aChangedCountKeepsEachValvesAnswer, t454_splitTakesTheLastValveAsItIs, t455_perValveAnswersFollowTheRow,
-    t456_theMarkBoxesNameTheOddValve, t457_everyCountChangeSettlesThePerValveAnswers];
+    t456_theMarkBoxesNameTheOddValve, t457_everyCountChangeSettlesThePerValveAnswers,
+    t458_aBypassDriveWithAKeypadHasItsOwnVerification];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

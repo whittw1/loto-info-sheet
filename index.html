@@ -526,7 +526,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b146</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b147</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1236,7 +1236,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 146;
+const APP_BUILD = 147;
 
 // ============================================================================
 // DATA
@@ -1306,6 +1306,10 @@ const DATA = {
     "Zero Flow",
     "SW (On/Off)","SW (Hand/Off/Auto)","SW (H/O/A)",
     "SW (Drive/Off/Bypass)","SW (VFD/Off/Bypass)","SW (Other)",
+    // A bypass drive with its own keypad (build 147, wilkins: a Danfoss VLT with
+    // a Drive/Off/Bypass selector). loto-web words it: Bypass, Hand, Off in
+    // Section 3; Off first, then Drive and Auto in Section 4.
+    "SW (Drive/Off/Bypass) + Button (H/O/A) - VFD",
     "Screen","Button (Start/Stop)","Button (Start/Stop) - VFD","Button (Hand/Off/Auto) - VFD",
     "Button (FWD/STOP) - VFD","Button (Start/Stop) - Retractable","Button (Other)",
     "Controls","Meter","Rotating","Block"
@@ -1414,7 +1418,7 @@ const DEVICE_VERIFICATION_MAP = {
   'Disconnect':           ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','SW (H/O/A)','SW (Other)','Button (Start/Stop)','Button (Other)'],
   // A fitting on an air, gas or chemical line since build 118: the line's own checks, as for its valves
   'Quick Disconnect':     ['_temponly','_gauge','_gaugeonly','_drain'],
-  'VFD':                  ['Controls','Meter','SW (Hand/Off/Auto)','SW (H/O/A)','SW (Drive/Off/Bypass)','SW (VFD/Off/Bypass)','SW (Other)','Button (Start/Stop) - VFD','Button (Hand/Off/Auto) - VFD','Button (Other)'],
+  'VFD':                  ['Controls','Meter','SW (Hand/Off/Auto)','SW (H/O/A)','SW (Drive/Off/Bypass)','SW (VFD/Off/Bypass)','SW (Drive/Off/Bypass) + Button (H/O/A) - VFD','SW (Other)','Button (Start/Stop) - VFD','Button (Hand/Off/Auto) - VFD','Button (Other)'],
   'Switch':               ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
   'Switch w/Padlock':     ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
   'Plug':                 ['Controls','SW (On/Off)','Button (Other)'],
