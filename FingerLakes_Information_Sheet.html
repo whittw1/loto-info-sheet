@@ -485,6 +485,9 @@ if ('serviceWorker' in navigator) {
   .toast.show { opacity: 1; }
   .toast.toast-warning { background: var(--warning); color: #1a1f2e; }
 
+  .ats-side { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px; margin-left: 6px; white-space: nowrap; }
+  .ats-side-emergency { background: #b5451b; color: #fff; }
+  .ats-side-normal { background: #2e7d4f; color: #fff; }
   .auto-badge {
     background: #4a90d9; color: white; font-size: 10px;
     padding: 2px 6px; border-radius: 3px; margin-left: 6px; font-weight: 700;
@@ -530,7 +533,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b152</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b153</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1240,7 +1243,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 152;
+const APP_BUILD = 153;
 
 // ============================================================================
 // DATA
@@ -5690,30 +5693,54 @@ function settleOtherPowerRow() {
 }
 
 // ---- After a type's voltage: an ATS's two feeds, a chiller's capacitors -------
-// ATS: loto-web reads each breaker's side from its Location words, emergency
-// first (its ats_sources.py), so the two rows are labelled in that order, each
-// with the panel and breaker the tech gives (blank leaves the bare label).
+// ATS: loto-web takes the unit's first Electrical row as the emergency
+// (generator) breaker and the second as the normal (utility) one — by ORDER
+// (its ats_sources.py; the Location words only check it). Build 153 (wilkins
+// 2026-11-04: "its not letting me name the specific panel unless I select
+// Panel"): each row's Location is Panel with the panel the tech names in its
+// Panel ID box — it was "Emergency Feed: <typed>", one fixed dropdown entry
+// that could not be edited. Blank leaves Panel with an empty Panel ID. The
+// card says which side each row is (atsFeedSide).
 function askAtsFeeds(rows) {
   const ask = (id, side) => askChoice({
     id: id, defaultValue: '',
     title: side + ' feed',
-    html: html`The panel and breaker of the ATS&rsquo;s <strong>${side.toLowerCase()}</strong> ${side === 'Emergency'
-      ? '(generator)' : '(utility)'} feed, as labelled. loto-web reads the side from this row&rsquo;s Location.`,
-    input: { type: 'text', placeholder: side === 'Emergency' ? 'e.g. EDP-1 bkr 3' : 'e.g. NDP-2 bkr 7' },
+    html: html`Which panel is the ATS&rsquo;s <strong>${side.toLowerCase()}</strong> ${side === 'Emergency'
+      ? '(generator)' : '(utility)'} feed breaker in? Type its name as labelled.`,
+    input: { type: 'text', placeholder: side === 'Emergency' ? 'e.g. EHD1001A' : 'e.g. NDP-2' },
     choices: [{ label: 'OK', needsInput: true, primary: true }, { value: '', label: 'Skip' }]
   }).then(t => String(typedOf(t) || '').replace(/\s+/g, ' ').trim());   // typed text only (build 123)
-  const label = (side, t) => side + ' Feed' + (t ? ': ' + t : '');
-  if (rows[0]) rows[0].location = label('Emergency', '');
-  if (rows[1]) rows[1].location = label('Normal', '');
+  // "Panel EHD1001A" typed in full is not "Panel Panel EHD1001A"
+  const panel = (t) => ('Panel ' + String(t || '').replace(/^panel\b\s*/i, '')).trim();
+  if (rows[0]) rows[0].location = panel('');
+  if (rows[1]) rows[1].location = panel('');
   renderSources();
   return ask('ats-emergency-feed', 'Emergency').then(e => {
-    if (rows[0] && sources.includes(rows[0])) rows[0].location = label('Emergency', e);
+    if (rows[0] && sources.includes(rows[0])) rows[0].location = panel(e);
     return ask('ats-normal-feed', 'Normal');
   }).then(n => {
-    if (rows[1] && sources.includes(rows[1])) rows[1].location = label('Normal', n);
+    if (rows[1] && sources.includes(rows[1])) rows[1].location = panel(n);
     renderSources();
     autoSaveCurrent();
   });
+}
+// Which side of an ATS source row `i` is (build 153): 'emergency' for the
+// unit's first Electrical row, 'normal' for its second, '' otherwise — the
+// order loto-web goes by. A backfeed row is never one of the two inputs
+// (loto-web's ats_type.is_backfeed_name), nor is the capacitor's Stored
+// Electrical Energy. Shown on the card so a reorder that swaps them shows.
+const ATS_SIDE_TEXT = { emergency: 'Emergency (generator) side', normal: 'Normal (utility) side' };
+function atsFeedSide(i, list) {
+  const rows = list || sources;
+  if (!unitKinds(getEquipType(), getTemplate()).ats) return '';
+  const feeds = [];
+  rows.forEach((s, k) => { if (isElectricalSource(s) && !/back[\s-]?feed/i.test(String(s.energySource || ''))) feeds.push(k); });
+  const pos = feeds.indexOf(i);
+  return pos === 0 ? 'emergency' : pos === 1 ? 'normal' : '';
+}
+function atsSideTag(i) {
+  const side = atsFeedSide(i);
+  return side ? html` <span class="ats-side ats-side-${side}" id="atsSide_${i}">${ATS_SIDE_TEXT[side]}</span>` : '';
 }
 // A row that belongs beside the unit's Electrical feed (the chiller's capacitor
 // bank, build 151 review: since the chiller's CHW rows it landed after them),
@@ -9137,7 +9164,7 @@ function buildSourceCard(src, i) {
         <div class="source-summary" onclick="expandSource(${i})">
           <span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
           <div class="source-summary-text">
-            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${valveStateBadgeText(src) ? html` <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">${valveStateBadgeText(src)}</span>` : ''}${photoData && photoData.dbKey && fittingMarks(photoData, src).length ? raw(' <span title="Valve location marked">&#128205;</span>') : ''}${src.linkedTo ? raw(' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>') : ''}${summaryLinkChips(src)}
+            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${atsSideTag(i)}${valveStateBadgeText(src) ? html` <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">${valveStateBadgeText(src)}</span>` : ''}${photoData && photoData.dbKey && fittingMarks(photoData, src).length ? raw(' <span title="Valve location marked">&#128205;</span>') : ''}${src.linkedTo ? raw(' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>') : ''}${summaryLinkChips(src)}
             ${src.deviceType ? html` &mdash; ${src.deviceType}` : ''}${qty > 1 ? html` <span class="src-qty" style="font-weight:700;">&times;${qty}</span>` : ''}${src.deviceId ? html` <span style="color:#7eb8da;">(${src.deviceId})</span>` : ''}
             ${src.location ? html` &mdash; ${src.location}` : ''}
             ${src.detail ? html` <span style="color:var(--accent);font-weight:600;font-family:monospace;">(${src.detail})</span>` : ''}
@@ -9211,7 +9238,7 @@ function buildSourceCard(src, i) {
         <div class="source-card-header">
           <h3 class="src-head"><span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
             <span><span class="src-head-title">${sourceCardTitle(src)}</span>
-            <span class="src-head-sub">Energy Source #${i + 1}${autoBadge}${role ? html` &middot; ${SOURCE_ROLES[role].noun}` : ''}</span></span></h3>
+            <span class="src-head-sub">Energy Source #${i + 1}${autoBadge}${atsSideTag(i)}${role ? html` &middot; ${SOURCE_ROLES[role].noun}` : ''}</span></span></h3>
           <div class="src-head-btns">
             <button class="btn btn-sm src-move" onclick="moveSource(${i},-1)" ${isFirstExp?'disabled':''} title="Move up">&#9650;</button>
             <button class="btn btn-sm src-move" onclick="moveSource(${i},1)" ${isLastExp?'disabled':''} title="Move down">&#9660;</button>
