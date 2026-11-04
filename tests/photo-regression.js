@@ -150,6 +150,8 @@
 //   T466      build 151: the Chiller type starts with Electrical, then CHW In and CHW Out (Butterfly, Gauge/Drain - CHW)
 //   T467      build 151: the Battery Charger type, on Standard Electrical (one Meter-verified feed, the voltage asked)
 //   T468      build 152: energy recovery is "Energy Recovery Water In/Out / In / Out" (was Glycol ER Water); a saved Glycol ER row keeps its name
+//   T469      build 153: an ATS's feeds are Location Panel + the Panel ID typed (was "Emergency Feed: …"); the first two
+//             Electrical rows say Emergency (generator) side / Normal (utility) side, by position; saved old labels still show
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -7830,6 +7832,74 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T469 — an ATS's feeds as Panel + Panel ID; the side each row is
+  async function t469_atsFeedsArePanels() {
+    const N = 'T469 build 153 (wilkins: "its not letting me name the specific panel unless I select Panel for location"): the ATS feed questions put Location Panel and the typed panel in the Panel ID box ("Panel EHD1001A" typed in full is not doubled; Skip keeps bare Panel); the card shows Panel selected and the ID editable; the first two Electrical rows are tagged Emergency (generator) side / Normal (utility) side by position (a reorder moves the tags, a backfeed row and the capacitor row take none); no tag off an ATS; a saved "Emergency Feed: …" Location still shows as its own choice';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const setup = async (name, type, choice) => {
+      await resetAppState();
+      fillFormNoSources(name);
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = type;
+      await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+      await withDialogs({ confirm: true, choice: choice }, async () => { await applyVoltageChoice('480V'); await sleep(0); });
+      closeAllPrompts();
+    };
+    const tags = () => sources.map((s, k) => { const el = document.getElementById('atsSide_' + k); return el ? el.textContent.trim() : '-'; }).join(' / ');
+    await setup('ATS-469', 'ATS', { 'ats-emergency-feed': ' Panel  EHD1001A ', 'ats-normal-feed': 'NDP-2' });
+    const brk = sources.filter(s => s.deviceType === 'Breaker');
+    got.locs = brk.map(s => s.location).join(' / ');
+    want(got.locs === 'Panel EHD1001A / Panel NDP-2', 'the two Locations');
+    const i0 = sources.indexOf(brk[0]);
+    sources[i0].collapsed = false; renderSources();
+    const sel = document.getElementById('src_loc_' + i0), idBox = document.getElementById('src_locid_' + i0);
+    got.card = [sel && sel.value, idBox && idBox.value].join('|');
+    want(got.card === 'Panel|EHD1001A', 'the card shows Panel and its ID');
+    got.tagsOpen = tags();
+    sources[i0].collapsed = true; renderSources();
+    got.tags = tags();
+    want(/Emergency \(generator\) side/.test(got.tagsOpen) && got.tags.split(' / ')[i0] === 'Emergency (generator) side'
+      && got.tags.split(' / ')[sources.indexOf(brk[1])] === 'Normal (utility) side', 'the side tags (open and closed)');
+    // the Panel ID typed again edits the same Location
+    sources[i0].collapsed = false; renderSources();
+    updateLocationId(i0, 'EHD1002B');
+    got.edited = sources[i0].location;
+    want(got.edited === 'Panel EHD1002B', 'the Panel ID box edits it');
+    sources.forEach(s => { s.collapsed = true; }); renderSources();
+    // a reorder: the tag goes by position
+    const j0 = sources.indexOf(brk[0]), j1 = sources.indexOf(brk[1]);
+    moveSource(j0, j1 - j0);
+    got.moved = [atsFeedSide(sources.indexOf(brk[1])), atsFeedSide(sources.indexOf(brk[0]))].join();
+    want(got.moved === 'emergency,normal', 'a swap swaps the sides');
+    // a backfeed row and the capacitor row take no side
+    const rows = [{ energySource: 'Electrical 480V - Backfeed', deviceType: 'Breaker' }, { energySource: 'Stored Electrical Energy', deviceType: 'Capacitor' },
+      { energySource: 'Electrical 480V', deviceType: 'Breaker' }, { energySource: 'Electrical 480V', deviceType: 'Breaker' }];
+    got.skipped = rows.map((r, k) => atsFeedSide(k, rows) || '-').join();
+    want(got.skipped === '-,-,emergency,normal', 'backfeed and capacitor rows are not inputs');
+    // Skip keeps bare Panel
+    await setup('ATS-469b', 'ATS', { 'ats-emergency-feed': '', 'ats-normal-feed': '' });
+    got.skip = sources.filter(s => s.deviceType === 'Breaker').map(s => s.location).join(' / ');
+    want(got.skip === 'Panel / Panel', 'Skip');
+    // no tag off an ATS
+    await setup('GEN-469', 'Generator', {});
+    renderSources();
+    got.gen = tags();
+    want(!/side/.test(got.gen), 'no tag on a generator');
+    // a saved unit's old "Emergency Feed: …" Location still shows as its own choice
+    await resetAppState();
+    fillFormNoSources('ATS-469d');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'ATS';
+    sources.length = 0;
+    sources.push({ energySource: 'Electrical 480V', deviceType: 'Breaker', quantity: 1, location: 'Emergency Feed: EDP-1 bkr 3', duplicate: 'No', verification: 'Meter', detail: '', collapsed: false });
+    renderSources();
+    const old = document.getElementById('src_loc_0');
+    got.old = old ? old.value + '|' + tags() : 'no select';
+    want(got.old === 'Emergency Feed: EDP-1 bkr 3|Emergency (generator) side', 'an old label still shows, tagged');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // T468 — Energy Recovery Water replaces Glycol ER Water
   async function t468_energyRecoveryWaterReplacesGlycolEr() {
     const N = 'T468 build 152 (wilkins: "change it to regular energy recovery water"): the source list offers Energy Recovery Water In/Out, In and Out where Glycol ER Water stood (app-lists.json too); each is a cold water line as Glycol ER was — the valve devices with a circuit setter, no Hot / CHW verification, the water family (drain question), letter W, the water colour, a valve state, In/Out sides for a one-valve link; a saved Glycol ER Water row still shows its own name selected, still links to one valve of its pair and exports it; every water name is coloured as water; a new Energy Recovery Water In/Out row exports under its name, Qty 2';
@@ -8207,7 +8277,7 @@
 
   // T242 — the type voltage box: ATS feeds, a chiller's capacitors, "Other voltage…".
   async function t242_theTypeVoltageQuestions() {
-    const N = 'T242 after a type\'s voltage: an ATS asks its emergency then normal feed (rows "Emergency Feed: …" then "Normal Feed", a blank keeping the bare label); a chiller asks "Capacitor bank?" (No: no Stored Electrical Energy row; Yes / Can\'t tell: the row; closed: the row, nothing recorded); the box offers "Other voltage…" (the full list, no blank voltage)';
+    const N = 'T242 after a type\'s voltage: an ATS asks its emergency then normal feed\'s panel (build 153: rows "Panel <typed>" then "Panel", a blank keeping bare Panel); a chiller asks "Capacitor bank?" (No: no Stored Electrical Energy row; Yes / Can\'t tell: the row; closed: the row, nothing recorded); the box offers "Other voltage…" (the full list, no blank voltage)';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -8227,7 +8297,7 @@
     got.buttons = await typeVoltage('ATS', 'ATS-242', { 'ats-emergency-feed': '  EDP-1   bkr 3 ', 'ats-normal-feed': '' }, '480V');
     want(got.buttons.includes('Other voltage…') && !got.buttons.some(t => /leave blank/i.test(t)), 'the box offers Other voltage…, no blank');
     got.ats = sources.filter(s => s.deviceType === 'Breaker').map(s => s.energySource + '|' + s.location).join(' / ');
-    want(got.ats === 'Electrical 480V|Emergency Feed: EDP-1 bkr 3 / Electrical 480V|Normal Feed', 'the ATS rows name their feeds');
+    want(got.ats === 'Electrical 480V|Panel EDP-1 bkr 3 / Electrical 480V|Panel', 'the ATS rows name their feeds\' panels');
     const chiller = async (answer) => {
       await typeVoltage('Chiller', 'CH-242', { 'chiller-capacitors': answer }, '480V');
       return sources.filter(s => s.energySource === 'Stored Electrical Energy').length + ':' + (unitAnswers.capacitors || '');
@@ -9699,18 +9769,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 152 (was build 122\'s): APP_BUILD and the header label say 152, the service worker\'s cache is loto-collector-v7.147, Xcode\'s CURRENT_PROJECT_VERSION is 152 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 153 (was build 122\'s): APP_BUILD and the header label say 153, the service worker\'s cache is loto-collector-v7.148, Xcode\'s CURRENT_PROJECT_VERSION is 153 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 152 && !!label && +label[1] === 152, 'the build');
+    want(APP_BUILD === 153 && !!label && +label[1] === 153, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.147', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.148', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 152;,CURRENT_PROJECT_VERSION = 152;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 153;,CURRENT_PROJECT_VERSION = 153;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -11783,7 +11853,7 @@
 
   // T345 — the ATS feeds through the real dialogs keep what was typed (a test gap)
   async function t345_theAtsFeedsKeepTypedTextInTheRealDialogs() {
-    const N = 'T345 build 123 review (a test gap): the ATS feed prompts in the real dialogs keep what is typed, even "cancel", and Skip leaves the bare label — "Emergency Feed: cancel" / "Normal Feed"';
+    const N = 'T345 build 123 review (a test gap): the ATS feed prompts in the real dialogs keep what is typed, even "cancel", and Skip leaves bare Panel — "Panel cancel" / "Panel" (build 153; was "Emergency Feed: cancel" / "Normal Feed")';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -11809,7 +11879,7 @@
       got.steps = [await step('cancel', 'OK'), await step(null, 'Skip')].join();
       await Promise.race([p, sleep(2000)]);
       got.locs = rows.map(r => r.location).join(' / ');
-      want(got.steps === 'true,true' && got.locs === 'Emergency Feed: cancel / Normal Feed', JSON.stringify(got));
+      want(got.steps === 'true,true' && got.locs === 'Panel cancel / Panel', JSON.stringify(got));
     } finally { window.__askChoiceAuto = rp; const o = document.getElementById('choiceDialogOverlay'); if (o) o.remove(); setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -16329,7 +16399,7 @@
     t460_aSteamRowTakesTheSitesPressure, t461_cancelEditKeepsTheBuildingAndRoom, t462_aDentalVacuumsPumpsAreOneLine,
     t463_leavingASavedUnitGoesBackWhereTheTechWas, t464_theAskBoxIsAtTheTopOfTheMarkScreen,
     t465_aLinkToAnInOutPairAsksWhichValve, t466_aChillerStartsWithChwInAndOut, t467_aBatteryChargerIsStandardElectrical,
-    t468_energyRecoveryWaterReplacesGlycolEr];
+    t468_energyRecoveryWaterReplacesGlycolEr, t469_atsFeedsArePanels];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
