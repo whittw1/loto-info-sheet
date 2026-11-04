@@ -530,7 +530,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b150</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b151</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1240,7 +1240,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 150;
+const APP_BUILD = 151;
 
 // ============================================================================
 // DATA
@@ -1252,7 +1252,7 @@ const DATA = {
     "Fire Pump","Fire Jockey Pump","Heat Exchanger",
     "Condensate Return Unit","Condensate Pump","Unit Heater",
     "Domestic Water Heater","Air Compressor","Compressed Air Tank","Blower","Air Dryer","Vacuum Pump","Lab Vacuum","ATS",
-    "Generator","Transformer","Switchgear","VFD","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Overhead Door","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
+    "Generator","Transformer","Switchgear","VFD","Battery Charger","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Overhead Door","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
     "Chiller","Refrigerator","Boiler","Steam PRV Station","Humidifier",
     "** New Equipment Type **"
   ],
@@ -2237,6 +2237,14 @@ let formSession = 1;
 // The form as it stood once a saved unit was opened in it (build 140 — see
 // formIsUnchangedEdit). A new form session is a new form: it goes.
 let _openBaseline = null;   // { entryId, json, hash, last }
+// Where the tech was working when a saved unit was opened (build 151, wilkins
+// 2026-11-03: after leaving an edit "it wipes the existing location"; build
+// 150 gave the next unit the OPENED unit's room, not the room he was in):
+// { building, room, entryId } — entryId the opened unit, kept across a switch
+// to another saved unit. Leaving that unit by Save & New, Close, Cancel edit,
+// Delete or the launch's close starts the next unit there (startNextUnit). A
+// blank new-unit form leaves none: the next unit takes the opened unit's place.
+let _returnPlace = null;
 function beginNewFormSession() { formSession++; _openBaseline = null; }
 const _photoWrites = new Map();   // token → { kind, at }
 let _photoWriteSeq = 0;
@@ -5430,7 +5438,7 @@ function setUnitAnswer(key, value) {
     const isCap = s => s.energySource === 'Stored Electrical Energy';
     if (value === 'No') removeUntouchedAutoRow(isCap);
     else if (!sources.some(s => s && isCap(s))) {
-      sources.push({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank',
+      addAfterElectrical({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank',
         verification: '', quantity: 1, duplicate: 'No', detail: '', collapsed: true, auto: true, noPhoto: true });
       renderSources();
     }
@@ -5703,6 +5711,17 @@ function askAtsFeeds(rows) {
     autoSaveCurrent();
   });
 }
+// A row that belongs beside the unit's Electrical feed (the chiller's capacitor
+// bank, build 151 review: since the chiller's CHW rows it landed after them),
+// right after the last Electrical row; else at the end. Photos follow their rows.
+function addAfterElectrical(row) {
+  let at = -1;
+  sources.forEach((s, i) => { if (s && /^Electrical\b/.test(s.energySource || '')) at = i; });
+  if (at < 0 || at === sources.length - 1) { sources.push(row); return; }
+  const prev = sources.slice();
+  sources.splice(at + 1, 0, row);
+  rebindSourcePhotos(prev);
+}
 // Chiller: loto-web adds its own capacitor row unless the unit says it has no
 // capacitor bank, so the answer travels on the sheet; the app's row follows it.
 // No answer (the box closed) keeps the row, as before build 118.
@@ -5716,7 +5735,7 @@ function askChillerCapacitors() {
     if (DATA.yesNoCantTell.includes(v)) unitAnswers.capacitors = v;
     const hasRow = sources.some(s => s && s.energySource === 'Stored Electrical Energy');
     if (v !== 'No' && !hasRow) {
-      sources.push({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank',
+      addAfterElectrical({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank',
         verification: '', quantity: 1, duplicate: 'No', detail: '', collapsed: true, auto: true, noPhoto: true, _voltagePick: true });
     }
     renderSources();
@@ -5780,6 +5799,7 @@ const VOLTAGE_PROMPT_CONFIG = {
   'Chiller': {
     title: 'Chiller Voltage',
     description: 'Select voltage for the Electrical source:',
+    ahead: true,   // its Electrical goes ahead of the template's CHW rows (build 151)
     apply: function(voltage) {
       const energyName = voltage ? 'Electrical ' + voltage : 'Electrical';
       sources.push({
@@ -5850,13 +5870,25 @@ function applyVoltageChoice(voltage) {
     // held data, the template change above only opened its confirm, and the
     // confirmed applyTemplate then dropped this source — a Generator with no
     // electrical isolation.
-    const before = sources.length;
+    // The rows it adds, wherever they land (build 151: a chiller's goes ahead of its water rows)
+    const had = new Set(sources);
     VOLTAGE_PROMPT_CONFIG[equipType].apply(voltage);
-    for (let i = before; i < sources.length; i++) if (sources[i]) sources[i]._voltagePick = true;
+    const added = sources.filter(s => s && !had.has(s));
+    added.forEach(s => { s._voltagePick = true; });
+    // `ahead` (build 151): the type's rows before the template's own, as on
+    // every template the Electrical source comes first. The tech's kept rows
+    // stay where they are; photos follow their rows.
+    const tplAt = VOLTAGE_PROMPT_CONFIG[equipType].ahead ? sources.findIndex(s => s && had.has(s) && s.auto && !s._voltagePick) : -1;
+    if (tplAt >= 0 && added.length) {
+      const prev = sources.slice();
+      sources = sources.filter(s => !added.includes(s));
+      sources.splice(tplAt, 0, ...added);
+      rebindSourcePhotos(prev);
+    }
     renderSources();
     autoSaveCurrent();
     // An ATS's two feeds, a chiller's capacitor bank (build 118)
-    return afterTypeVoltage(equipType, sources.slice(before));
+    return afterTypeVoltage(equipType, added);
   }
   renderSources();
   autoSaveCurrent();
@@ -5975,6 +6007,9 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Transformer': ['Standard Electrical','Electrical with Stored Energy'],
   'Switchgear': ['Switchgear'],
   'VFD': ['Electrical with Stored Energy'],
+  // Battery Charger (build 151, wilkins 2026-11-03): "a standard electrical
+  // template" — its one Electrical feed, the voltage prompted.
+  'Battery Charger': ['Standard Electrical'],
   'Steam PRV Station': ['Steam PRV Station'],
   'Humidifier': ['Humidifier'],
 };
@@ -8342,10 +8377,17 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'At Fan Assembly', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
-  // Chiller intentionally has no template auto-sources — the Kinetic source
-  // was removed per user request. The voltage dialog for Chiller still
-  // pushes the Electrical source via VOLTAGE_PROMPT_CONFIG['Chiller'].apply,
-  // so the final source set for a Chiller is just that Electrical.
+  // Chiller: no Kinetic (removed at the user's request). Its chilled-water
+  // valves as two sources of their own, In and Out (build 151, wilkins
+  // 2026-11-03), each with its own photo, tag and saved ID; loto-web prints
+  // them exactly as a "CHW In/Out" Qty 2 row (W- IDs, Section 2/4 order, the
+  // matrix, "drain between W-1 and W-2" while both say Gauge/Drain). Butterfly
+  // valves, as most surveyed chillers have. The voltage dialog adds the
+  // Electrical source ahead of them (VOLTAGE_PROMPT_CONFIG['Chiller'].apply).
+  'Chiller': [
+    { energySource: 'CHW In', deviceType: 'Butterfly Valve', quantity: 1, location: '', verification: 'Gauge/Drain - CHW', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'CHW Out', deviceType: 'Butterfly Valve', quantity: 1, location: '', verification: 'Gauge/Drain - CHW', duplicate: 'No', detail: '', auto: true },
+  ],
   'Emergency Generator': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
@@ -9531,6 +9573,7 @@ function kineticDefaultLocation() {
 function updateSource(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
+  if (field === 'energySource' || field === 'quantity') settleLinkedValve(sources[index]);   // build 151 review
   if (field === 'deviceId') refreshAfterRetag(syncFeederTags(sources), index);   // a retagged drive renames itself in its feeder (build 122)
   if (field === 'verification') delete sources[index]._drainDefault;   // the tech picked the code
   if (field === 'energySource' && value && sourceDefaultsOf(value)) {
@@ -10306,6 +10349,7 @@ function handleDeviceTypeChange(index, value) {
 function updateSourceCustomField(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
+  if (field === 'energySource') settleLinkedValve(sources[index]);   // build 151 review
   if (field === 'energySource') reconcileSourceMarks(index);
   autoSaveCurrent();
 }
@@ -10840,18 +10884,77 @@ function showLinkSourcePicker(equipIndex) {
   document.body.appendChild(newOverlay);
 }
 
-function applyLink(equipIndex, sourceIndex) {
-  const entry = savedEquipment[equipIndex];
+// One valve of an In/Out pair (build 151, wilkins 2026-11-03: linking to "CHW
+// In/Out" with 2 valves "doesn't ask me which one I want to assign to it").
+// The pair's side names, when the list has both ("CHW In" / "CHW Out"), else
+// null (Glycol HW / CHW In/Out have none: such a link is to the pair).
+function inOutSideNames(src) {
+  if (!isInOutPair(src)) return null;
+  const name = String(src.energySource || '');
+  const inName = name.replace(/In\/Out/i, 'In'), outName = name.replace(/In\/Out/i, 'Out');
+  const list = DATA.energySources || [];
+  return list.includes(inName) && list.includes(outName) ? { in: inName, out: outName } : null;
+}
+// The Device ID of one valve: the pair's per-valve list ("V-1; V-2") gives the
+// valve its own; a single tag stays as it is.
+function sideDeviceId(deviceId, side) {
+  const ids = splitUnitIds(deviceId).map(x => x.trim()).filter(Boolean);
+  return ids.length === 2 ? ids[side === 'out' ? 1 : 0] : String(deviceId || '');
+}
+const LINK_VALVE_WORDS = { in: 'In valve', out: 'Out valve' };
+const LINK_VALVE_SUFFIX_RE = / \u2014 (In|Out) valve$/;
+// A one-valve link follows its row (review): an edit to the row's energy or
+// count names the valve again from its side ("CHW In" at Quantity 1 = the In
+// valve), or makes it a link to the whole source once the row is no side.
+function settleLinkedValve(src) {
+  const lt = src && src.linkedTo;
+  if (!lt || !lt.valve) return;
+  const m = sourceQty(src) === 1 ? / (In|Out)$/.exec(String(src.energySource || '')) : null;
+  const base = String(lt.sourceLabel || '').replace(LINK_VALVE_SUFFIX_RE, '');
+  if (m) { lt.valve = m[1].toLowerCase(); lt.sourceLabel = base + ' \u2014 ' + LINK_VALVE_WORDS[lt.valve]; }
+  else { delete lt.valve; lt.sourceLabel = base; }
+}
+
+async function applyLink(equipIndex, sourceIndex) {
+  let entry = savedEquipment[equipIndex];
   if (!entry || pendingLinkSourceIndex === null) { closeLinkDialog(); return; }
-  const src = entry.sources[sourceIndex];
+  let src = entry.sources[sourceIndex];
   if (!src) { closeLinkDialog(); return; }
+  const linkIndex = pendingLinkSourceIndex, linkRow = sources[linkIndex], session = formSession;
+  if (!linkRow) { closeLinkDialog(); return; }
 
   // Build the label for display
   const parts = [];
   if (src.energySource) parts.push(src.energySource);
   if (src.deviceType) parts.push(src.deviceType);
   if (src.deviceId) parts.push('(' + src.deviceId + ')');
-  const label = parts.join(' — ') || 'Source #' + (sourceIndex + 1);
+  let label = parts.join(' — ') || 'Source #' + (sourceIndex + 1);
+
+  // An In/Out pair (build 151): which valve does this source share? The answer
+  // is the row's own energy — "CHW In" / "CHW Out", Quantity 1, which loto-web
+  // matches to the pair's first / second valve — and `linkedTo.valve`; the
+  // sheet's Linked To says it too ("… — Out valve").
+  const sides = inOutSideNames(src);
+  let valve = '';
+  if (sides) {
+    const v = await askChoice({ id: 'link-valve', defaultValue: 'cancel',
+      title: html`${entry.equipName || 'That unit'}'s ${src.energySource} has 2 valves`,
+      html: html`Which valve does this source share?`,
+      choices: [{ value: 'both', label: 'Both valves (In and Out)', primary: true },
+                { value: 'in', label: 'The In valve only (' + sides.in + ')' },
+                { value: 'out', label: 'The Out valve only (' + sides.out + ')' },
+                { value: 'cancel', label: 'Cancel' }] });
+    if (v !== 'both' && v !== 'in' && v !== 'out') return;   // the list stays open
+    // the form moved on, or the row moved or went, while the question was up (review)
+    if (session !== formSession || pendingLinkSourceIndex !== linkIndex || sources[linkIndex] !== linkRow) { closeLinkDialog(); return; }
+    // …and another writer's save may have replaced the saved list's objects
+    // meanwhile: link to the unit and source as stored now (review)
+    const nowEntry = savedEquipment.find(e => sameEntryId(e.id, entry.id));
+    const nowSrc = nowEntry && ((src.sourceId && (nowEntry.sources || []).find(x => x && x.sourceId === src.sourceId)) || (nowEntry.sources || [])[sourceIndex]);
+    if (!nowSrc || !inOutSideNames(nowSrc)) { closeLinkDialog(); showToast('That unit changed while the question was open \u2014 link it again', true); return; }
+    entry = nowEntry; src = nowSrc; sourceIndex = entry.sources.indexOf(src);
+    if (v !== 'both') { valve = v; label += ' \u2014 ' + LINK_VALVE_WORDS[v]; }
+  }
 
   // The link names its target by entry + source ID (build 89), not just the
   // name/index — names repeat and indexes shift. An older target source
@@ -10863,17 +10966,30 @@ function applyLink(equipIndex, sourceIndex) {
   // row, which the office import skips — the shared breaker never reached
   // the procedure.
   const mine = sources[pendingLinkSourceIndex];
-  const tookEnergy = !mine.energySource && !!src.energySource;
+  const energyBefore = mine.energySource || '';
+  // A pair's answer sets the row (build 151): one valve is its side, Quantity
+  // 1, with that valve's own tag; both is the pair, Quantity 2
+  if (sides) {
+    mine.energySource = valve ? sides[valve] : src.energySource;
+    mine.quantity = valve ? 1 : 2;
+    // The tag: this valve's, or the pair's. One the tech typed stays, but one an
+    // earlier link to this pair copied is replaced (review: re-linking from the
+    // Out valve to the In valve kept V-2)
+    const own = String(mine.deviceId || '').trim(), theirs = String(src.deviceId || '').trim();
+    const copied = !own || own === theirs || splitUnitIds(theirs).map(x => x.trim()).includes(own);
+    if (theirs && copied) mine.deviceId = valve ? sideDeviceId(theirs, valve) : theirs;
+  }
+  const tookEnergy = sides ? mine.energySource !== energyBefore : (!mine.energySource && !!src.energySource);
   for (const f of ['energySource', 'deviceType', 'deviceId', 'location', 'verification']) {
     if (!mine[f] && src[f]) mine[f] = src[f];
   }
   // …and the SAME point has the same device count (build 94): "HHW In/Out"
   // taken without its 2 exported as ×1, and loto-web made one water-out point
   // with no In valve.
-  if (tookEnergy && (parseInt(src.quantity, 10) || 1) !== (parseInt(mine.quantity, 10) || 1)) {
+  if (!sides && tookEnergy && (parseInt(src.quantity, 10) || 1) !== (parseInt(mine.quantity, 10) || 1)) {
     mine.quantity = parseInt(src.quantity, 10) || 1;
   }
-  const drainNotes = tookEnergy ? settleSourceChange(mine, '', photos, 'source_' + pendingLinkSourceIndex) : [];   // build 123 review
+  const drainNotes = tookEnergy ? settleSourceChange(mine, energyBefore, photos, 'source_' + pendingLinkSourceIndex) : [];   // build 123 review
   const valveNote = settleValveUnits(mine);   // the target's count: each valve's answer follows it (build 146 review)
   if (valveNote) drainNotes.push(valveNote);
   const marksCleared = reconcileSourceMarks(pendingLinkSourceIndex, true);
@@ -10888,6 +11004,7 @@ function applyLink(equipIndex, sourceIndex) {
     entryId: entry.id || '',
     sourceId: src.sourceId || '',
   };
+  if (valve) sources[pendingLinkSourceIndex].linkedTo.valve = valve;   // 'in' | 'out' (build 151); none = the whole source
   // The source's own photo is KEPT (build 89). It used to be deleted as
   // "redundant", but loto-web doesn't read linkedTo — the source then arrived
   // with no photo and no photo reference at all.
@@ -10895,7 +11012,7 @@ function applyLink(equipIndex, sourceIndex) {
   closeLinkDialog();
   renderSources();
   autoSaveCurrent();
-  showToast(`Linked to ${entry.equipName}` + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '') + noteClause(drainNotes),
+  showToast(`Linked to ${entry.equipName}` + (valve ? ' \u2014 ' + LINK_VALVE_WORDS[valve] + ' (' + mine.energySource + ')' : '') + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '') + noteClause(drainNotes),
     marksCleared || drainNotes.length > 0);
 }
 
@@ -11677,7 +11794,13 @@ function openValveMarkDialog(slotId, opts) {
   let objUrl = null;
   overlay.innerHTML = html`
     <div class="dialog" style="max-width:min(96vw,1000px);padding:14px 14px 12px;max-height:96vh;overflow-y:auto;">
-      <h3 style="margin:0 0 4px;font-size:17px;">&#128205; Where is the ${what}?</h3>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px 12px;flex-wrap:wrap;margin:0 0 4px;">
+        <h3 style="margin:0;font-size:17px;">&#128205; Where is the ${what}?</h3>
+        <!-- at the top since build 151 (wilkins: under the buttons it was easy to uncheck by accident) -->
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);cursor:pointer;white-space:nowrap;">
+          <input type="checkbox" id="valveMarkAsk" style="width:16px;height:16px;"> Ask after every source photo
+        </label>
+      </div>
       <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;line-height:1.4;">
         Source #${idx + 1} &mdash; ${src.energySource || 'energy source'}. ${isInOutPair(src) ? raw('<b>Tap the IN valve first, then the OUT valve.</b>') : slots > 1 ? 'Tap each of the ' + slots + ' devices in the photo.' : 'Tap it in the photo.'}
         The arrow on the LOTO procedure will point there.
@@ -11700,9 +11823,6 @@ function openValveMarkDialog(slotId, opts) {
         <button id="valveMarkClear" class="btn btn-outline" style="flex:1;padding:12px;font-size:14px;">Clear</button>
         <button id="valveMarkSkip" class="btn" style="flex:1;padding:12px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">${opts.auto ? 'Skip' : 'Cancel'}</button>
       </div>
-      <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--text-dim);cursor:pointer;">
-        <input type="checkbox" id="valveMarkAsk" style="width:16px;height:16px;"> Ask after every source photo
-      </label>
     </div>`;
   document.body.appendChild(overlay);
   overlay.style.display = 'flex';
@@ -13944,7 +14064,7 @@ const TYPES_WITH_ELECTRICAL_FEED = new Set([
   'Fire Pump','Fire Jockey Pump','Condensate Pump','Chemical Feed Pump','Chemical Pump','Vacuum Pump','Lab Vacuum',
   'Condensate Return Unit','Unit Heater','Domestic Water Heater','Boiler','Humidifier',
   'Air Compressor','Air Dryer','ATS','Generator','Transformer','Day Tank','Elevator','Overhead Door',
-  'Dishwasher','Refrigerator','Blower','Switchgear','VFD'
+  'Dishwasher','Refrigerator','Blower','Switchgear','VFD','Battery Charger'
 ]);
 // A Compressed Air Tank (build 111) is a plain vessel — also when the Air
 // Compressor type picks its template.
@@ -14349,9 +14469,10 @@ function discardForm() {
     : 'Discard ' + (name ? '“' + name + '”' : 'this unit') + '?\n\nEverything on the form is cleared. Photos already taken stay on the iPad (Settings → Photo Store Report).';
   if (!confirm(msg)) return;
   if (!tabMayWrite()) return;   // another tab took over while the dialog was open
-  // A cancelled edit goes on to the next unit where the saved one is, as Close
-  // and Save & New do (build 150, wilkins 2026-11-03: the cancel wiped the
-  // location and it had to be entered again); the dropped edit's own is not kept
+  // A cancelled edit goes on to the next unit as Close and Save & New do (build
+  // 150, wilkins 2026-11-03: the cancel wiped the location): where the tech was
+  // before opening it (build 151), else where the saved unit is — never the
+  // dropped edit's own
   if (editing) startNextUnit({ building: editing.equipBuilding, room: editing.equipRoom });
   else clearForm(false);
   renderSavedPanel();
@@ -14532,15 +14653,27 @@ function settleSavedUnit(entry) {
 // looked at (build 140): opening another unit, Duplicate and Clear ask only then.
 function formHasUnsavedWork() { return formHasData() && !formIsUnchangedEdit(); }
 // The next unit, after a save or an unchanged unit closed: a blank form that
-// keeps the building and room — the form's, or `at`'s ({ building, room }).
+// keeps the building and room — where the tech was before opening the saved
+// unit on the form (build 151), else `at`'s ({ building, room }), else the form's.
 function startNextUnit(at) {
-  const building = at ? at.building : getBuilding(), room = at ? at.room : document.getElementById('equipRoom').value;
+  const place = returnPlaceFor(currentEntryId) || at
+    || { building: getBuilding(), room: document.getElementById('equipRoom').value };
   clearForm(false);
-  setBuilding(building || '');
-  document.getElementById('equipRoom').value = room || '';
+  setBuilding(place.building || '');
+  document.getElementById('equipRoom').value = place.room || '';
   autoSaveCurrent();
   renderSavedPanel();
   updateHeaderBadge();
+}
+
+// The form's building and room, or null when both are blank (build 151)
+function formPlace() {
+  const building = getBuilding(), room = document.getElementById('equipRoom').value || '';
+  return (building || room.trim()) ? { building, room } : null;
+}
+// The place kept when the saved unit `id` was opened, or null (build 151)
+function returnPlaceFor(id) {
+  return (_returnPlace && id && sameEntryId(_returnPlace.entryId, id)) ? _returnPlace : null;
 }
 
 function clearForm(confirm_first = true) {
@@ -14557,6 +14690,7 @@ function clearForm(confirm_first = true) {
   beginNewFormSession();   // any photo still saving can no longer attach here
   editingEntry = null;
   currentEntryId = null;   // next capture/save mints a fresh entry UUID
+  _returnPlace = null;     // the next unit's place is settled by now (startNextUnit, build 151)
   clearPhotoHashWarning();
   sources = [];
   photos = {};
@@ -14941,7 +15075,8 @@ function formHoldsEntry(entry) {
 // no longer holds their photos.
 function closeFormIfRemoving(rows) {
   if (!(rows || []).some(formHoldsEntry)) return false;
-  clearForm(false);
+  // back where the tech was before opening it (build 151), else a blank form
+  if (returnPlaceFor(currentEntryId)) startNextUnit(); else clearForm(false);
   return true;
 }
 function deleteSaved(index) {
@@ -15119,6 +15254,9 @@ function editSaved(index) {
       : `Current form has ${currentDesc}. Discard and edit "${savedEquipment[index].equipName}"?`;
     if (!confirm(confirmMsg)) return;
   }
+  // Where the tech is working (build 151): a new unit's building and room, or,
+  // from one saved unit to another, the place kept when the first was opened
+  const back = formEditTarget() ? returnPlaceFor(currentEntryId) : formPlace();
   // Reset editing state before loading new entry
   editingEntry = null;
 
@@ -15130,6 +15268,7 @@ function editSaved(index) {
   if (!isValidEntryId(entry.id)) { if (entry.id) entry.legacyId = String(entry.id); entry.id = genUuid(); saveAll(); }
   else if (typeof entry.id !== 'string') { entry.id = normEntryId(entry.id); saveAll(); }
   currentEntryId = entry.id;
+  _returnPlace = back ? { building: back.building, room: back.room, entryId: entry.id } : null;
   // Until the cards have rendered and noteFormOpened has the baseline, the form
   // counts as an edit (build 140 review): its autosaves don't run the check
   _openBaseline = { entryId: normEntryId(entry.id), opening: true };
@@ -17508,6 +17647,9 @@ function buildWipState() {
   if (!state.entryId && wipHasContent(state)) state.entryId = ensureCurrentEntryId();
   // the form as opened (build 140), while it is still that unit
   if (_openBaseline && _openBaseline.hash && state.entryId && sameEntryId(_openBaseline.entryId, state.entryId)) state.openedHash = _openBaseline.hash;
+  // where the tech was before opening it, for a relaunch (build 151)
+  const back = returnPlaceFor(state.entryId);
+  if (back) state.returnPlace = { building: back.building || '', room: back.room || '' };
   return state;
 }
 const wipJson = (st) => JSON.stringify(Object.assign({}, st, { at: null }));
@@ -18502,6 +18644,10 @@ async function loadAll() {
     // the form as it was opened, when the autosave knows it (build 140)
     _openBaseline = (editingEntry && String(state.openedHash || '').startsWith(OPENED_HASH_FORMAT))
       ? { entryId: currentEntryId, json: null, hash: String(state.openedHash) } : null;
+    // …and where the tech was before opening it (build 151)
+    const rp = state.returnPlace;
+    _returnPlace = (editingEntry && rp && typeof rp === 'object' && (rp.building || rp.room))
+      ? { building: String(rp.building || ''), room: String(rp.room || ''), entryId: currentEntryId } : null;
     document.getElementById('equipType').value = state.equipType || '';
     filterTemplateDropdown(state.equipType === '** New Equipment Type **' ? '' : (state.equipType || ''));
 
