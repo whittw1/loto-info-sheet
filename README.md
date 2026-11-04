@@ -69,7 +69,7 @@ Collapsible section that auto-expands when a template's diagram is available or 
 | Energy Source Category | Available Devices |
 |---|---|
 | Electrical | Disconnect, VFD, Switch, Breaker, Plug, Fuse, Quick Disconnect (+ padlock variants) |
-| Steam / Water (HHW, CHW, Condensate, DW, Feedwater, Glycol, etc.) | Gate Valve, Ball Valve, Butterfly Valve, Ckt Setter, Chain (+ cable/padlock variants) |
+| Steam / Water (HHW, CHW, Condensate, DW, Feedwater, Glycol, Energy Recovery Water, etc.) | Gate Valve, Ball Valve, Butterfly Valve, Ckt Setter, Chain (+ cable/padlock variants) |
 | Pneumatic / Gas / Fuel / Refrigerant / Chemical / Thermal | Gate Valve, Ball Valve, Butterfly Valve, Chain (no Ckt Setter) |
 | Kinetic | Rotating |
 | Gravity/Potential | Potential |
