@@ -142,6 +142,13 @@
 //             unit's building and room (it wiped them), autosaved; a Discard of a new unit still clears the form
 //   T462      build 150 (wilkins 2026-11-03): a Dental Vacuum's pumps on ONE Electrical line, Quantity = pumps, from
 //             the count prompt's own buttons; saved and exported as Qty n; Lab / Medical Vacuum keep a line per pump
+//   T463      build 151 (wilkins 2026-11-03): leaving a saved unit (Cancel edit, Close, Save & New, Delete, a switch,
+//             a relaunch) starts the next unit where the tech was before opening it; a blank form: the unit's place
+//   T464      build 151: the mark screen's "Ask after every source photo" box is in its title row, not under the buttons
+//   T465      build 151: a link to an In/Out pair asks Both / In / Out — the row becomes "CHW In" / "CHW Out" Qty 1
+//             (its valve's tag, linkedTo.valve, "— Out valve" in the sheet's Linked To) or the pair; exported so
+//   T466      build 151: the Chiller type starts with Electrical, then CHW In and CHW Out (Butterfly, Gauge/Drain - CHW)
+//   T467      build 151: the Battery Charger type, on Standard Electrical (one Meter-verified feed, the voltage asked)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -3131,7 +3138,8 @@
     const T = mkEntry('Pair-102', { sources: [Object.assign(mkSrc('HHW In/Out'), { sourceId: genUuid(), deviceType: 'Ball Valve', quantity: 2, verification: 'Temp Only - Hot' })] });
     savedEquipment = [T]; saveAll();
     fillFormNoSources('Link-102'); addSource();
-    pendingLinkSourceIndex = 0; applyLink(0, 0);
+    // build 151: a pair asks which valve — Both is the pair
+    await withDialogs({ choice: { 'link-valve': 'both' } }, async () => { pendingLinkSourceIndex = 0; await applyLink(0, 0); });
     record(N, sources[0].energySource === 'HHW In/Out' && sources[0].quantity === 2, 'energy="' + sources[0].energySource + '", quantity=' + sources[0].quantity);
   }
 
@@ -7422,7 +7430,7 @@
 
   // T461 — Cancel edit goes on to a new unit where the saved one is
   async function t461_cancelEditKeepsTheBuildingAndRoom() {
-    const N = 'T461 build 150 (wilkins: after cancelling an edit the next unit\'s location had to be entered again): Cancel edit of a changed unit leaves a blank new unit at the saved unit\'s building and room — not the dropped edit\'s — and the autosave holds them; the saved unit is untouched; "No" keeps the edit; Close on an unchanged unit still keeps them; a Discard of a new unit still clears the whole form';
+    const N = 'T461 build 150 (wilkins: after cancelling an edit the next unit\'s location had to be entered again): Cancel edit of a changed unit leaves a blank new unit at the saved unit\'s building and room — not the dropped edit\'s — and the autosave holds them; the saved unit is untouched; "No" keeps the edit; Close on an unchanged unit goes back to where the tech was (build 151); a Discard of a new unit still clears the whole form';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -7446,12 +7454,12 @@
     got.wip = [wip.equipBuilding, wip.equipRoom].join(' | ');
     want(wip.equipBuilding === 'Bldg 7' && wip.equipRoom === 'R-461', 'the autosave: ' + got.wip);
     want(savedEquipment.length === 1 && JSON.stringify(savedEquipment[0]) === before, 'the saved unit changed');
-    // unchanged: Close keeps them (build 139), from another place
+    // unchanged: Close goes back to where the tech was before opening it (build 151; build 150: the unit's place)
     setBuilding('Bldg 1'); document.getElementById('equipRoom').value = 'R-1';
     await withDialogs({ confirm: true }, async () => { editSaved(0); });
     const closed = await withDialogs({ confirm: false }, async () => { discardForm(); });
     got.close = [closed.log.length, place()].join(' | ');
-    want(!closed.log.length && place() === ' | Bldg 7 | R-461', 'Close: ' + got.close);
+    want(!closed.log.length && place() === ' | Bldg 1 | R-1', 'Close: ' + got.close);
     // a new unit's Discard clears the form, building and room too (as before)
     fillForm('N-461', { building: 'Bldg 8', room: 'R-8' });
     await withDialogs({ confirm: true }, async () => { discardForm(); });
@@ -7526,6 +7534,261 @@
     await resetAppState();
     got.medical = (await vacuum('MV-462', 'Medical Vacuum', 2)).shape;
     want(/^Electrical 208V Disconnect x1,Electrical 208V Disconnect x1,Vacuum Air In/.test(got.medical), 'Medical: ' + got.medical);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // ==========================================================================
+  // BUILD 151 — back where the tech was; the mark screen's checkbox; links to one valve; chiller CHW; battery charger
+  // ==========================================================================
+
+  // T463 — leaving a saved unit goes back to where the tech was
+  async function t463_leavingASavedUnitGoesBackWhereTheTechWas() {
+    const N = 'T463 build 151 (wilkins: after an edit the location was still lost — "Where I was before"): a saved unit opened from a new-unit form at Bldg 7 / R-7 sends the next unit back there however it is left — Cancel edit, Close, Save & New with a change (the unit keeps its own place), Delete — also after switching to another saved unit and after a relaunch; a blank form gives the opened unit\'s place; a new unit\'s Save & New and a Duplicate keep their own place';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const place = () => [getBuilding(), document.getElementById('equipRoom').value].join(' / ');
+    const at = (b, r) => { setBuilding(b); document.getElementById('equipRoom').value = r; autoSaveCurrent(); };
+    fillForm('U-463', { building: 'Bldg 9', room: 'R-9' }); const U = saveEntry();
+    fillForm('V-463', { building: 'Bldg 8', room: 'R-8' }); const V = saveEntry();
+    const open = async (e) => { await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.indexOf(savedEquipment.find(x => x.id === e.id))); }); };
+    const change = () => { document.getElementById('equipNotes').value = 'changed ' + Math.random(); autoSaveCurrent(); };
+    // Cancel edit
+    clearForm(false); at('Bldg 7', 'R-7');
+    await open(U); got.opened = place(); change();
+    await withDialogs({ confirm: true }, async () => { discardForm(); });
+    got.cancel = place();
+    want(got.opened === 'Bldg 9 / R-9' && got.cancel === 'Bldg 7 / R-7', 'Cancel edit ' + got.opened + ' → ' + got.cancel);
+    // Close (unchanged)
+    await open(U);
+    await withDialogs({ confirm: false }, async () => { discardForm(); });
+    got.close = place();
+    want(got.close === 'Bldg 7 / R-7', 'Close ' + got.close);
+    // Save & New with a change: the unit keeps its own place
+    await open(U); change();
+    await withDialogs({ confirm: true, choice: () => 'later' }, async () => { performSaveAndNew(); });
+    const u = savedEquipment.find(e => e.id === U.id) || {};
+    got.save = [place(), u.equipBuilding + ' / ' + u.equipRoom, /^changed/.test(u.notes || '')].join(' | ');
+    want(got.save === 'Bldg 7 / R-7 | Bldg 9 / R-9 | true', 'Save & New ' + got.save);
+    // Save & New unchanged
+    await open(U);
+    await withDialogs({ confirm: true }, async () => { await saveAndNew(); });
+    got.saveSame = place();
+    want(got.saveSame === 'Bldg 7 / R-7', 'Save & New unchanged ' + got.saveSame);
+    // from one saved unit to another: the first place is kept
+    await open(U); await open(V);
+    got.switched = place();
+    await withDialogs({ confirm: false }, async () => { discardForm(); });
+    got.switch = place();
+    want(got.switched === 'Bldg 8 / R-8' && got.switch === 'Bldg 7 / R-7', 'switch ' + got.switched + ' → ' + got.switch);
+    // a relaunch with the edit open
+    await open(U); change();
+    got.wip = JSON.stringify(buildWipState().returnPlace || null);
+    autoSaveCurrent(); await sleep(300);
+    editingEntry = null; currentEntryId = null; _openBaseline = null; _returnPlace = null; savedEquipment = []; sources = []; photos = {}; miscPhotos = [];
+    try { clearSketchState(); } catch (e) {}
+    ['equipName', 'equipNotes', 'equipRoom'].forEach(id => { document.getElementById(id).value = ''; });
+    await withToasts(async () => { await loadAll(); await sleep(900); });
+    dropLoadBanners();
+    got.relaunched = [!!formEditTarget(), place()].join(' | ');
+    await withDialogs({ confirm: true }, async () => { discardForm(); });
+    got.relaunch = place();
+    want(got.wip === '{"building":"Bldg 7","room":"R-7"}' && got.relaunched === 'true | Bldg 9 / R-9' && got.relaunch === 'Bldg 7 / R-7', 'relaunch ' + [got.wip, got.relaunched, got.relaunch].join(' / '));
+    // Delete the open unit
+    const T = Object.assign(mkEntry('T-463', { building: 'Bldg 6', room: 'R-6' }), {});
+    savedEquipment.push(T); saveAll(); renderSavedPanel();
+    clearForm(false); at('Bldg 7', 'R-7');
+    await open(T);
+    await withDialogs({ confirm: true }, async () => { await deleteSaved(savedEquipment.findIndex(e => e.id === T.id)); });
+    await sleep(50);
+    got.del = [savedEquipment.some(e => e.id === T.id), place()].join(' | ');
+    want(got.del === 'false | Bldg 7 / R-7', 'Delete ' + got.del);
+    // a blank form: the opened unit's place (build 150)
+    clearForm(false);
+    await open(U); change();
+    await withDialogs({ confirm: true }, async () => { discardForm(); });
+    got.blank = place();
+    want(got.blank === 'Bldg 9 / R-9', 'from a blank form ' + got.blank);
+    // nothing left over: a new unit's Save & New keeps its own place
+    fillForm('W-463', { building: 'Bldg 4', room: 'R-4' }); saveEntry();
+    got.newUnit = place();
+    want(got.newUnit === 'Bldg 4 / R-4' && _returnPlace === null, 'a new unit ' + got.newUnit);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T464 — the mark screen's "Ask after every source photo" is at the top
+  async function t464_theAskBoxIsAtTheTopOfTheMarkScreen() {
+    const N = 'T464 build 151 (wilkins: under Save / Clear / Skip it was easy to uncheck after marking): the mark screen\'s "Ask after every source photo" sits in its title row, above the photo and nowhere near the buttons; there is one such box; it still turns the setting on and off';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillForm('M-464');
+    sources = [Object.assign(mkSrc('CHW In/Out'), { deviceType: 'Ball Valve', quantity: 2 })]; renderSources();
+    await captureInto('source_0', await makePhotoFile('m464'));
+    const before = valveMarkPromptEnabled();
+    closeAllPrompts(); closeValveMarkDialog();
+    openValveMarkDialog('source_0'); await markDialogReady();
+    const o = document.getElementById('valveMarkOverlay');
+    const box = o && o.querySelector('#valveMarkAsk');
+    const h3 = o && o.querySelector('h3');
+    const wrap = o && o.querySelector('#valveMarkWrap');
+    const save = o && o.querySelector('#valveMarkSave');
+    got.count = o ? o.querySelectorAll('#valveMarkAsk').length : 0;
+    if (box && h3 && wrap && save) {
+      const b = box.getBoundingClientRect(), w = wrap.getBoundingClientRect(), sv = save.getBoundingClientRect();
+      got.pos = { box: Math.round(b.top), photo: Math.round(w.top), save: Math.round(sv.top) };
+      want(box.closest('label').parentElement === h3.parentElement, 'not in the title row');
+      want(b.bottom <= w.top && b.bottom < sv.top - 100, 'not above the photo / far from the buttons ' + JSON.stringify(got.pos));
+      box.checked = !before; box.dispatchEvent(new Event('change', { bubbles: true }));
+      got.toggled = [before, valveMarkPromptEnabled()];
+      want(valveMarkPromptEnabled() === !before, 'the box no longer sets it');
+      box.checked = before; box.dispatchEvent(new Event('change', { bubbles: true }));
+    } else fails.push('no dialog / box');
+    want(got.count === 1, 'boxes ' + got.count);
+    closeValveMarkDialog();
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T465 — a link to an In/Out pair asks which valve
+  async function t465_aLinkToAnInOutPairAsksWhichValve() {
+    const N = 'T465 build 151 (wilkins: linking to "CHW In/Out" with 2 valves "doesn\'t ask me which one"): a link to an In/Out pair asks Both / In / Out; In or Out makes the row that side ("CHW In" / "CHW Out"), Quantity 1, the valve\'s own tag from "V-1; V-2", linkedTo.valve, "— Out valve" in its label; Both makes the pair, Quantity 2; Cancel changes nothing and leaves the list open; a plain target and a pair with no side names (Glycol HW) ask nothing; exported as such in entries.json and the sheet (col 1, col 4, col 13)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const P = mkEntry('CH-465', { sources: [
+      Object.assign(mkSrc('CHW In/Out'), { sourceId: genUuid(), deviceType: 'Ball Valve', deviceId: 'V-1; V-2', quantity: 2 }),
+      Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Disconnect' }),
+      Object.assign(mkSrc('Glycol HW In/Out'), { sourceId: genUuid(), deviceType: 'Ball Valve', quantity: 2 })] });
+    savedEquipment = [P]; saveAll();
+    fillFormNoSources('AHU-465'); addSource(); addSource(); addSource(); addSource(); addSource();
+    const asked = [];
+    const link = async (row, target, answer) => {
+      await withDialogs({ confirm: true, choice: (o) => { asked.push(o.id); return o.id === 'link-valve' ? answer : 'cancel'; } }, async () => {
+        showLinkDialog(row); showLinkSourcePicker(0); await applyLink(0, target);
+      });
+      const r = sources[row];
+      return [r.energySource, sourceQty(r), r.deviceId || '-', (r.linkedTo && r.linkedTo.valve) || '-', (r.linkedTo && r.linkedTo.sourceLabel) || '-'].join(' | ');
+    };
+    got.out = await link(0, 0, 'out');
+    want(got.out === 'CHW Out | 1 | V-2 | out | CHW In/Out — Ball Valve — (V-1; V-2) — Out valve', 'Out: ' + got.out);
+    got.in = await link(1, 0, 'in');
+    want(got.in === 'CHW In | 1 | V-1 | in | CHW In/Out — Ball Valve — (V-1; V-2) — In valve', 'In: ' + got.in);
+    got.both = await link(2, 0, 'both');
+    want(got.both === 'CHW In/Out | 2 | V-1; V-2 | - | CHW In/Out — Ball Valve — (V-1; V-2)', 'Both: ' + got.both);
+    asked.length = 0;
+    got.cancel = await link(3, 0, 'cancel');
+    got.cancelOpen = !!document.getElementById('linkDialogOverlay');
+    want(got.cancel === ' | 1 | - | - | -' && got.cancelOpen && asked.join() === 'link-valve', 'Cancel: ' + got.cancel + ' open=' + got.cancelOpen);
+    closeLinkDialog();
+    asked.length = 0;
+    got.plain = await link(3, 1, 'out');
+    got.glycol = await link(4, 2, 'out');
+    want(!asked.includes('link-valve'), 'asked on a plain / Glycol target: ' + asked.join());
+    want(/^Electrical 480V \| 1 \| - \| - \|/.test(got.plain) && /^Glycol HW In\/Out \| 2 \| - \| - \|/.test(got.glycol), 'plain / glycol: ' + got.plain + ' / ' + got.glycol);
+    // exported
+    const A = saveEntry();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (zip) {
+      const u = await unzipExport(zip.blob);
+      const je = jsonEntryFor(u.entriesJson, A);
+      got.json = je ? (je.sources || []).slice(0, 3).map(x => x.energySource + ' x' + x.quantity + ' ' + ((x.linkedTo && x.linkedTo.valve) || '-') + ' ' + ((x.linkedTo && x.linkedTo.sourceId) === P.sources[0].sourceId)).join(', ') : null;
+      want(got.json === 'CHW Out x1 out true, CHW In x1 in true, CHW In/Out x2 - true', 'entries.json ' + got.json);
+      const xp = Object.keys(u.files).find(q => /Information_Sheet_.*\.xlsx$/.test(q));
+      const rows = [];
+      for (let n = 1; n <= 3; n++) { const { row } = await sheetSourceRow(u.files[xp], 'AHU-465', n); rows.push(row ? [row[0], row[3], row[12]].join(' / ') : 'none'); }
+      got.sheet = rows;
+      want(rows[0] === 'CHW Out / 1 / CH-465 / Source #1 (CHW In/Out — Ball Valve — (V-1; V-2) — Out valve)'
+        && rows[1] === 'CHW In / 1 / CH-465 / Source #1 (CHW In/Out — Ball Valve — (V-1; V-2) — In valve)'
+        && rows[2] === 'CHW In/Out / 2 / CH-465 / Source #1 (CHW In/Out — Ball Valve — (V-1; V-2))', 'sheet ' + JSON.stringify(rows));
+    } else fails.push('no zip: ' + confirms.join(' | '));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T466 — a chiller starts with CHW In and CHW Out
+  async function t466_aChillerStartsWithChwInAndOut() {
+    const N = 'T466 build 151 (wilkins: "Have a chiller template automatically populate CHW In and CHW out as separate sources"): the Chiller type, after its voltage, holds its Electrical disconnect first, then CHW In and CHW Out (Butterfly Valve, Gauge/Drain - CHW, Quantity 1 each); the capacitor answer still adds its row; a photographed row the tech had stays first with its photo; the sheet and entries.json carry two rows, not one In/Out pair';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const rows = () => sources.map(s => [s.energySource, s.deviceType, s.verification, sourceQty(s)].join('/'));
+    const chiller = async (name, answer, before) => {
+      await resetAppState();
+      fillFormNoSources(name);
+      if (before) await before();
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = 'Chiller';
+      await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+      await withDialogs({ confirm: true, choice: { 'chiller-capacitors': answer } }, async () => {
+        await applyVoltageChoice('480V'); await sleep(0);
+        // a form holding the tech's rows asks before the template changes (build 93)
+        if (document.getElementById('templateConfirmOverlay')) { confirmTemplateChange('Chiller'); await sleep(0); }
+      });
+      closeAllPrompts();
+      return rows();
+    };
+    got.no = await chiller('CH-466', 'No');
+    want(getTemplate() === 'Chiller' && got.no.join('|') === 'Electrical 480V/Disconnect/Controls/1|CHW In/Butterfly Valve/Gauge/Drain - CHW/1|CHW Out/Butterfly Valve/Gauge/Drain - CHW/1', 'rows ' + got.no.join('|'));
+    want(sources[0]._voltagePick && !sources[1]._voltagePick && !sources[2]._voltagePick, 'the type\'s voltage row');
+    // exported as two rows
+    const A = saveEntry();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (zip) {
+      const u = await unzipExport(zip.blob);
+      const je = jsonEntryFor(u.entriesJson, A);
+      got.json = je ? (je.sources || []).map(x => x.energySource + ' x' + x.quantity).join(', ') : null;
+      want(got.json === 'Electrical 480V x1, CHW In x1, CHW Out x1', 'entries.json ' + got.json);
+      const xp = Object.keys(u.files).find(q => /Information_Sheet_.*\.xlsx$/.test(q));
+      const sheet = [];
+      for (let n = 1; n <= 3; n++) { const { row } = await sheetSourceRow(u.files[xp], 'CH-466', n); sheet.push(row ? row[0] + ' x' + row[3] : 'none'); }
+      got.sheet = sheet.join(', ');
+      want(got.sheet === 'Electrical 480V x1, CHW In x1, CHW Out x1', 'sheet ' + got.sheet);
+    } else fails.push('no zip: ' + confirms.join(' | '));
+    got.yes = await chiller('CH-466b', 'Yes');
+    want(got.yes.filter(r => /^Stored Electrical Energy/.test(r)).length === 1 && got.yes.filter(r => /^CHW (In|Out)\//.test(r)).length === 2 && /^Electrical 480V/.test(got.yes[0]), 'with capacitors ' + got.yes.join('|'));
+    // a photographed row the tech had: kept first, photo still on it
+    let key = null;
+    got.kept = await chiller('CH-466c', 'No', async () => {
+      sources.push(Object.assign(mkSrc('Condenser Water In'), { deviceType: 'Ball Valve' })); renderSources();
+      await captureInto('source_0', await makePhotoFile('ch466'));
+      key = photos.source_0 && photos.source_0.dbKey;
+    });
+    want(got.kept.map(r => r.split('/')[0]).join('|') === 'Condenser Water In|Electrical 480V|CHW In|CHW Out'
+      && !!key && photos.source_0 && photos.source_0.dbKey === key && !photos.source_1 && !photos.source_2, 'kept row ' + got.kept.join('|'));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T467 — Battery Charger, a standard electrical unit
+  async function t467_aBatteryChargerIsStandardElectrical() {
+    const N = 'T467 build 151 (wilkins: "Add Battery Charger as an Equipment Type, with a standard electrical template"): Battery Charger is on the type list, picks Standard Electrical with no question, asks the voltage and leaves one Meter-verified Electrical row; an Electrical feed is expected; app-lists.json maps it; exported as type Battery Charger, template Standard Electrical';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    got.listed = DATA.equipmentTypes.includes('Battery Charger') && [...document.getElementById('equipType').options].some(o => o.value === 'Battery Charger');
+    want(got.listed, 'not on the type list');
+    fillFormNoSources('BC-467');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'Battery Charger';
+    let volts = null, askedTemplate = false;
+    await withDialogs({ confirm: true }, async () => {
+      handleEquipTypeChange();
+      await sleep(0);
+      askedTemplate = !!document.getElementById('templatePromptOverlay');
+      const vo = document.getElementById('templateVoltageOverlay');
+      if (vo) { volts = [...vo.querySelectorAll('button')].map(b => b.textContent.trim()).filter(t => /^\d+V$/.test(t)); applyTemplateVoltageChoice('208V'); }
+    });
+    closeAllPrompts();
+    got.template = getTemplate(); got.volts = volts; got.rows = sources.map(s => [s.energySource, s.deviceType, s.verification].join('/'));
+    want(got.template === 'Standard Electrical' && !askedTemplate && (volts || []).join() === '120V,208V,240V,480V,4160V'
+      && got.rows.join('|') === 'Electrical 208V//Meter' && expectsElectricalSource('Battery Charger', 'Standard Electrical'), 'the unit ' + JSON.stringify(got));
+    got.lists = JSON.stringify((appListsSnapshot(APP_BUILD).typeToTemplates || {})['Battery Charger'] || null);
+    want(got.lists === '["Standard Electrical"]', 'app-lists ' + got.lists);
+    const A = saveEntry();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (zip) {
+      const u = await unzipExport(zip.blob);
+      const je = jsonEntryFor(u.entriesJson, A) || {};
+      got.json = [je.equipType, je.template].join(' / ');
+      want(got.json === 'Battery Charger / Standard Electrical', 'entries.json ' + got.json);
+    } else fails.push('no zip: ' + confirms.join(' | '));
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -9345,18 +9608,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 150 (was build 122\'s): APP_BUILD and the header label say 150, the service worker\'s cache is loto-collector-v7.145, Xcode\'s CURRENT_PROJECT_VERSION is 150 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 151 (was build 122\'s): APP_BUILD and the header label say 151, the service worker\'s cache is loto-collector-v7.146, Xcode\'s CURRENT_PROJECT_VERSION is 151 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 150 && !!label && +label[1] === 150, 'the build');
+    want(APP_BUILD === 151 && !!label && +label[1] === 151, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.145', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.146', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 150;,CURRENT_PROJECT_VERSION = 150;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 151;,CURRENT_PROJECT_VERSION = 151;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -15972,7 +16235,9 @@
     t453_aChangedCountKeepsEachValvesAnswer, t454_splitTakesTheLastValveAsItIs, t455_perValveAnswersFollowTheRow,
     t456_theMarkBoxesNameTheOddValve, t457_everyCountChangeSettlesThePerValveAnswers,
     t458_aBypassDriveWithAKeypadHasItsOwnVerification, t459_anAhusDrivesTogetherAreOneLine,
-    t460_aSteamRowTakesTheSitesPressure, t461_cancelEditKeepsTheBuildingAndRoom, t462_aDentalVacuumsPumpsAreOneLine];
+    t460_aSteamRowTakesTheSitesPressure, t461_cancelEditKeepsTheBuildingAndRoom, t462_aDentalVacuumsPumpsAreOneLine,
+    t463_leavingASavedUnitGoesBackWhereTheTechWas, t464_theAskBoxIsAtTheTopOfTheMarkScreen,
+    t465_aLinkToAnInOutPairAsksWhichValve, t466_aChillerStartsWithChwInAndOut, t467_aBatteryChargerIsStandardElectrical];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

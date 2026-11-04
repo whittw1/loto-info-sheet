@@ -875,7 +875,7 @@
     ['link', 2, () => sources.length > 0 && savedEquipment.some(e => (e.sources || []).length), async () => {
       const es = savedEquipment.map((e, i) => (e.sources || []).length ? i : -1).filter(i => i >= 0);
       const ei = pick(es); const si = randInt(0, savedEquipment[ei].sources.length - 1); const i = srcIdx();
-      pendingLinkSourceIndex = i; applyLink(ei, si); return 'link ' + i + ' → ' + ei + '/' + si;
+      pendingLinkSourceIndex = i; await applyLink(ei, si); return 'link ' + i + ' → ' + ei + '/' + si;   // a pair asks which valve (build 151)
     }],
     ['unlink', 1, () => sources.some(s => s.linkedTo), async () => { const i = sources.findIndex(s => s.linkedTo); unlinkSource(i); return 'unlink ' + i; }],
     ['copySource', 1, () => sources.length > 0 && savedEquipment.some(e => (e.sources || []).length), async () => {
