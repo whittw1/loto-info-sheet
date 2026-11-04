@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 151,
+  "build": 152,
   "hospitals": [
     {
       "code": "Marion",
@@ -332,9 +332,9 @@
     "Chemical Out",
     "Glycol HW In/Out",
     "Glycol CHW In/Out",
-    "Glycol ER Water In/Out",
-    "Glycol ER Water In",
-    "Glycol ER Water Out",
+    "Energy Recovery Water In/Out",
+    "Energy Recovery Water In",
+    "Energy Recovery Water Out",
     "Kinetic",
     "Stored Electrical Energy",
     "Refrigerant",

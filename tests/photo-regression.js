@@ -149,6 +149,7 @@
 //             (its valve's tag, linkedTo.valve, "— Out valve" in the sheet's Linked To) or the pair; exported so
 //   T466      build 151: the Chiller type starts with Electrical, then CHW In and CHW Out (Butterfly, Gauge/Drain - CHW)
 //   T467      build 151: the Battery Charger type, on Standard Electrical (one Meter-verified feed, the voltage asked)
+//   T468      build 152: energy recovery is "Energy Recovery Water In/Out / In / Out" (was Glycol ER Water); a saved Glycol ER row keeps its name
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -7825,6 +7826,54 @@
       const je = jsonEntryFor(u.entriesJson, A) || {};
       got.json = [je.equipType, je.template].join(' / ');
       want(got.json === 'Battery Charger / Standard Electrical', 'entries.json ' + got.json);
+    } else fails.push('no zip: ' + confirms.join(' | '));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T468 — Energy Recovery Water replaces Glycol ER Water
+  async function t468_energyRecoveryWaterReplacesGlycolEr() {
+    const N = 'T468 build 152 (wilkins: "change it to regular energy recovery water"): the source list offers Energy Recovery Water In/Out, In and Out where Glycol ER Water stood (app-lists.json too); each is a cold water line as Glycol ER was — the valve devices with a circuit setter, no Hot / CHW verification, the water family (drain question), letter W, the water colour, a valve state, In/Out sides for a one-valve link; a saved Glycol ER Water row still shows its own name selected and exports it; a new Energy Recovery Water In/Out row exports under its name, Qty 2';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const ER = ['Energy Recovery Water In/Out', 'Energy Recovery Water In', 'Energy Recovery Water Out'];
+    got.listed = ER.every(n => DATA.energySources.includes(n)) && !DATA.energySources.some(n => /^Glycol ER/.test(n));
+    want(got.listed, 'the list ' + DATA.energySources.filter(n => /recovery|glycol/i.test(n)).join());
+    const al = appListsSnapshot(APP_BUILD).energySources || [];
+    want(ER.every(n => al.includes(n)) && !al.some(n => /^Glycol ER/.test(n)), 'app-lists ' + al.filter(n => /recovery|glycol/i.test(n)).join());
+    got.rules = ER.map(n => [n, getFilteredDevices(n) === VALVE_DEVICES_WITH_CKT || getFilteredDevices(n).join() === VALVE_DEVICES_WITH_CKT.join(),
+      getTempSuffixFor(n) || 'cold', isWaterFamilySource(n), drainCodeFollowsDrain({ energySource: n }), prefixByEnergyName(n),
+      getSourceColorClass(n), takesValveState(n, 'Butterfly Valve')].join('/'));
+    want(got.rules.every(r => /\/true\/cold\/true\/true\/W\/source-water\/true$/.test(r)), 'rules ' + got.rules.join(' | '));
+    // the same answers the old name gave
+    const old = 'Glycol ER Water In/Out';
+    want(getTempSuffixFor(old) === getTempSuffixFor(ER[0]) && getFilteredDevices(old).join() === getFilteredDevices(ER[0]).join()
+      && prefixByEnergyName(old) === 'W' && getSourceColorClass(old) === 'source-water', 'the old name answers otherwise');
+    const sides = inOutSideNames({ energySource: ER[0], quantity: 2 });
+    want(sides && sides.in === ER[1] && sides.out === ER[2], 'sides ' + JSON.stringify(sides));
+    // a saved Glycol ER row (older data) and a new Energy Recovery row
+    fillFormNoSources('ER-468');
+    sources.push(Object.assign(mkSrc(old), { deviceType: 'Butterfly Valve', quantity: 2, verification: 'Gauge/Drain', collapsed: false }));
+    sources.push(Object.assign(mkSrc('Electrical 480V'), { collapsed: false }));
+    renderSources();
+    handleEnergySourceChange(1, ER[0]);
+    Object.assign(sources[1], { deviceType: 'Butterfly Valve', quantity: 2, verification: 'Gauge/Drain', collapsed: false });
+    renderSources();
+    const sel0 = document.getElementById('src_energy_0'), sel1 = document.getElementById('src_energy_1');
+    got.shown = [sel0 && sel0.value, sel1 && sel1.value].join(' | ');
+    want(got.shown === old + ' | ' + ER[0], 'shown ' + got.shown);
+    const A = saveEntry();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (zip) {
+      const u = await unzipExport(zip.blob);
+      const je = jsonEntryFor(u.entriesJson, A);
+      got.json = je ? (je.sources || []).map(x => x.energySource + ' x' + x.quantity).join(', ') : null;
+      want(got.json === old + ' x2, ' + ER[0] + ' x2', 'entries.json ' + got.json);
+      const xp = Object.keys(u.files).find(q => /Information_Sheet_.*\.xlsx$/.test(q));
+      const sheet = [];
+      for (let n = 1; n <= 2; n++) { const { row } = await sheetSourceRow(u.files[xp], 'ER-468', n); sheet.push(row ? row[0] + ' x' + row[3] : 'none'); }
+      got.sheet = sheet.join(', ');
+      want(got.sheet === old + ' x2, ' + ER[0] + ' x2', 'sheet ' + got.sheet);
     } else fails.push('no zip: ' + confirms.join(' | '));
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -16274,7 +16323,8 @@
     t458_aBypassDriveWithAKeypadHasItsOwnVerification, t459_anAhusDrivesTogetherAreOneLine,
     t460_aSteamRowTakesTheSitesPressure, t461_cancelEditKeepsTheBuildingAndRoom, t462_aDentalVacuumsPumpsAreOneLine,
     t463_leavingASavedUnitGoesBackWhereTheTechWas, t464_theAskBoxIsAtTheTopOfTheMarkScreen,
-    t465_aLinkToAnInOutPairAsksWhichValve, t466_aChillerStartsWithChwInAndOut, t467_aBatteryChargerIsStandardElectrical];
+    t465_aLinkToAnInOutPairAsksWhichValve, t466_aChillerStartsWithChwInAndOut, t467_aBatteryChargerIsStandardElectrical,
+    t468_energyRecoveryWaterReplacesGlycolEr];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
