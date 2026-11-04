@@ -7832,7 +7832,7 @@
 
   // T468 — Energy Recovery Water replaces Glycol ER Water
   async function t468_energyRecoveryWaterReplacesGlycolEr() {
-    const N = 'T468 build 152 (wilkins: "change it to regular energy recovery water"): the source list offers Energy Recovery Water In/Out, In and Out where Glycol ER Water stood (app-lists.json too); each is a cold water line as Glycol ER was — the valve devices with a circuit setter, no Hot / CHW verification, the water family (drain question), letter W, the water colour, a valve state, In/Out sides for a one-valve link; a saved Glycol ER Water row still shows its own name selected and exports it; a new Energy Recovery Water In/Out row exports under its name, Qty 2';
+    const N = 'T468 build 152 (wilkins: "change it to regular energy recovery water"): the source list offers Energy Recovery Water In/Out, In and Out where Glycol ER Water stood (app-lists.json too); each is a cold water line as Glycol ER was — the valve devices with a circuit setter, no Hot / CHW verification, the water family (drain question), letter W, the water colour, a valve state, In/Out sides for a one-valve link; a saved Glycol ER Water row still shows its own name selected, still links to one valve of its pair and exports it; every water name is coloured as water; a new Energy Recovery Water In/Out row exports under its name, Qty 2';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -7841,7 +7841,7 @@
     want(got.listed, 'the list ' + DATA.energySources.filter(n => /recovery|glycol/i.test(n)).join());
     const al = appListsSnapshot(APP_BUILD).energySources || [];
     want(ER.every(n => al.includes(n)) && !al.some(n => /^Glycol ER/.test(n)), 'app-lists ' + al.filter(n => /recovery|glycol/i.test(n)).join());
-    got.rules = ER.map(n => [n, getFilteredDevices(n) === VALVE_DEVICES_WITH_CKT || getFilteredDevices(n).join() === VALVE_DEVICES_WITH_CKT.join(),
+    got.rules = ER.map(n => [n, getFilteredDevices(n).join() === VALVE_DEVICES_WITH_CKT.join(),
       getTempSuffixFor(n) || 'cold', isWaterFamilySource(n), drainCodeFollowsDrain({ energySource: n }), prefixByEnergyName(n),
       getSourceColorClass(n), takesValveState(n, 'Butterfly Valve')].join('/'));
     want(got.rules.every(r => /\/true\/cold\/true\/true\/W\/source-water\/true$/.test(r)), 'rules ' + got.rules.join(' | '));
@@ -7851,6 +7851,11 @@
       && prefixByEnergyName(old) === 'W' && getSourceColorClass(old) === 'source-water', 'the old name answers otherwise');
     const sides = inOutSideNames({ energySource: ER[0], quantity: 2 });
     want(sides && sides.in === ER[1] && sides.out === ER[2], 'sides ' + JSON.stringify(sides));
+    // a saved Glycol ER pair still links to one valve (review: the list lost its sides)
+    const oldSides = inOutSideNames({ energySource: old, quantity: 2 });
+    want(oldSides && oldSides.in === 'Glycol ER Water In' && oldSides.out === 'Glycol ER Water Out', 'old sides ' + JSON.stringify(oldSides));
+    // every water line is coloured as water (review), not only these
+    want(['Geothermal Water In/Out', 'Fire Water'].every(n => getSourceColorClass(n) === 'source-water'), 'other water colours');
     // a saved Glycol ER row (older data) and a new Energy Recovery row
     fillFormNoSources('ER-468');
     sources.push(Object.assign(mkSrc(old), { deviceType: 'Butterfly Valve', quantity: 2, verification: 'Gauge/Drain', collapsed: false }));
@@ -9694,18 +9699,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 151 (was build 122\'s): APP_BUILD and the header label say 151, the service worker\'s cache is loto-collector-v7.146, Xcode\'s CURRENT_PROJECT_VERSION is 151 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 152 (was build 122\'s): APP_BUILD and the header label say 152, the service worker\'s cache is loto-collector-v7.147, Xcode\'s CURRENT_PROJECT_VERSION is 152 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 151 && !!label && +label[1] === 151, 'the build');
+    want(APP_BUILD === 152 && !!label && +label[1] === 152, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.146', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.147', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 151;,CURRENT_PROJECT_VERSION = 151;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 152;,CURRENT_PROJECT_VERSION = 152;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'

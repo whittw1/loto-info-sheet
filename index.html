@@ -8996,9 +8996,9 @@ function getSourceColorClass(sourceType) {
   const s = sourceType.toLowerCase();
   if (s.startsWith('electrical') || s.startsWith('stored') || s.startsWith('battery')) return 'source-electrical';
   if (s.includes('lps') || s.includes('mps') || s.includes('hps') || s.includes('condensate')) return 'source-steam';
+  // every water line by name (build 152: Geothermal / Energy Recovery Water were grey)
   if (s.includes('hhw') || s.includes('chw') || s.includes('dhw') || s.includes('dw ') ||
-      s.includes('condenser water') || s.includes('feedwater') || s.includes('glycol') ||
-      s.includes('energy recovery')) return 'source-water';
+      s.includes('water') || s.includes('glycol')) return 'source-water';
   if (s.includes('gas') || s.includes('propane')) return 'source-gas';
   return 'source-default';
 }
@@ -10889,6 +10889,10 @@ function showLinkSourcePicker(equipIndex) {
   document.body.appendChild(newOverlay);
 }
 
+// Names the list once offered that saved units still carry and loto-web still
+// maps (build 152: "Glycol ER Water" became "Energy Recovery Water"). Not offered
+// for new rows; kept so a saved pair still links to one valve.
+const RETIRED_ENERGY_SOURCES = ['Glycol ER Water In/Out', 'Glycol ER Water In', 'Glycol ER Water Out'];
 // One valve of an In/Out pair (build 151, wilkins 2026-11-03: linking to "CHW
 // In/Out" with 2 valves "doesn't ask me which one I want to assign to it").
 // The pair's side names, when the list has both ("CHW In" / "CHW Out"), else
@@ -10897,7 +10901,7 @@ function inOutSideNames(src) {
   if (!isInOutPair(src)) return null;
   const name = String(src.energySource || '');
   const inName = name.replace(/In\/Out/i, 'In'), outName = name.replace(/In\/Out/i, 'Out');
-  const list = DATA.energySources || [];
+  const list = (DATA.energySources || []).concat(RETIRED_ENERGY_SOURCES);
   return list.includes(inName) && list.includes(outName) ? { in: inName, out: outName } : null;
 }
 // The Device ID of one valve: the pair's per-valve list ("V-1; V-2") gives the
