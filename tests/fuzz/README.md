@@ -81,7 +81,9 @@ included, the box left or not) and makes a steam row when the unit has none, so 
 oracles see typed names ("MPS 30 PSI").
 A relaunch must bring the form back as it was (`relaunch-changed-form`), except
 since build 139 a form that equals its saved unit by the harness's own signatures
-(an edit only looked at): that one comes back as a new unit, its room kept.
+(an edit only looked at): that one comes back as a new unit, its room kept — since build 151 the room the
+tech was in before opening the unit (`returnPlaceFor`), when there was one. Since build 151 the `link` action
+awaits `applyLink` (a link to an In/Out pair asks which valve; the harness answers at random).
 Since build 140 "equals" is also "equals the form as the harness's last `edit`
 opened it" (`openedSnap`, the harness's own record — the app now measures against
 the form as opened), and the comparison covers notes, type, template, LOTO ID and
