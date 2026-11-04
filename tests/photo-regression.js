@@ -7685,6 +7685,42 @@
     got.glycol = await link(4, 2, 'out');
     want(!asked.includes('link-valve'), 'asked on a plain / Glycol target: ' + asked.join());
     want(/^Electrical 480V \| 1 \| - \| - \|/.test(got.plain) && /^Glycol HW In\/Out \| 2 \| - \| - \|/.test(got.glycol), 'plain / glycol: ' + got.plain + ' / ' + got.glycol);
+    // review: a re-link takes the new valve's tag (a copied tag is replaced, a typed one stays)
+    got.relinkIn = await link(0, 0, 'in');
+    got.relinkBoth = await link(0, 0, 'both');
+    got.relinkOut = await link(0, 0, 'out');
+    sources[0].deviceId = 'MY-TAG';
+    got.typedKept = await link(0, 0, 'in');
+    want(/^CHW In \| 1 \| V-1 \| in/.test(got.relinkIn) && /^CHW In\/Out \| 2 \| V-1; V-2 \| -/.test(got.relinkBoth) && /^CHW Out \| 1 \| V-2 \| out/.test(got.relinkOut)
+      && /^CHW In \| 1 \| MY-TAG \| in/.test(got.typedKept), 're-link tags ' + [got.relinkIn, got.relinkBoth, got.relinkOut, got.typedKept].join(' / '));
+    // review: an edit to the row moves its valve (energy) or makes it the whole source (count)
+    updateSource(0, 'energySource', 'CHW Out');
+    got.editSide = [sources[0].linkedTo.valve, sources[0].linkedTo.sourceLabel].join(' | ');
+    updateSource(0, 'quantity', 2);
+    got.editQty = [sources[0].linkedTo.valve || '-', sources[0].linkedTo.sourceLabel].join(' | ');
+    want(got.editSide === 'out | CHW In/Out — Ball Valve — (V-1; V-2) — Out valve' && got.editQty === '- | CHW In/Out — Ball Valve — (V-1; V-2)', 'edits ' + got.editSide + ' / ' + got.editQty);
+    updateSource(0, 'quantity', 1); updateSource(0, 'deviceId', 'V-2'); await link(0, 0, 'out');   // back to the Out valve for the export
+    // review: the list replaced while the question is up — the link goes to the unit as stored now
+    const Q = mkEntry('CH-465b', { sources: [Object.assign(mkSrc('HHW In/Out'), { deviceType: 'Ball Valve', quantity: 2 })] });
+    delete Q.sources[0].sourceId;
+    savedEquipment.push(Q); saveAll();
+    const qi = savedEquipment.length - 1;
+    addSource();   // row 5
+    await withDialogs({ confirm: true, choice: (o) => { if (o.id === 'link-valve') { savedEquipment = JSON.parse(JSON.stringify(savedEquipment)); return 'in'; } return 'cancel'; } }, async () => {
+      showLinkDialog(5); showLinkSourcePicker(qi); await applyLink(qi, 0);
+    });
+    const qNow = savedEquipment.find(e => e.id === Q.id);
+    got.merged = [sources[5].energySource, !!(sources[5].linkedTo && sources[5].linkedTo.sourceId), !!qNow && sources[5].linkedTo && qNow.sources[0].sourceId === sources[5].linkedTo.sourceId].join(' | ');
+    want(got.merged === 'HHW In | true | true', 'the stored target ' + got.merged);
+    // review: the row moved while the question was up — nothing is linked
+    addSource();
+    const before6 = sources.length - 1;
+    await withDialogs({ confirm: true, choice: (o) => { if (o.id === 'link-valve') { sources.unshift(Object.assign(mkSrc('Electrical 120V'), {})); return 'out'; } return 'cancel'; } }, async () => {
+      showLinkDialog(before6); showLinkSourcePicker(0); await applyLink(0, 0);
+    });
+    got.moved = [!!sources[sources.length - 1].linkedTo, !!document.getElementById('linkDialogOverlay')].join(' | ');
+    sources.shift(); sources.pop(); sources.pop(); renderSources();
+    want(got.moved === 'false | false', 'a moved row ' + got.moved);
     // exported
     const A = saveEntry();
     const { zip, confirms } = await runExport({ confirmResponse: true });
@@ -7743,7 +7779,8 @@
       want(got.sheet === 'Electrical 480V x1, CHW In x1, CHW Out x1', 'sheet ' + got.sheet);
     } else fails.push('no zip: ' + confirms.join(' | '));
     got.yes = await chiller('CH-466b', 'Yes');
-    want(got.yes.filter(r => /^Stored Electrical Energy/.test(r)).length === 1 && got.yes.filter(r => /^CHW (In|Out)\//.test(r)).length === 2 && /^Electrical 480V/.test(got.yes[0]), 'with capacitors ' + got.yes.join('|'));
+    // the capacitor row beside its Electrical feed (review), the water rows after
+    want(got.yes.map(r => r.split('/')[0]).join('|') === 'Electrical 480V|Stored Electrical Energy|CHW In|CHW Out', 'with capacitors ' + got.yes.join('|'));
     // a photographed row the tech had: kept first, photo still on it
     let key = null;
     got.kept = await chiller('CH-466c', 'No', async () => {

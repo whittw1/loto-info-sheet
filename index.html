@@ -5438,7 +5438,7 @@ function setUnitAnswer(key, value) {
     const isCap = s => s.energySource === 'Stored Electrical Energy';
     if (value === 'No') removeUntouchedAutoRow(isCap);
     else if (!sources.some(s => s && isCap(s))) {
-      sources.push({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank',
+      addAfterElectrical({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank',
         verification: '', quantity: 1, duplicate: 'No', detail: '', collapsed: true, auto: true, noPhoto: true });
       renderSources();
     }
@@ -5711,6 +5711,17 @@ function askAtsFeeds(rows) {
     autoSaveCurrent();
   });
 }
+// A row that belongs beside the unit's Electrical feed (the chiller's capacitor
+// bank, build 151 review: since the chiller's CHW rows it landed after them),
+// right after the last Electrical row; else at the end. Photos follow their rows.
+function addAfterElectrical(row) {
+  let at = -1;
+  sources.forEach((s, i) => { if (s && /^Electrical\b/.test(s.energySource || '')) at = i; });
+  if (at < 0 || at === sources.length - 1) { sources.push(row); return; }
+  const prev = sources.slice();
+  sources.splice(at + 1, 0, row);
+  rebindSourcePhotos(prev);
+}
 // Chiller: loto-web adds its own capacitor row unless the unit says it has no
 // capacitor bank, so the answer travels on the sheet; the app's row follows it.
 // No answer (the box closed) keeps the row, as before build 118.
@@ -5724,7 +5735,7 @@ function askChillerCapacitors() {
     if (DATA.yesNoCantTell.includes(v)) unitAnswers.capacitors = v;
     const hasRow = sources.some(s => s && s.energySource === 'Stored Electrical Energy');
     if (v !== 'No' && !hasRow) {
-      sources.push({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank',
+      addAfterElectrical({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank',
         verification: '', quantity: 1, duplicate: 'No', detail: '', collapsed: true, auto: true, noPhoto: true, _voltagePick: true });
     }
     renderSources();
@@ -5788,17 +5799,13 @@ const VOLTAGE_PROMPT_CONFIG = {
   'Chiller': {
     title: 'Chiller Voltage',
     description: 'Select voltage for the Electrical source:',
+    ahead: true,   // its Electrical goes ahead of the template's CHW rows (build 151)
     apply: function(voltage) {
       const energyName = voltage ? 'Electrical ' + voltage : 'Electrical';
-      const row = {
+      sources.push({
         energySource: energyName, deviceType: 'Disconnect', quantity: 1, location: 'On Equipment',
         duplicate: 'No', verification: 'Controls', detail: '', collapsed: true, auto: true
-      };
-      // Ahead of the template's chilled-water rows (build 151), as every
-      // template's Electrical source comes first
-      const at = sources.findIndex(s => s && s.auto && /^CHW (In|Out)$/.test(s.energySource || ''));
-      if (at < 0) sources.push(row);
-      else { const prev = sources.slice(); sources.splice(at, 0, row); rebindSourcePhotos(prev); }
+      });
       // The Stored Electrical Energy row follows the "Capacitor bank?" answer
       // since build 118 (askChillerCapacitors); it was added to every chiller.
       showToast(`Added Electrical source${voltage ? ' (' + voltage + ')' : ''} for Chiller`);
@@ -5868,6 +5875,16 @@ function applyVoltageChoice(voltage) {
     VOLTAGE_PROMPT_CONFIG[equipType].apply(voltage);
     const added = sources.filter(s => s && !had.has(s));
     added.forEach(s => { s._voltagePick = true; });
+    // `ahead` (build 151): the type's rows before the template's own, as on
+    // every template the Electrical source comes first. The tech's kept rows
+    // stay where they are; photos follow their rows.
+    const tplAt = VOLTAGE_PROMPT_CONFIG[equipType].ahead ? sources.findIndex(s => s && had.has(s) && s.auto && !s._voltagePick) : -1;
+    if (tplAt >= 0 && added.length) {
+      const prev = sources.slice();
+      sources = sources.filter(s => !added.includes(s));
+      sources.splice(tplAt, 0, ...added);
+      rebindSourcePhotos(prev);
+    }
     renderSources();
     autoSaveCurrent();
     // An ATS's two feeds, a chiller's capacitor bank (build 118)
@@ -9556,6 +9573,7 @@ function kineticDefaultLocation() {
 function updateSource(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
+  if (field === 'energySource' || field === 'quantity') settleLinkedValve(sources[index]);   // build 151 review
   if (field === 'deviceId') refreshAfterRetag(syncFeederTags(sources), index);   // a retagged drive renames itself in its feeder (build 122)
   if (field === 'verification') delete sources[index]._drainDefault;   // the tech picked the code
   if (field === 'energySource' && value && sourceDefaultsOf(value)) {
@@ -10331,6 +10349,7 @@ function handleDeviceTypeChange(index, value) {
 function updateSourceCustomField(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
+  if (field === 'energySource') settleLinkedValve(sources[index]);   // build 151 review
   if (field === 'energySource') reconcileSourceMarks(index);
   autoSaveCurrent();
 }
@@ -10879,17 +10898,30 @@ function inOutSideNames(src) {
 // The Device ID of one valve: the pair's per-valve list ("V-1; V-2") gives the
 // valve its own; a single tag stays as it is.
 function sideDeviceId(deviceId, side) {
-  const ids = String(deviceId || '').split(';').map(x => x.trim()).filter(Boolean);
+  const ids = splitUnitIds(deviceId).map(x => x.trim()).filter(Boolean);
   return ids.length === 2 ? ids[side === 'out' ? 1 : 0] : String(deviceId || '');
 }
 const LINK_VALVE_WORDS = { in: 'In valve', out: 'Out valve' };
+const LINK_VALVE_SUFFIX_RE = / \u2014 (In|Out) valve$/;
+// A one-valve link follows its row (review): an edit to the row's energy or
+// count names the valve again from its side ("CHW In" at Quantity 1 = the In
+// valve), or makes it a link to the whole source once the row is no side.
+function settleLinkedValve(src) {
+  const lt = src && src.linkedTo;
+  if (!lt || !lt.valve) return;
+  const m = sourceQty(src) === 1 ? / (In|Out)$/.exec(String(src.energySource || '')) : null;
+  const base = String(lt.sourceLabel || '').replace(LINK_VALVE_SUFFIX_RE, '');
+  if (m) { lt.valve = m[1].toLowerCase(); lt.sourceLabel = base + ' \u2014 ' + LINK_VALVE_WORDS[lt.valve]; }
+  else { delete lt.valve; lt.sourceLabel = base; }
+}
 
 async function applyLink(equipIndex, sourceIndex) {
-  const entry = savedEquipment[equipIndex];
+  let entry = savedEquipment[equipIndex];
   if (!entry || pendingLinkSourceIndex === null) { closeLinkDialog(); return; }
-  const src = entry.sources[sourceIndex];
+  let src = entry.sources[sourceIndex];
   if (!src) { closeLinkDialog(); return; }
-  const linkIndex = pendingLinkSourceIndex, session = formSession;
+  const linkIndex = pendingLinkSourceIndex, linkRow = sources[linkIndex], session = formSession;
+  if (!linkRow) { closeLinkDialog(); return; }
 
   // Build the label for display
   const parts = [];
@@ -10913,8 +10945,14 @@ async function applyLink(equipIndex, sourceIndex) {
                 { value: 'out', label: 'The Out valve only (' + sides.out + ')' },
                 { value: 'cancel', label: 'Cancel' }] });
     if (v !== 'both' && v !== 'in' && v !== 'out') return;   // the list stays open
-    // the form moved on, or the row went, while the question was up
-    if (session !== formSession || pendingLinkSourceIndex !== linkIndex || !sources[linkIndex]) { closeLinkDialog(); return; }
+    // the form moved on, or the row moved or went, while the question was up (review)
+    if (session !== formSession || pendingLinkSourceIndex !== linkIndex || sources[linkIndex] !== linkRow) { closeLinkDialog(); return; }
+    // …and another writer's save may have replaced the saved list's objects
+    // meanwhile: link to the unit and source as stored now (review)
+    const nowEntry = savedEquipment.find(e => sameEntryId(e.id, entry.id));
+    const nowSrc = nowEntry && ((src.sourceId && (nowEntry.sources || []).find(x => x && x.sourceId === src.sourceId)) || (nowEntry.sources || [])[sourceIndex]);
+    if (!nowSrc || !inOutSideNames(nowSrc)) { closeLinkDialog(); showToast('That unit changed while the question was open \u2014 link it again', true); return; }
+    entry = nowEntry; src = nowSrc; sourceIndex = entry.sources.indexOf(src);
     if (v !== 'both') { valve = v; label += ' \u2014 ' + LINK_VALVE_WORDS[v]; }
   }
 
@@ -10934,7 +10972,12 @@ async function applyLink(equipIndex, sourceIndex) {
   if (sides) {
     mine.energySource = valve ? sides[valve] : src.energySource;
     mine.quantity = valve ? 1 : 2;
-    if (valve && !mine.deviceId && src.deviceId) mine.deviceId = sideDeviceId(src.deviceId, valve);
+    // The tag: this valve's, or the pair's. One the tech typed stays, but one an
+    // earlier link to this pair copied is replaced (review: re-linking from the
+    // Out valve to the In valve kept V-2)
+    const own = String(mine.deviceId || '').trim(), theirs = String(src.deviceId || '').trim();
+    const copied = !own || own === theirs || splitUnitIds(theirs).map(x => x.trim()).includes(own);
+    if (theirs && copied) mine.deviceId = valve ? sideDeviceId(theirs, valve) : theirs;
   }
   const tookEnergy = sides ? mine.energySource !== energyBefore : (!mine.energySource && !!src.energySource);
   for (const f of ['energySource', 'deviceType', 'deviceId', 'location', 'verification']) {

@@ -573,6 +573,8 @@
     autoSaveCurrent(); await sleep(300);
     faultsOn = fo;
     const before = { entries: savedEquipment.map(entrySig).sort((a, b) => a.id.localeCompare(b.id)), form: formSig() };
+    // build 151: where the tech was when this saved unit was opened — the new unit's room after the launch closes it
+    const backRoom = (typeof returnPlaceFor === 'function' && returnPlaceFor(currentEntryId) || {}).room;
     // build 140: the rest of the form, the saved unit's, and whether it is still the form the last 'edit' opened
     const beforeFull = Object.assign({}, before.form, formExtraSig());
     const beforeSaved = before.form.id ? savedEquipment.find(e => sameEntryId(e.id, before.form.id)) : null;
@@ -636,7 +638,7 @@
       const keys = ['name', 'room', 'src', 'photos', 'misc', 'sketch', 'type', 'template', 'notes', 'lotoId', 'answers'];
       const eq = (x, y) => !!x && keys.every(k => JSON.stringify(x[k]) === JSON.stringify(y[k]));
       const same = (asOpened && eq(openedSnap.sig, beforeFull)) || eq(beforeSavedFull, beforeFull);
-      const fresh = !after.form.name && !after.form.src.length && !after.form.photos && !after.form.misc && after.form.room === before.form.room;
+      const fresh = !after.form.name && !after.form.src.length && !after.form.photos && !after.form.misc && after.form.room === (backRoom != null ? backRoom : before.form.room);
       if (!(same && fresh)) bad('relaunch-changed-form', sigDiff(before.form, after.form));
     }
     // the edit came back: it is still the form as opened, as the app's autosave remembers (build 140)
