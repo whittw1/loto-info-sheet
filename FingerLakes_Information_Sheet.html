@@ -548,7 +548,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b155</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b156</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -671,6 +671,8 @@ if ('serviceWorker' in navigator) {
         </div>
         <input type="file" accept="image/*" capture="environment" id="file_equip_main" onchange="handlePhoto(this, 'equip_main')">
         <button type="button" class="btn btn-sm" onclick="browsePhoto('equip_main')" title="Pick an existing photo from the library" style="width:100%;margin-top:6px;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#128194; Browse</button>
+        <!-- Build 156: an arrow at the unit when the photo shows more than one (openMainArrowDialog) -->
+        <button type="button" id="arrowbtn_equip_main" class="btn btn-sm" onclick="openMainArrowDialog()" title="When the photo shows more than one piece of equipment: point at this one" style="display:none;width:100%;margin-top:6px;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#10140; Point at unit</button>
       </div>
       <div class="photo-slot">
         <label>Data Plate</label>
@@ -1266,7 +1268,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 155;
+const APP_BUILD = 156;
 
 // ============================================================================
 // DATA
@@ -1278,7 +1280,7 @@ const DATA = {
     "Fire Pump","Fire Jockey Pump","Heat Exchanger",
     "Condensate Return Unit","Condensate Pump","Unit Heater",
     "Domestic Water Heater","Air Compressor","Compressed Air Tank","Blower","Air Dryer","Vacuum Pump","Lab Vacuum","ATS",
-    "Generator","Transformer","Switchgear","VFD","Battery Charger","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Overhead Door","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
+    "Generator","Transformer","Switchgear","VFD","Battery Charger","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Overhead Door","Dock Leveler","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
     "Chiller","Refrigerator","Boiler","Steam PRV Station","Humidifier",
     "** New Equipment Type **"
   ],
@@ -1369,7 +1371,7 @@ const DATA = {
     "Unit Heater - Steam","Unit Heater - HHW","Unit Heater - Natural Gas",
     "Air Compressor","Medical Air","Dental Air Compressor","Compressed Air Tank","Blower","Air Dryer","Vacuum Pump","Medical Vacuum","Medical Vacuum Pump","Lab Vacuum","Dental Vacuum","Condensing Unit","Mini Split",
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
-    "Elevator - Traction","Elevator - Hydraulic","Overhead Door",
+    "Elevator - Traction","Elevator - Hydraulic","Overhead Door","Dock Leveler",
     "ATS - Generic","Humidifier",
     "Standard Electrical","Electrical with Stored Energy","Switchgear","Heat Exchanger - Steam","DA Tank","Heat Exchanger - CHW/Glycol",
     "Steam PRV Station","Boiler - Natural Gas - HHW","Boiler - Natural Gas - STM"
@@ -3232,7 +3234,7 @@ const TEMPLATE_DEFAULT_SHOP = (() => {
     'Plumbing Shop': ['Air Compressor', 'Medical Air', 'Vacuum Pump', 'Medical Vacuum', 'Medical Vacuum Pump',
       'Lab Vacuum', 'Dental Vacuum', 'Dental Air Compressor', 'Compressed Air Tank', 'Blower', 'Standard Pump',
       'Fire Pump', 'Condensate Return Unit', 'Condensate Return Unit - Steam', 'Boiler - Natural Gas - HHW',
-      'Boiler - Natural Gas - STM', 'Overhead Door', 'Water Heater - Steam', 'Water Heater - Gas',
+      'Boiler - Natural Gas - STM', 'Overhead Door', 'Dock Leveler', 'Water Heater - Steam', 'Water Heater - Gas',
       'Water Heater - Electric'],
     'Boiler Plant': ['Chemical Pump', 'DA Tank'],
     'Electric Shop': ['ATS - Generic', 'Standard Electrical', 'Switchgear', 'Electrical with Stored Energy', 'Day Tank'],
@@ -6049,6 +6051,13 @@ const EQUIPMENT_TEMPLATE_MAP = {
   // lowest position, check it, kinetic and potential warnings; Plumbing Shop
   // POC / personnel; no matrix.
   'Overhead Door': ['Overhead Door'],
+  // Dock Leveler (build 156, wilkins 2026-11-05): a loading-dock leveler — a
+  // hydraulic pit leveler with its power unit and push-button control, as the
+  // Canandaigua ones (Aug 2026, surveyed on Elevator - Hydraulic). Its own
+  // template name, agreed with loto-web's "LOTO_Web_Dock_Leveler_Template" chat
+  // (loto-web maps it to Dock_Leveler_TEMPLATE.xlsx; until that is live a unit
+  // prints loto-web's generic template). A custom name with "dock leveler" too.
+  'Dock Leveler': ['Dock Leveler'],
   'ATS': ['ATS - Generic'],
   'Heat Exchanger': ['Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol'],
   'Boiler': ['Boiler - Natural Gas - HHW','Boiler - Natural Gas - STM'],
@@ -6144,7 +6153,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Cooling Tower': 'cooling_tower',
   'Condensate Return Unit': 'condensate_return', 'Condensate Return Unit - Steam': 'condensate_return',
   'Elevator - Traction': 'traction_elevator', 'Elevator - Hydraulic': 'hydraulic_elevator',
-  'Overhead Door': 'general',
+  'Overhead Door': 'general', 'Dock Leveler': 'general',
   'Vacuum Pump': 'medical_vacuum', 'Medical Vacuum': 'medical_vacuum', 'Medical Vacuum Pump': 'medical_vacuum', 'Lab Vacuum': 'medical_vacuum', 'Dental Vacuum': 'medical_vacuum',
   'Standard Electrical': 'general', 'UPS': 'ups',
   'Electrical with Stored Energy': 'general', 'Switchgear': 'general',
@@ -7925,6 +7934,7 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Lab Vacuum':              ['120V', '208V', '240V', '480V'],
   'Dental Vacuum':           ['120V', '208V', '240V', '480V'],
   'Blower':                  ['120V', '208V', '240V', '480V'],
+  'Dock Leveler':            ['120V', '208V', '240V', '480V'],   // build 156
   // Condensate Return Unit (the electric variant): standard pump-scale voltages.
   'Condensate Return Unit':  ['120V', '208V', '240V', '480V'],
   // Condensing Unit: drop 24V (control voltage, not a disconnect) and 4160V
@@ -8464,6 +8474,17 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
   ],
+  // Dock Leveler (build 156): the rows the Canandaigua levelers were surveyed
+  // with (wilkins' pick, "the hydraulic set") — the power unit's breaker in its
+  // control box, the hydraulic system (gauge only, no photo, as on Elevator -
+  // Hydraulic) and the deck and lip's potential energy (blocked on the
+  // maintenance strut, no photo). No Kinetic row. The voltage prompt sets the
+  // breaker's voltage (120V by default).
+  'Dock Leveler': [
+    { energySource: 'Electrical 120V', deviceType: 'Breaker', location: 'On Equipment', verification: 'Controls', duplicate: 'No', quantity: 1, auto: true },
+    { energySource: 'Hydraulic', deviceType: 'Hydraulic', location: 'On Equipment', verification: 'GaugeOnly', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+    { energySource: 'Gravity/Potential', deviceType: 'Potential', location: 'On Equipment', verification: 'Block', duplicate: 'No', quantity: 1, auto: true, noPhoto: true },
+  ],
   // Humidifier — dedicated template (was previously reusing Water Heater - Steam
   // with a general-diagram override). Has its own voltage prompt so the user
   // can pick a real power-feed voltage instead of the steam water heater's
@@ -8634,6 +8655,7 @@ const CUSTOM_EQUIP_KEYWORD_TEMPLATE = [
   { keyword: 'blower', template: 'Blower' },
   { keyword: 'switchgear', template: 'Switchgear' },
   { keyword: 'overhead door', template: 'Overhead Door' },
+  { keyword: 'dock leveler', template: 'Dock Leveler' },   // build 156
   { keyword: 'pump', template: 'Standard Pump' },
 ];
 
@@ -9128,7 +9150,8 @@ function photoSlotInnerHtml(ref, src) {
     ? html`<img src="${ref.thumbnail}">`
     : '<span class="placeholder" style="color:var(--text);">&#128247;<br>Photo saved<br><span style="font-size:10px;">preview unavailable &mdash; tap to view</span></span>';
   const n = src ? fittingMarks(ref, src).length : cleanValveMarks(ref.marks).length;   // what the export ships
-  const pin = n ? '<span class="mark-badge" title="Valve location marked">&#128205;' + (n > 1 ? ' ' + n : '') + '</span>' : '';
+  const pin = n ? '<span class="mark-badge" title="Valve location marked">&#128205;' + (n > 1 ? ' ' + n : '') + '</span>'
+    : cleanMainArrow(ref.pointer) ? '<span class="mark-badge" title="The arrow points at this unit">&#10140;</span>' : '';   // the Main Photo's arrow (build 156)
   return img + '<span class="retake-badge">Tap to retake</span>' + photoSlotBadge(ref) + pin;
 }
 // Repaint one slot from photos[slot]. A source slot whose card isn't on
@@ -9142,6 +9165,11 @@ function paintPhotoSlot(slot) {
   el.innerHTML = photoSlotInnerHtml(ref, sm ? sources[parseInt(sm[1], 10)] : null);
   const markBtn = document.getElementById('markbtn_' + slot);   // source cards: 📍 Mark needs a photo
   if (markBtn) markBtn.style.display = (ref && ref.dbKey) ? '' : 'none';
+  const arrowBtn = document.getElementById('arrowbtn_' + slot);   // the Main Photo: ➜ needs a photo (build 156)
+  if (arrowBtn) {
+    arrowBtn.style.display = (ref && ref.dbKey) ? '' : 'none';
+    arrowBtn.innerHTML = cleanMainArrow(ref && ref.pointer) ? '&#10140; Move arrow' : '&#10140; Point at unit';
+  }
 }
 function paintEquipPhotoSlots() { ['equip_main', 'equip_dataplate', 'equip_ee', 'equip_arcflash'].forEach(paintPhotoSlot); syncArcFlashSlot(); }
 
@@ -11624,6 +11652,7 @@ function showPhotoDialog(slotId) {
       </div>
       <div style="display:flex;flex-direction:column;gap:10px;">
         ${isSourceSlot ? html`<button class="btn btn-outline" onclick="openValveMarkDialog(${jsArg(slotId)})" style="padding:12px;font-size:15px;">&#128205; ${markCount ? 'Move the valve mark' : 'Mark the valve location'}</button>` : ''}
+        ${slotId === 'equip_main' ? html`<button id="photoViewerArrow" class="btn btn-outline" onclick="openMainArrowDialog()" style="padding:12px;font-size:15px;">&#10140; ${cleanMainArrow(p.pointer) ? 'Move the arrow' : 'Point at this unit (more than one in the photo)'}</button>` : ''}
         <button class="btn btn-primary" onclick="retakePhoto(${jsArg(slotId)})" style="padding:12px;font-size:15px;">Retake Photo</button>
         <button class="btn btn-outline" onclick="closePhotoDialog(); browsePhoto(${jsArg(slotId)});" style="padding:12px;font-size:15px;">&#128194; Choose from Library</button>
         <button class="btn" onclick="closePhotoDialog()" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Close</button>
@@ -12046,24 +12075,29 @@ function valveMarkStateText(src, k) {
 // One box + block arrow as SVG, in the photo box's pixel space. The arrow is
 // Excel's preset (shaft half its thickness, head half its short side) — what
 // loto-web draws.
-function valveMarkShapeSvg(ov, w, h, label, color, opacity) {
+// The block arrow of a loto-web override ({arrow_x, arrow_y, arrow_dir,
+// arrow_len}, its thickness VALVE_MARK_GEOM.THICK) as polygon points in a
+// w x h pixel box — shared with the main photo's arrow (build 156).
+function _blockArrowPts(ov, w, h) {
   const G = VALVE_MARK_GEOM;
   const vert = ov.arrow_dir === 'up' || ov.arrow_dir === 'down';
   const ax = ov.arrow_x * w, ay = ov.arrow_y * h;
   const aw = (vert ? G.THICK : ov.arrow_len) * w, ah = (vert ? ov.arrow_len : G.THICK) * h;
   const hl = Math.min(aw, ah) * 0.5;
-  let pts;
   if (!vert) {
     const t0 = ay + ah * 0.25, t1 = ay + ah * 0.75, cy = ay + ah / 2;
-    pts = ov.arrow_dir === 'right'
+    return ov.arrow_dir === 'right'
       ? [[ax, t0], [ax + aw - hl, t0], [ax + aw - hl, ay], [ax + aw, cy], [ax + aw - hl, ay + ah], [ax + aw - hl, t1], [ax, t1]]
       : [[ax + aw, t0], [ax + hl, t0], [ax + hl, ay], [ax, cy], [ax + hl, ay + ah], [ax + hl, t1], [ax + aw, t1]];
-  } else {
-    const s0 = ax + aw * 0.25, s1 = ax + aw * 0.75, cx = ax + aw / 2;
-    pts = ov.arrow_dir === 'down'
-      ? [[s0, ay], [s0, ay + ah - hl], [ax, ay + ah - hl], [cx, ay + ah], [ax + aw, ay + ah - hl], [s1, ay + ah - hl], [s1, ay]]
-      : [[s0, ay + ah], [s0, ay + hl], [ax, ay + hl], [cx, ay], [ax + aw, ay + hl], [s1, ay + hl], [s1, ay + ah]];
   }
+  const s0 = ax + aw * 0.25, s1 = ax + aw * 0.75, cx = ax + aw / 2;
+  return ov.arrow_dir === 'down'
+    ? [[s0, ay], [s0, ay + ah - hl], [ax, ay + ah - hl], [cx, ay + ah], [ax + aw, ay + ah - hl], [s1, ay + ah - hl], [s1, ay]]
+    : [[s0, ay + ah], [s0, ay + hl], [ax, ay + hl], [cx, ay], [ax + aw, ay + hl], [s1, ay + hl], [s1, ay + ah]];
+}
+function valveMarkShapeSvg(ov, w, h, label, color, opacity) {
+  const G = VALVE_MARK_GEOM;
+  const pts = _blockArrowPts(ov, w, h);
   const bx = ov.box_x * w, by = ov.box_y * h, bw = G.BOX_W * w, bh = G.BOX_H * h;
   const fs = Math.max(9, Math.min(bh * 0.6, 22));
   return '<g opacity="' + opacity + '">' +
@@ -12072,6 +12106,43 @@ function valveMarkShapeSvg(ov, w, h, label, color, opacity) {
     '<text x="' + (bx + bw / 2).toFixed(1) + '" y="' + (by + bh / 2).toFixed(1) + '" font-size="' + fs.toFixed(1) + '" font-weight="700" text-anchor="middle" dominant-baseline="central" fill="#000" font-family="Arial, sans-serif">' + html`${label}` + '</text>' +
     '</g>';
 }
+
+// The loupe a dragged red circle shows (mark dialog, main photo arrow): the
+// photo under the finger at 2.5x, above it (below it at the top edge).
+function showPhotoLoupe(loupe, wrap, img, px, py) {
+  const W = wrap.clientWidth, H = wrap.clientHeight, Z = 2.5, S = 120;
+  if (loupe.style.display !== 'block') {
+    loupe.style.backgroundImage = 'url("' + String(img.currentSrc || img.src).replace(/"/g, '%22') + '")';
+    loupe.style.backgroundSize = (W * Z) + 'px ' + (H * Z) + 'px';
+    loupe.style.display = 'block';
+  }
+  loupe.style.backgroundPosition = (S / 2 - px * Z) + 'px ' + (S / 2 - py * Z) + 'px';
+  loupe.style.left = Math.max(-6, Math.min(W - S + 6, px - S / 2)) + 'px';   // never past the dialog's sides
+  loupe.style.top = (py - S - 44 < -10 ? py + 44 : py - S - 44) + 'px';   // above the finger, below it at the top edge
+}
+// The photo box of a mark dialog sized to the image, as large as the dialog
+// and the screen allow (mark dialog, main photo arrow). False until it loads.
+function sizeMarkPhoto(overlay, wrap, img) {
+  const iw = img.naturalWidth, ih = img.naturalHeight;
+  if (!iw || !ih) return false;
+  const dlg = overlay.querySelector('.dialog');
+  const maxW = Math.max(120, Math.min(dlg.clientWidth - 28, 972));
+  const maxH = Math.max(140, Math.min(window.innerHeight * 0.72, window.innerHeight - 290));
+  let w = maxW, h = w * ih / iw;
+  if (h > maxH) { h = maxH; w = h * iw / ih; }
+  wrap.style.width = Math.round(w) + 'px';
+  wrap.style.height = Math.round(h) + 'px';
+  return true;
+}
+// Where a pointer event is on that box: pixels and image fractions (3 decimals).
+function markPhotoPointAt(wrap, e) {
+  const r = wrap.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  return { r: r, px: e.clientX - r.left, py: e.clientY - r.top,
+    x: Math.round(_vmClamp((e.clientX - r.left) / r.width, 0, 1) * 1000) / 1000,
+    y: Math.round(_vmClamp((e.clientY - r.top) / r.height, 0, 1) * 1000) / 1000 };
+}
+const PHOTO_LOUPE_INNER = '<div style="position:absolute;left:50%;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;border:2.5px solid #e02020;border-radius:50%;box-shadow:0 0 0 1.5px #fff;"></div>';
 
 // ---- the dialog ------------------------------------------------------------
 // Tap the photo where the valve is (one tap per device for a quantity-N
@@ -12227,25 +12298,8 @@ function openValveMarkDialog(slotId, opts) {
     });
     svg.innerHTML = out;
   };
-  const fit = () => {
-    const iw = img.naturalWidth, ih = img.naturalHeight;
-    if (!iw || !ih) return;
-    const dlg = overlay.querySelector('.dialog');
-    const maxW = Math.max(120, Math.min(dlg.clientWidth - 28, 972));
-    const maxH = Math.max(140, Math.min(window.innerHeight * 0.72, window.innerHeight - 290));
-    let w = maxW, h = w * ih / iw;
-    if (h > maxH) { h = maxH; w = h * iw / ih; }
-    wrap.style.width = Math.round(w) + 'px';
-    wrap.style.height = Math.round(h) + 'px';
-    draw();
-  };
-  const pointAt = (e) => {
-    const r = wrap.getBoundingClientRect();
-    if (!r.width || !r.height) return null;
-    return { r: r, px: e.clientX - r.left, py: e.clientY - r.top,
-      x: Math.round(_vmClamp((e.clientX - r.left) / r.width, 0, 1) * 1000) / 1000,
-      y: Math.round(_vmClamp((e.clientY - r.top) / r.height, 0, 1) * 1000) / 1000 };
-  };
+  const fit = () => { if (sizeMarkPhoto(overlay, wrap, img)) draw(); };
+  const pointAt = (e) => markPhotoPointAt(wrap, e);
   // What a finger at pt is on: a red circle of this source (within 22 px),
   // else one of its boxes (the last drawn is on top).
   const hitAt = (pt) => {
@@ -12293,17 +12347,7 @@ function openValveMarkDialog(slotId, opts) {
   // While a red circle is dragged, a loupe above the finger shows the photo
   // under it at 2.5x — the finger hides the valve it is lining up on.
   const loupe = overlay.querySelector('#valveMarkLoupe');
-  const showLoupe = (px, py) => {
-    const W = wrap.clientWidth, H = wrap.clientHeight, Z = 2.5, S = 120;
-    if (loupe.style.display !== 'block') {
-      loupe.style.backgroundImage = 'url("' + String(img.currentSrc || img.src).replace(/"/g, '%22') + '")';
-      loupe.style.backgroundSize = (W * Z) + 'px ' + (H * Z) + 'px';
-      loupe.style.display = 'block';
-    }
-    loupe.style.backgroundPosition = (S / 2 - px * Z) + 'px ' + (S / 2 - py * Z) + 'px';
-    loupe.style.left = Math.max(-6, Math.min(W - S + 6, px - S / 2)) + 'px';   // never past the dialog's sides
-    loupe.style.top = (py - S - 44 < -10 ? py + 44 : py - S - 44) + 'px';   // above the finger, below it at the top edge
-  };
+  const showLoupe = (px, py) => showPhotoLoupe(loupe, wrap, img, px, py);
   // Dragging a circle or a box (Pointer Events: finger, Pencil or mouse).
   let drag = null;
   wrap.addEventListener('pointerdown', (e) => {
@@ -12401,6 +12445,293 @@ function saveValveMarks(ref, marks, session, openShape) {
   paintPhotoSlot(slot);
   autoSaveCurrent();
   showToast(clean.length ? '\ud83d\udccd Valve location saved' : 'Valve mark removed');
+  return true;
+}
+
+// ============================================================================
+// MAIN PHOTO ARROW (build 156) — "which one of these is it?"
+// ----------------------------------------------------------------------------
+// wilkins 2026-11-05: "Sometimes I take a photo of 2-3 pieces of equipment at a
+// time and need to mark which one I am referencing. I can do it in LOTO web,
+// just not the field app." loto-web's EQUIPMENT POINTER (2026-09-17): an arrow
+// alone on the unit's main photo — no ID box, which would read as an isolation
+// point — white with a black outline, saved in that photo's
+// annotation_overrides under "equipment" with arrow keys only.
+// Here it lives on the MAIN PHOTO REFERENCE: photos.equip_main.pointer =
+// {x, y, dir, len} — the tip (where the tech tapped; fractions of the image, 3
+// decimals), the way the arrow points, and its length (a fraction of the
+// image's width for a left / right arrow, of its height for up / down; never
+// past the photo's edge). Like a valve mark it belongs to that photo: a retake
+// or a reused photo is a new reference with no arrow, and Duplicate Entry
+// (another unit) drops it. Saving REPLACES the reference (see VALVE MARKS).
+// Exported only with the main photo (exportMainArrow): entries.json
+// mainPhotoArrow {x, y, dir, len, layout} — layout = loto-web's override keys
+// {arrow_x, arrow_y, arrow_dir, arrow_len}, the arrow's top-left corner and
+// length, thickness its default 0.11 — the sheet's equipment rows col 14
+// "Main Photo Arrow" ("arrow_x,arrow_y,arrow_dir,arrow_len") and the CSV's
+// last column.
+// ============================================================================
+const MAIN_ARROW_GEOM = { LEN: 0.25, MIN_LEN: 0.08, MAX_LEN: 0.6 };   // thickness: VALVE_MARK_GEOM.THICK
+const MAIN_ARROW_FIRST = ['down', 'right', 'left', 'up'];   // a new arrow: the first way with room (from above first)
+const MAIN_ARROW_TURN = ['down', 'left', 'up', 'right'];    // ↻ Turn: the next way round, clockwise
+const MAIN_ARROW_COLOR = '#ffffff';                          // loto-web's EQUIPMENT_MARKER_COLOR
+const _maR3 = v => Math.round(v * 1000) / 1000;
+// How long an arrow pointing `dir` with its tip at (x, y) can be on the photo.
+function mainArrowRoom(x, y, dir) {
+  return dir === 'right' ? x : dir === 'left' ? 1 - x : dir === 'down' ? y : 1 - y;
+}
+// A stored arrow, or null: tip on the photo, a known way, length at least
+// MIN_LEN once held in by the photo's edge.
+function cleanMainArrow(p) {
+  if (!p || typeof p !== 'object' || !VALVE_MARK_DIRS.includes(p.dir)) return null;
+  const x = Number(p.x), y = Number(p.y), len = Number(p.len);
+  if (!isFinite(x) || !isFinite(y) || !isFinite(len) || x < 0 || x > 1 || y < 0 || y > 1) return null;
+  const tx = _maR3(x), ty = _maR3(y);
+  const l = Math.floor(Math.min(len, MAIN_ARROW_GEOM.MAX_LEN, mainArrowRoom(tx, ty, p.dir)) * 1000 + 1e-6) / 1000;
+  if (l < MAIN_ARROW_GEOM.MIN_LEN) return null;
+  return { x: tx, y: ty, dir: p.dir, len: l };
+}
+// The arrow with its tip at (x, y): pointing `prefer` when there is room that
+// way (`len` long, or as long as there is room for), else the first way with
+// room for a whole arrow, else the way with the most. Never null: one way
+// always has half the photo.
+function mainArrowAt(x, y, prefer, len) {
+  x = _maR3(_vmClamp(x, 0, 1)); y = _maR3(_vmClamp(y, 0, 1));
+  const want = Math.max(MAIN_ARROW_GEOM.MIN_LEN, len || MAIN_ARROW_GEOM.LEN);
+  if (prefer && mainArrowRoom(x, y, prefer) >= MAIN_ARROW_GEOM.MIN_LEN) return cleanMainArrow({ x, y, dir: prefer, len: want });
+  const dir = MAIN_ARROW_FIRST.find(d => mainArrowRoom(x, y, d) >= MAIN_ARROW_GEOM.LEN)
+    || MAIN_ARROW_FIRST.reduce((a, d) => (mainArrowRoom(x, y, d) > mainArrowRoom(x, y, a) ? d : a), 'down');
+  return cleanMainArrow({ x, y, dir, len: want });
+}
+// loto-web's override keys for an arrow: its top-left corner, way and length
+// (4 decimals). Across the arrow it is centred on the tip, held on the photo.
+function mainArrowOverride(p) {
+  const a = cleanMainArrow(p);
+  if (!a) return null;
+  const T = VALVE_MARK_GEOM.THICK, r4 = v => Math.round(_vmClamp(v, 0, 1) * 10000) / 10000;
+  const horiz = a.dir === 'right' || a.dir === 'left';
+  const ax = horiz ? (a.dir === 'right' ? a.x - a.len : a.x) : _vmClamp(a.x - T / 2, 0, 1 - T);
+  const ay = horiz ? _vmClamp(a.y - T / 2, 0, 1 - T) : (a.dir === 'down' ? a.y - a.len : a.y);
+  return { arrow_x: r4(ax), arrow_y: r4(ay), arrow_dir: a.dir, arrow_len: r4(a.len) };
+}
+// The sheet's col 14 / the CSV: "arrow_x,arrow_y,arrow_dir,arrow_len" ('' = none)
+function mainArrowSheetText(p) {
+  const o = mainArrowOverride(p);
+  return o ? [o.arrow_x.toFixed(4), o.arrow_y.toFixed(4), o.arrow_dir, o.arrow_len.toFixed(4)].join(',') : '';
+}
+// entries.json mainPhotoArrow (null = none)
+function mainArrowForJson(p) {
+  const a = cleanMainArrow(p);
+  return a ? Object.assign({}, a, { layout: mainArrowOverride(a) }) : null;
+}
+// What a unit's export says: its main photo's arrow, only when that photo
+// itself is exported (mainH = its file name).
+function exportMainArrow(entry, mainH) {
+  return mainH ? cleanMainArrow(((entry && entry.photos) || {}).equip_main && entry.photos.equip_main.pointer) : null;
+}
+// The arrow as it prints, in a w x h pixel box (white, black outline).
+function mainArrowSvg(p, w, h) {
+  const ov = mainArrowOverride(p);
+  if (!ov) return '';
+  const pts = _blockArrowPts(ov, w, h);
+  return '<polygon points="' + pts.map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' ') + '" fill="' + MAIN_ARROW_COLOR + '" stroke="#000" stroke-width="1.5" opacity="0.95"/>';
+}
+function closeMainArrowDialog() {
+  const o = document.getElementById('mainArrowOverlay');
+  if (o) { if (o._cleanup) o._cleanup(); o.remove(); }
+}
+// The dialog. Tap the unit: the arrow points there (a later tap moves it,
+// keeping its way). Drag the red circle to move the tip (a loupe shows what is
+// under the finger); drag the arrow itself to swing it to another side or make
+// it longer or shorter; ↻ Turn goes round the sides with room. Bound to the
+// photo REFERENCE shown: if the Main Photo is retaken or removed meanwhile,
+// nothing is saved.
+function openMainArrowDialog() {
+  if (refuseIfDuplicateCopying()) return false;
+  const ref = photos.equip_main;
+  if (!ref || !ref.dbKey) { showToast('Take the Main Photo first, then point the arrow at the unit', true); return false; }
+  if (ref.saving) { showToast('The Main Photo is still saving — try again in a moment', true); return false; }
+  closePhotoDialog();
+  closeValveMarkDialog();
+  closeMainArrowDialog();
+  const session = formSession;
+  const G = MAIN_ARROW_GEOM;
+  let arrow = cleanMainArrow(ref.pointer);
+  const unitName = ((document.getElementById('equipName') || {}).value || '').trim();
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'mainArrowOverlay';
+  overlay.style.padding = '10px';
+  let objUrl = null;
+  overlay.innerHTML = html`
+    <div class="dialog" style="max-width:min(96vw,1000px);padding:14px 14px 12px;max-height:96vh;overflow-y:auto;">
+      <h3 style="margin:0 0 4px;font-size:17px;">&#10140; Which one is ${unitName || 'this unit'}?</h3>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;line-height:1.4;">
+        When the Main Photo shows more than one piece of equipment, tap the one this record is for.
+        The arrow on the LOTO procedure will point there.
+      </div>
+      <div id="mainArrowWrap" style="position:relative;margin:0 auto;cursor:crosshair;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;">
+        <img id="mainArrowImg" src="${ref.thumbnail || ''}" draggable="false" alt="" style="display:block;width:100%;height:100%;border-radius:6px;background:#000;pointer-events:none;">
+        <svg id="mainArrowSvg" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible;"></svg>
+        <div id="mainArrowLoupe" style="display:none;position:absolute;width:120px;height:120px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.55);background-color:#000;background-repeat:no-repeat;pointer-events:none;">${raw(PHOTO_LOUPE_INNER)}</div>
+      </div>
+      <div id="mainArrowNote" style="font-size:11px;color:var(--text-dim);margin-top:6px;text-align:center;">Loading full resolution…</div>
+      <div id="mainArrowState" style="font-size:13px;font-weight:600;text-align:center;margin-top:2px;"></div>
+      <div id="mainArrowHint" style="display:flex;visibility:hidden;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--text-dim);margin-top:4px;text-align:center;">
+        <span>Drag the arrow to turn it or change its length &middot; drag the red circle to move its tip</span>
+        <button type="button" id="mainArrowTurn" class="btn btn-sm" style="padding:4px 10px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">&#8635; Turn</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button id="mainArrowSave" class="btn btn-primary" style="flex:2;padding:12px;font-size:15px;">Save</button>
+        <button id="mainArrowClear" class="btn btn-outline" style="flex:1;padding:12px;font-size:14px;">Remove</button>
+        <button id="mainArrowCancel" class="btn" style="flex:1;padding:12px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+  const wrap = overlay.querySelector('#mainArrowWrap');
+  const img = overlay.querySelector('#mainArrowImg');
+  const svg = overlay.querySelector('#mainArrowSvg');
+  const state = overlay.querySelector('#mainArrowState');
+  const hint = overlay.querySelector('#mainArrowHint');
+  const loupe = overlay.querySelector('#mainArrowLoupe');
+  const draw = () => {
+    state.textContent = arrow ? 'Arrow placed' : 'Tap the unit in the photo';
+    hint.style.visibility = arrow ? 'visible' : 'hidden';   // its line is always there: the photo never shifts under the next tap
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    if (!w || !h) return;
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    let out = arrow ? mainArrowSvg(arrow, w, h) : '';
+    if (arrow) {
+      const cx = (arrow.x * w).toFixed(1), cy = (arrow.y * h).toFixed(1);
+      out += '<circle cx="' + cx + '" cy="' + cy + '" r="9" fill="none" stroke="#fff" stroke-width="4"/>' +
+             '<circle cx="' + cx + '" cy="' + cy + '" r="9" fill="none" stroke="#e02020" stroke-width="2.5"/>' +
+             '<circle cx="' + cx + '" cy="' + cy + '" r="2" fill="#e02020"/>';
+    }
+    svg.innerHTML = out;
+  };
+  const fit = () => { if (sizeMarkPhoto(overlay, wrap, img)) draw(); };
+  // What a finger at pt is on: the red circle (within 22 px), else the arrow.
+  const hitAt = (pt) => {
+    if (!arrow) return null;
+    const W = pt.r.width, H = pt.r.height;
+    if (Math.hypot(arrow.x * W - pt.px, arrow.y * H - pt.py) <= 22) return { kind: 'tip' };
+    const ov = mainArrowOverride(arrow);
+    const vert = ov.arrow_dir === 'up' || ov.arrow_dir === 'down';
+    const x0 = ov.arrow_x * W, y0 = ov.arrow_y * H;
+    const x1 = x0 + (vert ? VALVE_MARK_GEOM.THICK : ov.arrow_len) * W, y1 = y0 + (vert ? ov.arrow_len : VALVE_MARK_GEOM.THICK) * H;
+    if (pt.px >= x0 - 8 && pt.px <= x1 + 8 && pt.py >= y0 - 8 && pt.py <= y1 + 8) {
+      // where the arrow's tail is, from the finger: the tail follows the finger
+      const tx = arrow.x * W, ty = arrow.y * H;
+      const tail = arrow.dir === 'right' ? [tx - arrow.len * W, ty] : arrow.dir === 'left' ? [tx + arrow.len * W, ty]
+        : arrow.dir === 'down' ? [tx, ty - arrow.len * H] : [tx, ty + arrow.len * H];
+      return { kind: 'body', gx: tail[0] - pt.px, gy: tail[1] - pt.py };
+    }
+    return null;
+  };
+  let noClickUntil = 0;
+  wrap.addEventListener('click', (e) => {
+    if (Date.now() < noClickUntil) return;
+    const pt = markPhotoPointAt(wrap, e);
+    if (!pt || hitAt(pt)) return;   // the circle or the arrow: those are dragged
+    // the arrow keeps its side and length when it still fits there whole
+    const keep = arrow && mainArrowRoom(pt.x, pt.y, arrow.dir) >= arrow.len ? arrow : null;
+    arrow = mainArrowAt(pt.x, pt.y, keep && keep.dir, keep && keep.len);
+    draw();
+  });
+  let drag = null;
+  wrap.addEventListener('pointerdown', (e) => {
+    const pt = markPhotoPointAt(wrap, e);
+    const hit = pt && hitAt(pt);
+    if (!hit) return;
+    drag = Object.assign({ id: e.pointerId, sx: e.clientX, sy: e.clientY, base: arrow, moved: false }, hit);
+    try { wrap.setPointerCapture(e.pointerId); } catch (x) {}
+  });
+  wrap.addEventListener('pointermove', (e) => {
+    if (!drag) {
+      if (e.pointerType === 'mouse') { const pt = markPhotoPointAt(wrap, e); wrap.style.cursor = pt && hitAt(pt) ? 'move' : 'crosshair'; }
+      return;
+    }
+    if (e.pointerId !== drag.id) return;
+    if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 6) return;
+    drag.moved = true;
+    e.preventDefault();
+    const pt = markPhotoPointAt(wrap, e);
+    if (!pt) return;
+    const b = drag.base;
+    if (drag.kind === 'tip') {
+      arrow = mainArrowAt(pt.x, pt.y, b.dir, b.len);
+      showPhotoLoupe(loupe, wrap, img, _vmClamp(pt.px, 0, pt.r.width), _vmClamp(pt.py, 0, pt.r.height));
+    } else {
+      // the tail where the finger has it: the arrow points from there to the tip
+      const W = pt.r.width, H = pt.r.height;
+      const dx = b.x * W - (pt.px + drag.gx), dy = b.y * H - (pt.py + drag.gy);
+      const dir = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'down' : 'up');
+      const len = Math.abs(dx) >= Math.abs(dy) ? Math.abs(dx) / W : Math.abs(dy) / H;
+      const next = cleanMainArrow({ x: b.x, y: b.y, dir: dir, len: Math.max(G.MIN_LEN, len) });
+      if (next) arrow = next;
+    }
+    draw();
+  });
+  const endDrag = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    if (drag.moved) noClickUntil = Date.now() + 400;   // the drag's own click is not a tap
+    drag = null;
+    loupe.style.display = 'none';
+  };
+  wrap.addEventListener('pointerup', endDrag);
+  wrap.addEventListener('pointercancel', endDrag);
+  overlay.querySelector('#mainArrowTurn').onclick = () => {
+    if (!arrow) return;
+    const k = MAIN_ARROW_TURN.indexOf(arrow.dir);
+    for (let i = 1; i <= 4; i++) {
+      const d = MAIN_ARROW_TURN[(k + i) % 4];
+      const next = mainArrowRoom(arrow.x, arrow.y, d) >= G.MIN_LEN && cleanMainArrow({ x: arrow.x, y: arrow.y, dir: d, len: Math.max(arrow.len, G.LEN) });
+      if (next) { arrow = next; break; }
+    }
+    draw();
+  };
+  overlay.querySelector('#mainArrowClear').onclick = () => { arrow = null; draw(); };
+  overlay.querySelector('#mainArrowCancel').onclick = () => closeMainArrowDialog();
+  overlay.querySelector('#mainArrowSave').onclick = () => { closeMainArrowDialog(); saveMainArrow(ref, arrow, session); };
+  img.addEventListener('load', fit);
+  window.addEventListener('resize', fit);
+  overlay._cleanup = () => {
+    window.removeEventListener('resize', fit);
+    if (objUrl) { URL.revokeObjectURL(objUrl); objUrl = null; }
+  };
+  if (img.complete && img.naturalWidth) fit();
+  draw();
+  loadFullPhotoUrl(ref.dbKey, ref.fileType).then(url => {
+    const note = overlay.querySelector('#mainArrowNote');
+    if (!overlay.isConnected) { if (url && url.indexOf('blob:') === 0) URL.revokeObjectURL(url); return; }
+    if (url) {
+      if (url.indexOf('blob:') === 0) objUrl = url;
+      img.src = url;
+      if (note) note.textContent = '';
+    } else if (note) {
+      note.textContent = 'Full-resolution image unavailable — showing the preview';
+    }
+  });
+  return true;
+}
+// Store the arrow on the Main Photo reference the dialog was opened for — as a
+// NEW reference object. Nothing is written if the form or that photo changed.
+function saveMainArrow(ref, arrow, session) {
+  if (session !== formSession) { showToast('⚠ The form changed — arrow not saved', true); return false; }
+  if (refuseIfDuplicateCopying()) return false;
+  if (photos.equip_main !== ref || ref.saving) {
+    showToast('⚠ The Main Photo changed while you were placing the arrow — not saved. Tap ➜ Point at unit to place it again.', true);
+    return false;
+  }
+  const a = cleanMainArrow(arrow);
+  if (JSON.stringify(a) === JSON.stringify(cleanMainArrow(ref.pointer))) return true;
+  const next = Object.assign({}, ref);
+  if (a) next.pointer = a; else delete next.pointer;
+  photos.equip_main = next;
+  paintPhotoSlot('equip_main');
+  autoSaveCurrent();
+  showToast(a ? '➜ Arrow saved' : 'Arrow removed');
   return true;
 }
 
@@ -14405,7 +14736,7 @@ const TYPES_WITH_ELECTRICAL_FEED = new Set([
   'Heating HW Pump','CHW Pump','Domestic HW Pump','Domestic Water Pump','Feedwater Pump','Glycol Pump',
   'Fire Pump','Fire Jockey Pump','Condensate Pump','Chemical Feed Pump','Chemical Pump','Vacuum Pump','Lab Vacuum',
   'Condensate Return Unit','Unit Heater','Domestic Water Heater','Boiler','Humidifier',
-  'Air Compressor','Air Dryer','ATS','Generator','Transformer','Day Tank','Elevator','Overhead Door',
+  'Air Compressor','Air Dryer','ATS','Generator','Transformer','Day Tank','Elevator','Overhead Door','Dock Leveler',
   'Dishwasher','Refrigerator','Blower','Switchgear','VFD','Battery Charger'
 ]);
 // A Compressed Air Tank (build 111) is a plain vessel — also when the Air
@@ -15834,7 +16165,7 @@ async function executeDuplicate(index, withPhotos) {
   // (settleAutoDuplicates). Info Only brings no photo, so the first render
   // settles every automatic Yes to No — it used to stay Yes with no photo.
   const write = withPhotos ? startPhotoWrite('duplicate') : null;
-  let dupCopied = 0, dupFailed = 0, abandoned = false, keptNewer = 0;
+  let dupCopied = 0, dupFailed = 0, abandoned = false, keptNewer = 0, arrowLeft = false;
   try {
     photos = {};
     miscPhotos = [];
@@ -15884,6 +16215,9 @@ async function executeDuplicate(index, withPhotos) {
         // a copy of another enclosure's label would silence Save & New's question
         if (slot === 'equip_arcflash') continue;
         const copy = await copyPhoto(photo, slotTokenFor(slot, dupSources));
+        // The Main Photo's arrow points at the ORIGINAL unit (build 156): the
+        // copy is another one — its tech points the arrow at it
+        if (slot === 'equip_main' && copy.pointer) { delete copy.pointer; arrowLeft = true; }
         if (session !== formSession) { abandoned = true; break; }
         // Place it where its SOURCE is now (the user may have reordered).
         // A slot that already holds a photo got it DURING the copy (the
@@ -15930,7 +16264,9 @@ async function executeDuplicate(index, withPhotos) {
     const own = droppedBreakerRows ? ` — record its own ${droppedKinds.join(' / ')} breaker${droppedBreakerRows !== 1 ? 's' : ''}` : '';
     // …and that the arc flash label stayed behind (build 123 review)
     const label = holdsArcFlashPhoto(entry.photos) ? ' \u2014 photograph its own arc flash label' : '';
-    if (withPhotos) showToast(`Duplicated "${entry.equipName}" with ${photoCount} photo${photoCount !== 1 ? 's' : ''} (copies) — update name` + own + label);
+    // …and that the Main Photo's arrow was left on the original (build 156)
+    const arrow = arrowLeft ? ' \u2014 point the Main Photo\u2019s arrow at this unit' : '';
+    if (withPhotos) showToast(`Duplicated "${entry.equipName}" with ${photoCount} photo${photoCount !== 1 ? 's' : ''} (copies) — update name` + own + label + arrow);
     else showToast(`Duplicated "${entry.equipName}" (info only) — update name` + own);
   }
 }
@@ -16827,10 +17163,11 @@ async function buildAndSendExport(opts, run) {
   }
 
   for (const entry of allEntries) {
-    const map = { mainH: null, dpH: null, eeH: null, afH: null, sourceHs: [], retakeHs: [] };
+    const map = { mainH: null, mainArrow: null, dpH: null, eeH: null, afH: null, sourceHs: [], retakeHs: [] };
     const ep = entry.photos || {};
 
     map.mainH = await resolveExportPhoto(entry, 'main', ep.equip_main);
+    map.mainArrow = exportMainArrow(entry, map.mainH);   // the arrow at this unit (build 156)
     map.dpH   = await resolveExportPhoto(entry, 'dataplate', ep.equip_dataplate);
     map.eeH   = await resolveExportPhoto(entry, 'ee', ep.equip_ee);
     // The arc flash label (build 122): after EE, before the sources — whatever the
@@ -16950,7 +17287,7 @@ async function buildAndSendExport(opts, run) {
   }
 
   // ---- PASS 2: build CSV ----
-  let csv = 'Hospital Code,Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Valve State,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames,Valve Marks,Arc Flash Photo Filename\n';
+  let csv = 'Hospital Code,Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Valve State,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames,Valve Marks,Arc Flash Photo Filename,Main Photo Arrow\n';
 
   allEntries.forEach((entry, ei) => {
     const map = entryMaps[ei];
@@ -16976,8 +17313,10 @@ async function buildAndSendExport(opts, run) {
         quote(miscFileNames[ei] || ''),
         // Where the tech tapped the valve(s) in this source's photo (build 92)
         quote(map.sourceHs[i] ? valveMarksText(sourceMarksForExport(entry, i)) : ''),
-        // The arc flash label's photo (build 122): the last column
-        quote(map.afH || '')
+        // The arc flash label's photo (build 122)
+        quote(map.afH || ''),
+        // The Main Photo's arrow at this unit (build 156): the last column
+        quote(mainArrowSheetText(map.mainArrow))
       ].join(',') + '\n';
     });
   });
@@ -17067,7 +17406,10 @@ async function buildAndSendExport(opts, run) {
         ee:        captureInfoOf((photos || {}).equip_ee, map.eeH),
         arcflash:  captureInfoOf((photos || {}).equip_arcflash, map.afH),
         misc:      miscCaptured[ei] || []   // one per file in photoFiles.misc, same order (build 110)
-      }
+      },
+      // the arrow at this unit on its main photo (build 156): {x, y, dir, len,
+      // layout} — layout = loto-web's equipment pointer keys — or null
+      mainPhotoArrow: mainArrowForJson(map.mainArrow)
     };
   });
   await zip.file('entries.json', JSON.stringify({
@@ -17125,7 +17467,7 @@ async function buildAndSendExport(opts, run) {
         { width: 28 }, { width: 22 }, { width: 16 }, { width: 26 }, { width: 18 },
         { width: 14 }, { width: 10 }, { width: 22 }, { width: 18 }, { width: 8 }, { width: 22 }, { width: 30 },
         { width: 34 },  // 13: Linked To (build 94)
-        { width: 34 },  // 14: Drain Location (build 118)
+        { width: 34 },  // 14: Drain Location (build 118); on the equipment rows, Main Photo Arrow (build 156)
         { width: 10 },  // 15: Lock Open (build 118)
         { width: 22 },  // 16: Existing Tag (build 119)
         { width: 14 },  // 17: Spring Return (build 120)
@@ -17194,15 +17536,19 @@ async function buildAndSendExport(opts, run) {
         // blocks — the photo's file name, "No label", or blank (not checked) — and
         // on any block whose unit holds an arc flash photo (build 122 review).
         const arcHere = arcFlashAskedFor(entry.equipType, entry.template) || !!map.afH;
+        // Column 14 (build 156): "Main Photo Arrow" — the arrow at this unit on its
+        // main photo, as loto-web's equipment pointer: "arrow_x,arrow_y,arrow_dir,
+        // arrow_len" — headed only on a block that carries one.
+        const arrowText = mainArrowSheetText(map.mainArrow);
         const eqHeaderRow = ws.addRow(['Equipment ID/Name','','','Location','Main Photo','Equipment Type','','Data Plate Photo','EE Number Photo','Page #','Diagram File','Misc Photo Files',
-          arcHere ? 'Arc Flash Label' : '']);
+          arcHere ? 'Arc Flash Label' : ''].concat(arrowText ? ['Main Photo Arrow'] : []));
         applyRow(eqHeaderRow, headerFont, labelFill, allBorders);
         const eqHdrNum = eqHeaderRow.number;
         ws.mergeCells(eqHdrNum, 1, eqHdrNum, 2); // A:B merge
 
         // Equipment data row
         const eqDataRow = ws.addRow([entry.equipName || '', '', '', location, map.mainH || '', entry.equipType || '', '', map.dpH || '', map.eeH || '', pageNum, diagramFiles[ei] || '', miscFileNames[ei] || '',
-          arcHere ? arcFlashSheetValue(entry, map.afH) : '']);
+          arcHere ? arcFlashSheetValue(entry, map.afH) : ''].concat(arrowText ? [arrowText] : []));
         applyRow(eqDataRow, dataFont, null, allBorders);
         eqDataRow.getCell(10).font = boldData;
         const eqDataNum = eqDataRow.number;

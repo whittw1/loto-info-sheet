@@ -156,6 +156,9 @@
 //             likely picks (More… is the list itself); a chip runs the list's own change; Settings turns them off
 //   T471      build 154: "+ <source>" chips on Add Energy Source (sources added by hand on this type before); one card open at a time
 //   T472      build 155: the template's own lines first on the Add row (AHU - HHW, AHU - Steam, CHW, HHW, Water Heater - Gas); "+ Other…" is the whole list
+//   T473–T476 build 156: the Main Photo's arrow at this unit (several units in one photo) — the dialog, the export
+//             (entries.json mainPhotoArrow, the name row's column 14, the CSV's last column), saved / copied / retaken, its geometry
+//   T477      build 156: the Dock Leveler type and template (Electrical with the voltage asked, Hydraulic, Gravity/Potential)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -7836,6 +7839,314 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ---------- build 156: the Main Photo's arrow; the Dock Leveler type ----------
+  // wilkins, 2026-11-05: "Add the ability to mark the arrow on the Main photo.
+  // Sometimes I take a photo of 2-3 pieces of equipment at a time and need to
+  // mark which one I am referencing. I can do it in LOTO web, just not the
+  // field app." and "Create a Dock Leveler equipment type".
+  async function arrowDialogReady() {
+    await waitFor(() => {
+      const w = document.getElementById('mainArrowWrap');
+      const r = w && w.getBoundingClientRect();
+      return !!(r && r.width > 20 && r.height > 20);
+    }, 8000, 'main photo arrow dialog laid out');
+    return document.getElementById('mainArrowWrap');
+  }
+  function tapArrow(fx, fy) {
+    const w = document.getElementById('mainArrowWrap'), r = w.getBoundingClientRect();
+    w.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: r.left + fx * r.width, clientY: r.top + fy * r.height }));
+  }
+  function dragArrow(fromX, fromY, toX, toY) {
+    const w = document.getElementById('mainArrowWrap'), r = w.getBoundingClientRect();
+    const at = (fx, fy) => ({ clientX: r.left + fx * r.width, clientY: r.top + fy * r.height });
+    const ev = (type, p) => w.dispatchEvent(new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 43, pointerType: 'touch', isPrimary: true }, p)));
+    ev('pointerdown', at(fromX, fromY));
+    for (let i = 1; i <= 4; i++) ev('pointermove', at(fromX + (toX - fromX) * i / 4, fromY + (toY - fromY) * i / 4));
+    ev('pointerup', at(toX, toY));
+    w.dispatchEvent(new MouseEvent('click', Object.assign({ bubbles: true, cancelable: true }, at(toX, toY))));
+  }
+  // The tip of the arrow the dialog draws, as image fractions (the polygon's
+  // head point, from loto-web's override)
+  function drawnArrowTip() {
+    const w = document.getElementById('mainArrowWrap'), poly = document.querySelector('#mainArrowSvg polygon');
+    if (!w || !poly) return null;
+    const pts = poly.getAttribute('points').split(' ').map(q => q.split(',').map(Number));
+    return { x: pts[3][0] / w.clientWidth, y: pts[3][1] / w.clientHeight };
+  }
+  const arrowBtn = () => document.getElementById('arrowbtn_equip_main');
+
+  // T473 — the dialog
+  async function t473_mainPhotoArrowDialog() {
+    const N = 'T473 build 156: "➜ Point at unit" under the Main Photo shows once it has a photo; a tap points a white arrow at the tap (from above first, 0.25 long), a later tap moves it and keeps its side while it fits; dragging the arrow swings it to another side / length, ↻ Turn goes round; Save stores it on a NEW Main Photo reference (the old one untouched) with a ➜ badge and "Move arrow"; Cancel keeps the saved one, Remove + Save drops it; the photo viewer offers it on the Main Photo only; a Main Photo retaken while the dialog is open gets nothing';
+    await resetAppState();
+    if (typeof openMainArrowDialog !== 'function') return record(N, false, 'this build has no main photo arrow');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const near = (a, b) => !!a && !!b && Math.abs(a.x - b.x) <= 0.012 && Math.abs(a.y - b.y) <= 0.012;
+    fillFormNoSources('ARW-473');
+    want(arrowBtn() && arrowBtn().style.display === 'none', 'button before a photo');
+    const toasts0 = await withToasts(async () => { got.noPhoto = openMainArrowDialog(); });
+    want(got.noPhoto === false && !document.getElementById('mainArrowOverlay') && toasts0.some(t => /Main Photo first/.test(t)), 'no photo: no dialog');
+    await captureInto('equip_main', await makePhotoFile('arw-473'));
+    want(arrowBtn().style.display === '' && /Point at unit/.test(arrowBtn().textContent), 'button with a photo: ' + arrowBtn().textContent);
+    const ref0 = photos.equip_main;
+    clickById('arrowbtn_equip_main'); await arrowDialogReady();
+    got.state0 = document.getElementById('mainArrowState').textContent;
+    tapArrow(0.5, 0.6);
+    const draft1 = drawnArrowTip();
+    got.tip1 = draft1;
+    want(near(draft1, { x: 0.5, y: 0.6 }), 'the arrow points at the tap');
+    const fill = (document.querySelector('#mainArrowSvg polygon') || { getAttribute: () => '' }).getAttribute('fill');
+    want(/^#fff(fff)?$/i.test(fill), 'white like loto-web\'s pointer: ' + fill);
+    tapArrow(0.3, 0.1);   // no room above for the whole arrow: from the left
+    got.tip2 = drawnArrowTip();
+    got.side2 = (mainArrowOverride(drawnArrowTip() && { x: 0.3, y: 0.1, dir: 'right', len: 0.25 }) || {}).arrow_dir;
+    const poly2 = document.querySelector('#mainArrowSvg polygon').getAttribute('points');
+    tapArrow(0.5, 0.5);   // room for it on that side: it keeps it
+    const poly3 = document.querySelector('#mainArrowSvg polygon').getAttribute('points');
+    const pts = t => t.split(' ').map(q => q.split(',').map(Number));
+    const flat = t => { const q = pts(t); return Math.abs(q[0][1] - q[6][1]) > 1 && Math.abs(q[0][0] - q[6][0]) < 0.5 ? 'horizontal' : 'vertical'; };
+    got.sides = [flat(poly2), flat(poly3)];
+    want(near(got.tip2, { x: 0.3, y: 0.1 }) && near(drawnArrowTip(), { x: 0.5, y: 0.5 }), 'a later tap moves it');
+    want(got.sides.join() === 'horizontal,horizontal', 'no room above: from the side, and a tap with room keeps that side');
+    clickById('mainArrowClear');
+    tapArrow(0.6, 0.7);
+    clickById('mainArrowSave');
+    const a1 = photos.equip_main.pointer;
+    got.a1 = a1;
+    want(photos.equip_main !== ref0 && !ref0.pointer && photos.equip_main.dbKey === ref0.dbKey, 'a new reference, the old untouched');
+    want(a1 && a1.dir === 'down' && a1.len === 0.25 && Math.abs(a1.x - 0.6) <= 0.012 && Math.abs(a1.y - 0.7) <= 0.012, 'saved: from above, 0.25 long');
+    want(!!document.querySelector('#photo_equip_main .mark-badge') && /Move arrow/.test(arrowBtn().textContent), 'badge + Move arrow');
+    // swing: the tail dragged to the left of the tip
+    openMainArrowDialog(); await arrowDialogReady();
+    dragArrow(a1.x, a1.y - a1.len + 0.03, a1.x - 0.35, a1.y);
+    const sw = photos.equip_main.pointer;   // not saved yet
+    clickById('mainArrowTurn');
+    got.turned = JSON.stringify(drawnArrowTip());
+    clickById('mainArrowCancel');
+    want(JSON.stringify(photos.equip_main.pointer) === JSON.stringify(a1) && sw === a1, 'Cancel keeps the saved arrow');
+    openMainArrowDialog(); await arrowDialogReady();
+    dragArrow(a1.x, a1.y - a1.len + 0.03, a1.x - 0.35, a1.y);
+    clickById('mainArrowSave');
+    const a2 = photos.equip_main.pointer;
+    got.a2 = a2;
+    want(a2 && a2.dir === 'right' && Math.abs(a2.len - 0.35) <= 0.03 && a2.x === a1.x && a2.y === a1.y, 'dragged to the left: points right, as long as the drag');
+    openMainArrowDialog(); await arrowDialogReady();
+    clickById('mainArrowTurn');
+    clickById('mainArrowSave');
+    got.a3 = photos.equip_main.pointer;
+    want(got.a3 && got.a3.dir === 'down' && got.a3.x === a1.x, '↻ Turn: right → down');
+    openMainArrowDialog(); await arrowDialogReady();
+    clickById('mainArrowClear'); clickById('mainArrowSave');
+    want(!photos.equip_main.pointer && !document.querySelector('#photo_equip_main .mark-badge') && /Point at unit/.test(arrowBtn().textContent), 'Remove + Save');
+    // the viewer
+    showPhotoDialog('equip_main');
+    got.viewerMain = !!document.getElementById('photoViewerArrow');
+    closePhotoDialog();
+    sources.push(Object.assign(mkSrc('Electrical 208V'), { collapsed: false })); renderSources();
+    await captureInto('source_0', await makePhotoFile('arw-473-s'));
+    showPhotoDialog('source_0');
+    got.viewerSource = !!document.getElementById('photoViewerArrow');
+    closePhotoDialog(); closeValveMarkDialog();
+    want(got.viewerMain && !got.viewerSource, 'the viewer offers it on the Main Photo only');
+    // retaken while the dialog is open
+    openMainArrowDialog(); await arrowDialogReady();
+    tapArrow(0.5, 0.5);
+    await captureInto('equip_main', await makePhotoFile('arw-473-r'));
+    const toasts = await withToasts(async () => { const b = document.getElementById('mainArrowSave'); if (b) b.click(); });
+    got.retakeToast = toasts.join(' | ');
+    want(!photos.equip_main.pointer && toasts.some(t => /changed while you were placing the arrow/.test(t)), 'a retake meanwhile: nothing saved');
+    closeMainArrowDialog();
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T474 — the export
+  async function t474_mainPhotoArrowExport() {
+    const N = 'T474 build 156: the arrow goes out with its Main Photo — entries.json mainPhotoArrow {x, y, dir, len, layout} (layout = loto-web\'s equipment pointer keys arrow_x, arrow_y, arrow_dir, arrow_len), the name row\'s column 14 headed "Main Photo Arrow" with "arrow_x,arrow_y,arrow_dir,arrow_len", and the CSV\'s last column "Main Photo Arrow"; a unit without one: null, no column 14 header, an empty CSV cell; no Main Photo exported, no arrow';
+    await resetAppState();
+    if (typeof mainArrowOverride !== 'function') return record(N, false, 'this build has no main photo arrow');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillForm('ARW-474-A');
+    await captureInto('equip_main', await makePhotoFile('arw-474-a'));
+    openMainArrowDialog(); await arrowDialogReady();
+    tapArrow(0.5, 0.6); clickById('mainArrowSave');
+    const arrow = photos.equip_main.pointer;
+    const A = saveEntry();
+    fillForm('ARW-474-B');
+    await captureInto('equip_main', await makePhotoFile('arw-474-b'));
+    const B = saveEntry();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const ja = jsonEntryFor(u.entriesJson, A) || {}, jb = jsonEntryFor(u.entriesJson, B) || {};
+    const lay = mainArrowOverride(arrow);
+    got.json = ja.mainPhotoArrow;
+    want(lay && lay.arrow_dir === 'down' && Math.abs(lay.arrow_x - (arrow.x - VALVE_MARK_GEOM.THICK / 2)) < 1e-4 && Math.abs(lay.arrow_y - (arrow.y - 0.25)) < 1e-4 && lay.arrow_len === 0.25, 'the layout: top-left corner, centred across the tip ' + JSON.stringify(lay));
+    want(ja.mainPhotoArrow && ja.mainPhotoArrow.x === arrow.x && ja.mainPhotoArrow.y === arrow.y && ja.mainPhotoArrow.dir === 'down'
+      && JSON.stringify(ja.mainPhotoArrow.layout) === JSON.stringify(lay), 'entries.json A');
+    want(jb.mainPhotoArrow === null, 'entries.json B: null');
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    const by = {};
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      const ws = wb.worksheets[0];
+      const v = (r, c) => { const x = ws.getRow(r).getCell(c).value; return x == null ? '' : String(x); };
+      ws.eachRow(row => {
+        if (v(row.number, 1) !== 'Equipment ID/Name') return;
+        by[v(row.number + 1, 1)] = { h14: v(row.number, 14), v14: v(row.number + 1, 14), main: v(row.number + 1, 5) };
+      });
+    }
+    got.sheet = by;
+    const sa = by['ARW-474-A'] || {}, sb = by['ARW-474-B'] || {};
+    want(sa.h14 === 'Main Photo Arrow' && sa.v14 === mainArrowSheetText(arrow) && /^\d\.\d{4},\d\.\d{4},down,0\.2500$/.test(sa.v14) && !!sa.main, 'sheet A');
+    want(sb.h14 === '' && sb.v14 === '' && !!sb.main, 'sheet B: no header');
+    const cp = Object.keys(u.files).find(q => /\.csv$/.test(q));
+    const rows = parseCsvRows(new TextDecoder().decode(u.files[cp]));
+    const last = r => r[r.length - 1];
+    got.csv = { head: last(rows[0] || []), a: rows.filter(r => r[2] === 'ARW-474-A').map(last).join('|'), b: rows.filter(r => r[2] === 'ARW-474-B').map(last).join('|') };
+    want(got.csv.head === 'Main Photo Arrow' && got.csv.a === sa.v14 && got.csv.b === '', 'CSV');
+    // no Main Photo in the export: no arrow (exportMainArrow)
+    const ghost = { photos: { equip_main: { dbKey: 'x', pointer: arrow } } };
+    want(exportMainArrow(ghost, null) === null && JSON.stringify(exportMainArrow(ghost, 'H1.jpg')) === JSON.stringify(cleanMainArrow(arrow)), 'only with the photo');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T475 — where the arrow goes (and doesn't)
+  async function t475_mainPhotoArrowLifecycle() {
+    const N = 'T475 build 156: the arrow is saved with the unit and comes back after a relaunch; moving it on an opened saved unit is a change (Save & New saves it); a retake of the Main Photo has no arrow; Duplicate with photos copies the Main Photo WITHOUT the arrow (another unit — the message says to point it), the original keeps its own';
+    await resetAppState();
+    if (typeof openMainArrowDialog !== 'function') return record(N, false, 'this build has no main photo arrow');
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillForm('ARW-475');
+    await captureInto('equip_main', await makePhotoFile('arw-475'));
+    openMainArrowDialog(); await arrowDialogReady();
+    tapArrow(0.4, 0.5); clickById('mainArrowSave');
+    const arrow = photos.equip_main.pointer;
+    const A = saveEntry();
+    savedEquipment = []; await loadAll(); await sleep(300);
+    const back = savedEquipment.find(e => e.id === A.id);
+    got.back = back && back.photos.equip_main.pointer;
+    want(back && JSON.stringify(back.photos.equip_main.pointer) === JSON.stringify(arrow), 'saved and back after a relaunch');
+    dropLoadBanners();
+    // an opened saved unit: a moved arrow is a change
+    const idx = savedEquipment.findIndex(e => e.id === A.id);
+    editSaved(idx); await sleep(200);
+    const before = unitCompareJson(savedEquipment[idx]);
+    want(unitCompareJson(formAsUnit()) === before, 'opened unchanged');
+    openMainArrowDialog(); await arrowDialogReady();
+    tapArrow(0.7, 0.5); clickById('mainArrowSave');
+    want(unitCompareJson(formAsUnit()) !== before, 'a moved arrow is a change');
+    const moved = photos.equip_main.pointer;
+    saveEntry();
+    const saved = savedEquipment.find(e => e.id === A.id);
+    got.moved = saved && saved.photos.equip_main.pointer;
+    want(saved && JSON.stringify(saved.photos.equip_main.pointer) === JSON.stringify(moved) && moved.x !== arrow.x, 'Save & New saved the moved arrow');
+    // Duplicate with photos
+    const i2 = savedEquipment.findIndex(e => e.id === A.id);
+    const toasts = await withToasts(async () => { await executeDuplicate(i2, true); });
+    got.dupToast = toasts.filter(t => /Duplicated/.test(t)).join(' | ');
+    want(photos.equip_main && photos.equip_main.dbKey && !photos.equip_main.pointer, 'the copy has no arrow');
+    want(/point the Main Photo.s arrow at this unit/.test(got.dupToast), 'the message says so');
+    want(JSON.stringify((savedEquipment.find(e => e.id === A.id) || { photos: {} }).photos.equip_main.pointer) === JSON.stringify(moved), 'the original keeps its arrow');
+    // a retake
+    openMainArrowDialog(); await arrowDialogReady();
+    tapArrow(0.5, 0.5); clickById('mainArrowSave');
+    want(!!photos.equip_main.pointer, 'the copy can have its own');
+    await captureInto('equip_main', await makePhotoFile('arw-475-r'));
+    want(!photos.equip_main.pointer, 'a retake has no arrow');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T476 — the arrow always fits the photo, its head on the tip
+  async function t476_mainPhotoArrowGeometry() {
+    const N = 'T476 build 156: every stored arrow lies on the photo with its head on the tip, at least 0.08 and at most 0.6 long (held in by the photo\'s edge); a new arrow is a whole one (0.25) on the first side with room, from above first; loto-web\'s keys (4 decimals) and the sheet text agree; junk is dropped';
+    if (typeof cleanMainArrow !== 'function') return record(N, false, 'this build has no main photo arrow');
+    const bad = [], T = VALVE_MARK_GEOM.THICK, eps = 1.2e-4;
+    for (let i = 0; i <= 20; i++) for (let j = 0; j <= 20; j++) {
+      const x = i / 20, y = j / 20;
+      for (const dir of ['right', 'left', 'down', 'up']) for (const len of [0.03, 0.08, 0.25, 0.6, 0.9]) {
+        const a = cleanMainArrow({ x, y, dir, len });
+        const room = mainArrowRoom(Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000, dir);
+        const expectNone = Math.min(len, 0.6, room) < 0.08 - 1e-9;
+        if (!a) { if (!expectNone) bad.push('dropped ' + [x, y, dir, len].join()); continue; }
+        if (expectNone) { bad.push('kept ' + [x, y, dir, len].join()); continue; }
+        const o = mainArrowOverride(a);
+        const horiz = dir === 'right' || dir === 'left';
+        const w = horiz ? o.arrow_len : T, h = horiz ? T : o.arrow_len;
+        const on = o.arrow_x >= 0 && o.arrow_y >= 0 && o.arrow_x + w <= 1 + eps && o.arrow_y + h <= 1 + eps;
+        const head = dir === 'right' ? Math.abs(o.arrow_x + w - a.x) < eps : dir === 'left' ? Math.abs(o.arrow_x - a.x) < eps
+          : dir === 'down' ? Math.abs(o.arrow_y + h - a.y) < eps : Math.abs(o.arrow_y - a.y) < eps;
+        const text = mainArrowSheetText(a) === [o.arrow_x.toFixed(4), o.arrow_y.toFixed(4), dir, o.arrow_len.toFixed(4)].join(',');
+        if (!on || !head || !text || a.len < 0.08 || a.len > 0.6 || o.arrow_dir !== dir) bad.push(JSON.stringify({ a, o, on, head, text }));
+      }
+      const n = mainArrowAt(x, y);
+      const first = ['down', 'right', 'left', 'up'].find(d => mainArrowRoom(n ? n.x : x, n ? n.y : y, d) >= 0.25);
+      if (!n || n.len !== 0.25 || n.dir !== first) bad.push('new at ' + [x, y].join() + ' ' + JSON.stringify(n));
+    }
+    [null, 7, {}, { x: 2, y: 0.5, dir: 'down', len: 0.2 }, { x: 0.5, y: 0.5, dir: 'sideways', len: 0.2 }, { x: 'a', y: 0.5, dir: 'up', len: 0.2 }, { x: 0.5, y: 0.5, dir: 'up' }]
+      .forEach(j => { if (cleanMainArrow(j) !== null || mainArrowSheetText(j) !== '' || mainArrowForJson(j) !== null) bad.push('junk ' + JSON.stringify(j)); });
+    record(N, !bad.length, bad.length ? bad.length + ' bad: ' + bad.slice(0, 5).join(' | ') : 'grid of 21 x 21 tips x 4 ways x 5 lengths');
+  }
+
+  // T477 — the Dock Leveler type
+  async function t477_dockLevelerTypeAndTemplate() {
+    const N = 'T477 build 156: the new Dock Leveler type picks the Dock Leveler template (the only one) and asks the voltage (120V / 208V / 240V / 480V); three rows — Electrical 120V Breaker On Equipment / Controls, Hydraulic / GaugeOnly (no photo), Gravity/Potential / Block (no photo), no Kinetic — and the pick sets the breaker\'s voltage; Electrical expected; Plumbing Shop by default; a custom "Dock Leveler 3" gets it; app-lists.json lists it; the export says "Dock Leveler" as template and type';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('DL-477');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'Dock Leveler';
+    await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+    const ov = document.getElementById('templateVoltageOverlay');
+    got.voltages = ov ? Array.from(ov.querySelectorAll('button.btn-primary')).map(b => b.textContent.trim()) : null;
+    got.template = getTemplate();
+    got.offered = [...document.getElementById('equipTemplate').options].map(o => o.value).filter(v => v && v !== '** New Template **');
+    got.rows = sources.map(x => [x.energySource, x.deviceType, x.location, x.verification, x.noPhoto ? 'noPhoto' : ''].join('/'));
+    want(got.template === 'Dock Leveler' && got.offered.join() === 'Dock Leveler', 'type picks the template');
+    want((got.voltages || []).join() === '120V,208V,240V,480V', 'the voltage asked');
+    want(got.rows.join('|') === 'Electrical 120V/Breaker/On Equipment/Controls/|Hydraulic/Hydraulic/On Equipment/GaugeOnly/noPhoto|Gravity/Potential/Potential/On Equipment/Block/noPhoto', 'rows');
+    if (ov) applyTemplateVoltageChoice('480V');
+    closeAllPrompts();
+    got.picked = sources.map(x => x.energySource + '/' + x.deviceType + '/' + x.location).join('|');
+    want(/^Electrical 480V\/Breaker\/On Equipment\|Hydraulic\//.test(got.picked), 'the pick sets the breaker\'s voltage');
+    want(expectsElectricalSource('Dock Leveler', 'Dock Leveler') && defaultShopFor('Dock Leveler', sources) === 'Plumbing Shop', 'Electrical expected, Plumbing Shop');
+    fillFormNoSources('C-477');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = '** New Equipment Type **';
+    filterTemplateDropdown('');
+    document.getElementById('equipTypeCustom').value = 'Dock Leveler 3';
+    await withDialogs({ confirm: true }, async () => { handleCustomEquipTypeChange(); });
+    closeAllPrompts();
+    got.custom = getTemplate();
+    want(got.custom === 'Dock Leveler', 'custom name');
+    const al = appListsSnapshot(APP_BUILD);
+    want(al.equipmentTypes.includes('Dock Leveler') && al.templates.includes('Dock Leveler') && JSON.stringify(al.typeToTemplates['Dock Leveler']) === '["Dock Leveler"]', 'app-lists');
+    await resetAppState();
+    const A = mkEntry('Dock Leveler 1', { sources: [Object.assign(mkSrc('Electrical 120V'), { sourceId: genUuid(), location: 'On Equipment' })] });
+    A.equipType = 'Dock Leveler'; A.template = 'Dock Leveler';
+    savedEquipment = [A]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    const sheet = [], types = [];
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      const ws = wb.worksheets[0];
+      ws.eachRow(row => {
+        if (String(row.getCell(1).value || '') === 'Tied to Equipment') sheet.push(String(ws.getRow(row.number + 1).getCell(8).value || ''));
+        if (String(row.getCell(1).value || '') === 'Dock Leveler 1') types.push(String(row.getCell(6).value || ''));
+      });
+    }
+    got.export = { json: je.template, type: je.equipType, sheet, types };
+    want(je.template === 'Dock Leveler' && je.equipType === 'Dock Leveler' && sheet.join() === 'Dock Leveler' && types.join() === 'Dock Leveler', 'export');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // T472 — the template's own lines on the Add row; "+ Other…" is the whole list (build 155)
   async function t472_templateLinesAndOtherList() {
     const N = 'T472 build 155 (wilkins: "If I select an AHU - Steam, CHW, HHW or AHU - HHW template, can the Add energy source also include HHW In/out?" and "Shouldnt other just open another dropdown list?"): the Add row offers the lines a template names but leaves to the tech — AHU - HHW: HHW In/Out; AHU - Steam, CHW, HHW: HHW In/Out and CHW In/Out; Water Heater - Gas: DW In and DHW Out — first, from the first unit (no history needed), then the sources added by hand on the type, never twice; "+ Other…" is the whole Energy Source list: a pick adds the row with that source (the only card open), Custom… adds it with its Custom box, closing it adds nothing; Quick picks off: the plain button';
@@ -9710,9 +10021,11 @@
       want(!!rec && rec.entries.some(e => e.slot === 'arcflash'), 'manifest slot');
       const cp = Object.keys(u.files).find(q => /\.csv$/.test(q));
       const rows = parseCsvRows(new TextDecoder().decode(u.files[cp]));
-      const last = r => r[r.length - 1];
-      got.csv = { head: last(rows[0] || []), ats: rows.filter(r => r[2] === 'ATS-263').map(last).join(), gen: rows.filter(r => r[2] === 'GEN-263').map(last).join() };
-      want(got.csv.head === 'Arc Flash Photo Filename' && got.csv.ats === ats.v13 && got.csv.gen === '', 'the CSV\'s last column');
+      // by its header: build 156 added "Main Photo Arrow" after it, the last column
+      const afCol = (rows[0] || []).indexOf('Arc Flash Photo Filename');
+      const last = r => r[afCol];
+      got.csv = { head: (rows[0] || [])[afCol], col: afCol, ats: rows.filter(r => r[2] === 'ATS-263').map(last).join(), gen: rows.filter(r => r[2] === 'GEN-263').map(last).join() };
+      want(afCol === (rows[0] || []).length - 2 && got.csv.ats === ats.v13 && got.csv.gen === '', 'the CSV\'s column before the last');
       want((savedEquipment.find(e => e.equipName === 'ATS-263') || {}).exportedAllPhotos === true, 'stamped exported with every photo');
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
@@ -10049,18 +10362,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 155 (was build 122\'s): APP_BUILD and the header label say 155, the service worker\'s cache is loto-collector-v7.150, Xcode\'s CURRENT_PROJECT_VERSION is 155 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 156 (was build 122\'s): APP_BUILD and the header label say 156, the service worker\'s cache is loto-collector-v7.151, Xcode\'s CURRENT_PROJECT_VERSION is 156 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 155 && !!label && +label[1] === 155, 'the build');
+    want(APP_BUILD === 156 && !!label && +label[1] === 156, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.150', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.151', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 155;,CURRENT_PROJECT_VERSION = 155;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 156;,CURRENT_PROJECT_VERSION = 156;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -16682,7 +16995,8 @@
     t463_leavingASavedUnitGoesBackWhereTheTechWas, t464_theAskBoxIsAtTheTopOfTheMarkScreen,
     t465_aLinkToAnInOutPairAsksWhichValve, t466_aChillerStartsWithChwInAndOut, t467_aBatteryChargerIsStandardElectrical,
     t468_energyRecoveryWaterReplacesGlycolEr, t469_atsFeedsArePanels,
-    t470_quickPicksOnTheCard, t471_quickAddAndOneCardOpen, t472_templateLinesAndOtherList];
+    t470_quickPicksOnTheCard, t471_quickAddAndOneCardOpen, t472_templateLinesAndOtherList,
+    t473_mainPhotoArrowDialog, t474_mainPhotoArrowExport, t475_mainPhotoArrowLifecycle, t476_mainPhotoArrowGeometry, t477_dockLevelerTypeAndTemplate];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

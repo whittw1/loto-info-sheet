@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 155,
+  "build": 156,
   "hospitals": [
     {
       "code": "Marion",
@@ -63,6 +63,7 @@
     "Condensate Surge Tank",
     "Elevator",
     "Overhead Door",
+    "Dock Leveler",
     "Cooling Tower",
     "Chemical Feed Pump",
     "Chemical Pump",
@@ -193,6 +194,9 @@
     "Overhead Door": [
       "Overhead Door"
     ],
+    "Dock Leveler": [
+      "Dock Leveler"
+    ],
     "ATS": [
       "ATS - Generic"
     ],
@@ -266,6 +270,7 @@
     "Elevator - Traction",
     "Elevator - Hydraulic",
     "Overhead Door",
+    "Dock Leveler",
     "ATS - Generic",
     "Humidifier",
     "Standard Electrical",
