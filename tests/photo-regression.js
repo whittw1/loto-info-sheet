@@ -155,6 +155,7 @@
 //   T470      build 154: quick picks — an open card's Energy Source, Device, Location and Verification as one-tap chips of the
 //             likely picks (More… is the list itself); a chip runs the list's own change; Settings turns them off
 //   T471      build 154: "+ <source>" chips on Add Energy Source (sources added by hand on this type before); one card open at a time
+//   T472      build 155: the template's own lines first on the Add row (AHU - HHW, AHU - Steam, CHW, HHW, Water Heater - Gas); "+ Other…" is the whole list
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -7835,6 +7836,76 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T472 — the template's own lines on the Add row; "+ Other…" is the whole list (build 155)
+  async function t472_templateLinesAndOtherList() {
+    const N = 'T472 build 155 (wilkins: "If I select an AHU - Steam, CHW, HHW or AHU - HHW template, can the Add energy source also include HHW In/out?" and "Shouldnt other just open another dropdown list?"): the Add row offers the lines a template names but leaves to the tech — AHU - HHW: HHW In/Out; AHU - Steam, CHW, HHW: HHW In/Out and CHW In/Out; Water Heater - Gas: DW In and DHW Out — first, from the first unit (no history needed), then the sources added by hand on the type, never twice; "+ Other…" is the whole Energy Source list: a pick adds the row with that source (the only card open), Custom… adds it with its Custom box, closing it adds nothing; Quick picks off: the plain button';
+    await resetAppState();
+    await withQuickPicksSetting(async () => {
+      const fails = [], got = {};
+      const want = (ok, what) => { if (!ok) fails.push(what); };
+      const box = document.getElementById('quickAddSources'), btn = document.getElementById('addSourceBtn');
+      const adds = () => Array.from(box.querySelectorAll('.qp-add-pick')).map(b => b.textContent.trim());
+      const open = () => sources.map((s, k) => s.collapsed ? '' : String(k)).filter(Boolean).join(',');
+      const unit = (type, tmpl) => {
+        fillFormNoSources('U-472');
+        document.getElementById('equipType').value = type;
+        filterTemplateDropdown(type);
+        document.getElementById('equipTemplate').value = tmpl;
+        renderSources();
+      };
+      // no history at all: the template's lines alone
+      unit('Air Handler', 'AHU - HHW');
+      got.hhw = adds().join(' | ');
+      want(got.hhw === '+ HHW In/Out' && box.style.display !== 'none' && btn.style.display === 'none', 'AHU - HHW: ' + got.hhw);
+      unit('Air Handler', 'AHU - Steam, CHW, HHW');
+      got.three = adds().join(' | ');
+      want(got.three === '+ HHW In/Out | + CHW In/Out', 'AHU - Steam, CHW, HHW: ' + got.three);
+      unit('Domestic Water Heater', 'Water Heater - Gas');
+      got.gas = adds().join(' | ');
+      want(got.gas === '+ DW In | + DHW Out', 'Water Heater - Gas: ' + got.gas);
+      unit('Air Handler', 'AHU - Steam');
+      got.steam = adds().join(' | ') + '|' + box.style.display;
+      want(got.steam === '|none' && btn.style.display !== 'none', 'AHU - Steam with no history: the plain button ' + got.steam);
+      // with history: the template's lines first, then the hand rows, never twice
+      const hand = (es) => Object.assign(mkSrc(es), { deviceType: 'Gate Valve' });
+      savedEquipment.push(Object.assign(mkEntry('AHU-H'), { equipType: 'Air Handler',
+        sources: [hand('MPS 20 PSI'), hand('MPS 20 PSI'), hand('CHW In/Out'), hand('Condensate Out')] }));
+      unit('Air Handler', 'AHU - Steam, CHW, HHW');
+      got.mixed = adds().join(' | ');
+      want(got.mixed === '+ HHW In/Out | + CHW In/Out | + MPS 20 PSI | + Condensate Out', 'pinned first, then history, CHW once: ' + got.mixed);
+      // a pinned chip adds its row
+      Array.from(box.querySelectorAll('.qp-add-pick')).find(b => /HHW/.test(b.textContent)).click();
+      got.pinTap = [sources.length, sources[0] && sources[0].energySource, sources[0] && sources[0].quantity, open()].join('|');
+      want(got.pinTap === '1|HHW In/Out|2|0', 'the HHW chip: ' + got.pinTap);
+      // "+ Other…" is the whole list
+      const other = document.getElementById('quickAddOther');
+      const values = other ? Array.from(other.options).map(o => o.value) : [];
+      want(!!other && !!other.closest('.qp-more') && values[0] === '' && values.includes('Natural Gas') && values.includes('DHW Out')
+        && values[values.length - 1] === '** Custom Energy **' && values.length === offeredEnergySources().length + 2, 'the list: ' + values.length);
+      other.value = 'Fuel Oil In'; other.dispatchEvent(new Event('change', { bubbles: true }));
+      got.pick = [sources.length, sources[1] && sources[1].energySource, open()].join('|');
+      want(got.pick === '2|Fuel Oil In|1', 'a pick adds that row, the only one open: ' + got.pick);
+      const other2 = document.getElementById('quickAddOther');
+      other2.value = '** Custom Energy **'; other2.dispatchEvent(new Event('change', { bubbles: true }));
+      got.custom = [sources.length, !!(sources[2] && sources[2]._customEnergy), !!document.getElementById('src_energy_custom_2'), open()].join('|');
+      want(got.custom === '3|true|true|2', 'Custom… adds a row with its box: ' + got.custom);
+      // closing the list without a pick adds nothing (no change fires)
+      quickAddOther('');
+      want(sources.length === 3, 'no pick, no row');
+      // the template cleared on a unit with rows: its lines leave the Add row at once
+      document.getElementById('equipTemplate').value = '';
+      applyTemplate('');
+      got.cleared = adds().join(' | ');
+      want(adds()[0] === '+ MPS 20 PSI', 'the template cleared: the history leads again: ' + got.cleared);
+      // Quick picks off: the plain button, even on a pinned template
+      setQuickPicks(false);
+      got.off = [box.style.display, btn.style.display, adds().length].join('|');
+      want(got.off === 'none||0', 'off: ' + got.off);
+      setQuickPicks(true);
+      record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+    });
+  }
+
   // T470 / T471 turn Settings → Quick picks off and on: the browser's own setting
   // comes back whatever happens in the test (the build 154 review)
   async function withQuickPicksSetting(fn) {
@@ -7966,10 +8037,11 @@
       const r0 = sources[0] || {};
       got.added = [sources.length, r0.energySource, r0.quantity, r0.deviceType, r0.collapsed].join(' | ');
       want(got.added === '1 | CHW In/Out | 2 | Butterfly Valve | false', 'the CHW chip: ' + got.added);
-      // + Other… adds a blank row
-      box.querySelector('.qp-more').click();
+      // + Other… is the whole list (build 155): a pick adds the row with it
+      const other = document.getElementById('quickAddOther');
+      other.value = 'Natural Gas'; other.dispatchEvent(new Event('change', { bubbles: true }));
       got.other = sources.length + '|' + (sources[1] && sources[1].energySource) + '|' + open();
-      want(got.other === '2||1', '+ Other… adds a blank row, the only one open: ' + got.other);
+      want(got.other === '2|Natural Gas|1', '+ Other… adds the source picked, the only one open: ' + got.other);
       // one card open at a time
       sources.forEach(s => { s.collapsed = false; });
       sources.push(Object.assign(mkSrc('Electrical 480V'), { collapsed: false }));
@@ -9977,18 +10049,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 154 (was build 122\'s): APP_BUILD and the header label say 154, the service worker\'s cache is loto-collector-v7.149, Xcode\'s CURRENT_PROJECT_VERSION is 154 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 155 (was build 122\'s): APP_BUILD and the header label say 155, the service worker\'s cache is loto-collector-v7.150, Xcode\'s CURRENT_PROJECT_VERSION is 155 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 154 && !!label && +label[1] === 154, 'the build');
+    want(APP_BUILD === 155 && !!label && +label[1] === 155, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.149', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.150', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 154;,CURRENT_PROJECT_VERSION = 154;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 155;,CURRENT_PROJECT_VERSION = 155;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -16610,7 +16682,7 @@
     t463_leavingASavedUnitGoesBackWhereTheTechWas, t464_theAskBoxIsAtTheTopOfTheMarkScreen,
     t465_aLinkToAnInOutPairAsksWhichValve, t466_aChillerStartsWithChwInAndOut, t467_aBatteryChargerIsStandardElectrical,
     t468_energyRecoveryWaterReplacesGlycolEr, t469_atsFeedsArePanels,
-    t470_quickPicksOnTheCard, t471_quickAddAndOneCardOpen];
+    t470_quickPicksOnTheCard, t471_quickAddAndOneCardOpen, t472_templateLinesAndOtherList];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
