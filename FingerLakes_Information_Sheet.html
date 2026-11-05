@@ -382,6 +382,21 @@ if ('serviceWorker' in navigator) {
   .seg button { background: var(--input-bg); color: var(--text); border: none; border-right: 1px solid var(--border); padding: 10px 16px; font-size: 14px; font-weight: 500; cursor: pointer; }
   .seg button:last-child { border-right: none; }
   .seg button.on { background: var(--accent); color: #fff; }
+  /* Quick picks (build 154): a list's likely picks as one-tap chips; the list
+     itself sits invisible over More… so a tap there opens it as before */
+  .form-group.qp-group { grid-column: 1 / -1; }
+  .qp-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .qp-chip { position: relative; display: inline-flex; align-items: center; min-height: 44px; padding: 0 15px; box-sizing: border-box;
+    border: 1px solid var(--border); border-radius: 22px; background: var(--input-bg); color: var(--text);
+    font-size: 15px; font-weight: 500; line-height: 1.2; cursor: pointer; text-align: left; }
+  .qp-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .qp-chip.qp-more { border-style: dashed; color: var(--accent); }
+  .qp-chip.qp-more.on { border-style: solid; color: #fff; }
+  .qp-more > select.qp-select { position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0;
+    opacity: 0; cursor: pointer; font-size: 16px; border: 0; }
+  .qp-add { background: var(--card); border: 2px dashed var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 20px; }
+  .qp-add-label { font-size: 12px; font-weight: 600; color: var(--text-label); margin-bottom: 8px; }
+  .qp-chip.qp-add-pick { border-color: var(--accent); color: var(--accent); font-weight: 600; }
   .src-chip { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; margin-left: 6px; white-space: nowrap; }
   .src-chip.link { background: rgba(74,144,217,0.16); color: var(--accent); }
   .src-chip.warn { background: rgba(217,138,74,0.20); color: #b5451b; }
@@ -533,7 +548,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b153</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b154</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -700,7 +715,8 @@ if ('serviceWorker' in navigator) {
   <!-- Energy Sources -->
   <div id="sourcesContainer"></div>
 
-  <button class="add-source-btn" onclick="addSource()">+ Add Energy Source</button>
+  <div id="quickAddSources" class="qp-add" style="display:none;"></div>
+  <button class="add-source-btn" id="addSourceBtn" onclick="addSource()">+ Add Energy Source</button>
 
   <!-- Answers for loto-web (build 118): renderUnitQuestions -->
   <div class="equipment-section" id="unitQuestionsSection" style="margin-bottom:20px;">
@@ -921,6 +937,11 @@ if ('serviceWorker' in navigator) {
       </label>
       <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">Water valves get Drain / Gauge checkboxes; electrical defaults to Controls. Same saved values either way &mdash; turn off to restore the classic pickers.</div>
       <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="settingsQuickPicks" style="width:18px;height:18px;" onchange="setQuickPicks(this.checked)">
+        Quick picks on source cards
+      </label>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">Energy Source, Device, Location and Verification show your likely picks as one-tap buttons (More&hellip; opens the whole list); Add Energy Source offers the sources you add by hand on this type; one card is open at a time. Same saved values either way &mdash; turn off for the lists as before.</div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer;">
         <input type="checkbox" id="settingsDarkTheme" style="width:18px;height:18px;" onchange="setDarkTheme(this.checked)">
         Dark theme
       </label>
@@ -1099,6 +1120,8 @@ function showSettings() {
   try { document.getElementById('settingsCollectorTag').value = localStorage.getItem('loto_collector_tag') || ''; } catch (e) {}
   const svChk = document.getElementById('settingsSimpleVerif');
   if (svChk) svChk.checked = simpleVerifEnabled();
+  const qpChk = document.getElementById('settingsQuickPicks');
+  if (qpChk) qpChk.checked = quickPicksEnabled();
   const dtChk = document.getElementById('settingsDarkTheme');
   if (dtChk) dtChk.checked = document.body.classList.contains('theme-dark');
   const vmChk = document.getElementById('settingsAskValveMark');
@@ -1243,7 +1266,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 153;
+const APP_BUILD = 154;
 
 // ============================================================================
 // DATA
@@ -4897,7 +4920,7 @@ function goToSource(j) {
   if (!src) return;
   const keyboard = letGoOfBox() || keyboardJustLetGo();
   if (!sources.includes(src)) return;
-  src.collapsed = false;
+  openOnlySource(src);   // the others close (build 154)
   renderSources();
   const show = () => { const c = srcCardOf(src); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   setTimeout(show, 50);
@@ -8579,6 +8602,7 @@ function handleEquipTypeChange() {
   }
   // Fire the existing auto-source / auto-template logic
   equipTypeChanged(resolvedType);
+  renderQuickAdd();   // the "+ <source>" chips follow the type (build 154)
   autoSaveCurrent();
 }
 
@@ -8623,6 +8647,7 @@ function nameHasWord(lowerName, keyword) {
 // (e.g. contains "Pump") and no template is selected yet, auto-pick the suggested
 // template and apply its auto-sources — the user can still change it afterward.
 function handleCustomEquipTypeChange() {
+  renderQuickAdd();   // a typed type has its own "+ <source>" chips (build 154)
   autoSaveCurrent();
   const name = document.getElementById('equipTypeCustom').value.trim();
   if (!name) return;
@@ -9065,10 +9090,12 @@ function dropStaleSourceRefs(photoMap, srcList) {
 function addSource() {
   const index = sources.length;
   delete photos['source_' + index];   // never inherit a stale ref
-  sources.push({
+  const row = {
     energySource: '', deviceType: '', quantity: 1, location: '',
     duplicate: 'No', verification: isATSEquipment() ? 'Meter' : '', detail: '', collapsed: false
-  });
+  };
+  sources.push(row);
+  openOnlySource(row);   // the new row's card is the open one (build 154)
   renderSources();
   setTimeout(() => {
     const cards = document.querySelectorAll('.source-card');
@@ -9137,6 +9164,7 @@ function renderSources() {
   container.innerHTML = '';
 
   sources.forEach((src, i) => { container.appendChild(buildSourceCard(src, i)); });
+  renderQuickAdd();   // "+ <source>" chips for this type (build 154)
 
   document.getElementById('sourceCountNum').textContent = sources.length;
   renderUnitQuestions(false);   // which questions show follows the type, template and rows (build 118)
@@ -9504,8 +9532,249 @@ function buildSourceCard(src, i) {
         </div>
       `;
       syncKindSections(card);
+      attachQuickPicks(card, src, i);   // the lists' likely picks as chips (build 154)
     }
     return card;
+}
+
+// ---- Quick picks (build 154) ------------------------------------------------
+// wilkins 2026-11-05 picked "Option A" of the efficiency mockups ("Build A"): the
+// card's four long lists — Energy Source (62 entries), Device Type, Location (25)
+// and Verification (up to 34) — show the likely picks as one-tap chips, and
+// More… opens the list as before. The <select> stays the one control: a chip
+// sets its value and fires its own change, so every rule the list runs (the
+// defaults a source fills, a drive's feeder question, the MCC / Panel ID box,
+// Custom…) runs the same for a chip. The list sits, invisible, over the More…
+// chip, so a tap on More… opens the iPad's own list. Chips only pick what the
+// list offers: the saved unit, the sheet and the exports are unchanged.
+//
+// Which picks: what this device has used before, weighted to rows like this one
+// — the same equipment type for the Energy Source, the same source for the
+// Device, the same kind of source (and type) for the Location, the same device
+// for the Verification — counted over the saved units and the unit's other rows.
+// Ties go to the source's own default, then to the list's order. The row's own
+// pick always shows. "+ Add Energy Source" becomes "+ <source>" chips for the
+// sources added by hand on this type before (quickAddChoices), and one card is
+// open at a time (openOnlySource). Settings → "Quick picks on source cards"
+// turns all three off: the card, the Add button and the open cards as before.
+const QP_COUNT = 5;
+const QP_LISTS = [['energy', 'src_energy_'], ['device', 'src_device_'], ['location', 'src_loc_'], ['verification', 'src_ver_']];
+function quickPicksEnabled() {
+  try { return localStorage.getItem('loto_quick_picks') !== '0'; } catch (e) { return true; }
+}
+function setQuickPicks(on) {
+  try { localStorage.setItem('loto_quick_picks', on ? '1' : '0'); } catch (e) {}
+  renderSources();
+  showToast(on ? 'Quick picks on' : 'Quick picks off — the lists as before');
+}
+// Opening a row's card closes the others (quick picks on).
+function openOnlySource(src) {
+  if (!src) return;
+  if (quickPicksEnabled()) sources.forEach(s => { if (s && typeof s === 'object' && s !== src) s.collapsed = true; });
+  src.collapsed = false;
+}
+// A row's kind of source, for weighting: electrical, steam, water, gas or other.
+function qpFamily(energy) { return getSourceColorClass(listEnergyName(String(energy || ''))); }
+// What a row holds in one list, as the list names it: a typed steam pressure is
+// its class's entry, "Panel EHD1001A" is Panel.
+function qpKey(field, s) {
+  if (field === 'energy') return listEnergyName(String(s.energySource || ''));
+  if (field === 'device') return String(s.deviceType || '');
+  if (field === 'location') { const li = locationIdInfo(s.location); return li ? li.prefix : String(s.location || ''); }
+  return String(s.verification || '');
+}
+// A row's keys for the four lists and its kind of source, worked out once per
+// row and again only when one of its four answers changes (the review: every
+// render had re-run the name tests for each row of every saved unit, per list —
+// and per keystroke in a drive's Device ID while its feeder's card was open).
+const _qpFeatures = new WeakMap();
+function qpFeatures(s) {
+  const sig = [s.energySource, s.deviceType, s.location, s.verification].join('\u0001');
+  let f = _qpFeatures.get(s);
+  if (!f || f.sig !== sig) {
+    f = { sig, energy: qpKey('energy', s), device: qpKey('device', s), location: qpKey('location', s),
+      verification: qpKey('verification', s), fam: qpFamily(s.energySource) };
+    _qpFeatures.set(s, f);
+  }
+  return f;
+}
+// Every row the device knows, with its unit's type and facility: the saved
+// units' rows, then the other rows of the unit on the form.
+function qpHistory(skip) {
+  const out = [], setting = getHospitalCode();
+  (savedEquipment || []).forEach(e => {
+    if (!e || !Array.isArray(e.sources)) return;
+    const type = String(e.equipType || ''), fac = entryHospitalCode(e, setting);
+    e.sources.forEach(s => { if (s && typeof s === 'object') out.push({ s, type, fac }); });
+  });
+  const type = getEquipType(), fac = formFacilityCode();
+  sources.forEach(s => { if (s && typeof s === 'object' && s !== skip) out.push({ s, type, fac }); });
+  return out;
+}
+// How much one known row (its features `f`) counts toward a pick for the row
+// described by `ctx` (quickPickRank).
+function qpWeight(field, ctx, f, sameType) {
+  if (field === 'energy') return sameType ? 4 : 1;
+  const sameFam = ctx.has && f.fam === ctx.fam;
+  if (field === 'device') {
+    if (!ctx.has) return sameType ? 1 : 0;
+    return f.energy === ctx.energy ? (sameType ? 4 : 3) : (sameFam ? 1 : 0);
+  }
+  if (field === 'location') return sameFam ? (sameType ? 4 : 2) : (sameType ? 1 : 0);
+  const sameDev = !!ctx.device && f.device === ctx.device;
+  return sameDev ? (sameFam ? 4 : 2) : (sameFam ? 1 : 0);
+}
+// The source's own default for a list (the tie-break after what was used). A
+// Kinetic row's is the fan the unit hasn't named yet — only while the row names
+// none (the review: kineticDefaultLocation counts the row itself, so a row "At
+// Supply Fan" had Return Fan as its default).
+function qpDefault(field, row) {
+  if (field === 'energy' || !row.energySource) return '';
+  const d = sourceDefaultsOf(row.energySource) || {};
+  if (field === 'device') return d.device || '';
+  if (field === 'location') return row.energySource === 'Kinetic' ? (row.location ? '' : kineticDefaultLocation()) : (d.location || '');
+  return d.verification || '';
+}
+// A list's entries, most likely first: [{ v, score }]. A score of 4 or more is
+// at least one row like this one; under 1 is no use at all.
+function quickPickRank(field, row, values, history) {
+  row = row || {};
+  const type = getEquipType();
+  const ctx = { has: !!String(row.energySource || ''), fam: qpFamily(row.energySource),
+    energy: qpKey('energy', row), device: String(row.deviceType || '') };
+  const list = Array.from(new Set(values || []));
+  const keyOf = v => field === 'energy' ? listEnergyName(v) : v;
+  const score = new Map(list.map(v => [keyOf(v), 0]));
+  (history || qpHistory(row)).forEach(h => {
+    const f = qpFeatures(h.s), k = f[field];
+    if (!k || !score.has(k)) return;
+    const w = qpWeight(field, ctx, f, !!type && h.type === type);
+    if (w) score.set(k, score.get(k) + w);
+  });
+  const def = qpDefault(field, row);
+  return list.map((v, n) => ({ v, n, score: score.get(keyOf(v)) + (def && v === def ? 0.5 : 0) }))
+    .sort((a, b) => b.score - a.score || a.n - b.n)
+    .map(r => ({ v: r.v, score: r.score }));
+}
+// Wraps each of the card's four lists in its chip row (once) and draws the chips.
+function attachQuickPicks(card, src, index) {
+  if (!card || !src || src.collapsed || !quickPicksEnabled()) return;
+  let history = null;
+  QP_LISTS.forEach(([field, prefix]) => {
+    const sel = card.querySelector('#' + prefix + index);
+    if (!sel) return;
+    let row = sel.closest('.qp-row');
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'qp-row';
+      row.id = 'qp_' + field + '_' + index;
+      const more = document.createElement('span');
+      more.className = 'qp-chip qp-more';
+      const label = document.createElement('span');
+      label.className = 'qp-more-label';
+      label.textContent = 'More…';
+      sel.parentNode.insertBefore(row, sel);
+      more.appendChild(label);
+      more.appendChild(sel);
+      row.appendChild(more);
+      sel.classList.add('qp-select');
+      const group = row.closest('.form-group');
+      if (group) group.classList.add('qp-group');
+      // the list keeps its field's name for VoiceOver (the review: four "All choices")
+      const name = group && group.querySelector('label') ? group.querySelector('label').textContent.trim() : '';
+      sel.setAttribute('aria-label', name ? 'All ' + name + ' choices' : 'All choices');
+    }
+    // an already wrapped list (a card refreshed in place) is only drawn again
+    paintQuickPickRow(row, field, src, history || (history = qpHistory(src)));
+  });
+}
+// One list's chips, from its <select>'s entries and value.
+function paintQuickPickRow(row, field, src, history) {
+  const sel = row.querySelector('select'), more = row.querySelector('.qp-more');
+  if (!sel || !more) return;
+  const textOf = new Map();
+  Array.from(sel.options).forEach(o => { if (o.value && !/^\*\* /.test(o.value) && !textOf.has(o.value)) textOf.set(o.value, o.textContent); });
+  const cur = sel.value;
+  const picks = quickPickRank(field, src, [...textOf.keys()], history).slice(0, QP_COUNT).map(r => r.v);
+  if (cur && textOf.has(cur) && !picks.includes(cur)) { if (picks.length >= QP_COUNT) picks.pop(); picks.push(cur); }
+  row.querySelectorAll('.qp-pick').forEach(b => b.remove());
+  picks.forEach(v => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'qp-chip qp-pick' + (v === cur ? ' on' : '');
+    b.setAttribute('aria-pressed', v === cur ? 'true' : 'false');
+    b.dataset.v = v;
+    b.textContent = (v === cur ? '✓ ' : '') + textOf.get(v);
+    b.addEventListener('click', () => quickPick(sel, v));
+    row.insertBefore(b, more);
+  });
+  // More… names a pick no chip shows (Custom… / Other… with its box open)
+  const off = !!cur && !picks.includes(cur);
+  more.classList.toggle('on', off);
+  const label = more.querySelector('.qp-more-label');
+  if (label) label.textContent = off ? (((sel.options[sel.selectedIndex] || {}).textContent || 'More…') + ' ▾') : 'More…';
+}
+// A chip: the list's own change, as if the entry were picked in it.
+function quickPick(sel, value) {
+  if (!sel || !sel.isConnected || sel.value === value) return;
+  sel.value = value;
+  if (sel.value !== value) return;   // no such entry any more
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+}
+// The rows added by hand on units of this type: not a template's own rows, not
+// a feeder, secondary main or alternate (each is added from its own card).
+function qpHandAdded(type, skip) {
+  return qpHistory(skip).filter(h => h.type === type && !h.s.auto && !sourceRoleOf(h.s));
+}
+// "+ <source>" chips for Add Energy Source: the sources added by hand on units
+// of this type before, most used first. A steam class this facility types at
+// its own pressure is offered at it ("+ MPS 30 PSI", build 149's names; the
+// review: the chip had always added the usual 20 PSI).
+function quickAddChoices() {
+  const type = getEquipType();
+  if (!type || !quickPicksEnabled()) return [];
+  const hist = qpHandAdded(type, null), fac = formFacilityCode();
+  return quickPickRank('energy', {}, offeredEnergySources(), hist)
+    .filter(r => r.score > 0).slice(0, QP_COUNT).map(r => qpSitePressure(r.v, hist, fac));
+}
+// The steam name used most at this facility for a class's list entry (the entry
+// itself when none was typed at another pressure); any other source as it is.
+function qpSitePressure(name, hist, fac) {
+  if (!steamPressureOf(name)) return name;
+  const count = new Map();
+  hist.forEach(h => {
+    const e = String(h.s.energySource || '');
+    if (h.fac === fac && steamPressureOf(e) && listEnergyName(e) === name) count.set(e, (count.get(e) || 0) + 1);
+  });
+  let best = name, most = 0;
+  count.forEach((n, e) => { if (n > most) { best = e; most = n; } });
+  return best;
+}
+function renderQuickAdd() {
+  const box = document.getElementById('quickAddSources'), btn = document.getElementById('addSourceBtn');
+  if (!box) return;
+  const picks = quickAddChoices();
+  box.style.display = picks.length ? '' : 'none';
+  if (btn) btn.style.display = picks.length ? 'none' : '';
+  box.innerHTML = picks.length ? String(html`<div class="qp-add-label">Add energy source &mdash; one tap fills it in</div>
+    <div class="qp-row">${picks.map(v => html`<button type="button" class="qp-chip qp-add-pick" onclick="quickAddSource(${jsArg(v)})">+ ${v}</button>`)}<button type="button" class="qp-chip qp-more" onclick="addSource()">+ Other&hellip;</button></div>`) : '';
+}
+// A new row with its source picked — and the device used most with that source
+// on the rows added by hand on this type, when there is one — through the lists'
+// own changes. (The review: the device had been ranked over every type and the
+// template's rows, so AHU drives made a pump's "+ Electrical 480V" a VFD and
+// opened the drive's feeder questions.) A steam name at a typed pressure is its
+// class's list entry.
+function quickAddSource(energy) {
+  if (!energy || !offeredEnergySources().includes(listEnergyName(energy))) return;
+  addSource();
+  const i = sources.length - 1, row = sources[i];
+  handleEnergySourceChange(i, energy);
+  if (sources[i] !== row || row.deviceType) return;
+  const key = qpKey('energy', row);
+  const like = qpHandAdded(getEquipType(), row).filter(h => qpFeatures(h.s).energy === key);
+  const top = quickPickRank('device', row, getFilteredDevices(row.energySource), like)[0];
+  if (top && top.score >= 4) handleDeviceTypeChange(i, top.v);
 }
 
 // A custom Energy Source or Device box is saved as it is typed but never
@@ -9584,6 +9853,7 @@ function refreshSourceDependents(index) {
   else if (fa) fa.remove();
   else if (fb) { const body = live.querySelector('.source-card-body'); if (body) body.insertBefore(fb, body.querySelector(':scope > .src-sec')); }
   syncKindSections(live);
+  attachQuickPicks(live, src, index);   // the chips follow the lists just refreshed (build 154)
 }
 
 // Build 107: a Kinetic row on an air handler or exhaust fan names its fan.
@@ -10496,7 +10766,7 @@ function redrawKeepingCard(i, change) {
   if (keyboard) whileKeyboardCloses(hold);   // iOS scrolls again as its keyboard closes
 }
 function collapseSource(i) { redrawKeepingCard(i, src => { src.collapsed = true; }); }
-function expandSource(i) { redrawKeepingCard(i, src => { src.collapsed = false; }); }
+function expandSource(i) { redrawKeepingCard(i, src => { openOnlySource(src); }); }   // the others close (build 154)
 
 // Any tap on the source list lets go of a box still being typed in FIRST
 // (build 143 — the build 142 review: only a card's title and Done did). The iPad
@@ -10552,7 +10822,7 @@ window.addEventListener('scroll', () => {
 }, { passive: true });
 document.addEventListener('click', e => {
   const t = e.target;
-  if (!t || !t.closest || !t.closest('#sourcesContainer, .add-source-btn')) return;
+  if (!t || !t.closest || !t.closest('#sourcesContainer, .add-source-btn, #quickAddSources')) return;
   if (t.closest('input, textarea, select, label')) return;   // another box takes the focus itself
   const a = document.activeElement;
   if (!a || a.contains(t) || !/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
@@ -10757,6 +11027,7 @@ function duplicateSource(index) {
   } else {
     delete photos[`source_${index + 1}`];   // no photo came with it: renderSources settles an automatic Yes to No (build 110)
   }
+  openOnlySource(newSrc);   // the copy is the open card (build 154)
   renderSources();
   autoSaveCurrent();
   showToast(`Duplicated source #${index + 1}` + (roleCopied ? ' — as an ordinary row: one breaker keeps one ' + SOURCE_ROLES[roleCopied].noun + ' row' : ''), false);
