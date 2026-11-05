@@ -9712,10 +9712,26 @@ function attachQuickPicks(card, src, index) {
       // the list keeps its field's name for VoiceOver (the review: four "All choices")
       const name = group && group.querySelector('label') ? group.querySelector('label').textContent.trim() : '';
       sel.setAttribute('aria-label', name ? 'All ' + name + ' choices' : 'All choices');
+      // The chips follow every change of the list — a chip or a More… pick —
+      // whatever the list's own change does after it (build 156, wilkins on
+      // b155: "when I try to select a location or verification button, it
+      // doesn't let me select it … but if I hit Done for that source and come
+      // back to it, it has changed": a Verification pick only saved the row, so
+      // the old chip kept its check). Runs after the list's own onchange.
+      sel.addEventListener('change', () => repaintQuickPicksOf(sel.id));
     }
     // an already wrapped list (a card refreshed in place) is only drawn again
     paintQuickPickRow(row, field, src, history || (history = qpHistory(src)));
   });
+}
+// Draws a card's chips again from its lists as they are now — the card the
+// list `selId` is on, or the one a redraw put in its place.
+function repaintQuickPicksOf(selId) {
+  const m = /_(\d+)$/.exec(selId || '');
+  const sel = m && document.getElementById(selId);
+  const card = sel && sel.closest('.source-card');
+  const i = m ? parseInt(m[1], 10) : -1;
+  if (card && sources[i]) attachQuickPicks(card, sources[i], i);
 }
 // One list's chips, from its <select>'s entries and value.
 function paintQuickPickRow(row, field, src, history) {

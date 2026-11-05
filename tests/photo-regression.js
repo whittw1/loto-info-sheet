@@ -159,6 +159,7 @@
 //   T473–T476 build 156: the Main Photo's arrow at this unit (several units in one photo) — the dialog, the export
 //             (entries.json mainPhotoArrow, the name row's column 14, the CSV's last column), saved / copied / retaken, its geometry
 //   T477      build 156: the Dock Leveler type and template (Electrical with the voltage asked, Hydraulic, Gravity/Potential)
+//   T478      build 156: a chip tapped in any of a card's four lists is checked at once (Verification kept the old check)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8144,6 +8145,48 @@
     }
     got.export = { json: je.template, type: je.equipType, sheet, types };
     want(je.template === 'Dock Leveler' && je.equipType === 'Dock Leveler' && sheet.join() === 'Dock Leveler' && types.join() === 'Dock Leveler', 'export');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T478 — a chip's check follows every pick (build 156)
+  async function t478_chipCheckFollowsEveryPick() {
+    const N = 'T478 build 156 (wilkins on b155: "when I try to select a location or verification button, it doesn\'t let me select it when I click on it, but if I hit Done for that source and come back to it, it has changed"): on an open card, a chip tapped in each of the four lists — Energy Source, Device, Location, Verification — is the one checked at once, and its row holds it; a More… pick no chip showed is checked too; a Location chip tapped while the Panel ID box still has the focus (the iPad keeps it) is checked';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withQuickPicksSetting(async () => {
+      fillFormNoSources('QP-478');
+      sources = [{ energySource: 'Electrical 480V', deviceType: 'Disconnect', deviceId: 'SGSCHP1', quantity: 1, location: 'Panel QMCC00A', duplicate: 'No', verification: 'SW (Hand/Off/Auto)', detail: '', valveState: 'normal', noPhoto: false, collapsed: false }];
+      renderSources();
+      const on = f => Array.from(document.querySelectorAll('#qp_' + f + '_0 .qp-pick.on')).map(b => b.dataset.v);
+      const chipFor = (f, skip) => Array.from(document.querySelectorAll('#qp_' + f + '_0 .qp-pick')).find(b => !b.classList.contains('on') && !(skip || []).includes(b.dataset.v));
+      const field = { energy: 'energySource', device: 'deviceType', location: 'location', verification: 'verification' };
+      for (const f of ['verification', 'location', 'device', 'energy']) {
+        const b = chipFor(f, f === 'location' ? ['Panel', 'MCC'] : []);
+        if (!b) { fails.push(f + ': no chip to tap'); continue; }
+        const v = b.dataset.v;
+        await withDialogs({ confirm: true }, async () => { b.click(); });
+        closeAllPrompts();
+        got[f] = { tapped: v, row: sources[0] && sources[0][field[f]], on: on(f) };
+        want(sources[0] && String(sources[0][field[f]]).indexOf(v) === 0 && on(f).join() === v, f + ': the tapped chip is the checked one');
+      }
+      // a More… pick no chip shows
+      sources = [{ energySource: 'Electrical 480V', deviceType: 'Disconnect', deviceId: '', quantity: 1, location: 'Panel QMCC00A', duplicate: 'No', verification: 'SW (Hand/Off/Auto)', detail: '', valveState: 'normal', noPhoto: false, collapsed: false }];
+      renderSources();
+      const sel = document.getElementById('src_ver_0');
+      const shown = Array.from(document.querySelectorAll('#qp_verification_0 .qp-pick')).map(b => b.dataset.v);
+      const other = Array.from(sel.options).map(o => o.value).find(v => v && !/^\*\* /.test(v) && !shown.includes(v));
+      if (other) { sel.value = other; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+      got.more = { other, row: sources[0].verification, on: on('verification') };
+      want(!!other && sources[0].verification === other && on('verification').join() === other, 'a More… pick is checked');
+      // the Panel ID box still focused (iPad), a Location chip tapped
+      const box = document.getElementById('src_locid_0');
+      if (box) { box.focus(); box.value = 'QMCC00B'; box.dispatchEvent(new Event('input', { bubbles: true })); }
+      const lb = chipFor('location', ['Panel', 'MCC']);
+      if (lb) lb.click();
+      got.focused = { tapped: lb && lb.dataset.v, row: sources[0].location, on: on('location') };
+      want(!!box && !!lb && sources[0].location === lb.dataset.v && on('location').join() === lb.dataset.v, 'a Location chip with the Panel ID box focused');
+    });
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -16996,7 +17039,8 @@
     t465_aLinkToAnInOutPairAsksWhichValve, t466_aChillerStartsWithChwInAndOut, t467_aBatteryChargerIsStandardElectrical,
     t468_energyRecoveryWaterReplacesGlycolEr, t469_atsFeedsArePanels,
     t470_quickPicksOnTheCard, t471_quickAddAndOneCardOpen, t472_templateLinesAndOtherList,
-    t473_mainPhotoArrowDialog, t474_mainPhotoArrowExport, t475_mainPhotoArrowLifecycle, t476_mainPhotoArrowGeometry, t477_dockLevelerTypeAndTemplate];
+    t473_mainPhotoArrowDialog, t474_mainPhotoArrowExport, t475_mainPhotoArrowLifecycle, t476_mainPhotoArrowGeometry, t477_dockLevelerTypeAndTemplate,
+    t478_chipCheckFollowsEveryPick];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
