@@ -7835,174 +7835,209 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T470 / T471 turn Settings → Quick picks off and on: the browser's own setting
+  // comes back whatever happens in the test (the build 154 review)
+  async function withQuickPicksSetting(fn) {
+    let was = null;
+    try { was = localStorage.getItem('loto_quick_picks'); localStorage.removeItem('loto_quick_picks'); } catch (e) {}
+    try { return await fn(); }
+    finally { try { if (was === null) localStorage.removeItem('loto_quick_picks'); else localStorage.setItem('loto_quick_picks', was); } catch (e) {} }
+  }
   // T470 — quick picks on the source card (build 154)
   async function t470_quickPicksOnTheCard() {
     const N = 'T470 build 154 (wilkins picked Option A of the efficiency mockups, "Build A"): an open card shows Energy Source, Device, Location and Verification as one-tap chips of the likely picks (what this device used on rows like this one, then the source\'s default, then the list) with More… — the list itself — beside them; a chip runs the list\'s own change (a steam chip fills its Gate Valve default; MCC opens its ID box); the row\'s own pick always shows lit; Custom… lights More… with its name; a typed steam pressure is its own chip; a list refreshed in place keeps its chips in step with it; Quick picks off in Settings brings back the plain lists';
     await resetAppState();
-    try { localStorage.removeItem('loto_quick_picks'); } catch (e) {}
-    const fails = [], got = {};
-    const want = (ok, what) => { if (!ok) fails.push(what); };
-    const chips = (f, i) => Array.from(document.querySelectorAll('#qp_' + f + '_' + i + ' .qp-pick')).map(b => b.dataset.v);
-    const lit = (f, i) => { const b = document.querySelector('#qp_' + f + '_' + i + ' .qp-pick.on'); return b ? b.dataset.v : ''; };
-    const tap = (f, i, v) => { const b = Array.from(document.querySelectorAll('#qp_' + f + '_' + i + ' .qp-pick')).find(x => x.dataset.v === v); if (b) b.click(); return !!b; };
-    const inStep = (i) => ['energy', 'device', 'location', 'verification'].every(f => {
-      const row = document.getElementById('qp_' + f + '_' + i);
-      if (!row) return true;
-      const s = row.querySelector('select'), vals = Array.from(s.options).map(o => o.value);
-      return chips(f, i).every(v => vals.includes(v)) && (lit(f, i) === '' || lit(f, i) === s.value);
+    await withQuickPicksSetting(async () => {
+      const fails = [], got = {};
+      const want = (ok, what) => { if (!ok) fails.push(what); };
+      const chips = (f, i) => Array.from(document.querySelectorAll('#qp_' + f + '_' + i + ' .qp-pick')).map(b => b.dataset.v);
+      const lit = (f, i) => { const b = document.querySelector('#qp_' + f + '_' + i + ' .qp-pick.on'); return b ? b.dataset.v : ''; };
+      const tap = (f, i, v) => { const b = Array.from(document.querySelectorAll('#qp_' + f + '_' + i + ' .qp-pick')).find(x => x.dataset.v === v); if (b) b.click(); return !!b; };
+      const inStep = (i) => ['energy', 'device', 'location', 'verification'].every(f => {
+        const row = document.getElementById('qp_' + f + '_' + i);
+        if (!row) return true;
+        const s = row.querySelector('select'), vals = Array.from(s.options).map(o => o.value);
+        return chips(f, i).every(v => vals.includes(v)) && (lit(f, i) === '' || lit(f, i) === s.value);
+      });
+      // what this device used before: three Air Handlers' drives and steam valves
+      const ahu = (n, loc, ver) => Object.assign(mkEntry('AHU-H' + n), { equipType: 'Air Handler',
+        sources: [Object.assign(mkSrc('Electrical 480V'), { deviceType: 'VFD', location: loc, verification: ver }),
+          Object.assign(mkSrc('MPS 20 PSI'), { deviceType: 'Butterfly Valve', location: 'In Ceiling', verification: 'Gauge/Drain - Hot' })] });
+      savedEquipment.push(ahu(1, 'On Wall', 'Button (Hand/Off/Auto) - VFD'), ahu(2, 'On Wall', 'Button (Hand/Off/Auto) - VFD'), ahu(3, 'MCC 2', 'Controls'));
+      fillFormNoSources('AHU-470');
+      document.getElementById('equipType').value = 'Air Handler';
+      sources.push(Object.assign(mkSrc('Electrical 480V'), { deviceType: '', location: '', verification: '', collapsed: false }));
+      renderSources();
+      const sel = document.getElementById('src_energy_0');
+      got.wrapped = !!(sel && sel.closest('.qp-more') && sel.closest('.form-group.qp-group'));
+      want(got.wrapped, 'the list sits in More… and its field takes the whole row');
+      got.counts = ['energy', 'device', 'location', 'verification'].map(f => f + ':' + chips(f, 0).length).join(' ');
+      want(['energy', 'device', 'location'].every(f => chips(f, 0).length === 5), 'five chips a list ' + got.counts);
+      got.device = chips('device', 0).join(' | ');
+      want(chips('device', 0)[0] === 'VFD', 'VFD first for a 480V row on an Air Handler: ' + got.device);
+      got.location = chips('location', 0).join(' | ');
+      want(chips('location', 0)[0] === 'On Wall' && chips('location', 0).includes('MCC'), 'On Wall first, and MCC from "MCC 2": ' + got.location);
+      want(lit('energy', 0) === 'Electrical 480V', 'the row\'s source is the lit chip');
+      want(inStep(0), 'every chip is an entry of its list');
+      // a chip runs the list's own change (the drive's feeder question included)
+      await withDialogs({ confirm: false, choice: () => 'cancel' }, async () => { tap('device', 0, 'VFD'); await sleep(0); });
+      closeAllPrompts();
+      got.devTap = sources[0].deviceType;
+      want(got.devTap === 'VFD' && lit('device', 0) === 'VFD', 'the VFD chip set the device');
+      got.ver = chips('verification', 0).join(' | ');
+      want(chips('verification', 0)[0] === 'Button (Hand/Off/Auto) - VFD', 'the drives\' verification first: ' + got.ver);
+      tap('location', 0, 'MCC');
+      got.mcc = sources[0].location + '|' + !!document.getElementById('src_locid_0');
+      want(got.mcc === 'MCC|true', 'MCC opens its ID box');
+      updateLocationId(0, '2'); renderSources();
+      want(sources[0].location === 'MCC 2' && lit('location', 0) === 'MCC', 'MCC 2 lights MCC');
+      // the row's own pick always shows
+      sources[0].location = 'Below Equipment'; renderSources();
+      got.own = lit('location', 0) + '|' + chips('location', 0).length;
+      want(got.own === 'Below Equipment|5', 'a rare pick of the row\'s own shows lit: ' + got.own);
+      // Custom… lights More… with its name
+      handleLocationChange(0, '** Custom Location **');
+      const more = document.querySelector('#qp_location_0 .qp-more');
+      const moreLabel = more && more.querySelector('.qp-more-label');
+      got.custom = more ? more.classList.contains('on') + '|' + (moreLabel ? moreLabel.textContent : '') : 'none';
+      want(got.custom === 'true|Custom... ▾' && lit('location', 0) === '', 'Custom… lights More… with its name: ' + got.custom);
+      // a blank row: a steam chip runs its defaults (Gate Valve), history ranks the devices
+      sources[0].collapsed = true;
+      sources.push(Object.assign(mkSrc(''), { deviceType: '', location: '', verification: '', collapsed: false }));
+      renderSources();
+      got.energy1 = chips('energy', 1).join(' | ');
+      want(chips('energy', 1).includes('MPS 20 PSI'), 'steam among the source chips: ' + got.energy1);
+      tap('energy', 1, 'MPS 20 PSI');
+      got.steam = [sources[1].energySource, sources[1].deviceType, lit('device', 1), chips('device', 1)[0]].join(' | ');
+      want(got.steam === 'MPS 20 PSI | Gate Valve | Gate Valve | Butterfly Valve', 'the steam chip: ' + got.steam);
+      // a typed steam pressure is its own chip
+      sources[1].energySource = 'MPS 30 PSI'; renderSources();
+      got.psi = lit('energy', 1) + '|' + chips('energy', 1).includes('MPS 20 PSI');
+      want(got.psi === 'MPS 30 PSI|false', 'MPS 30 PSI is the lit chip, in its class\'s place: ' + got.psi);
+      // a list refreshed in place keeps its chips in step
+      handleDeviceTypeChange(1, '** Custom Device **');
+      updateSourceCustomField(1, 'deviceType', 'Steam trap valve');
+      refreshSourceDependents(1);
+      const dm = document.querySelector('#qp_device_1 .qp-more');
+      got.refreshed = (dm && dm.classList.contains('on')) + '|' + inStep(1);
+      want(got.refreshed === 'true|true', 'chips in step after the in-place refresh: ' + got.refreshed);
+      // More… is the list itself: a pick there is the list's change
+      const ls = document.getElementById('src_loc_1');
+      ls.value = 'Behind Equipment'; ls.dispatchEvent(new Event('change', { bubbles: true }));
+      want(sources[1].location === 'Behind Equipment' && lit('location', 1) === 'Behind Equipment', 'a pick in More… shows as the lit chip');
+      // Settings → Quick picks off: the plain lists
+      setQuickPicks(false);
+      const plain = document.getElementById('src_energy_1');
+      got.off = [document.querySelectorAll('.qp-row').length, !!(plain && plain.closest('.qp-more'))].join('|');
+      want(got.off === '0|false', 'off: no chips, the plain list ' + got.off);
+      setQuickPicks(true);
+      want(document.querySelectorAll('#qp_energy_1 .qp-pick').length > 0, 'back on');
+      record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
     });
-    // what this device used before: three Air Handlers' drives and steam valves
-    const ahu = (n, loc, ver) => Object.assign(mkEntry('AHU-H' + n), { equipType: 'Air Handler',
-      sources: [Object.assign(mkSrc('Electrical 480V'), { deviceType: 'VFD', location: loc, verification: ver }),
-        Object.assign(mkSrc('MPS 20 PSI'), { deviceType: 'Butterfly Valve', location: 'In Ceiling', verification: 'Gauge/Drain - Hot' })] });
-    savedEquipment.push(ahu(1, 'On Wall', 'Button (Hand/Off/Auto) - VFD'), ahu(2, 'On Wall', 'Button (Hand/Off/Auto) - VFD'), ahu(3, 'MCC 2', 'Controls'));
-    fillFormNoSources('AHU-470');
-    document.getElementById('equipType').value = 'Air Handler';
-    sources.push(Object.assign(mkSrc('Electrical 480V'), { deviceType: '', location: '', verification: '', collapsed: false }));
-    renderSources();
-    const sel = document.getElementById('src_energy_0');
-    got.wrapped = !!(sel && sel.closest('.qp-more') && sel.closest('.form-group.qp-group'));
-    want(got.wrapped, 'the list sits in More… and its field takes the whole row');
-    got.counts = ['energy', 'device', 'location', 'verification'].map(f => f + ':' + chips(f, 0).length).join(' ');
-    want(['energy', 'device', 'location'].every(f => chips(f, 0).length === 5), 'five chips a list ' + got.counts);
-    got.device = chips('device', 0).join(' | ');
-    want(chips('device', 0)[0] === 'VFD', 'VFD first for a 480V row on an Air Handler: ' + got.device);
-    got.location = chips('location', 0).join(' | ');
-    want(chips('location', 0)[0] === 'On Wall' && chips('location', 0).includes('MCC'), 'On Wall first, and MCC from "MCC 2": ' + got.location);
-    want(lit('energy', 0) === 'Electrical 480V', 'the row\'s source is the lit chip');
-    want(inStep(0), 'every chip is an entry of its list');
-    // a chip runs the list's own change (the drive's feeder question included)
-    await withDialogs({ confirm: false, choice: () => 'cancel' }, async () => { tap('device', 0, 'VFD'); await sleep(0); });
-    closeAllPrompts();
-    got.devTap = sources[0].deviceType;
-    want(got.devTap === 'VFD' && lit('device', 0) === 'VFD', 'the VFD chip set the device');
-    got.ver = chips('verification', 0).join(' | ');
-    want(chips('verification', 0)[0] === 'Button (Hand/Off/Auto) - VFD', 'the drives\' verification first: ' + got.ver);
-    tap('location', 0, 'MCC');
-    got.mcc = sources[0].location + '|' + !!document.getElementById('src_locid_0');
-    want(got.mcc === 'MCC|true', 'MCC opens its ID box');
-    updateLocationId(0, '2'); renderSources();
-    want(sources[0].location === 'MCC 2' && lit('location', 0) === 'MCC', 'MCC 2 lights MCC');
-    // the row's own pick always shows
-    sources[0].location = 'Below Equipment'; renderSources();
-    got.own = lit('location', 0) + '|' + chips('location', 0).length;
-    want(got.own === 'Below Equipment|5', 'a rare pick of the row\'s own shows lit: ' + got.own);
-    // Custom… lights More… with its name
-    handleLocationChange(0, '** Custom Location **');
-    const more = document.querySelector('#qp_location_0 .qp-more');
-    const moreLabel = more && more.querySelector('.qp-more-label');
-    got.custom = more ? more.classList.contains('on') + '|' + (moreLabel ? moreLabel.textContent : '') : 'none';
-    want(got.custom === 'true|Custom... ▾' && lit('location', 0) === '', 'Custom… lights More… with its name: ' + got.custom);
-    // a blank row: a steam chip runs its defaults (Gate Valve), history ranks the devices
-    sources[0].collapsed = true;
-    sources.push(Object.assign(mkSrc(''), { deviceType: '', location: '', verification: '', collapsed: false }));
-    renderSources();
-    got.energy1 = chips('energy', 1).join(' | ');
-    want(chips('energy', 1).includes('MPS 20 PSI'), 'steam among the source chips: ' + got.energy1);
-    tap('energy', 1, 'MPS 20 PSI');
-    got.steam = [sources[1].energySource, sources[1].deviceType, lit('device', 1), chips('device', 1)[0]].join(' | ');
-    want(got.steam === 'MPS 20 PSI | Gate Valve | Gate Valve | Butterfly Valve', 'the steam chip: ' + got.steam);
-    // a typed steam pressure is its own chip
-    sources[1].energySource = 'MPS 30 PSI'; renderSources();
-    got.psi = lit('energy', 1) + '|' + chips('energy', 1).includes('MPS 20 PSI');
-    want(got.psi === 'MPS 30 PSI|false', 'MPS 30 PSI is the lit chip, in its class\'s place: ' + got.psi);
-    // a list refreshed in place keeps its chips in step
-    handleDeviceTypeChange(1, '** Custom Device **');
-    updateSourceCustomField(1, 'deviceType', 'Steam trap valve');
-    refreshSourceDependents(1);
-    const dm = document.querySelector('#qp_device_1 .qp-more');
-    got.refreshed = (dm && dm.classList.contains('on')) + '|' + inStep(1);
-    want(got.refreshed === 'true|true', 'chips in step after the in-place refresh: ' + got.refreshed);
-    // More… is the list itself: a pick there is the list's change
-    const ls = document.getElementById('src_loc_1');
-    ls.value = 'Behind Equipment'; ls.dispatchEvent(new Event('change', { bubbles: true }));
-    want(sources[1].location === 'Behind Equipment' && lit('location', 1) === 'Behind Equipment', 'a pick in More… shows as the lit chip');
-    // Settings → Quick picks off: the plain lists
-    setQuickPicks(false);
-    const plain = document.getElementById('src_energy_1');
-    got.off = [document.querySelectorAll('.qp-row').length, !!(plain && plain.closest('.qp-more'))].join('|');
-    want(got.off === '0|false', 'off: no chips, the plain list ' + got.off);
-    setQuickPicks(true);
-    want(document.querySelectorAll('#qp_energy_1 .qp-pick').length > 0, 'back on');
-    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
   // T471 — "+ <source>" chips on Add Energy Source; one card open at a time (build 154)
   async function t471_quickAddAndOneCardOpen() {
-    const N = 'T471 build 154: Add Energy Source offers "+ <source>" chips for the sources added by hand on this equipment type before (not a template\'s AUTO rows, not a feeder, not another type\'s), most used first, and + Other… for a blank row; a chip adds the row with its source through the list\'s own change (CHW In/Out → Qty 2) and the device most used with that source; a type with nothing added by hand keeps the plain button; one card is open at a time — opening, adding, duplicating and Go to close the others; Quick picks off keeps every card as it was';
+    const N = 'T471 build 154: Add Energy Source offers "+ <source>" chips for the sources added by hand on this equipment type before (not a template\'s AUTO rows, not a feeder, not another type\'s), most used first, and + Other… for a blank row; a steam class this facility types at its own pressure is offered at it (MPS 30 PSI; another facility\'s is not); a chip adds the row with its source through the list\'s own change (CHW In/Out → Qty 2) and the device most used with that source on this type\'s rows added by hand (AHU drives don\'t make a pump\'s 480V a VFD); a type with nothing added by hand keeps the plain button; one card is open at a time — opening, adding, duplicating and Go to close the others; Quick picks off keeps every card as it was';
     await resetAppState();
-    try { localStorage.removeItem('loto_quick_picks'); } catch (e) {}
-    const fails = [], got = {};
-    const want = (ok, what) => { if (!ok) fails.push(what); };
-    const box = document.getElementById('quickAddSources'), btn = document.getElementById('addSourceBtn');
-    const adds = () => Array.from(box.querySelectorAll('.qp-add-pick')).map(b => b.textContent.trim());
-    const open = () => sources.map((s, k) => s.collapsed ? '' : String(k)).filter(Boolean).join(',');
-    const hand = (es, dev) => Object.assign(mkSrc(es), { deviceType: dev });
-    const entry = (name, type, rows) => Object.assign(mkEntry(name), { equipType: type, sources: rows });
-    savedEquipment.push(
-      entry('AHU-A', 'Air Handler', [Object.assign(mkSrc('Kinetic'), { auto: true }), hand('MPS 20 PSI', 'Gate Valve'), hand('CHW In/Out', 'Butterfly Valve'),
-        Object.assign(hand('Electrical 480V', 'Breaker'), { role: 'feeder', location: 'Feeder: Panel EHD1001A (SF-VFD)' })]),
-      entry('AHU-B', 'Air Handler', [Object.assign(mkSrc('Kinetic'), { auto: true }), hand('MPS 20 PSI', 'Gate Valve'), hand('CHW In/Out', 'Butterfly Valve'), hand('Condensate Out', 'Gate Valve')]),
-      entry('AHU-C', 'Air Handler', [hand('MPS 20 PSI', 'Gate Valve')]),
-      entry('BLR-A', 'Boiler', [hand('Natural Gas', 'Ball Valve'), hand('Natural Gas', 'Ball Valve'), hand('Natural Gas', 'Ball Valve'), hand('Natural Gas', 'Ball Valve')]));
-    fillFormNoSources('AHU-471');
-    want(box.style.display === 'none' && btn.style.display !== 'none', 'no type: the plain button');
-    document.getElementById('equipType').value = 'Air Handler';
-    renderSources();
-    got.adds = adds().join(' | ');
-    want(got.adds === '+ MPS 20 PSI | + CHW In/Out | + Condensate Out', 'the chips: ' + got.adds);
-    want(box.style.display !== 'none' && btn.style.display === 'none', 'the chips stand in for the button');
-    // a chip adds the row through the lists' own changes
-    Array.from(box.querySelectorAll('.qp-add-pick')).find(b => /CHW/.test(b.textContent)).click();
-    const r0 = sources[0] || {};
-    got.added = [sources.length, r0.energySource, r0.quantity, r0.deviceType, r0.collapsed].join(' | ');
-    want(got.added === '1 | CHW In/Out | 2 | Butterfly Valve | false', 'the CHW chip: ' + got.added);
-    // + Other… adds a blank row
-    box.querySelector('.qp-more').click();
-    got.other = sources.length + '|' + (sources[1] && sources[1].energySource) + '|' + open();
-    want(got.other === '2||1', '+ Other… adds a blank row, the only one open: ' + got.other);
-    // one card open at a time
-    sources.forEach(s => { s.collapsed = false; });
-    sources.push(Object.assign(mkSrc('Electrical 480V'), { collapsed: false }));
-    renderSources();
-    expandSource(2);
-    got.expand = open();
-    want(got.expand === '2', 'opening a card closes the others: ' + got.expand);
-    addSource();
-    got.add = open();
-    want(got.add === '3', 'a new row is the only one open: ' + got.add);
-    duplicateSource(2);
-    got.dup = open();
-    want(got.dup === '3' && sources.length === 5, 'the copy is the only one open: ' + got.dup);
-    goToSource(0);
-    got.goTo = open();
-    want(got.goTo === '0', 'Go to opens only that row: ' + got.goTo);
-    // a type with nothing added by hand: the plain button (on an empty unit — the
-    // unit's own rows added by hand count for its type)
-    const rows = sources;
-    sources = [];
-    document.getElementById('equipType').value = 'Chiller';
-    renderSources();
-    want(box.style.display === 'none' && btn.style.display !== 'none' && !adds().length, 'a Chiller (none by hand) keeps the button');
-    document.getElementById('equipType').value = 'Boiler';
-    renderSources();
-    got.boiler = adds().join(' | ');
-    want(got.boiler === '+ Natural Gas', 'each type its own: ' + got.boiler);
-    sources.push(Object.assign(mkSrc('Electrical 208V'), { collapsed: true }));
-    renderSources();
-    got.own = adds().join(' | ');
-    want(got.own === '+ Natural Gas | + Electrical 208V', 'the unit\'s own row added by hand counts: ' + got.own);
-    sources = rows;
-    document.getElementById('equipType').value = 'Air Handler';
-    renderSources();
-    // Quick picks off: the button, and every card as it was
-    setQuickPicks(false);
-    sources.forEach(s => { s.collapsed = false; }); renderSources();
-    expandSource(1); addSource();
-    got.off = [box.style.display, btn.style.display, open()].join(' | ');
-    want(got.off === 'none |  | 0,1,2,3,4,5', 'off: ' + got.off);
-    setQuickPicks(true);
-    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+    await withQuickPicksSetting(async () => {
+      const fails = [], got = {};
+      const want = (ok, what) => { if (!ok) fails.push(what); };
+      const box = document.getElementById('quickAddSources'), btn = document.getElementById('addSourceBtn');
+      const adds = () => Array.from(box.querySelectorAll('.qp-add-pick')).map(b => b.textContent.trim());
+      const open = () => sources.map((s, k) => s.collapsed ? '' : String(k)).filter(Boolean).join(',');
+      const hand = (es, dev) => Object.assign(mkSrc(es), { deviceType: dev });
+      const entry = (name, type, rows) => Object.assign(mkEntry(name), { equipType: type, sources: rows });
+      savedEquipment.push(
+        entry('AHU-A', 'Air Handler', [Object.assign(mkSrc('Kinetic'), { auto: true }), hand('MPS 20 PSI', 'Gate Valve'), hand('CHW In/Out', 'Butterfly Valve'),
+          Object.assign(hand('Electrical 480V', 'Breaker'), { role: 'feeder', location: 'Feeder: Panel EHD1001A (SF-VFD)' })]),
+        entry('AHU-B', 'Air Handler', [Object.assign(mkSrc('Kinetic'), { auto: true }), hand('MPS 20 PSI', 'Gate Valve'), hand('CHW In/Out', 'Butterfly Valve'), hand('Condensate Out', 'Gate Valve')]),
+        entry('AHU-C', 'Air Handler', [hand('MPS 20 PSI', 'Gate Valve')]),
+        entry('BLR-A', 'Boiler', [hand('Natural Gas', 'Ball Valve'), hand('Natural Gas', 'Ball Valve'), hand('Natural Gas', 'Ball Valve'), hand('Natural Gas', 'Ball Valve')]));
+      fillFormNoSources('AHU-471');
+      want(box.style.display === 'none' && btn.style.display !== 'none', 'no type: the plain button');
+      document.getElementById('equipType').value = 'Air Handler';
+      renderSources();
+      got.adds = adds().join(' | ');
+      want(got.adds === '+ MPS 20 PSI | + CHW In/Out | + Condensate Out', 'the chips: ' + got.adds);
+      want(box.style.display !== 'none' && btn.style.display === 'none', 'the chips stand in for the button');
+      // a chip adds the row through the lists' own changes
+      Array.from(box.querySelectorAll('.qp-add-pick')).find(b => /CHW/.test(b.textContent)).click();
+      const r0 = sources[0] || {};
+      got.added = [sources.length, r0.energySource, r0.quantity, r0.deviceType, r0.collapsed].join(' | ');
+      want(got.added === '1 | CHW In/Out | 2 | Butterfly Valve | false', 'the CHW chip: ' + got.added);
+      // + Other… adds a blank row
+      box.querySelector('.qp-more').click();
+      got.other = sources.length + '|' + (sources[1] && sources[1].energySource) + '|' + open();
+      want(got.other === '2||1', '+ Other… adds a blank row, the only one open: ' + got.other);
+      // one card open at a time
+      sources.forEach(s => { s.collapsed = false; });
+      sources.push(Object.assign(mkSrc('Electrical 480V'), { collapsed: false }));
+      renderSources();
+      expandSource(2);
+      got.expand = open();
+      want(got.expand === '2', 'opening a card closes the others: ' + got.expand);
+      addSource();
+      got.add = open();
+      want(got.add === '3', 'a new row is the only one open: ' + got.add);
+      duplicateSource(2);
+      got.dup = open();
+      want(got.dup === '3' && sources.length === 5, 'the copy is the only one open: ' + got.dup);
+      goToSource(0);
+      got.goTo = open();
+      want(got.goTo === '0', 'Go to opens only that row: ' + got.goTo);
+      // a type with nothing added by hand: the plain button (on an empty unit — the
+      // unit's own rows added by hand count for its type)
+      const rows = sources;
+      sources = [];
+      document.getElementById('equipType').value = 'Chiller';
+      renderSources();
+      want(box.style.display === 'none' && btn.style.display !== 'none' && !adds().length, 'a Chiller (none by hand) keeps the button');
+      document.getElementById('equipType').value = 'Boiler';
+      renderSources();
+      got.boiler = adds().join(' | ');
+      want(got.boiler === '+ Natural Gas', 'each type its own: ' + got.boiler);
+      sources.push(Object.assign(mkSrc('Electrical 208V'), { collapsed: true }));
+      renderSources();
+      got.own = adds().join(' | ');
+      want(got.own === '+ Natural Gas | + Electrical 208V', 'the unit\'s own row added by hand counts: ' + got.own);
+      // a steam class this facility types at its own pressure is offered at it
+      // (another facility's pressure is not) — the review
+      const psi = (n, es) => Array.from({ length: n }, () => hand(es, 'Gate Valve'));
+      savedEquipment.push(entry('AHU-D', 'Air Handler', psi(4, 'MPS 30 PSI')),
+        Object.assign(entry('AHU-X', 'Air Handler', psi(6, 'MPS 15 PSI')), { hospitalCode: 'Elsewhere-471' }));
+      sources = [];
+      document.getElementById('equipType').value = 'Air Handler';
+      renderSources();
+      got.psiAdds = adds().join(' | ');
+      want(adds()[0] === '+ MPS 30 PSI', 'the site\'s own steam pressure: ' + got.psiAdds);
+      box.querySelector('.qp-add-pick').click();
+      got.psiRow = sources.length + ' | ' + (sources[0] || {}).energySource + ' | ' + (sources[0] || {}).deviceType;
+      want(got.psiRow === '1 | MPS 30 PSI | Gate Valve', 'the chip adds it at that pressure: ' + got.psiRow);
+      // the device comes from rows added by hand on THIS type: AHU drives don't
+      // make a pump's 480V a VFD (the review)
+      savedEquipment.push(entry('AHU-E', 'Air Handler', Array.from({ length: 5 }, () => hand('Electrical 480V', 'VFD'))),
+        entry('CHWP-A', 'CHW Pump', [hand('Electrical 480V', 'Disconnect')]));
+      sources = [];
+      document.getElementById('equipType').value = 'CHW Pump';
+      renderSources();
+      const pumpChip = Array.from(box.querySelectorAll('.qp-add-pick')).find(b => /480V/.test(b.textContent));
+      await withDialogs({ confirm: false, choice: () => 'cancel' }, async () => { if (pumpChip) pumpChip.click(); await sleep(0); });
+      closeAllPrompts();
+      got.pump = (pumpChip ? 'chip' : 'no chip') + ' | ' + (sources[0] || {}).deviceType;
+      want(got.pump === 'chip | Disconnect', 'the pump\'s own device: ' + got.pump);
+      sources = rows;
+      document.getElementById('equipType').value = 'Air Handler';
+      renderSources();
+      // Quick picks off: the button, and every card as it was
+      setQuickPicks(false);
+      sources.forEach(s => { s.collapsed = false; }); renderSources();
+      expandSource(1); addSource();
+      got.off = [box.style.display, btn.style.display, open()].join(' | ');
+      want(got.off === 'none |  | 0,1,2,3,4,5', 'off: ' + got.off);
+      setQuickPicks(true);
+      record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+    });
   }
 
   // T469 — an ATS's feeds as Panel + Panel ID; the side each row is

@@ -9583,54 +9583,75 @@ function qpKey(field, s) {
   if (field === 'location') { const li = locationIdInfo(s.location); return li ? li.prefix : String(s.location || ''); }
   return String(s.verification || '');
 }
-// Every row the device knows, with its unit's type: the saved units' rows, then
-// the other rows of the unit on the form.
+// A row's keys for the four lists and its kind of source, worked out once per
+// row and again only when one of its four answers changes (the review: every
+// render had re-run the name tests for each row of every saved unit, per list —
+// and per keystroke in a drive's Device ID while its feeder's card was open).
+const _qpFeatures = new WeakMap();
+function qpFeatures(s) {
+  const sig = [s.energySource, s.deviceType, s.location, s.verification].join('\u0001');
+  let f = _qpFeatures.get(s);
+  if (!f || f.sig !== sig) {
+    f = { sig, energy: qpKey('energy', s), device: qpKey('device', s), location: qpKey('location', s),
+      verification: qpKey('verification', s), fam: qpFamily(s.energySource) };
+    _qpFeatures.set(s, f);
+  }
+  return f;
+}
+// Every row the device knows, with its unit's type and facility: the saved
+// units' rows, then the other rows of the unit on the form.
 function qpHistory(skip) {
-  const out = [];
+  const out = [], setting = getHospitalCode();
   (savedEquipment || []).forEach(e => {
     if (!e || !Array.isArray(e.sources)) return;
-    const type = String(e.equipType || '');
-    e.sources.forEach(s => { if (s && typeof s === 'object') out.push({ s, type }); });
+    const type = String(e.equipType || ''), fac = entryHospitalCode(e, setting);
+    e.sources.forEach(s => { if (s && typeof s === 'object') out.push({ s, type, fac }); });
   });
-  const type = getEquipType();
-  sources.forEach(s => { if (s && typeof s === 'object' && s !== skip) out.push({ s, type }); });
+  const type = getEquipType(), fac = formFacilityCode();
+  sources.forEach(s => { if (s && typeof s === 'object' && s !== skip) out.push({ s, type, fac }); });
   return out;
 }
-// How much one known row counts toward a pick for `row`.
-function qpWeight(field, row, h, sameType) {
+// How much one known row (its features `f`) counts toward a pick for the row
+// described by `ctx` (quickPickRank).
+function qpWeight(field, ctx, f, sameType) {
   if (field === 'energy') return sameType ? 4 : 1;
-  const has = !!String(row.energySource || '');
-  const sameFam = has && qpFamily(h.energySource) === qpFamily(row.energySource);
+  const sameFam = ctx.has && f.fam === ctx.fam;
   if (field === 'device') {
-    if (!has) return sameType ? 1 : 0;
-    return qpKey('energy', h) === qpKey('energy', row) ? (sameType ? 4 : 3) : (sameFam ? 1 : 0);
+    if (!ctx.has) return sameType ? 1 : 0;
+    return f.energy === ctx.energy ? (sameType ? 4 : 3) : (sameFam ? 1 : 0);
   }
   if (field === 'location') return sameFam ? (sameType ? 4 : 2) : (sameType ? 1 : 0);
-  const sameDev = !!row.deviceType && h.deviceType === row.deviceType;
+  const sameDev = !!ctx.device && f.device === ctx.device;
   return sameDev ? (sameFam ? 4 : 2) : (sameFam ? 1 : 0);
 }
-// The source's own default for a list (the tie-break after what was used).
+// The source's own default for a list (the tie-break after what was used). A
+// Kinetic row's is the fan the unit hasn't named yet — only while the row names
+// none (the review: kineticDefaultLocation counts the row itself, so a row "At
+// Supply Fan" had Return Fan as its default).
 function qpDefault(field, row) {
   if (field === 'energy' || !row.energySource) return '';
   const d = sourceDefaultsOf(row.energySource) || {};
   if (field === 'device') return d.device || '';
-  if (field === 'location') return row.energySource === 'Kinetic' ? kineticDefaultLocation() : (d.location || '');
+  if (field === 'location') return row.energySource === 'Kinetic' ? (row.location ? '' : kineticDefaultLocation()) : (d.location || '');
   return d.verification || '';
 }
 // A list's entries, most likely first: [{ v, score }]. A score of 4 or more is
 // at least one row like this one; under 1 is no use at all.
 function quickPickRank(field, row, values, history) {
+  row = row || {};
   const type = getEquipType();
+  const ctx = { has: !!String(row.energySource || ''), fam: qpFamily(row.energySource),
+    energy: qpKey('energy', row), device: String(row.deviceType || '') };
   const list = Array.from(new Set(values || []));
   const keyOf = v => field === 'energy' ? listEnergyName(v) : v;
   const score = new Map(list.map(v => [keyOf(v), 0]));
-  (history || qpHistory(row)).forEach(({ s, type: t }) => {
-    const k = qpKey(field, s);
+  (history || qpHistory(row)).forEach(h => {
+    const f = qpFeatures(h.s), k = f[field];
     if (!k || !score.has(k)) return;
-    const w = qpWeight(field, row || {}, s, !!type && t === type);
+    const w = qpWeight(field, ctx, f, !!type && h.type === type);
     if (w) score.set(k, score.get(k) + w);
   });
-  const def = qpDefault(field, row || {});
+  const def = qpDefault(field, row);
   return list.map((v, n) => ({ v, n, score: score.get(keyOf(v)) + (def && v === def ? 0.5 : 0) }))
     .sort((a, b) => b.score - a.score || a.n - b.n)
     .map(r => ({ v: r.v, score: r.score }));
@@ -9657,21 +9678,14 @@ function attachQuickPicks(card, src, index) {
       more.appendChild(sel);
       row.appendChild(more);
       sel.classList.add('qp-select');
-      sel.setAttribute('aria-label', 'All choices');
       const group = row.closest('.form-group');
       if (group) group.classList.add('qp-group');
+      // the list keeps its field's name for VoiceOver (the review: four "All choices")
+      const name = group && group.querySelector('label') ? group.querySelector('label').textContent.trim() : '';
+      sel.setAttribute('aria-label', name ? 'All ' + name + ' choices' : 'All choices');
     }
+    // an already wrapped list (a card refreshed in place) is only drawn again
     paintQuickPickRow(row, field, src, history || (history = qpHistory(src)));
-  });
-}
-// A card's chips drawn again from its lists as they now are (a list refreshed
-// in place by refreshSourceDependents keeps its row; its entries changed).
-function repaintQuickPicks(card, src, index) {
-  if (!card || !src) return;
-  let history = null;
-  QP_LISTS.forEach(([field]) => {
-    const row = card.querySelector('#qp_' + field + '_' + index);
-    if (row) paintQuickPickRow(row, field, src, history || (history = qpHistory(src)));
   });
 }
 // One list's chips, from its <select>'s entries and value.
@@ -9707,15 +9721,34 @@ function quickPick(sel, value) {
   if (sel.value !== value) return;   // no such entry any more
   sel.dispatchEvent(new Event('change', { bubbles: true }));
 }
+// The rows added by hand on units of this type: not a template's own rows, not
+// a feeder, secondary main or alternate (each is added from its own card).
+function qpHandAdded(type, skip) {
+  return qpHistory(skip).filter(h => h.type === type && !h.s.auto && !sourceRoleOf(h.s));
+}
 // "+ <source>" chips for Add Energy Source: the sources added by hand on units
-// of this type before — not a template's own rows, not a drive's feeder (its
-// drive's card adds that) — most used first.
+// of this type before, most used first. A steam class this facility types at
+// its own pressure is offered at it ("+ MPS 30 PSI", build 149's names; the
+// review: the chip had always added the usual 20 PSI).
 function quickAddChoices() {
   const type = getEquipType();
   if (!type || !quickPicksEnabled()) return [];
-  const hist = qpHistory(null).filter(h => h.type === type && !h.s.auto && !sourceRoleOf(h.s));   // a feeder, secondary main or alternate is added from its own card
+  const hist = qpHandAdded(type, null), fac = formFacilityCode();
   return quickPickRank('energy', {}, offeredEnergySources(), hist)
-    .filter(r => r.score > 0).slice(0, QP_COUNT).map(r => r.v);
+    .filter(r => r.score > 0).slice(0, QP_COUNT).map(r => qpSitePressure(r.v, hist, fac));
+}
+// The steam name used most at this facility for a class's list entry (the entry
+// itself when none was typed at another pressure); any other source as it is.
+function qpSitePressure(name, hist, fac) {
+  if (!steamPressureOf(name)) return name;
+  const count = new Map();
+  hist.forEach(h => {
+    const e = String(h.s.energySource || '');
+    if (h.fac === fac && steamPressureOf(e) && listEnergyName(e) === name) count.set(e, (count.get(e) || 0) + 1);
+  });
+  let best = name, most = 0;
+  count.forEach((n, e) => { if (n > most) { best = e; most = n; } });
+  return best;
 }
 function renderQuickAdd() {
   const box = document.getElementById('quickAddSources'), btn = document.getElementById('addSourceBtn');
@@ -9727,14 +9760,20 @@ function renderQuickAdd() {
     <div class="qp-row">${picks.map(v => html`<button type="button" class="qp-chip qp-add-pick" onclick="quickAddSource(${jsArg(v)})">+ ${v}</button>`)}<button type="button" class="qp-chip qp-more" onclick="addSource()">+ Other&hellip;</button></div>`) : '';
 }
 // A new row with its source picked — and the device used most with that source
-// on this type, when there is one — through the lists' own changes.
+// on the rows added by hand on this type, when there is one — through the lists'
+// own changes. (The review: the device had been ranked over every type and the
+// template's rows, so AHU drives made a pump's "+ Electrical 480V" a VFD and
+// opened the drive's feeder questions.) A steam name at a typed pressure is its
+// class's list entry.
 function quickAddSource(energy) {
-  if (!offeredEnergySources().includes(energy)) return;
+  if (!energy || !offeredEnergySources().includes(listEnergyName(energy))) return;
   addSource();
   const i = sources.length - 1, row = sources[i];
   handleEnergySourceChange(i, energy);
   if (sources[i] !== row || row.deviceType) return;
-  const top = quickPickRank('device', row, getFilteredDevices(row.energySource))[0];
+  const key = qpKey('energy', row);
+  const like = qpHandAdded(getEquipType(), row).filter(h => qpFeatures(h.s).energy === key);
+  const top = quickPickRank('device', row, getFilteredDevices(row.energySource), like)[0];
   if (top && top.score >= 4) handleDeviceTypeChange(i, top.v);
 }
 
@@ -9814,7 +9853,7 @@ function refreshSourceDependents(index) {
   else if (fa) fa.remove();
   else if (fb) { const body = live.querySelector('.source-card-body'); if (body) body.insertBefore(fb, body.querySelector(':scope > .src-sec')); }
   syncKindSections(live);
-  repaintQuickPicks(live, src, index);   // the chips follow the lists just refreshed (build 154)
+  attachQuickPicks(live, src, index);   // the chips follow the lists just refreshed (build 154)
 }
 
 // Build 107: a Kinetic row on an air handler or exhaust fan names its fan.
