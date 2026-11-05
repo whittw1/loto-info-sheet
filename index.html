@@ -390,7 +390,9 @@ if ('serviceWorker' in navigator) {
     border: 1px solid var(--border); border-radius: 22px; background: var(--input-bg); color: var(--text);
     font-size: 15px; font-weight: 500; line-height: 1.2; cursor: pointer; text-align: left; }
   .qp-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .qp-chip.qp-more { border-style: dashed; color: var(--accent); }
+  /* overflow: the iPad draws the invisible list at its own width (its longest
+     entry) past the chip and the card (build 156: T411 inside the app) */
+  .qp-chip.qp-more { border-style: dashed; color: var(--accent); overflow: hidden; }
   .qp-chip.qp-more.on { border-style: solid; color: #fff; }
   .qp-more > select.qp-select { position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0;
     opacity: 0; cursor: pointer; font-size: 16px; border: 0; }
