@@ -548,7 +548,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b154</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b155</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1266,7 +1266,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 154;
+const APP_BUILD = 155;
 
 // ============================================================================
 // DATA
@@ -7831,6 +7831,7 @@ function applyTemplate(val) {
     }
   }
 
+  renderQuickAdd();   // the template's own lines on the Add row follow it, also where no row changed (build 155)
   autoSaveCurrent();
 }
 
@@ -9726,16 +9727,33 @@ function quickPick(sel, value) {
 function qpHandAdded(type, skip) {
   return qpHistory(skip).filter(h => h.type === type && !h.s.auto && !sourceRoleOf(h.s));
 }
-// "+ <source>" chips for Add Energy Source: the sources added by hand on units
-// of this type before, most used first. A steam class this facility types at
-// its own pressure is offered at it ("+ MPS 30 PSI", build 149's names; the
-// review: the chip had always added the usual 20 PSI).
+// The lines a template's name says the unit has but its AUTO rows leave to the
+// tech (build 155, wilkins 2026-11-05: "If I select an AHU - Steam, CHW, HHW or
+// AHU - HHW template, can the 'Add energy source' also include HHW In/out?").
+// Offered on the Add row from the first unit, ahead of what was added by hand.
+// Water Heater - Gas adds only its 120V and gas rows where Water Heater -
+// Electric adds DW In and DHW Out, so its water valves are offered here too. A
+// steam line is left to the history: its class and pressure differ by site.
+const TEMPLATE_QUICK_ADD = {
+  'AHU - HHW': ['HHW In/Out'],
+  'AHU - Steam, CHW, HHW': ['HHW In/Out', 'CHW In/Out'],
+  'Water Heater - Gas': ['DW In', 'DHW Out'],
+};
+// "+ <source>" chips for Add Energy Source: the template's own lines first
+// (TEMPLATE_QUICK_ADD), then the sources added by hand on units of this type
+// before, most used first (QP_COUNT of them). A steam class this facility types
+// at its own pressure is offered at it ("+ MPS 30 PSI", build 149's names; the
+// build 154 review: the chip had always added the usual 20 PSI).
 function quickAddChoices() {
+  if (!quickPicksEnabled()) return [];
+  const offered = offeredEnergySources();
+  const pinned = (TEMPLATE_QUICK_ADD[getTemplate()] || []).filter(v => offered.includes(v));
   const type = getEquipType();
-  if (!type || !quickPicksEnabled()) return [];
+  if (!type) return pinned;
   const hist = qpHandAdded(type, null), fac = formFacilityCode();
-  return quickPickRank('energy', {}, offeredEnergySources(), hist)
+  const used = quickPickRank('energy', {}, offered.filter(v => !pinned.includes(v)), hist)
     .filter(r => r.score > 0).slice(0, QP_COUNT).map(r => qpSitePressure(r.v, hist, fac));
+  return pinned.concat(used);
 }
 // The steam name used most at this facility for a class's list entry (the entry
 // itself when none was typed at another pressure); any other source as it is.
@@ -9756,8 +9774,25 @@ function renderQuickAdd() {
   const picks = quickAddChoices();
   box.style.display = picks.length ? '' : 'none';
   if (btn) btn.style.display = picks.length ? 'none' : '';
+  // "+ Other…" is the whole Energy Source list itself (build 155, wilkins: "Shouldnt
+  // other just open another dropdown list? As it stands right now, its an extra
+  // click"): a pick adds the row with that source; Custom… adds it with its box
+  // open; closing the list adds nothing. (Build 154 added a blank card, whose
+  // chips were mostly these same ones, so More… was always the next tap.)
   box.innerHTML = picks.length ? String(html`<div class="qp-add-label">Add energy source &mdash; one tap fills it in</div>
-    <div class="qp-row">${picks.map(v => html`<button type="button" class="qp-chip qp-add-pick" onclick="quickAddSource(${jsArg(v)})">+ ${v}</button>`)}<button type="button" class="qp-chip qp-more" onclick="addSource()">+ Other&hellip;</button></div>`) : '';
+    <div class="qp-row">${picks.map(v => html`<button type="button" class="qp-chip qp-add-pick" onclick="quickAddSource(${jsArg(v)})">+ ${v}</button>`)}<span class="qp-chip qp-more"><span class="qp-more-label">+ Other&hellip;</span><select class="qp-select" id="quickAddOther" aria-label="All energy sources" onchange="quickAddOther(this.value)">
+      <option value="" selected>+ Other&hellip;</option>
+      ${offeredEnergySources().map(v => html`<option value="${v}">${v}</option>`)}
+      <option value="** Custom Energy **">Custom...</option>
+    </select></span></div>`) : '';
+}
+// A pick in "+ Other…": the row with that source (as a chip adds it), or a row
+// with its Custom box open for one not on the list.
+function quickAddOther(value) {
+  if (!value) return;
+  if (value !== '** Custom Energy **') { quickAddSource(value); return; }
+  addSource();
+  handleEnergySourceChange(sources.length - 1, value);
 }
 // A new row with its source picked — and the device used most with that source
 // on the rows added by hand on this type, when there is one — through the lists'
