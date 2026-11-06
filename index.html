@@ -8456,12 +8456,13 @@ const TEMPLATE_AUTO_SOURCES = {
   // In and Feedwater Out, both default as gate valve devices". The Electrical's
   // voltage is still asked (208V / 480V) and its device is the Disconnect; the
   // suction and the discharge valve are each their own row, checked as the hot
-  // water they are (GaugeOnly - Hot, as Feedwater In always was). No Kinetic, as
-  // every pump template since build 107.
+  // water they are: Feedwater In GaugeOnly - Hot (as it always was), Feedwater
+  // Out Gauge/Drain - Hot (wilkins' pick) — an app default drain (_drainDefault,
+  // noteDefaultDrain), so a "None found" drain answer takes it back. No Kinetic,
+  // as every pump template since build 107.
   'Feedwater Pump': [
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Feedwater In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
-    // the discharge side: "Gauge/Drain - Hot" (wilkins' pick over GaugeOnly - Hot)
     { energySource: 'Feedwater Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Gauge/Drain - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   // Glycol Pump: standard pump shape (no Kinetic since build 107) but with the Electrical pre-set to
@@ -8737,7 +8738,10 @@ function handleCustomEquipTypeChange() {
   if (!name) return;
   const tmplSel = document.getElementById('equipTemplate');
   if (tmplSel.value) return; // respect a template the user already chose
-  const lower = name.toLowerCase();
+  // Runs of spaces, hyphens and underscores read as one space (build 159 review):
+  // "Boiler-Feed Pump" and "Feed_Water Pump" are the keywords' "boiler feed pump"
+  // and "feed water pump"; "VFD-3" still holds "vfd".
+  const lower = name.toLowerCase().replace(/[\s_-]+/g, ' ');
   const match = CUSTOM_EQUIP_KEYWORD_TEMPLATE.find(e => nameHasWord(lower, e.keyword) && !(e.unless && lower.includes(e.unless)));
   if (match && [...tmplSel.options].some(o => o.value === match.template)) {
     pickTemplate(match.template); // applies the template's auto-sources + diagram

@@ -8195,6 +8195,39 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // The template a custom Equipment Type picks when typed on a fresh form (builds
+  // 157 and 159: loto-web's own name words), name by name.
+  async function templatesForCustomTypes(names, formName) {
+    const out = {};
+    for (const name of names) {
+      fillFormNoSources(formName);
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = '** New Equipment Type **';
+      filterTemplateDropdown('');
+      document.getElementById('equipTypeCustom').value = name;
+      await withDialogs({ confirm: true }, async () => { handleCustomEquipTypeChange(); });
+      closeAllPrompts();
+      out[name] = getTemplate();
+    }
+    return out;
+  }
+  // An unzipped export's Information Sheet: each unit's template (the cell under
+  // "Tied to Equipment", column 8), the named unit's type (its name row, column 6)
+  // and every cell's text, in sheet order.
+  async function infoSheetTemplateAndType(u, unitName) {
+    const sheet = [], types = [], cells = [];
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    if (!xpath) return { sheet, types, cells };
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+    const ws = wb.worksheets[0];
+    ws.eachRow(row => {
+      if (String(row.getCell(1).value || '') === 'Tied to Equipment') sheet.push(String(ws.getRow(row.number + 1).getCell(8).value || ''));
+      if (String(row.getCell(1).value || '') === unitName) types.push(String(row.getCell(6).value || ''));
+      row.eachCell(c => cells.push(String(c.value == null ? '' : c.value)));
+    });
+    return { sheet, types, cells };
+  }
+
   // ---------- build 157: the Condenser Water Pump type ----------
   // wilkins, 2026-11-05: "Can you make 'Condenser water pump' a template drop
   // down?" — key agreed with loto-web's chat; HVAC Shop (wilkins).
@@ -8222,17 +8255,7 @@
     got.water = ['Condenser Water In', 'Condenser Water Out'].map(e => [isWaterFamilySource(e), getTempSuffixFor(e)]);
     want(got.water.every(w => w[0] === true && !w[1]), 'plain water checks (no - CHW / - Hot)');
     want(expectsElectricalSource('Condenser Water Pump', 'Condenser Water Pump') && defaultShopFor('Condenser Water Pump', sources) === 'HVAC Shop', 'Electrical expected, HVAC Shop');
-    got.custom = {};
-    for (const name of ['Condenser Water Pump 3', 'CDW Pump 2', 'Cooling Tower Pump 1', 'Condenser Pump P-4', 'CW Pump 1', 'Condenser Water Pump VFD']) {
-      fillFormNoSources('C-479');
-      document.getElementById('equipTemplate').value = '';
-      document.getElementById('equipType').value = '** New Equipment Type **';
-      filterTemplateDropdown('');
-      document.getElementById('equipTypeCustom').value = name;
-      await withDialogs({ confirm: true }, async () => { handleCustomEquipTypeChange(); });
-      closeAllPrompts();
-      got.custom[name] = getTemplate();
-    }
+    got.custom = await templatesForCustomTypes(['Condenser Water Pump 3', 'CDW Pump 2', 'Cooling Tower Pump 1', 'Condenser Pump P-4', 'CW Pump 1', 'Condenser Water Pump VFD'], 'C-479');
     want(['Condenser Water Pump 3', 'CDW Pump 2', 'Cooling Tower Pump 1', 'Condenser Pump P-4'].every(n => got.custom[n] === 'Condenser Water Pump'), 'custom names');
     want(got.custom['CW Pump 1'] === 'Standard Pump', 'a "CW Pump" stays Standard Pump (loto-web reads CW as chilled water)');
     want(got.custom['Condenser Water Pump VFD'] === 'Electrical with Stored Energy', 'its drive stays the drive');
@@ -8248,16 +8271,7 @@
     if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
     const u = await unzipExport(zip.blob);
     const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
-    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
-    const sheet = [], types = [];
-    if (xpath) {
-      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
-      const ws = wb.worksheets[0];
-      ws.eachRow(row => {
-        if (String(row.getCell(1).value || '') === 'Tied to Equipment') sheet.push(String(ws.getRow(row.number + 1).getCell(8).value || ''));
-        if (String(row.getCell(1).value || '') === 'Condenser Water Pump 1') types.push(String(row.getCell(6).value || ''));
-      });
-    }
+    const { sheet, types } = await infoSheetTemplateAndType(u, 'Condenser Water Pump 1');
     got.export = { json: je.template, type: je.equipType, sheet, types, media: (je.sources || []).map(x => x.energySource) };
     want(je.template === 'Condenser Water Pump' && je.equipType === 'Condenser Water Pump' && sheet.join() === 'Condenser Water Pump' && types.join() === 'Condenser Water Pump', 'export');
     want(got.export.media.join() === 'Electrical 480V,Condenser Water In,Condenser Water Out', 'export media');
@@ -8462,7 +8476,7 @@
   // Template should defaut to electrical, disconnect, and Feedwater In and
   // Feedwater Out, both default as gate valve devices".
   async function t483_feedwaterPumpRowsAndBoilerPlant() {
-    const N = 'T483 build 159: the Feedwater Pump type picks the Feedwater Pump template (the only one) and asks the voltage (208V / 480V); three rows — Electrical / Disconnect, Feedwater In / Gate Valve / GaugeOnly - Hot and NEW Feedwater Out / Gate Valve / Gauge/Drain - Hot (wilkins\' pick), Qty 1 — and the pick sets the voltage but keeps the Disconnect; the same rows when the template is picked by itself (the simplified checks, on by default, fill the Disconnect\'s check with Controls); the cards show Disconnect and Gate Valve; Electrical expected; the Shop hint is "Default: Boiler Plant" (was HVAC Shop); custom "Feedwater Pump 2", "Feed Water Pump 3", "Boiler Feed Pump 1" get it (loto-web\'s words), "Chemical Feed Pump 1", "Feedwater Pump VFD" and "Booster Pump 1" keep theirs; a unit saved before build 159 (no Feedwater Out) opens with no row added; the export says "Feedwater Pump" as template and type and carries both valves';
+    const N = 'T483 build 159: the Feedwater Pump type picks the Feedwater Pump template (the only one) and asks the voltage (208V / 480V); three rows — Electrical / Disconnect, Feedwater In / Gate Valve / GaugeOnly - Hot and NEW Feedwater Out / Gate Valve / Gauge/Drain - Hot (wilkins\' pick), Qty 1 — and the pick sets the voltage but keeps the Disconnect; the same rows when the template is picked by itself (the simplified checks, on by default, fill the Disconnect\'s check with Controls); the cards show Disconnect and Gate Valve; Electrical expected; the Shop hint is "Default: Boiler Plant" (was HVAC Shop); custom "Feedwater Pump 2", "Feed Water Pump 3", "Boiler Feed Pump 1" get it (loto-web\'s words), so do "Boiler-Feed Pump 4", "Feed_Water  Pump 5" and "feed-water-pump-6" (the review: hyphens, underscores and doubled spaces read as one space), "Chemical Feed Pump 1", "Chem-Feed Pump 2", the VFDs and "Booster Pump 1" keep theirs; Feedwater Out\'s drain is the app\'s default, so "None found" takes it back (and clearing the answer returns it); a unit saved before build 159 (no Feedwater Out) opens with no row added; the export says "Feedwater Pump" as template and type and carries both valves';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -8487,6 +8501,14 @@
     closeAllPrompts();
     got.picked = sources.map(x => x.energySource + '/' + x.deviceType).join('|');
     want(got.picked === 'Electrical 480V/Disconnect|Feedwater In/Gate Valve|Feedwater Out/Gate Valve', 'the pick sets the voltage, keeps the Disconnect');
+    // Feedwater Out's drain is the app's default (noteDefaultDrain), so "None found" takes it back; In has none
+    got.drainDefault = sources.map(x => !!x._drainDefault).join();
+    want(got.drainDefault === 'false,false,true', 'only Feedwater Out\'s drain is a default');
+    updateDrainWhere(2, 'None found');
+    got.noneFound = sources[2].verification + ' / ' + ((sources[2].drainLocation || {}).where || '');
+    updateDrainWhere(2, '');
+    got.cleared = sources[2].verification;
+    want(got.noneFound === 'GaugeOnly - Hot / None found' && got.cleared === 'Gauge/Drain - Hot', '"None found" takes the default drain back; clearing the answer returns it');
     // the cards show each row's device (the water checks are tick boxes while the simplified checks are on)
     got.cards = [0, 1, 2].map(i => {
       expandSource(i);
@@ -8507,21 +8529,14 @@
     const shopSel = document.getElementById('uq_shop');
     got.shopHint = shopSel && shopSel.options[0] ? shopSel.options[0].textContent.trim() : null;
     want(got.shop === 'Boiler Plant', 'Boiler Plant');
-    want(got.shopHint === null || got.shopHint === 'Default: Boiler Plant', 'the Shop hint');
+    want(got.shopHint === 'Default: Boiler Plant', 'the Shop hint (the Shop question shown, its blank option)');
     // custom names: loto-web's own words for its template (wilkins 2026-11-06)
-    got.custom = {};
-    for (const name of ['Feedwater Pump 2', 'Feed Water Pump 3', 'Boiler Feed Pump 1', 'Chemical Feed Pump 1', 'Feedwater Pump VFD', 'Booster Pump 1']) {
-      fillFormNoSources('C-483');
-      document.getElementById('equipTemplate').value = '';
-      document.getElementById('equipType').value = '** New Equipment Type **';
-      filterTemplateDropdown('');
-      document.getElementById('equipTypeCustom').value = name;
-      await withDialogs({ confirm: true }, async () => { handleCustomEquipTypeChange(); });
-      closeAllPrompts();
-      got.custom[name] = getTemplate();
-    }
-    want(['Feedwater Pump 2', 'Feed Water Pump 3', 'Boiler Feed Pump 1'].every(n => got.custom[n] === 'Feedwater Pump'), 'custom names');
-    want(got.custom['Chemical Feed Pump 1'] === 'Chemical Pump' && got.custom['Feedwater Pump VFD'] === 'Electrical with Stored Energy' && got.custom['Booster Pump 1'] === 'Standard Pump', 'other pumps and the drive keep theirs');
+    const feedNames = ['Feedwater Pump 2', 'Feed Water Pump 3', 'Boiler Feed Pump 1', 'Boiler-Feed Pump 4', 'Feed_Water  Pump 5', 'feed-water-pump-6'];
+    got.custom = await templatesForCustomTypes(feedNames.concat(['Chemical Feed Pump 1', 'Chem-Feed Pump 2', 'Feedwater Pump VFD', 'Feedwater-Pump-VFD-2', 'Booster Pump 1']), 'C-483');
+    want(feedNames.every(n => got.custom[n] === 'Feedwater Pump'), 'custom names (hyphens and underscores read as spaces)');
+    want(got.custom['Chemical Feed Pump 1'] === 'Chemical Pump' && got.custom['Chem-Feed Pump 2'] === 'Chemical Pump'
+      && got.custom['Feedwater Pump VFD'] === 'Electrical with Stored Energy' && got.custom['Feedwater-Pump-VFD-2'] === 'Electrical with Stored Energy'
+      && got.custom['Booster Pump 1'] === 'Standard Pump', 'other pumps and the drive keep theirs');
     // 2. the template picked by itself
     fillFormNoSources('FWP-483b');
     document.getElementById('equipType').value = '';
@@ -8552,17 +8567,8 @@
     if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
     const u = await unzipExport(zip.blob);
     const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
-    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
-    const sheet = [], types = [], media = [];
-    if (xpath) {
-      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
-      const ws = wb.worksheets[0];
-      ws.eachRow(row => {
-        if (String(row.getCell(1).value || '') === 'Tied to Equipment') sheet.push(String(ws.getRow(row.number + 1).getCell(8).value || ''));
-        if (String(row.getCell(1).value || '') === 'Feedwater Pump 1') types.push(String(row.getCell(6).value || ''));
-        row.eachCell(c => { if (/^Feedwater (In|Out)$/.test(String(c.value || ''))) media.push(String(c.value)); });
-      });
-    }
+    const { sheet, types, cells } = await infoSheetTemplateAndType(u, 'Feedwater Pump 1');
+    const media = cells.filter(c => /^Feedwater (In|Out)$/.test(c));
     got.export = { json: je.template, type: je.equipType, sheet, types, media, src: (je.sources || []).map(x => x.energySource + '/' + x.deviceType + '/' + x.verification) };
     want(je.template === 'Feedwater Pump' && je.equipType === 'Feedwater Pump' && sheet.join() === 'Feedwater Pump' && types.join() === 'Feedwater Pump', 'export');
     want(got.export.src.join('|') === 'Electrical 480V/Disconnect/Controls|Feedwater In/Gate Valve/GaugeOnly - Hot|Feedwater Out/Gate Valve/Gauge/Drain - Hot', 'export sources');
