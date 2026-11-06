@@ -165,6 +165,7 @@
 //   T481      build 158: one Equipment ID/Name on two units in one room asks before export (Fix stops it, Export anyway goes on); SAME NAME badge
 //   T482      build 158: the open form counts as it stands; a unit outside this export counts against one in it
 //   T483      build 159: the Feedwater Pump's rows (Electrical / Disconnect; Feedwater In / Gate Valve / GaugeOnly - Hot; Feedwater Out / Gate Valve / Gauge/Drain - Hot), its Boiler Plant shop, loto-web's name words
+//   T484      build 160: Location's Custom… (a damper row's Other…) is always a chip beside More…; a tap opens its box
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8646,6 +8647,79 @@
     });
   }
 
+  // T484 — Location's Custom… is always a chip (build 160)
+  async function t484_customLocationIsAlwaysAChip() {
+    const N = 'T484 build 160 (wilkins: "always show \'Custom\' instead of having to click More and scroll all the way down"): an open card\'s Location chips end with Custom… beside More… (the five likely picks unchanged); a tap opens and focuses the Custom Location box and lights "✓ Custom" (More… stays More…); what is typed saves as the row\'s location and keeps the chip lit; a tap while lit puts the box back in focus and changes nothing; a plain chip leaves Custom; a damper row\'s chip is Other… (its list\'s own word); Energy Source, Device and Verification get no such chip; Quick picks off shows none';
+    await resetAppState();
+    await withQuickPicksSetting(async () => {
+      const fails = [], got = {};
+      const want = (ok, what) => { if (!ok) fails.push(what); };
+      const customChip = (i) => document.querySelector('#qp_location_' + i + ' .qp-custom');
+      const pickCount = (i) => document.querySelectorAll('#qp_location_' + i + ' .qp-pick').length;
+      fillFormNoSources('AHU-484');
+      document.getElementById('equipType').value = 'Air Handler';
+      sources.push(Object.assign(mkSrc('Electrical 480V'), { deviceType: 'VFD', location: '', verification: '', collapsed: false }));
+      renderSources();
+      // 1. the chip is there, last before More…, with the five picks
+      let c = customChip(0);
+      got.start = c ? [c.textContent, c.classList.contains('on'), !!(c.nextElementSibling && c.nextElementSibling.classList.contains('qp-more')), pickCount(0)].join('|') : 'no chip';
+      want(got.start === 'Custom…|false|true|5', 'Custom… beside More…, five picks: ' + got.start);
+      // 2. a tap opens the box, in focus, and lights the chip
+      c.click();
+      await sleep(0);
+      const box = document.getElementById('src_loc_custom_0');
+      c = customChip(0);
+      const more = document.querySelector('#qp_location_0 .qp-more');
+      got.tap = [!!sources[0]._customLoc, sources[0].location === '', !!box, document.activeElement === box,
+        c ? c.textContent : 'no chip', more ? more.classList.contains('on') + ':' + more.querySelector('.qp-more-label').textContent : 'no more'].join('|');
+      want(got.tap === 'true|true|true|true|✓ Custom|false:More…', 'the tap opens the box: ' + got.tap);
+      // 3. what is typed is the location; the chip stays lit
+      box.value = 'Behind Panel 3';
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+      renderSources();
+      c = customChip(0);
+      got.typed = [sources[0].location, !!sources[0]._customLoc, c ? c.textContent : 'no chip', (document.getElementById('src_loc_custom_0') || {}).value].join('|');
+      want(got.typed === 'Behind Panel 3|true|✓ Custom|Behind Panel 3', 'the typed location: ' + got.typed);
+      // 4. a tap while lit focuses the box again and changes nothing
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      c.click();
+      await sleep(0);
+      got.again = [document.activeElement === document.getElementById('src_loc_custom_0'), sources[0].location, !!sources[0]._customLoc].join('|');
+      want(got.again === 'true|Behind Panel 3|true', 'a second tap focuses the box: ' + got.again);
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      // 5. a plain chip leaves Custom
+      const plain = document.querySelector('#qp_location_0 .qp-pick');
+      const plainV = plain && plain.dataset.v;
+      if (plain) plain.click();
+      await sleep(0);
+      c = customChip(0);
+      got.leave = [sources[0].location === plainV, !!sources[0]._customLoc, c ? c.textContent + ':' + c.classList.contains('on') : 'no chip', !!document.getElementById('src_loc_custom_0')].join('|');
+      want(got.leave === 'true|false|Custom…:false|false', 'a plain chip leaves Custom: ' + got.leave);
+      // 6. the other three lists get no Custom chip
+      got.others = ['energy', 'device', 'verification'].map(f => f + ':' + document.querySelectorAll('#qp_' + f + '_0 .qp-custom').length).join(' ');
+      want(got.others === 'energy:0 device:0 verification:0', 'no chip on the other lists: ' + got.others);
+      // 7. a damper row's chip is Other…, and opens its box the same way
+      sources[0].collapsed = true;
+      sources.push(Object.assign(mkSrc('Damper Actuator'), { deviceType: 'Electric Actuator', location: '', verification: '', collapsed: false }));
+      renderSources();
+      c = customChip(1);
+      got.damper = c ? c.textContent : 'no chip';
+      if (c) c.click();
+      await sleep(0);
+      c = customChip(1);
+      got.damper += '|' + !!sources[1]._customLoc + '|' + (c ? c.textContent : 'no chip') + '|' + !!document.getElementById('src_loc_custom_1');
+      want(got.damper === 'Other…|true|✓ Other|true', 'a damper row says Other…: ' + got.damper);
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      // 8. Quick picks off: no chips at all
+      setQuickPicks(false);
+      got.off = document.querySelectorAll('.qp-custom').length + '|' + !!document.getElementById('src_loc_1');
+      want(got.off === '0|true', 'off: no Custom chip, the plain list: ' + got.off);
+      setQuickPicks(true);
+      record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+    });
+  }
+
   // T470 / T471 turn Settings → Quick picks off and on: the browser's own setting
   // comes back whatever happens in the test (the build 154 review)
   async function withQuickPicksSetting(fn) {
@@ -8656,7 +8730,7 @@
   }
   // T470 — quick picks on the source card (build 154)
   async function t470_quickPicksOnTheCard() {
-    const N = 'T470 build 154 (wilkins picked Option A of the efficiency mockups, "Build A"): an open card shows Energy Source, Device, Location and Verification as one-tap chips of the likely picks (what this device used on rows like this one, then the source\'s default, then the list) with More… — the list itself — beside them; a chip runs the list\'s own change (a steam chip fills its Gate Valve default; MCC opens its ID box); the row\'s own pick always shows lit; Custom… lights More… with its name; a typed steam pressure is its own chip; a list refreshed in place keeps its chips in step with it; Quick picks off in Settings brings back the plain lists';
+    const N = 'T470 build 154 (wilkins picked Option A of the efficiency mockups, "Build A"): an open card shows Energy Source, Device, Location and Verification as one-tap chips of the likely picks (what this device used on rows like this one, then the source\'s default, then the list) with More… — the list itself — beside them; a chip runs the list\'s own change (a steam chip fills its Gate Valve default; MCC opens its ID box); the row\'s own pick always shows lit; Custom… lights its own chip and More… stays More… (build 160; it had lit More… with its name); a typed steam pressure is its own chip; a list refreshed in place keeps its chips in step with it; Quick picks off in Settings brings back the plain lists';
     await resetAppState();
     await withQuickPicksSetting(async () => {
       const fails = [], got = {};
@@ -8706,12 +8780,13 @@
       sources[0].location = 'Below Equipment'; renderSources();
       got.own = lit('location', 0) + '|' + chips('location', 0).length;
       want(got.own === 'Below Equipment|5', 'a rare pick of the row\'s own shows lit: ' + got.own);
-      // Custom… lights More… with its name
+      // Custom… lights its own chip (build 160; it had lit More… with its name)
       handleLocationChange(0, '** Custom Location **');
       const more = document.querySelector('#qp_location_0 .qp-more');
       const moreLabel = more && more.querySelector('.qp-more-label');
-      got.custom = more ? more.classList.contains('on') + '|' + (moreLabel ? moreLabel.textContent : '') : 'none';
-      want(got.custom === 'true|Custom... ▾' && lit('location', 0) === '', 'Custom… lights More… with its name: ' + got.custom);
+      const customChip = document.querySelector('#qp_location_0 .qp-custom');
+      got.custom = more ? more.classList.contains('on') + '|' + (moreLabel ? moreLabel.textContent : '') + '|' + (customChip ? customChip.className + ':' + customChip.textContent : 'no chip') : 'none';
+      want(got.custom === 'false|More…|qp-chip qp-custom on:✓ Custom' && lit('location', 0) === '', 'Custom… lights its own chip: ' + got.custom);
       // a blank row: a steam chip runs its defaults (Gate Valve), history ranks the devices
       sources[0].collapsed = true;
       sources.push(Object.assign(mkSrc(''), { deviceType: '', location: '', verification: '', collapsed: false }));
@@ -10791,18 +10866,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 159 (was build 122\'s): APP_BUILD and the header label say 159, the service worker\'s cache is loto-collector-v7.154, Xcode\'s CURRENT_PROJECT_VERSION is 159 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 160 (was build 122\'s): APP_BUILD and the header label say 160, the service worker\'s cache is loto-collector-v7.155, Xcode\'s CURRENT_PROJECT_VERSION is 160 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 159 && !!label && +label[1] === 159, 'the build');
+    want(APP_BUILD === 160 && !!label && +label[1] === 160, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.154', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.155', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 159;,CURRENT_PROJECT_VERSION = 159;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 160;,CURRENT_PROJECT_VERSION = 160;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -17427,7 +17502,8 @@
     t470_quickPicksOnTheCard, t471_quickAddAndOneCardOpen, t472_templateLinesAndOtherList,
     t473_mainPhotoArrowDialog, t474_mainPhotoArrowExport, t475_mainPhotoArrowLifecycle, t476_mainPhotoArrowGeometry, t477_dockLevelerTypeAndTemplate,
     t478_chipCheckFollowsEveryPick, t479_condenserWaterPumpTypeAndTemplate, t480_coolingTowerCondenserWaterVisual,
-    t481_sameNameSameRoomAsksBeforeExport, t482_sameNameFormAndEarlierUnits, t483_feedwaterPumpRowsAndBoilerPlant];
+    t481_sameNameSameRoomAsksBeforeExport, t482_sameNameFormAndEarlierUnits, t483_feedwaterPumpRowsAndBoilerPlant,
+    t484_customLocationIsAlwaysAChip];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

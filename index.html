@@ -552,7 +552,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b159</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b160</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1272,7 +1272,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 159;
+const APP_BUILD = 160;
 
 // ============================================================================
 // DATA
@@ -9807,7 +9807,7 @@ function paintQuickPickRow(row, field, src, history) {
   const cur = sel.value;
   const picks = quickPickRank(field, src, [...textOf.keys()], history).slice(0, QP_COUNT).map(r => r.v);
   if (cur && textOf.has(cur) && !picks.includes(cur)) { if (picks.length >= QP_COUNT) picks.pop(); picks.push(cur); }
-  row.querySelectorAll('.qp-pick').forEach(b => b.remove());
+  row.querySelectorAll('.qp-pick, .qp-custom').forEach(b => b.remove());
   picks.forEach(v => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -9818,8 +9818,30 @@ function paintQuickPickRow(row, field, src, history) {
     b.addEventListener('click', () => quickPick(sel, v));
     row.insertBefore(b, more);
   });
-  // More… names a pick no chip shows (Custom… / Other… with its box open)
-  const off = !!cur && !picks.includes(cur);
+  // Location's Custom… (a damper row's Other…) is always a chip, next to More…
+  // (build 160, wilkins 2026-11-06: "Would it be possible for the 'Where its
+  // isolated and verified' pills to always show 'Custom' instead of having to
+  // click More and scroll all the way down?" — it is the list's last entry). It
+  // is the list's own entry, so a tap runs the list's change and opens the box;
+  // a tap while it is lit puts the box back in focus.
+  const custom = field === 'location' ? Array.from(sel.options).find(o => o.value === '** Custom Location **') : null;
+  if (custom) {
+    const on = cur === custom.value, name = custom.textContent.replace(/(\.\.\.|…)$/, '');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'qp-chip qp-custom' + (on ? ' on' : '');
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.textContent = on ? '✓ ' + name : name + '…';
+    b.addEventListener('click', () => {
+      if (sel.isConnected && sel.value === custom.value) {
+        const box = document.getElementById(sel.id.replace('src_loc_', 'src_loc_custom_'));
+        if (box) box.focus();
+      } else quickPick(sel, custom.value);
+    });
+    row.insertBefore(b, more);
+  }
+  // More… names a pick no chip shows (an Energy Source or Device Custom… with its box open)
+  const off = !!cur && !picks.includes(cur) && !(custom && cur === custom.value);
   more.classList.toggle('on', off);
   const label = more.querySelector('.qp-more-label');
   if (label) label.textContent = off ? (((sel.options[sel.selectedIndex] || {}).textContent || 'More…') + ' ▾') : 'More…';
