@@ -162,6 +162,8 @@
 //   T478      build 156: a chip tapped in any of a card's four lists is checked at once (Verification kept the old check)
 //   T479      build 157: the Condenser Water Pump type and template (Electrical with the voltage asked, Condenser Water In and Out; HVAC Shop; custom names, never "CW Pump")
 //   T480      build 157: a Cooling Tower fills Condenser Water In and Out (Gate Valve, "Visual"); Visual offered on condenser water rows
+//   T481      build 158: one Equipment ID/Name on two units in one room asks before export (Fix stops it, Export anyway goes on); SAME NAME badge
+//   T482      build 158: the open form counts as it stands; a unit outside this export counts against one in it
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8325,6 +8327,134 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T481 — one Equipment ID/Name on two units in one room asks before export (build 158)
+  // wilkins, 2026-11-05: "because I duplicated an existing procedure and forgot to
+  // change the equipment ID, I got duplicates of equipment … is there a way for the
+  // export function to check to see if the equipment name is identical, at least
+  // within the same Room/location, and ask me to fix it before export?"
+  async function t481_sameNameSameRoomAsksBeforeExport() {
+    const N = 'T481 build 158: two saved units named "CHWP-1" in Main / B100 — Export asks "Same name, same room" before anything is written; "Fix the name first" stops it (no ZIP, neither unit marked exported, no photo numbers used) and opens the saved list searched for the name with both units badged SAME NAME (a third unit elsewhere not badged); "Export anyway" exports both; "chwp 1", "CHWP_1" and room "Rm. 20" = "rm 20" ask too; the same name in another room, building or facility, "CHWP1", "CHWP-10", and one unit saved twice under one entry id do not';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const asked = (r) => r.confirms.some(c => /\[CHOICE export-same-name\]/.test(c));
+    // 1. the clash — Fix the name first
+    const A = mkEntry('CHWP-1'), B = mkEntry('CHWP-1'), C = mkEntry('CHWP-1', { room: 'B200' });
+    savedEquipment = [A, B, C]; saveAll();
+    if (savedPanelOpen) toggleSavedPanel();
+    const seqBefore = localStorage.getItem('photoSeqNext');
+    const r1 = await runExport({ confirmResponse: true, choice: { 'export-same-name': 'fix' } });
+    got.fixAsked = asked(r1); got.fixZip = !!r1.zip;
+    want(got.fixAsked && !got.fixZip, 'fix: asked and stopped');
+    want(!A.exportedAt && !B.exportedAt && !C.exportedAt && !A.firstExportedAt && !B.firstExportedAt, 'fix: nothing marked exported');
+    want(localStorage.getItem('photoSeqNext') === seqBefore, 'fix: photo numbers untouched');
+    got.panel = savedPanelOpen; got.search = savedSearchTerm + '/' + document.getElementById('savedSearchInput').value;
+    want(got.panel && got.search === 'chwp-1/CHWP-1', 'fix: saved list searched for the name');
+    const rows = [...document.querySelectorAll('#savedPanelBody .saved-item')];
+    got.badges = rows.map(r => (r.querySelector('.saved-item-name').textContent.includes('SAME NAME') ? 'Y' : 'n') + (r.textContent.includes('B200') ? '200' : '100')).sort().join(',');
+    want(got.badges === 'Y100,Y100,n200', 'badges');
+    setSavedSearch(''); document.getElementById('savedSearchInput').value = '';
+    // 2. Export anyway
+    const r2 = await runExport({ confirmResponse: true, choice: { 'export-same-name': 'export' } });
+    let names = [];
+    if (r2.zip) { const u = await unzipExport(r2.zip.blob); names = (u.entriesJson.entries || []).map(e => e.equipName); }
+    got.anyway = names.filter(n => n === 'CHWP-1').length;
+    want(asked(r2) && got.anyway === 3, 'export anyway');
+    // 3. what is (and is not) the same name in the same room
+    const twin = mkEntry('CHWP-1'), twinCopy = Object.assign(JSON.parse(JSON.stringify(twin)), { savedAt: new Date(Date.now() + 1000).toISOString() });
+    const cases = [
+      ['chwp 1', [mkEntry('CHWP-1'), mkEntry('chwp 1')], true],
+      ['CHWP_1', [mkEntry('CHWP-1'), mkEntry('CHWP_1')], true],
+      ['Rm. 20 / rm 20', [mkEntry('CHWP-1', { room: 'Rm. 20' }), mkEntry('CHWP-1', { room: 'rm 20' })], true],
+      ['another room', [mkEntry('CHWP-1'), mkEntry('CHWP-1', { room: 'B200' })], false],
+      ['another building', [mkEntry('CHWP-1'), mkEntry('CHWP-1', { building: 'North' })], false],
+      ['another facility', [mkEntry('CHWP-1'), Object.assign(mkEntry('CHWP-1'), { hospitalCode: 'ZZZ' })], false],
+      ['CHWP1', [mkEntry('CHWP-1'), mkEntry('CHWP1')], false],
+      ['CHWP-10', [mkEntry('CHWP-1'), mkEntry('CHWP-10')], false],
+      ['saved twice', [twin, twinCopy], false],
+    ];
+    got.cases = {};
+    for (const [label, units, asks] of cases) {
+      savedEquipment = units; saveAll();
+      const r = await runExport({ confirmResponse: true, choice: { 'export-same-name': 'fix' } });
+      got.cases[label] = asked(r);
+      want(asked(r) === asks, label + (asks ? ' should ask' : ' should not ask'));
+    }
+    setSavedSearch(''); document.getElementById('savedSearchInput').value = '';
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T482 — the open form counts as it stands; a unit outside this export counts against it (build 158)
+  async function t482_sameNameFormAndEarlierUnits() {
+    const N = 'T482 build 158: the open form counts as it stands — a NEW unit typed "AHU-3" where a saved AHU-3 is asks, and "Fix the name first" rings its Equipment ID/Name in red without focusing it by code (build 145) and opens no saved list; typing clears the ring, so does a cleared form; a saved unit open for edit and renamed away from a clash no longer asks (its saved copy\'s old name does not count), renamed INTO one it asks and Fix opens the saved list; a unit surveyed yesterday counts against today\'s export (asks), but two of yesterday\'s units do not hold up today\'s export of another';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const asked = (r) => r.confirms.some(c => /\[CHOICE export-same-name\]/.test(c));
+    // 1. a new unit in the form
+    await resetAppState();
+    savedEquipment = [mkEntry('AHU-3')]; saveAll(); renderSavedPanel();
+    if (savedPanelOpen) toggleSavedPanel();
+    fillFormNoSources('AHU-3'); addSource(); sources[0].energySource = 'Electrical 480V'; renderSources();
+    document.getElementById('savedSearchInput').value = ''; setSavedSearch('');
+    const nameBox = document.getElementById('equipName');
+    const ring = () => nameBox.classList.contains('same-name-flag');
+    const r1 = await runExport({ confirmResponse: true, choice: { 'export-same-name': 'fix' } });
+    got.newForm = [asked(r1), !!r1.zip, ring(), document.activeElement === nameBox, savedPanelOpen, savedSearchTerm].join('/');
+    want(got.newForm === 'true/false/true/false/false/', 'new unit in the form: ringed, not focused, no saved list');
+    nameBox.value = 'AHU-3B'; nameBox.dispatchEvent(new Event('input', { bubbles: true }));
+    got.ringAfterTyping = ring();
+    want(!got.ringAfterTyping, 'typing clears the ring');
+    await runExport({ confirmResponse: true, choice: { 'export-same-name': 'fix' } });   // AHU-3B: no ask, exports
+    nameBox.value = 'AHU-3'; nameBox.dispatchEvent(new Event('input', { bubbles: true }));
+    await runExport({ confirmResponse: true, choice: { 'export-same-name': 'fix' } });
+    got.ringAgain = ring();
+    clearForm(false);
+    got.ringAfterClear = ring();
+    want(got.ringAgain && !got.ringAfterClear, 'a cleared form drops the ring');
+    // …and the form wins over an older pair listed first
+    savedEquipment = [mkEntry('AHU-1'), mkEntry('AHU-1'), mkEntry('AHU-3')]; saveAll();
+    if (savedPanelOpen) toggleSavedPanel();
+    fillFormNoSources('AHU-3'); addSource(); sources[0].energySource = 'Electrical 480V'; renderSources();
+    const r1b = await runExport({ confirmResponse: true, choice: { 'export-same-name': 'fix' } });
+    got.formFirst = [asked(r1b), ring(), savedPanelOpen].join('/');
+    want(got.formFirst === 'true/true/false', 'the form comes before an older pair');
+    clearForm(false);
+    // 2. an edit renamed away from the clash
+    await resetAppState();
+    savedEquipment = [mkEntry('AHU-4'), mkEntry('AHU-4')]; saveAll(); renderSavedPanel();
+    editSaved(1);
+    document.getElementById('equipName').value = 'AHU-5';
+    const r2 = await runExport({ confirmResponse: true, choice: { 'export-same-name': 'fix' } });
+    got.renamedAway = [asked(r2), !!r2.zip].join('/');
+    want(got.renamedAway === 'false/true', 'edit renamed away');
+    // 3. an edit renamed into one
+    await resetAppState();
+    savedEquipment = [mkEntry('AHU-6'), mkEntry('AHU-7')]; saveAll(); renderSavedPanel();
+    if (savedPanelOpen) toggleSavedPanel();
+    editSaved(1);
+    document.getElementById('equipName').value = 'AHU-6';
+    const r3 = await runExport({ confirmResponse: true, choice: { 'export-same-name': 'fix' } });
+    got.renamedInto = [asked(r3), !!r3.zip, savedPanelOpen, savedSearchTerm].join('/');
+    want(got.renamedInto === 'true/false/true/ahu-6', 'edit renamed into');
+    setSavedSearch(''); document.getElementById('savedSearchInput').value = '';
+    // 4. yesterday's units
+    await resetAppState();
+    const y = new Date(); y.setDate(y.getDate() - 1);
+    const yd = localDateStr(y), td = localDateStr(new Date());
+    savedEquipment = [Object.assign(mkEntry('EF-2'), { surveyDate: yd }), Object.assign(mkEntry('EF-2'), { surveyDate: td })]; saveAll();
+    const r4 = await runExport({ confirmResponse: true, dateFilter: td, choice: { 'export-same-name': 'fix' } });
+    got.yesterdaysTwin = [asked(r4), !!r4.zip].join('/');
+    want(got.yesterdaysTwin === 'true/false', 'a twin from yesterday asks');
+    savedEquipment = [Object.assign(mkEntry('EF-9'), { surveyDate: yd }), Object.assign(mkEntry('EF-9'), { surveyDate: yd }), Object.assign(mkEntry('EF-1'), { surveyDate: td })]; saveAll();
+    const r5 = await runExport({ confirmResponse: true, dateFilter: td, choice: { 'export-same-name': 'fix' } });
+    let names = [];
+    if (r5.zip) { const u = await unzipExport(r5.zip.blob); names = (u.entriesJson.entries || []).map(e => e.equipName); }
+    got.notInThisExport = [asked(r5), names.join(',')].join('/');
+    want(got.notInThisExport === 'false/EF-1', 'yesterday\'s pair does not hold up today');
+    setSavedSearch(''); document.getElementById('savedSearchInput').value = '';
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // T472 — the template's own lines on the Add row; "+ Other…" is the whole list (build 155)
   async function t472_templateLinesAndOtherList() {
     const N = 'T472 build 155 (wilkins: "If I select an AHU - Steam, CHW, HHW or AHU - HHW template, can the Add energy source also include HHW In/out?" and "Shouldnt other just open another dropdown list?"): the Add row offers the lines a template names but leaves to the tech — AHU - HHW: HHW In/Out; AHU - Steam, CHW, HHW: HHW In/Out and CHW In/Out; Water Heater - Gas: DW In and DHW Out — first, from the first unit (no history needed), then the sources added by hand on the type, never twice; "+ Other…" is the whole Energy Source list: a pick adds the row with that source (the only card open), Custom… adds it with its Custom box, closing it adds nothing; Quick picks off: the plain button';
@@ -10540,18 +10670,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 157 (was build 122\'s): APP_BUILD and the header label say 157, the service worker\'s cache is loto-collector-v7.152, Xcode\'s CURRENT_PROJECT_VERSION is 157 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 158 (was build 122\'s): APP_BUILD and the header label say 158, the service worker\'s cache is loto-collector-v7.153, Xcode\'s CURRENT_PROJECT_VERSION is 158 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 157 && !!label && +label[1] === 157, 'the build');
+    want(APP_BUILD === 158 && !!label && +label[1] === 158, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.152', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.153', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 157;,CURRENT_PROJECT_VERSION = 157;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 158;,CURRENT_PROJECT_VERSION = 158;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -17175,7 +17305,8 @@
     t468_energyRecoveryWaterReplacesGlycolEr, t469_atsFeedsArePanels,
     t470_quickPicksOnTheCard, t471_quickAddAndOneCardOpen, t472_templateLinesAndOtherList,
     t473_mainPhotoArrowDialog, t474_mainPhotoArrowExport, t475_mainPhotoArrowLifecycle, t476_mainPhotoArrowGeometry, t477_dockLevelerTypeAndTemplate,
-    t478_chipCheckFollowsEveryPick, t479_condenserWaterPumpTypeAndTemplate, t480_coolingTowerCondenserWaterVisual];
+    t478_chipCheckFollowsEveryPick, t479_condenserWaterPumpTypeAndTemplate, t480_coolingTowerCondenserWaterVisual,
+    t481_sameNameSameRoomAsksBeforeExport, t482_sameNameFormAndEarlierUnits];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

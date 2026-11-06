@@ -42,6 +42,7 @@ A progressive web app (PWA) for field data collection of Lockout/Tagout (LOTO) i
 - **Tied-To Equipment** — Track interdependent systems across entries
 - **Survey Date** — Each unit's survey date is on the form (blank = the day it is saved) and decides which day's Information Sheet it goes on; changing it on a unit already exported asks first
 - **Export Date Filter** — Export dialog lets you pick a specific date's entries, all dates, **not yet exported** (only the units not yet exported, each on its own day's sheet — since build 141; builds 109–140 sent the whole day of each), or undated entries; a unit with no date is asked for one. Filename includes the date suffix for specific-day exports.
+- **Same name, same room** (build 158) — an export with two units under one Equipment ID/Name in the same facility, building and room (a Duplicate whose name was never changed) asks first: **Fix the name first** stops it, **Export anyway** goes on. Case and spaces/hyphens don't count; the same name in another room never asks. The saved list marks such units **⚠ SAME NAME**.
 
 ### Overhead Sketch System
 
