@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 156,
+  "build": 157,
   "hospitals": [
     {
       "code": "Marion",
@@ -35,6 +35,7 @@
     "Exhaust Fan",
     "Heating HW Pump",
     "CHW Pump",
+    "Condenser Water Pump",
     "Domestic HW Pump",
     "Domestic Water Pump",
     "Feedwater Pump",
@@ -92,6 +93,9 @@
     ],
     "CHW Pump": [
       "Chilled Water Pump"
+    ],
+    "Condenser Water Pump": [
+      "Condenser Water Pump"
     ],
     "Heating HW Pump": [
       "Heating Hot Water Pump"
@@ -234,6 +238,7 @@
     "AHU - Geothermal",
     "AHU - Steam, CHW, HHW",
     "Chilled Water Pump",
+    "Condenser Water Pump",
     "Heating Hot Water Pump",
     "Standard Pump",
     "Fire Pump",

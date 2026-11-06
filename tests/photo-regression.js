@@ -160,6 +160,7 @@
 //             (entries.json mainPhotoArrow, the name row's column 14, the CSV's last column), saved / copied / retaken, its geometry
 //   T477      build 156: the Dock Leveler type and template (Electrical with the voltage asked, Hydraulic, Gravity/Potential)
 //   T478      build 156: a chip tapped in any of a card's four lists is checked at once (Verification kept the old check)
+//   T479      build 157: the Condenser Water Pump type and template (Electrical with the voltage asked, Condenser Water In; HVAC Shop; custom names)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8190,6 +8191,73 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ---------- build 157: the Condenser Water Pump type ----------
+  // wilkins, 2026-11-05: "Can you make 'Condenser water pump' a template drop
+  // down?" — key agreed with loto-web's chat; HVAC Shop (wilkins).
+  async function t479_condenserWaterPumpTypeAndTemplate() {
+    const N = 'T479 build 157: the new Condenser Water Pump type picks the Condenser Water Pump template (the only one) and asks the voltage (120V / 208V / 240V / 480V); two rows — Electrical, Condenser Water In / Ball Valve / GaugeOnly (plain water checks, no "- CHW") — and the pick sets the Electrical\'s voltage; Electrical expected; HVAC Shop by default; custom "Condenser Water Pump 3", "CDW Pump 2", "CW Pump 1", "Condenser Pump P-4" get it, "Domestic CW Pump" and "Condenser Water Pump VFD" do not; app-lists.json lists it; the export says "Condenser Water Pump" as template and type';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('CWP-479');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'Condenser Water Pump';
+    await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+    const ov = document.getElementById('templateVoltageOverlay');
+    got.voltages = ov ? Array.from(ov.querySelectorAll('button.btn-primary')).map(b => b.textContent.trim()) : null;
+    got.template = getTemplate();
+    got.offered = [...document.getElementById('equipTemplate').options].map(o => o.value).filter(v => v && v !== '** New Template **');
+    got.rows = sources.map(x => [x.energySource, x.deviceType, x.location, x.verification, x.noPhoto ? 'noPhoto' : ''].join('/'));
+    want(got.template === 'Condenser Water Pump' && got.offered.join() === 'Condenser Water Pump', 'type picks the template');
+    want((got.voltages || []).join() === '120V,208V,240V,480V', 'the voltage asked');
+    want(got.rows.join('|') === 'Electrical 208V////|Condenser Water In/Ball Valve//GaugeOnly/', 'rows');
+    if (ov) applyTemplateVoltageChoice('480V');
+    closeAllPrompts();
+    got.picked = sources.map(x => x.energySource + '/' + x.deviceType).join('|');
+    want(got.picked === 'Electrical 480V/|Condenser Water In/Ball Valve', 'the pick sets the voltage');
+    got.water = [isWaterFamilySource('Condenser Water In'), getTempSuffixFor('Condenser Water In')];
+    want(got.water[0] === true && !got.water[1], 'plain water checks (no - CHW / - Hot)');
+    want(expectsElectricalSource('Condenser Water Pump', 'Condenser Water Pump') && defaultShopFor('Condenser Water Pump', sources) === 'HVAC Shop', 'Electrical expected, HVAC Shop');
+    got.custom = {};
+    for (const name of ['Condenser Water Pump 3', 'CDW Pump 2', 'CW Pump 1', 'Condenser Pump P-4', 'Domestic CW Pump', 'Condenser Water Pump VFD']) {
+      fillFormNoSources('C-479');
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = '** New Equipment Type **';
+      filterTemplateDropdown('');
+      document.getElementById('equipTypeCustom').value = name;
+      await withDialogs({ confirm: true }, async () => { handleCustomEquipTypeChange(); });
+      closeAllPrompts();
+      got.custom[name] = getTemplate();
+    }
+    want(['Condenser Water Pump 3', 'CDW Pump 2', 'CW Pump 1', 'Condenser Pump P-4'].every(n => got.custom[n] === 'Condenser Water Pump'), 'custom names');
+    want(got.custom['Domestic CW Pump'] === 'Standard Pump', 'a domestic CW pump stays Standard Pump');
+    want(got.custom['Condenser Water Pump VFD'] === 'Electrical with Stored Energy', 'its drive stays the drive');
+    const al = appListsSnapshot(APP_BUILD);
+    want(al.equipmentTypes.includes('Condenser Water Pump') && al.templates.includes('Condenser Water Pump') && JSON.stringify(al.typeToTemplates['Condenser Water Pump']) === '["Condenser Water Pump"]', 'app-lists');
+    await resetAppState();
+    const A = mkEntry('Condenser Water Pump 1', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), location: 'MCC-1' }),
+      Object.assign(mkSrc('Condenser Water In'), { sourceId: genUuid(), deviceType: 'Ball Valve', verification: 'GaugeOnly' })] });
+    A.equipType = 'Condenser Water Pump'; A.template = 'Condenser Water Pump';
+    savedEquipment = [A]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    const sheet = [], types = [];
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      const ws = wb.worksheets[0];
+      ws.eachRow(row => {
+        if (String(row.getCell(1).value || '') === 'Tied to Equipment') sheet.push(String(ws.getRow(row.number + 1).getCell(8).value || ''));
+        if (String(row.getCell(1).value || '') === 'Condenser Water Pump 1') types.push(String(row.getCell(6).value || ''));
+      });
+    }
+    got.export = { json: je.template, type: je.equipType, sheet, types, media: (je.sources || []).map(x => x.energySource) };
+    want(je.template === 'Condenser Water Pump' && je.equipType === 'Condenser Water Pump' && sheet.join() === 'Condenser Water Pump' && types.join() === 'Condenser Water Pump', 'export');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // T472 — the template's own lines on the Add row; "+ Other…" is the whole list (build 155)
   async function t472_templateLinesAndOtherList() {
     const N = 'T472 build 155 (wilkins: "If I select an AHU - Steam, CHW, HHW or AHU - HHW template, can the Add energy source also include HHW In/out?" and "Shouldnt other just open another dropdown list?"): the Add row offers the lines a template names but leaves to the tech — AHU - HHW: HHW In/Out; AHU - Steam, CHW, HHW: HHW In/Out and CHW In/Out; Water Heater - Gas: DW In and DHW Out — first, from the first unit (no history needed), then the sources added by hand on the type, never twice; "+ Other…" is the whole Energy Source list: a pick adds the row with that source (the only card open), Custom… adds it with its Custom box, closing it adds nothing; Quick picks off: the plain button';
@@ -10405,18 +10473,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 156 (was build 122\'s): APP_BUILD and the header label say 156, the service worker\'s cache is loto-collector-v7.151, Xcode\'s CURRENT_PROJECT_VERSION is 156 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 157 (was build 122\'s): APP_BUILD and the header label say 157, the service worker\'s cache is loto-collector-v7.152, Xcode\'s CURRENT_PROJECT_VERSION is 157 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 156 && !!label && +label[1] === 156, 'the build');
+    want(APP_BUILD === 157 && !!label && +label[1] === 157, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.151', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.152', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 156;,CURRENT_PROJECT_VERSION = 156;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 157;,CURRENT_PROJECT_VERSION = 157;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -17040,7 +17108,7 @@
     t468_energyRecoveryWaterReplacesGlycolEr, t469_atsFeedsArePanels,
     t470_quickPicksOnTheCard, t471_quickAddAndOneCardOpen, t472_templateLinesAndOtherList,
     t473_mainPhotoArrowDialog, t474_mainPhotoArrowExport, t475_mainPhotoArrowLifecycle, t476_mainPhotoArrowGeometry, t477_dockLevelerTypeAndTemplate,
-    t478_chipCheckFollowsEveryPick];
+    t478_chipCheckFollowsEveryPick, t479_condenserWaterPumpTypeAndTemplate];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
