@@ -1342,6 +1342,9 @@ const DATA = {
     "Drain Only - Hot","Drain Only - CHW","Drain Only",
     "G/Tmp/Drain - Hot","G/Tmp/Drain - CHW",
     "Zero Flow",
+    // loto-web's Mapping Sheet "Visual": "Visually confirm absence of flow through
+    // lines." (build 157, wilkins 2026-11-05: a cooling tower's condenser water)
+    "Visual",
     "SW (On/Off)","SW (Hand/Off/Auto)","SW (H/O/A)",
     "SW (Drive/Off/Bypass)","SW (VFD/Off/Bypass)","SW (Other)",
     // A bypass drive with its own keypad (build 147, wilkins: a Danfoss VLT with
@@ -1862,6 +1865,9 @@ function applySimpleVerifDefaults() {
 // cross-cutting cases like "Controls" being valid on any Fuel Oil source
 // regardless of whether the device is a valve, breaker, or solenoid.
 const SOURCE_EXTRA_VERIFICATIONS = {
+  // build 157: condenser water can be seen to stop (a cooling tower's basin and
+  // spray) — loto-web's "Visual", the check a tower's rows default to
+  'Condenser Water': ['Visual'],
   'Fuel Oil':    ['Controls'],
   'Natural Gas': ['Controls'],
   'Propane':     ['Controls'],
@@ -2218,6 +2224,9 @@ const EQUIPMENT_AUTO_SOURCES = {
     // "At Fan Assembly" since build 118 (wilkins): the row names the fan it blocks
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'At Fan Assembly', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    // build 157: its condenser water valves, as on the template
+    { energySource: 'Condenser Water In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Visual', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condenser Water Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Visual', duplicate: 'No', detail: '', auto: true },
   ],
   'Chemical Pump': [
     { energySource: 'Electrical 120V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
@@ -8456,10 +8465,17 @@ const TEMPLATE_AUTO_SOURCES = {
   // auto-applies and REPLACES the type's standard sources, so it has to carry
   // the disconnect itself (build 91 — it used to leave a Cooling Tower with no
   // electrical isolation point and skip the 120/208/480 prompt). Its Kinetic
-  // row is "At Fan Assembly" since build 118, as on the type.
+  // row is "At Fan Assembly" since build 118, as on the type. Build 157 (wilkins
+  // 2026-11-05: "edit the cooling tower auto-population to also include
+  // visual/flow"): its Condenser Water In and Out valves, Gate Valve (his pick),
+  // checked "Visual" — loto-web's "Visually confirm absence of flow through
+  // lines.", as its Cooling Tower procedure's own "Visually confirm zero flow of
+  // water through tower" step.
   'Cooling Tower': [
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'At Fan Assembly', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condenser Water In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Visual', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condenser Water Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Visual', duplicate: 'No', detail: '', auto: true },
   ],
   // Chiller: no Kinetic (removed at the user's request). Its chilled-water
   // valves as two sources of their own, In and Out (build 151, wilkins

@@ -161,6 +161,7 @@
 //   T477      build 156: the Dock Leveler type and template (Electrical with the voltage asked, Hydraulic, Gravity/Potential)
 //   T478      build 156: a chip tapped in any of a card's four lists is checked at once (Verification kept the old check)
 //   T479      build 157: the Condenser Water Pump type and template (Electrical with the voltage asked, Condenser Water In and Out; HVAC Shop; custom names, never "CW Pump")
+//   T480      build 157: a Cooling Tower fills Condenser Water In and Out (Gate Valve, "Visual"); Visual offered on condenser water rows
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8257,6 +8258,70 @@
     got.export = { json: je.template, type: je.equipType, sheet, types, media: (je.sources || []).map(x => x.energySource) };
     want(je.template === 'Condenser Water Pump' && je.equipType === 'Condenser Water Pump' && sheet.join() === 'Condenser Water Pump' && types.join() === 'Condenser Water Pump', 'export');
     want(got.export.media.join() === 'Electrical 480V,Condenser Water In,Condenser Water Out', 'export media');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T480 — a Cooling Tower's condenser water, checked "Visual" (build 157)
+  // wilkins, 2026-11-05: "edit the cooling tower auto-population to also include
+  // visual/flow (whichever one is correct). I didnt see it there today."
+  async function t480_coolingTowerCondenserWaterVisual() {
+    const N = 'T480 build 157: a Cooling Tower (type or template) fills Kinetic, Electrical and NEW Condenser Water In and Condenser Water Out — Gate Valve, Qty 1, verification "Visual" (loto-web\'s "Visually confirm absence of flow through lines.") — the voltage still asked; Visual is offered on condenser water rows (and on no other water row), the card shows it selected also with the simplified checks on, it is in DATA.verificationTypes and app-lists.json, and the export carries "Visual" in entries.json and on the sheet';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    let simpleWas = null;
+    try { simpleWas = localStorage.getItem('loto_simple_verification'); localStorage.setItem('loto_simple_verification', '1'); } catch (e) {}
+    try {
+      fillFormNoSources('CT-480');
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = 'Cooling Tower';
+      await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+      got.voltageAsked = !!document.getElementById('templateVoltageOverlay');
+      if (got.voltageAsked) applyTemplateVoltageChoice('480V');
+      closeAllPrompts();
+      got.template = getTemplate();
+      got.rows = sources.map(x => [x.energySource, x.deviceType, x.location, x.verification, x.quantity].join('/'));
+      want(got.template === 'Cooling Tower', 'the template');
+      want(got.voltageAsked, 'the voltage asked');
+      want(got.rows.join('|') === 'Kinetic/Rotating/At Fan Assembly/Rotating/1|Electrical 480V/Disconnect//Controls/1|Condenser Water In/Gate Valve//Visual/1|Condenser Water Out/Gate Valve//Visual/1', 'rows');
+      const typeRows = EQUIPMENT_AUTO_SOURCES['Cooling Tower'].map(x => x.energySource + '/' + x.deviceType + '/' + x.verification).join('|');
+      const tmplRows = TEMPLATE_AUTO_SOURCES['Cooling Tower'].map(x => x.energySource + '/' + x.deviceType + '/' + x.verification).join('|');
+      want(typeRows === tmplRows, 'the type and the template agree');
+      const sel = i => document.getElementById('src_ver_' + i);
+      got.cards = [2, 3].map(i => { expandSource(i); return sel(i) ? sel(i).value + ':' + [...sel(i).options].map(o => o.value).includes('Visual') : 'no select'; });
+      want(got.cards.join() === 'Visual:true,Visual:true', 'the card shows Visual selected');
+      got.offered = {
+        cwGate: getFilteredVerifications('Gate Valve', 'Condenser Water In').includes('Visual'),
+        cwButterfly: getFilteredVerifications('Butterfly Valve', 'Condenser Water Out').includes('Visual'),
+        cwInOut: getFilteredVerifications('Ball Valve', 'Condenser Water In/Out').includes('Visual'),
+        chw: getFilteredVerifications('Gate Valve', 'CHW In').includes('Visual'),
+        hhw: getFilteredVerifications('Gate Valve', 'HHW In').includes('Visual'),
+        elec: getFilteredVerifications('Disconnect', 'Electrical 480V').includes('Visual'),
+      };
+      want(got.offered.cwGate && got.offered.cwButterfly && got.offered.cwInOut && !got.offered.chw && !got.offered.hhw && !got.offered.elec, 'Visual on condenser water rows only');
+      want(DATA.verificationTypes.includes('Visual') && appListsSnapshot(APP_BUILD).verifications.includes('Visual'), 'the lists');
+      await resetAppState();
+      const A = mkEntry('Cooling Tower 1', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Disconnect', verification: 'Controls' }),
+        Object.assign(mkSrc('Condenser Water In'), { sourceId: genUuid(), deviceType: 'Gate Valve', verification: 'Visual' }),
+        Object.assign(mkSrc('Condenser Water Out'), { sourceId: genUuid(), deviceType: 'Gate Valve', verification: 'Visual' })] });
+      A.equipType = 'Cooling Tower'; A.template = 'Cooling Tower';
+      savedEquipment = [A]; saveAll();
+      const { zip, confirms } = await runExport({ confirmResponse: true });
+      if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+      const u = await unzipExport(zip.blob);
+      const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
+      got.json = (je.sources || []).map(x => x.energySource + '/' + x.verification).join('|');
+      const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+      let sheetHasVisual = 0;
+      if (xpath) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        wb.worksheets[0].eachRow(row => row.eachCell(c => { if (String(c.value || '') === 'Visual') sheetHasVisual++; }));
+      }
+      got.sheetVisual = sheetHasVisual;
+      want(got.json === 'Electrical 480V/Controls|Condenser Water In/Visual|Condenser Water Out/Visual' && sheetHasVisual === 2, 'export');
+    } finally {
+      try { if (simpleWas === null) localStorage.removeItem('loto_simple_verification'); else localStorage.setItem('loto_simple_verification', simpleWas); } catch (e) {}
+    }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -17110,7 +17175,7 @@
     t468_energyRecoveryWaterReplacesGlycolEr, t469_atsFeedsArePanels,
     t470_quickPicksOnTheCard, t471_quickAddAndOneCardOpen, t472_templateLinesAndOtherList,
     t473_mainPhotoArrowDialog, t474_mainPhotoArrowExport, t475_mainPhotoArrowLifecycle, t476_mainPhotoArrowGeometry, t477_dockLevelerTypeAndTemplate,
-    t478_chipCheckFollowsEveryPick, t479_condenserWaterPumpTypeAndTemplate];
+    t478_chipCheckFollowsEveryPick, t479_condenserWaterPumpTypeAndTemplate, t480_coolingTowerCondenserWaterVisual];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
