@@ -552,7 +552,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b158</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b159</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1272,7 +1272,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 158;
+const APP_BUILD = 159;
 
 // ============================================================================
 // DATA
@@ -3243,7 +3243,7 @@ const REFRIGERANT_TEMPLATES = ['Chiller', 'Condensing Unit', 'Mini Split', 'Refr
 const TEMPLATE_DEFAULT_SHOP = (() => {
   const by = {
     'HVAC Shop': ['AHU - Steam', 'AHU - HHW', 'AHU - Geothermal', 'AHU - Steam, CHW, HHW', 'Air Dryer',
-      'Chilled Water Pump', 'Condenser Water Pump', 'Heating Hot Water Pump', 'Feedwater Pump', 'Chiller', 'Condensing Unit', 'Mini Split',
+      'Chilled Water Pump', 'Condenser Water Pump', 'Heating Hot Water Pump', 'Chiller', 'Condensing Unit', 'Mini Split',
       'Cooling Tower', 'Exhaust Fan', 'Emergency Generator', 'Heat Exchanger - Steam', 'Heat Exchanger - CHW/Glycol',
       'Unit Heater - Steam', 'Unit Heater - HHW', 'Unit Heater - Natural Gas', 'Refrigerator', 'Humidifier',
       'Steam PRV Station'],
@@ -3253,7 +3253,8 @@ const TEMPLATE_DEFAULT_SHOP = (() => {
       'Fire Pump', 'Condensate Return Unit', 'Condensate Return Unit - Steam', 'Boiler - Natural Gas - HHW',
       'Boiler - Natural Gas - STM', 'Overhead Door', 'Dock Leveler', 'Water Heater - Steam', 'Water Heater - Gas',
       'Water Heater - Electric'],
-    'Boiler Plant': ['Chemical Pump', 'DA Tank'],
+    // Feedwater Pump: build 159 (wilkins: "Default should be Boiler Plant"; loto-web's own template)
+    'Boiler Plant': ['Chemical Pump', 'DA Tank', 'Feedwater Pump'],
     'Electric Shop': ['ATS - Generic', 'Standard Electrical', 'Switchgear', 'Electrical with Stored Energy', 'Day Tank'],
     'Elevator Contractor': ['Elevator - Traction', 'Elevator - Hydraulic']
   };
@@ -8449,11 +8450,20 @@ const TEMPLATE_AUTO_SOURCES = {
   'Fire Pump': [
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
-  // Mirrors Heating Hot Water Pump (Electrical, voltage is prompted; no Kinetic since build 107)
-  // and adds a Feedwater In source pre-configured with Gate Valve / GaugeOnly - Hot.
+  // Feedwater Pump (build 159, wilkins 2026-11-06, through loto-web's
+  // "LOTO_Web_Feedwater Pump Template Check" chat, which gives it its own
+  // template): "Template should defaut to electrical, disconnect, and Feedwater
+  // In and Feedwater Out, both default as gate valve devices". The Electrical's
+  // voltage is still asked (208V / 480V) and its device is the Disconnect; the
+  // suction and the discharge valve are each their own row, checked as the hot
+  // water they are: Feedwater In GaugeOnly - Hot (as it always was), Feedwater
+  // Out Gauge/Drain - Hot (wilkins' pick) — an app default drain (_drainDefault,
+  // noteDefaultDrain), so a "None found" drain answer takes it back. No Kinetic,
+  // as every pump template since build 107.
   'Feedwater Pump': [
-    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Feedwater In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Feedwater Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Gauge/Drain - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   // Glycol Pump: standard pump shape (no Kinetic since build 107) but with the Electrical pre-set to
   // Disconnect / Controls so the user doesn't have to fill those each time.
@@ -8697,6 +8707,11 @@ const CUSTOM_EQUIP_KEYWORD_TEMPLATE = [
   { keyword: 'switchgear', template: 'Switchgear' },
   { keyword: 'overhead door', template: 'Overhead Door' },
   { keyword: 'dock leveler', template: 'Dock Leveler' },   // build 156
+  // build 159: loto-web's own name words for its Feedwater Pump template
+  // (wilkins, 2026-11-06). "Chemical feed pump" is matched above.
+  { keyword: 'feedwater pump', template: 'Feedwater Pump' },
+  { keyword: 'feed water pump', template: 'Feedwater Pump' },
+  { keyword: 'boiler feed pump', template: 'Feedwater Pump' },
   // build 157: loto-web's own name words for its Condenser Water Pump template.
   // Never "cw pump": loto-web reads CW as chilled water (wilkins, 2026-11-05).
   { keyword: 'condenser water pump', template: 'Condenser Water Pump' },
@@ -8723,7 +8738,10 @@ function handleCustomEquipTypeChange() {
   if (!name) return;
   const tmplSel = document.getElementById('equipTemplate');
   if (tmplSel.value) return; // respect a template the user already chose
-  const lower = name.toLowerCase();
+  // Runs of spaces, hyphens and underscores read as one space (build 159 review):
+  // "Boiler-Feed Pump" and "Feed_Water Pump" are the keywords' "boiler feed pump"
+  // and "feed water pump"; "VFD-3" still holds "vfd".
+  const lower = name.toLowerCase().replace(/[\s_-]+/g, ' ');
   const match = CUSTOM_EQUIP_KEYWORD_TEMPLATE.find(e => nameHasWord(lower, e.keyword) && !(e.unless && lower.includes(e.unless)));
   if (match && [...tmplSel.options].some(o => o.value === match.template)) {
     pickTemplate(match.template); // applies the template's auto-sources + diagram
