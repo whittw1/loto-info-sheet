@@ -160,7 +160,7 @@
 //             (entries.json mainPhotoArrow, the name row's column 14, the CSV's last column), saved / copied / retaken, its geometry
 //   T477      build 156: the Dock Leveler type and template (Electrical with the voltage asked, Hydraulic, Gravity/Potential)
 //   T478      build 156: a chip tapped in any of a card's four lists is checked at once (Verification kept the old check)
-//   T479      build 157: the Condenser Water Pump type and template (Electrical with the voltage asked, Condenser Water In; HVAC Shop; custom names)
+//   T479      build 157: the Condenser Water Pump type and template (Electrical with the voltage asked, Condenser Water In and Out; HVAC Shop; custom names, never "CW Pump")
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8195,7 +8195,7 @@
   // wilkins, 2026-11-05: "Can you make 'Condenser water pump' a template drop
   // down?" — key agreed with loto-web's chat; HVAC Shop (wilkins).
   async function t479_condenserWaterPumpTypeAndTemplate() {
-    const N = 'T479 build 157: the new Condenser Water Pump type picks the Condenser Water Pump template (the only one) and asks the voltage (120V / 208V / 240V / 480V); two rows — Electrical, Condenser Water In / Ball Valve / GaugeOnly (plain water checks, no "- CHW") — and the pick sets the Electrical\'s voltage; Electrical expected; HVAC Shop by default; custom "Condenser Water Pump 3", "CDW Pump 2", "CW Pump 1", "Condenser Pump P-4" get it, "Domestic CW Pump" and "Condenser Water Pump VFD" do not; app-lists.json lists it; the export says "Condenser Water Pump" as template and type';
+    const N = 'T479 build 157: the new Condenser Water Pump type picks the Condenser Water Pump template (the only one) and asks the voltage (120V / 208V / 240V / 480V); three rows (wilkins: "E + In + Out") — Electrical, Condenser Water In and Condenser Water Out / Ball Valve / GaugeOnly (plain water checks, no "- CHW") — and the pick sets the Electrical\'s voltage; Electrical expected; HVAC Shop by default; custom "Condenser Water Pump 3", "CDW Pump 2", "Cooling Tower Pump 1", "Condenser Pump P-4" get it, "CW Pump 1" (loto-web reads CW as chilled water) and "Condenser Water Pump VFD" do not; app-lists.json lists it; the export says "Condenser Water Pump" as template and type';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -8210,16 +8210,16 @@
     got.rows = sources.map(x => [x.energySource, x.deviceType, x.location, x.verification, x.noPhoto ? 'noPhoto' : ''].join('/'));
     want(got.template === 'Condenser Water Pump' && got.offered.join() === 'Condenser Water Pump', 'type picks the template');
     want((got.voltages || []).join() === '120V,208V,240V,480V', 'the voltage asked');
-    want(got.rows.join('|') === 'Electrical 208V////|Condenser Water In/Ball Valve//GaugeOnly/', 'rows');
+    want(got.rows.join('|') === 'Electrical 208V////|Condenser Water In/Ball Valve//GaugeOnly/|Condenser Water Out/Ball Valve//GaugeOnly/', 'rows');
     if (ov) applyTemplateVoltageChoice('480V');
     closeAllPrompts();
     got.picked = sources.map(x => x.energySource + '/' + x.deviceType).join('|');
-    want(got.picked === 'Electrical 480V/|Condenser Water In/Ball Valve', 'the pick sets the voltage');
-    got.water = [isWaterFamilySource('Condenser Water In'), getTempSuffixFor('Condenser Water In')];
-    want(got.water[0] === true && !got.water[1], 'plain water checks (no - CHW / - Hot)');
+    want(got.picked === 'Electrical 480V/|Condenser Water In/Ball Valve|Condenser Water Out/Ball Valve', 'the pick sets the voltage');
+    got.water = ['Condenser Water In', 'Condenser Water Out'].map(e => [isWaterFamilySource(e), getTempSuffixFor(e)]);
+    want(got.water.every(w => w[0] === true && !w[1]), 'plain water checks (no - CHW / - Hot)');
     want(expectsElectricalSource('Condenser Water Pump', 'Condenser Water Pump') && defaultShopFor('Condenser Water Pump', sources) === 'HVAC Shop', 'Electrical expected, HVAC Shop');
     got.custom = {};
-    for (const name of ['Condenser Water Pump 3', 'CDW Pump 2', 'CW Pump 1', 'Condenser Pump P-4', 'Domestic CW Pump', 'Condenser Water Pump VFD']) {
+    for (const name of ['Condenser Water Pump 3', 'CDW Pump 2', 'Cooling Tower Pump 1', 'Condenser Pump P-4', 'CW Pump 1', 'Condenser Water Pump VFD']) {
       fillFormNoSources('C-479');
       document.getElementById('equipTemplate').value = '';
       document.getElementById('equipType').value = '** New Equipment Type **';
@@ -8229,14 +8229,15 @@
       closeAllPrompts();
       got.custom[name] = getTemplate();
     }
-    want(['Condenser Water Pump 3', 'CDW Pump 2', 'CW Pump 1', 'Condenser Pump P-4'].every(n => got.custom[n] === 'Condenser Water Pump'), 'custom names');
-    want(got.custom['Domestic CW Pump'] === 'Standard Pump', 'a domestic CW pump stays Standard Pump');
+    want(['Condenser Water Pump 3', 'CDW Pump 2', 'Cooling Tower Pump 1', 'Condenser Pump P-4'].every(n => got.custom[n] === 'Condenser Water Pump'), 'custom names');
+    want(got.custom['CW Pump 1'] === 'Standard Pump', 'a "CW Pump" stays Standard Pump (loto-web reads CW as chilled water)');
     want(got.custom['Condenser Water Pump VFD'] === 'Electrical with Stored Energy', 'its drive stays the drive');
     const al = appListsSnapshot(APP_BUILD);
     want(al.equipmentTypes.includes('Condenser Water Pump') && al.templates.includes('Condenser Water Pump') && JSON.stringify(al.typeToTemplates['Condenser Water Pump']) === '["Condenser Water Pump"]', 'app-lists');
     await resetAppState();
     const A = mkEntry('Condenser Water Pump 1', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), location: 'MCC-1' }),
-      Object.assign(mkSrc('Condenser Water In'), { sourceId: genUuid(), deviceType: 'Ball Valve', verification: 'GaugeOnly' })] });
+      Object.assign(mkSrc('Condenser Water In'), { sourceId: genUuid(), deviceType: 'Ball Valve', verification: 'GaugeOnly' }),
+      Object.assign(mkSrc('Condenser Water Out'), { sourceId: genUuid(), deviceType: 'Ball Valve', verification: 'GaugeOnly' })] });
     A.equipType = 'Condenser Water Pump'; A.template = 'Condenser Water Pump';
     savedEquipment = [A]; saveAll();
     const { zip, confirms } = await runExport({ confirmResponse: true });
@@ -8255,6 +8256,7 @@
     }
     got.export = { json: je.template, type: je.equipType, sheet, types, media: (je.sources || []).map(x => x.energySource) };
     want(je.template === 'Condenser Water Pump' && je.equipType === 'Condenser Water Pump' && sheet.join() === 'Condenser Water Pump' && types.join() === 'Condenser Water Pump', 'export');
+    want(got.export.media.join() === 'Electrical 480V,Condenser Water In,Condenser Water Out', 'export media');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 

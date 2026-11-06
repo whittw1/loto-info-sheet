@@ -8405,13 +8405,15 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'CHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly - CHW', duplicate: 'No', detail: '', auto: true },
   ],
-  // Condenser Water Pump (build 157): the Chilled Water Pump shape with condenser
-  // water — Electrical (the voltage is asked) and its Condenser Water In valve.
-  // Condenser water is on the warm tower side, so the plain verifications (no
-  // "- CHW"). No Kinetic, as every pump template since build 107.
+  // Condenser Water Pump (build 157): wilkins' rows, through loto-web's chat
+  // (2026-11-05: "E + In + Out") — Electrical (the voltage is asked) and both the
+  // suction and the discharge valve, each its own row. Condenser water is on the
+  // warm tower side, so the plain verifications (no "- CHW"). No Kinetic, as
+  // every pump template since build 107.
   'Condenser Water Pump': [
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Condenser Water In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condenser Water Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly', duplicate: 'No', detail: '', auto: true },
   ],
   'Heating Hot Water Pump': [
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
@@ -8673,11 +8675,12 @@ const CUSTOM_EQUIP_KEYWORD_TEMPLATE = [
   { keyword: 'switchgear', template: 'Switchgear' },
   { keyword: 'overhead door', template: 'Overhead Door' },
   { keyword: 'dock leveler', template: 'Dock Leveler' },   // build 156
-  // build 157: loto-web's own aliases ("condenser water pump", "cdw pump", "cw pump") + "condenser pump"
+  // build 157: loto-web's own name words for its Condenser Water Pump template.
+  // Never "cw pump": loto-web reads CW as chilled water (wilkins, 2026-11-05).
   { keyword: 'condenser water pump', template: 'Condenser Water Pump' },
   { keyword: 'condenser pump', template: 'Condenser Water Pump' },
   { keyword: 'cdw pump', template: 'Condenser Water Pump' },
-  { keyword: 'cw pump', unless: 'domestic', template: 'Condenser Water Pump' },   // a domestic CW pump is cold water
+  { keyword: 'cooling tower pump', template: 'Condenser Water Pump' },
   { keyword: 'pump', template: 'Standard Pump' },
 ];
 
