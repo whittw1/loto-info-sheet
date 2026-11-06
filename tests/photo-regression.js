@@ -164,6 +164,7 @@
 //   T480      build 157: a Cooling Tower fills Condenser Water In and Out (Gate Valve, "Visual"); Visual offered on condenser water rows
 //   T481      build 158: one Equipment ID/Name on two units in one room asks before export (Fix stops it, Export anyway goes on); SAME NAME badge
 //   T482      build 158: the open form counts as it stands; a unit outside this export counts against one in it
+//   T483      build 159: the Feedwater Pump's rows (Electrical / Disconnect; Feedwater In / Gate Valve / GaugeOnly - Hot; Feedwater Out / Gate Valve / Gauge/Drain - Hot), its Boiler Plant shop, loto-web's name words
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8455,6 +8456,120 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T483 — the Feedwater Pump's rows and its Boiler Plant shop (build 159)
+  // wilkins, 2026-11-06 (loto-web's "LOTO_Web_Feedwater Pump Template Check"
+  // chat, which gives it its own template): "Default should be Boiler Plant,
+  // Template should defaut to electrical, disconnect, and Feedwater In and
+  // Feedwater Out, both default as gate valve devices".
+  async function t483_feedwaterPumpRowsAndBoilerPlant() {
+    const N = 'T483 build 159: the Feedwater Pump type picks the Feedwater Pump template (the only one) and asks the voltage (208V / 480V); three rows — Electrical / Disconnect, Feedwater In / Gate Valve / GaugeOnly - Hot and NEW Feedwater Out / Gate Valve / Gauge/Drain - Hot (wilkins\' pick), Qty 1 — and the pick sets the voltage but keeps the Disconnect; the same rows when the template is picked by itself (the simplified checks, on by default, fill the Disconnect\'s check with Controls); the cards show Disconnect and Gate Valve; Electrical expected; the Shop hint is "Default: Boiler Plant" (was HVAC Shop); custom "Feedwater Pump 2", "Feed Water Pump 3", "Boiler Feed Pump 1" get it (loto-web\'s words), "Chemical Feed Pump 1", "Feedwater Pump VFD" and "Booster Pump 1" keep theirs; a unit saved before build 159 (no Feedwater Out) opens with no row added; the export says "Feedwater Pump" as template and type and carries both valves';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const rows = () => sources.map(x => [x.energySource, x.deviceType, x.quantity, x.verification, x.auto ? 'auto' : ''].join('/'));
+    // the simplified checks (on by default) fill a blank Electrical check with Controls
+    const elecCheck = simpleVerifEnabled() ? 'Controls' : '';
+    const want3 = 'Electrical 208V/Disconnect/1/' + elecCheck + '/auto|Feedwater In/Gate Valve/1/GaugeOnly - Hot/auto|Feedwater Out/Gate Valve/1/Gauge/Drain - Hot/auto';
+    // 1. by the type
+    fillFormNoSources('FWP-483');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'Feedwater Pump';
+    await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+    const ov = document.getElementById('templateVoltageOverlay');
+    got.voltages = ov ? Array.from(ov.querySelectorAll('button.btn-primary')).map(b => b.textContent.trim()) : null;
+    got.template = getTemplate();
+    got.offered = [...document.getElementById('equipTemplate').options].map(o => o.value).filter(v => v && v !== '** New Template **');
+    got.rows = rows();
+    want(got.template === 'Feedwater Pump' && got.offered.join() === 'Feedwater Pump', 'type picks the template');
+    want((got.voltages || []).join() === '208V,480V', 'the voltage asked');
+    want(got.rows.join('|') === want3, 'rows');
+    if (ov) applyTemplateVoltageChoice('480V');
+    closeAllPrompts();
+    got.picked = sources.map(x => x.energySource + '/' + x.deviceType).join('|');
+    want(got.picked === 'Electrical 480V/Disconnect|Feedwater In/Gate Valve|Feedwater Out/Gate Valve', 'the pick sets the voltage, keeps the Disconnect');
+    // the cards show each row's device (the water checks are tick boxes while the simplified checks are on)
+    got.cards = [0, 1, 2].map(i => {
+      expandSource(i);
+      const d = document.getElementById('src_device_' + i);
+      return d ? d.value : 'no device select';
+    });
+    want(got.cards.join() === 'Disconnect,Gate Valve,Gate Valve', 'the cards');
+    got.hot = ['Feedwater In', 'Feedwater Out'].map(e => [isWaterFamilySource(e), getTempSuffixFor(e)].join(':'));
+    want(got.hot.join() === 'true:hot,true:hot', 'hot water checks');
+    want(getFilteredVerifications('Gate Valve', 'Feedwater Out').includes('Gauge/Drain - Hot') && getFilteredVerifications('Gate Valve', 'Feedwater In').includes('GaugeOnly - Hot')
+      && getFilteredDevices('Feedwater Out').includes('Gate Valve') && getFilteredDevices('Electrical 480V').includes('Disconnect'), 'Gate Valve and the hot checks offered, Disconnect on the Electrical');
+    // simplified checks: Out is the Gauge and Drain ticks of a hot line, In the Gauge tick
+    got.parsed = ['GaugeOnly - Hot', 'Gauge/Drain - Hot'].map(v => { const p = parseWaterVerification(v); return [!!p.gauge, !!p.drain, !!p.temp].join(''); });
+    want(got.parsed.join() === 'truefalsefalse,truetruefalse', 'the simplified ticks');
+    want(expectsElectricalSource('Feedwater Pump', 'Feedwater Pump'), 'Electrical expected');
+    got.shop = defaultShopFor('Feedwater Pump', sources);
+    renderUnitQuestions(true);
+    const shopSel = document.getElementById('uq_shop');
+    got.shopHint = shopSel && shopSel.options[0] ? shopSel.options[0].textContent.trim() : null;
+    want(got.shop === 'Boiler Plant', 'Boiler Plant');
+    want(got.shopHint === null || got.shopHint === 'Default: Boiler Plant', 'the Shop hint');
+    // custom names: loto-web's own words for its template (wilkins 2026-11-06)
+    got.custom = {};
+    for (const name of ['Feedwater Pump 2', 'Feed Water Pump 3', 'Boiler Feed Pump 1', 'Chemical Feed Pump 1', 'Feedwater Pump VFD', 'Booster Pump 1']) {
+      fillFormNoSources('C-483');
+      document.getElementById('equipTemplate').value = '';
+      document.getElementById('equipType').value = '** New Equipment Type **';
+      filterTemplateDropdown('');
+      document.getElementById('equipTypeCustom').value = name;
+      await withDialogs({ confirm: true }, async () => { handleCustomEquipTypeChange(); });
+      closeAllPrompts();
+      got.custom[name] = getTemplate();
+    }
+    want(['Feedwater Pump 2', 'Feed Water Pump 3', 'Boiler Feed Pump 1'].every(n => got.custom[n] === 'Feedwater Pump'), 'custom names');
+    want(got.custom['Chemical Feed Pump 1'] === 'Chemical Pump' && got.custom['Feedwater Pump VFD'] === 'Electrical with Stored Energy' && got.custom['Booster Pump 1'] === 'Standard Pump', 'other pumps and the drive keep theirs');
+    // 2. the template picked by itself
+    fillFormNoSources('FWP-483b');
+    document.getElementById('equipType').value = '';
+    filterTemplateDropdown('');
+    document.getElementById('equipTemplate').value = 'Feedwater Pump';
+    await withDialogs({ confirm: true }, async () => { handleTemplateChange(); });
+    got.byTemplate = rows().join('|');
+    closeAllPrompts();
+    want(got.byTemplate === want3, 'the template by itself');
+    // 3. a unit saved before build 159 opens as it was saved
+    await resetAppState();
+    const old = mkEntry('Feedwater Pump 7', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), location: 'MCC-2' }),
+      Object.assign(mkSrc('Feedwater In'), { sourceId: genUuid(), deviceType: 'Gate Valve', verification: 'GaugeOnly - Hot' })] });
+    old.equipType = 'Feedwater Pump'; old.template = 'Feedwater Pump';
+    savedEquipment = [old]; saveAll();
+    await withDialogs({ confirm: true }, async () => { editSaved(0); });
+    closeAllPrompts();
+    got.oldUnit = sources.map(x => x.energySource + '/' + x.deviceType).join('|');
+    want(got.oldUnit === old.sources.map(x => x.energySource + '/' + x.deviceType).join('|') && sources.length === 2, 'an older unit is not changed');
+    // 4. the export
+    await resetAppState();
+    const A = mkEntry('Feedwater Pump 1', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Disconnect', location: 'MCC-1', verification: 'Controls' }),
+      Object.assign(mkSrc('Feedwater In'), { sourceId: genUuid(), deviceType: 'Gate Valve', verification: 'GaugeOnly - Hot' }),
+      Object.assign(mkSrc('Feedwater Out'), { sourceId: genUuid(), deviceType: 'Gate Valve', verification: 'Gauge/Drain - Hot' })] });
+    A.equipType = 'Feedwater Pump'; A.template = 'Feedwater Pump';
+    savedEquipment = [A]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    const sheet = [], types = [], media = [];
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      const ws = wb.worksheets[0];
+      ws.eachRow(row => {
+        if (String(row.getCell(1).value || '') === 'Tied to Equipment') sheet.push(String(ws.getRow(row.number + 1).getCell(8).value || ''));
+        if (String(row.getCell(1).value || '') === 'Feedwater Pump 1') types.push(String(row.getCell(6).value || ''));
+        row.eachCell(c => { if (/^Feedwater (In|Out)$/.test(String(c.value || ''))) media.push(String(c.value)); });
+      });
+    }
+    got.export = { json: je.template, type: je.equipType, sheet, types, media, src: (je.sources || []).map(x => x.energySource + '/' + x.deviceType + '/' + x.verification) };
+    want(je.template === 'Feedwater Pump' && je.equipType === 'Feedwater Pump' && sheet.join() === 'Feedwater Pump' && types.join() === 'Feedwater Pump', 'export');
+    want(got.export.src.join('|') === 'Electrical 480V/Disconnect/Controls|Feedwater In/Gate Valve/GaugeOnly - Hot|Feedwater Out/Gate Valve/Gauge/Drain - Hot', 'export sources');
+    want(media.join() === 'Feedwater In,Feedwater Out', 'the sheet names both valves');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // T472 — the template's own lines on the Add row; "+ Other…" is the whole list (build 155)
   async function t472_templateLinesAndOtherList() {
     const N = 'T472 build 155 (wilkins: "If I select an AHU - Steam, CHW, HHW or AHU - HHW template, can the Add energy source also include HHW In/out?" and "Shouldnt other just open another dropdown list?"): the Add row offers the lines a template names but leaves to the tech — AHU - HHW: HHW In/Out; AHU - Steam, CHW, HHW: HHW In/Out and CHW In/Out; Water Heater - Gas: DW In and DHW Out — first, from the first unit (no history needed), then the sources added by hand on the type, never twice; "+ Other…" is the whole Energy Source list: a pick adds the row with that source (the only card open), Custom… adds it with its Custom box, closing it adds nothing; Quick picks off: the plain button';
@@ -10670,18 +10785,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 158 (was build 122\'s): APP_BUILD and the header label say 158, the service worker\'s cache is loto-collector-v7.153, Xcode\'s CURRENT_PROJECT_VERSION is 158 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 159 (was build 122\'s): APP_BUILD and the header label say 159, the service worker\'s cache is loto-collector-v7.154, Xcode\'s CURRENT_PROJECT_VERSION is 159 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 158 && !!label && +label[1] === 158, 'the build');
+    want(APP_BUILD === 159 && !!label && +label[1] === 159, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.153', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.154', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 158;,CURRENT_PROJECT_VERSION = 158;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 159;,CURRENT_PROJECT_VERSION = 159;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -17306,7 +17421,7 @@
     t470_quickPicksOnTheCard, t471_quickAddAndOneCardOpen, t472_templateLinesAndOtherList,
     t473_mainPhotoArrowDialog, t474_mainPhotoArrowExport, t475_mainPhotoArrowLifecycle, t476_mainPhotoArrowGeometry, t477_dockLevelerTypeAndTemplate,
     t478_chipCheckFollowsEveryPick, t479_condenserWaterPumpTypeAndTemplate, t480_coolingTowerCondenserWaterVisual,
-    t481_sameNameSameRoomAsksBeforeExport, t482_sameNameFormAndEarlierUnits];
+    t481_sameNameSameRoomAsksBeforeExport, t482_sameNameFormAndEarlierUnits, t483_feedwaterPumpRowsAndBoilerPlant];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
