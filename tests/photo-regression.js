@@ -166,6 +166,7 @@
 //   T482      build 158: the open form counts as it stands; a unit outside this export counts against one in it
 //   T483      build 159: the Feedwater Pump's rows (Electrical / Disconnect; Feedwater In / Gate Valve / GaugeOnly - Hot; Feedwater Out / Gate Valve / Gauge/Drain - Hot), its Boiler Plant shop, loto-web's name words
 //   T484      build 160: Location's Custom… (a damper row's Other…) is always a chip beside More…; a tap opens its box
+//   T485      build 161: Chemical In / Chemical Out rows offer "Visual" (loto-web's "Visually confirm absence of flow through lines.") on every chemical device; a chip on the card; exported as is
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8720,6 +8721,74 @@
     });
   }
 
+  // T485 — Chemical In / Chemical Out offer "Visual" (build 161)
+  // wilkins, 2026-11-06: "I need for the verification list for chemical in or
+  // chemical out to also be Visual or flow, whatever is appropriate for LOTO web"
+  async function t485_chemicalLinesOfferVisual() {
+    const N = 'T485 build 161: Chemical In and Chemical Out offer "Visual" (loto-web\'s "Visually confirm absence of flow through lines.", the check its boiler drafts use on Chemical In) on every chemical device (Ball, Gate, Butterfly, Quick Disconnect) beside the device\'s own Gauge/Drain, GaugeOnly and Drain Only; not "Zero Flow" (loto-web\'s "Flow", a whole-unit Section 3 step); no other new row gets Visual (HHW, CHW, steam, Natural Gas, Electrical); an open Chemical In card shows a Visual chip and the list entry, a tap checks it; the export carries "Visual" in entries.json and on the sheet';
+    await resetAppState();
+    await withQuickPicksSetting(async () => {
+      const fails = [], got = {};
+      const want = (ok, what) => { if (!ok) fails.push(what); };
+      // 1. the list, by device and source
+      const devs = ['Ball Valve', 'Gate Valve', 'Butterfly Valve', 'Quick Disconnect'];
+      got.chem = ['Chemical In', 'Chemical Out'].map(es => es + ':' + devs.map(d => {
+        const v = getFilteredVerifications(d, es);
+        return d + '=' + v.includes('Visual') + '/' + v.includes('Zero Flow');
+      }).join(','));
+      want(got.chem.every(line => !/=false\//.test(line) && !/\/true/.test(line)), 'Visual (and not Zero Flow) on every chemical device: ' + got.chem.join(' '));
+      const ball = getFilteredVerifications('Ball Valve', 'Chemical In');
+      got.ballList = ball.join(',');
+      want(['Gauge/Drain', 'GaugeOnly', 'Drain Only'].every(v => ball.includes(v)), 'the device\'s own checks kept: ' + got.ballList);
+      got.others = {
+        hhw: getFilteredVerifications('Ball Valve', 'HHW In').includes('Visual'),
+        chw: getFilteredVerifications('Ball Valve', 'CHW Out').includes('Visual'),
+        steam: getFilteredVerifications('Gate Valve', 'LPS 10 PSI').includes('Visual'),
+        gas: getFilteredVerifications('Ball Valve', 'Natural Gas').includes('Visual'),
+        elec: getFilteredVerifications('Disconnect', 'Electrical 480V').includes('Visual'),
+        cw: getFilteredVerifications('Gate Valve', 'Condenser Water In').includes('Visual'),
+      };
+      want(!got.others.hhw && !got.others.chw && !got.others.steam && !got.others.gas && !got.others.elec && got.others.cw, 'Visual nowhere new but chemical (condenser water keeps it): ' + JSON.stringify(got.others));
+      // 2. an open Chemical In card: the chip and the list entry; a tap checks it
+      fillFormNoSources('CFP-485');
+      document.getElementById('equipType').value = 'Chemical Feed Pump';
+      sources.push(Object.assign(mkSrc('Chemical In'), { deviceType: 'Ball Valve', location: 'Front of Equipment', verification: '', collapsed: false }));
+      renderSources();
+      const sel = document.getElementById('src_ver_0');
+      got.listHas = !!sel && [...sel.options].some(o => o.value === 'Visual');
+      want(got.listHas, 'the card\'s list has Visual');
+      let chip = [...document.querySelectorAll('#qp_verification_0 .qp-pick')].find(b => b.dataset.v === 'Visual');
+      got.chip = chip ? chip.textContent : 'no chip';
+      want(got.chip === 'Visual', 'a Visual chip: ' + got.chip);
+      if (chip) chip.click();
+      await sleep(0);
+      chip = [...document.querySelectorAll('#qp_verification_0 .qp-pick')].find(b => b.dataset.v === 'Visual');
+      got.tapped = [sources[0].verification, chip ? chip.textContent : 'no chip', (document.getElementById('src_ver_0') || {}).value].join('|');
+      want(got.tapped === 'Visual|✓ Visual|Visual', 'the tap checks Visual: ' + got.tapped);
+      // 3. the export
+      await resetAppState();
+      const A = mkEntry('Chemical Feed Pump 1', { sources: [Object.assign(mkSrc('Electrical 120V'), { sourceId: genUuid(), deviceType: 'Plug', verification: 'Controls' }),
+        Object.assign(mkSrc('Chemical In'), { sourceId: genUuid(), deviceType: 'Ball Valve', verification: 'Visual' }),
+        Object.assign(mkSrc('Chemical Out'), { sourceId: genUuid(), deviceType: 'Quick Disconnect', verification: 'Visual' })] });
+      A.equipType = 'Chemical Feed Pump'; A.template = 'Chemical Pump';
+      savedEquipment = [A]; saveAll();
+      const { zip, confirms } = await runExport({ confirmResponse: true });
+      if (!zip) { record(N, false, 'no zip: ' + confirms.join(' | ')); return; }
+      const u = await unzipExport(zip.blob);
+      const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
+      got.json = (je.sources || []).map(x => x.energySource + '/' + x.verification).join('|');
+      const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+      let sheetVisual = 0;
+      if (xpath) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        wb.worksheets[0].eachRow(row => row.eachCell(c => { if (String(c.value || '') === 'Visual') sheetVisual++; }));
+      }
+      got.sheetVisual = sheetVisual;
+      want(got.json === 'Electrical 120V/Controls|Chemical In/Visual|Chemical Out/Visual' && sheetVisual === 2, 'export: ' + got.json + ' sheet ' + sheetVisual);
+      record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+    });
+  }
+
   // T470 / T471 turn Settings → Quick picks off and on: the browser's own setting
   // comes back whatever happens in the test (the build 154 review)
   async function withQuickPicksSetting(fn) {
@@ -10866,18 +10935,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 160 (was build 122\'s): APP_BUILD and the header label say 160, the service worker\'s cache is loto-collector-v7.155, Xcode\'s CURRENT_PROJECT_VERSION is 160 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 161 (was build 122\'s): APP_BUILD and the header label say 161, the service worker\'s cache is loto-collector-v7.156, Xcode\'s CURRENT_PROJECT_VERSION is 161 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 160 && !!label && +label[1] === 160, 'the build');
+    want(APP_BUILD === 161 && !!label && +label[1] === 161, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.155', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.156', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 160;,CURRENT_PROJECT_VERSION = 160;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 161;,CURRENT_PROJECT_VERSION = 161;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -17503,7 +17572,7 @@
     t473_mainPhotoArrowDialog, t474_mainPhotoArrowExport, t475_mainPhotoArrowLifecycle, t476_mainPhotoArrowGeometry, t477_dockLevelerTypeAndTemplate,
     t478_chipCheckFollowsEveryPick, t479_condenserWaterPumpTypeAndTemplate, t480_coolingTowerCondenserWaterVisual,
     t481_sameNameSameRoomAsksBeforeExport, t482_sameNameFormAndEarlierUnits, t483_feedwaterPumpRowsAndBoilerPlant,
-    t484_customLocationIsAlwaysAChip];
+    t484_customLocationIsAlwaysAChip, t485_chemicalLinesOfferVisual];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
