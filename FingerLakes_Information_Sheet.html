@@ -294,6 +294,8 @@ if ('serviceWorker' in navigator) {
   .form-group select:focus, .form-group input:focus {
     outline: none; border-color: var(--accent);
   }
+  /* build 158: the Equipment ID/Name an export stopped on (same name, same room) */
+  .form-group input.same-name-flag { border-color: #e0553a; box-shadow: 0 0 0 3px rgba(224,85,58,0.45); }
 
   .photo-row { display: flex; gap: 12px; margin-top: 12px; }
   .photo-slot { flex: 1; text-align: center; }
@@ -550,7 +552,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b157</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b158</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1270,7 +1272,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 157;
+const APP_BUILD = 158;
 
 // ============================================================================
 // DATA
@@ -2288,7 +2290,11 @@ let _openBaseline = null;   // { entryId, json, hash, last }
 // Delete or the launch's close starts the next unit there (startNextUnit). A
 // blank new-unit form leaves none: the next unit takes the opened unit's place.
 let _returnPlace = null;
-function beginNewFormSession() { formSession++; _openBaseline = null; }
+function beginNewFormSession() {
+  formSession++; _openBaseline = null;
+  const n = document.getElementById('equipName');   // another unit: no ring from an export of the last one (build 158)
+  if (n) n.classList.remove('same-name-flag');
+}
 const _photoWrites = new Map();   // token → { kind, at }
 let _photoWriteSeq = 0;
 const PHOTO_WRITE_STALE_MS = 60000;   // a write this old is presumed dead — never block forever
@@ -15620,6 +15626,8 @@ function renderSavedPanel() {
   // flagged: export ships only the newest copy; delete the one you don't want.
   const idCounts = {};
   savedEquipment.forEach(e => { if (e && e.id) idCounts[e.id] = (idCounts[e.id] || 0) + 1; });
+  // Build 158: a name another saved unit in the same room has (sameNamePlaceClashes)
+  const clashKeys = sameNamePlaceClashes(unitsOnDevice(null));
   body.innerHTML = visible.map(({ entry, i }) => {
     const photoCount = entry.photos ? Object.keys(entry.photos).filter(k => entry.photos[k] && entry.photos[k].timestamp).length : 0;
     const isEditing = editingEntry === entry;
@@ -15633,10 +15641,11 @@ function renderSavedPanel() {
     // An exhaust fan marked biohazard (build 145)
     const hazard = unitBiohazard(entry);
     const bioBadge = hazard ? html` <span class="biohazard-badge" style="background:#c2410c;color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="${hazard.label}">&#9763; BIOHAZARD</span>` : '';
+    const sameName = clashKeys.has(sameNamePlaceKey(entry, setting)) ? raw(' <span class="same-name-badge" style="background:#9a3412;color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="Another saved unit in this room has the same Equipment ID/Name — most likely a Duplicate whose name was never changed. Rename the copy (Edit); Export asks before it goes.">&#9888; SAME NAME</span>') : '';
     return html`
     <div class="saved-item" style="${isEditing ? 'border:2px solid var(--accent);background:rgba(74,144,217,0.08);' : ''}">
       <div class="saved-item-info">
-        <div class="saved-item-name">${entry.equipName}${isEditing ? raw(' <span style="background:var(--accent);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">EDITING</span>') : ''}${photoSuspect ? raw(' <span style="background:rgba(200,40,40,0.92);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="This entry\'s photo was shared with other equipment in the old photo store — verify it shows THIS unit (Settings → Photo Store Report).">&#9888; PHOTO SUSPECT</span>') : ''}${twinBadge}${officeBadge}${bioBadge}</div>
+        <div class="saved-item-name">${entry.equipName}${isEditing ? raw(' <span style="background:var(--accent);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;">EDITING</span>') : ''}${photoSuspect ? raw(' <span style="background:rgba(200,40,40,0.92);color:white;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px;" title="This entry\'s photo was shared with other equipment in the old photo store — verify it shows THIS unit (Settings → Photo Store Report).">&#9888; PHOTO SUSPECT</span>') : ''}${twinBadge}${sameName}${officeBadge}${bioBadge}</div>
         <div class="saved-item-detail">
           ${entry.equipType || 'No type'} &#183; ${entry.template || 'No template'}
           &#183; ${entry.sources.length} source${entry.sources.length !== 1 ? 's' : ''}
@@ -16975,6 +16984,78 @@ async function reportUnfinishedExport() {
   });
 }
 
+// ============================================================================
+// SAME NAME, SAME ROOM  (build 158)
+// ============================================================================
+// Two units under one Equipment ID/Name in one place — the same facility,
+// building and room — are most likely a Duplicate whose name was never
+// changed (wilkins 2026-11-05: a duplicated unit kept its ID, and loto-web got
+// the equipment twice). The same name in another room is normal: every
+// mechanical room has its "Chilled Water Pump 1". Case doesn't count, nor do
+// spaces, hyphens, underscores and periods between the words ("CHWP-1" =
+// "chwp 1"); "CHWP1" is another name. Export asks; the saved list badges them.
+function sameNameKeyPart(s) { return String(s == null ? '' : s).toLowerCase().replace(/[\s\-_.]+/g, ' ').trim(); }
+function sameNamePlaceKey(e, setting) {
+  const name = sameNameKeyPart(e && e.equipName);
+  if (!name) return '';
+  return [entryHospitalCode(e, setting), sameNameKeyPart(e.equipBuilding), sameNameKeyPart(e.equipRoom), name].join('\u0001');
+}
+// key → the units sharing it, for every key on two units or more. One entry
+// id is one unit: a copy saved twice under it never counts as a second.
+function sameNamePlaceClashes(units) {
+  const setting = getHospitalCode();
+  const byKey = new Map();
+  for (const e of units) {
+    const k = sameNamePlaceKey(e, setting);
+    if (!k) continue;
+    let g = byKey.get(k);
+    if (!g) byKey.set(k, g = []);
+    if (!g.some(x => x === e || sameEntryId(x.id, e.id))) g.push(e);
+  }
+  for (const [k, g] of byKey) if (g.length < 2) byKey.delete(k);
+  return byKey;
+}
+// Every unit on this device once, as it stands now: the open form (`formEntry`,
+// a snapshot) in place of its saved copy, and the newest copy of a unit saved twice.
+function unitsOnDevice(formEntry) {
+  const newest = new Map(), out = [];
+  const add = (e) => {
+    if (!e) return;
+    if (!e.id) { out.push(e); return; }
+    const k = String(e.id), cur = newest.get(k);
+    if (!cur || entryRecency(e).localeCompare(entryRecency(cur)) > 0) newest.set(k, e);
+  };
+  savedEquipment.forEach(e => { if (!(formEntry && sameEntryId(e && e.id, formEntry.id))) add(e); });
+  if (formEntry) { if (formEntry.id) newest.set(String(formEntry.id), formEntry); else out.push(formEntry); }
+  return out.concat([...newest.values()]);
+}
+// "Fix the name first": a new unit open in the form is renamed there — its
+// Equipment ID/Name is brought into view and ringed in red until it is typed
+// in (never focused by code: on the iPad that brings the page jumping back to
+// the box, build 145); else the saved list opens, searched for the first
+// name, where SAME NAME marks them. The form comes first: it is the unit in
+// front of the tech.
+function showSameNameUnits(groups, formEntry) {
+  const g = groups[0];
+  const newForm = !!formEntry && groups.some(x => x.includes(formEntry)) && !savedEquipment.some(s => sameEntryId(s.id, formEntry.id));
+  if (newForm) {
+    const el = document.getElementById('equipName');
+    if (el) {
+      el.classList.add('same-name-flag');
+      el.addEventListener('input', () => el.classList.remove('same-name-flag'), { once: true });
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return;
+  }
+  followSavedFacility(entryHospitalCode(g[0]));
+  savedFilter = 'all';
+  const term = String(g[0].equipName || '').trim();
+  const inp = document.getElementById('savedSearchInput');
+  if (inp) inp.value = term;
+  setSavedSearch(term);
+  showSavedList();
+}
+
 async function buildAndSendExport(opts, run) {
   if (refuseIfPhotoWritesBusy('export')) return;
   let startNum = parseInt(document.getElementById('photoSeqStart').value, 10);
@@ -17029,6 +17110,33 @@ async function buildAndSendExport(opts, run) {
 
   if (allEntries.length === 0) { showToast('Nothing to export', true); return; }
   if (typeof ExcelJS === 'undefined' || typeof JSZip === 'undefined') { showToast('⚠ Export library not loaded — restart the app', true); return; }
+
+  // Build 158: one Equipment ID/Name on two units in one room (see
+  // sameNamePlaceClashes) — most often a Duplicate whose name was never
+  // changed. Asked before anything is written. Every unit on this device
+  // counts (its twin may have gone out yesterday), but only a name with a
+  // unit in THIS export asks.
+  {
+    const goingIds = new Set(allEntries.map(e => e && e.id).filter(Boolean).map(String));
+    const going = (e) => allEntries.includes(e) || (!!e.id && goingIds.has(String(e.id)));
+    const clashes = [...sameNamePlaceClashes(unitsOnDevice(formEntry)).values()].filter(g => g.some(going));
+    if (clashes.length) {
+      const where = (e) => [e.equipBuilding, e.equipRoom].map(s => String(s || '').trim()).filter(Boolean).join(', ') || 'no building or room';
+      const one = clashes.length === 1;
+      const go = await askChoice({
+        id: 'export-same-name', defaultValue: 'export',
+        title: '&#9888; Same name, same room',
+        html: html`${clashes.slice(0, 12).map((g, k) => html`${k ? raw('<br>') : ''}&bull; <b>${g[0].equipName}</b> &mdash; ${where(g[0])} &mdash; ${g.length} units${formEntry && g.includes(formEntry) ? ' (one is the form open now)' : ''}`)}${clashes.length > 12 ? raw('<br>&hellip;') : ''}<br><br>${one ? 'This name is' : 'Each of these names is'} on more than one unit in the same room &mdash; most likely a Duplicate whose Equipment ID was never changed. Exported as is, the office gets ${one ? 'that equipment' : 'each'} twice.<br><br>Rename the copy first &mdash; or export anyway if they really are different units.`,
+        choices: [{ value: 'fix', label: one ? 'Fix the name first' : 'Fix the names first', primary: true },
+                  { value: 'export', label: 'Export anyway — they are different units' }]
+      });
+      if (go !== 'export') {
+        showToast(go === 'fix' ? 'Export stopped — rename the copy, then export again' : 'Export cancelled', true);
+        if (go === 'fix') showSameNameUnits(clashes, formEntry);
+        return;
+      }
+    }
+  }
 
   // A unit with no survey date — saved before the app recorded one — gets a
   // date now (build 109). It went on "Information_Sheet_undated.xlsx", and
