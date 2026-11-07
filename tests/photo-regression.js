@@ -167,6 +167,7 @@
 //   T483      build 159: the Feedwater Pump's rows (Electrical / Disconnect; Feedwater In / Gate Valve / GaugeOnly - Hot; Feedwater Out / Gate Valve / Gauge/Drain - Hot), its Boiler Plant shop, loto-web's name words
 //   T484      build 160: Location's Custom… (a damper row's Other…) is always a chip beside More…; a tap opens its box
 //   T485      build 161: Chemical In / Chemical Out rows offer "Visual" (loto-web's "Visually confirm absence of flow through lines.") on every chemical device; a chip on the card; exported as is
+//   T486      build 162: a new Chemical In / Chemical Out row starts on "Visual" (its device and location left to the tech); leaving chemical clears it; a steam row's location stays empty, never undefined
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8789,6 +8790,61 @@
     });
   }
 
+  // T486 — a new Chemical In / Out row starts on "Visual" (build 162)
+  // wilkins, 2026-11-06, after build 161 offered it: "Still didnt see the 'Flow'
+  // verification on a chemical out auto population"
+  async function t486_chemicalRowStartsOnVisual() {
+    const N = 'T486 build 162: picking Chemical Out (and Chemical In) on a new row fills its verification "Visual" and leaves Device and Location empty strings (never undefined); a Device picked after keeps Visual (Ball Valve, Quick Disconnect); the "+ Chemical Out" add row fills it too; a check the tech already picked stays; an HHW In row re-picked as Chemical Out takes Visual, and a Chemical Out row re-picked as HHW In drops it; the Visual chip is lit on the card; a steam row (LPS 10 PSI) still gets Gate Valve and its location stays an empty string (its check is the simplified checks\' own, unchanged)';
+    await resetAppState();
+    await withQuickPicksSetting(async () => {
+      const fails = [], got = {};
+      const want = (ok, what) => { if (!ok) fails.push(what); };
+      const fresh = (es) => { addSource(); const i = sources.length - 1; handleEnergySourceChange(i, es); return i; };
+      fillFormNoSources('CFP-486');
+      document.getElementById('equipType').value = 'Chemical Feed Pump';
+      // 1. a new row
+      let i = fresh('Chemical Out');
+      got.out = [sources[i].verification, JSON.stringify(sources[i].deviceType), JSON.stringify(sources[i].location)].join('|');
+      want(got.out === 'Visual|""|""', 'Chemical Out starts on Visual: ' + got.out);
+      handleDeviceTypeChange(i, 'Ball Valve');
+      got.afterBall = sources[i].verification;
+      handleDeviceTypeChange(i, 'Quick Disconnect');
+      got.afterQD = sources[i].verification;
+      want(got.afterBall === 'Visual' && got.afterQD === 'Visual', 'a device keeps it: ' + got.afterBall + '/' + got.afterQD);
+      const chip = document.querySelector('#qp_verification_' + i + ' .qp-pick.on');
+      got.chip = chip ? chip.textContent : 'no lit chip';
+      want(got.chip === '✓ Visual', 'the lit chip: ' + got.chip);
+      const j = fresh('Chemical In');
+      got.in = sources[j].verification;
+      want(got.in === 'Visual', 'Chemical In too: ' + got.in);
+      // 2. the add row
+      sources.forEach(x => { x.collapsed = true; });
+      quickAddSource('Chemical Out');
+      got.quickAdd = (sources[sources.length - 1] || {}).energySource + '/' + (sources[sources.length - 1] || {}).verification;
+      want(got.quickAdd === 'Chemical Out/Visual', 'the add row: ' + got.quickAdd);
+      // 3. a check already picked stays
+      addSource(); i = sources.length - 1;
+      sources[i].deviceType = 'Ball Valve'; sources[i].verification = 'Drain Only';
+      handleEnergySourceChange(i, 'Chemical In');
+      got.kept = sources[i].verification;
+      // 4. re-picks
+      const h = fresh('HHW In');
+      handleDeviceTypeChange(h, 'Ball Valve');
+      sources[h].verification = 'Gauge/Drain - Hot';
+      handleEnergySourceChange(h, 'Chemical Out');
+      got.hhwToChem = sources[h].verification;
+      handleEnergySourceChange(h, 'HHW In');
+      got.chemToHhw = sources[h].verification;
+      want(got.hhwToChem === 'Visual' && got.chemToHhw !== 'Visual', 're-picks: ' + got.hhwToChem + ' then ' + JSON.stringify(got.chemToHhw));
+      want(['Drain Only', 'Visual'].includes(got.kept), 'a picked check is not replaced by a blank: ' + got.kept);
+      // 5. steam unchanged, but its location an empty string
+      const st = fresh('LPS 10 PSI');
+      got.steam = [sources[st].deviceType, JSON.stringify(sources[st].location)].join('|');
+      want(got.steam === 'Gate Valve|""', 'steam: ' + got.steam);
+      record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+    });
+  }
+
   // T470 / T471 turn Settings → Quick picks off and on: the browser's own setting
   // comes back whatever happens in the test (the build 154 review)
   async function withQuickPicksSetting(fn) {
@@ -10935,18 +10991,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 161 (was build 122\'s): APP_BUILD and the header label say 161, the service worker\'s cache is loto-collector-v7.156, Xcode\'s CURRENT_PROJECT_VERSION is 161 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 162 (was build 122\'s): APP_BUILD and the header label say 162, the service worker\'s cache is loto-collector-v7.157, Xcode\'s CURRENT_PROJECT_VERSION is 162 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 161 && !!label && +label[1] === 161, 'the build');
+    want(APP_BUILD === 162 && !!label && +label[1] === 162, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.156', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.157', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 161;,CURRENT_PROJECT_VERSION = 161;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 162;,CURRENT_PROJECT_VERSION = 162;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -17572,7 +17628,7 @@
     t473_mainPhotoArrowDialog, t474_mainPhotoArrowExport, t475_mainPhotoArrowLifecycle, t476_mainPhotoArrowGeometry, t477_dockLevelerTypeAndTemplate,
     t478_chipCheckFollowsEveryPick, t479_condenserWaterPumpTypeAndTemplate, t480_coolingTowerCondenserWaterVisual,
     t481_sameNameSameRoomAsksBeforeExport, t482_sameNameFormAndEarlierUnits, t483_feedwaterPumpRowsAndBoilerPlant,
-    t484_customLocationIsAlwaysAChip, t485_chemicalLinesOfferVisual];
+    t484_customLocationIsAlwaysAChip, t485_chemicalLinesOfferVisual, t486_chemicalRowStartsOnVisual];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
