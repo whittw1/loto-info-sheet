@@ -552,7 +552,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b161</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b162</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1272,7 +1272,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 161;
+const APP_BUILD = 162;
 
 // ============================================================================
 // DATA
@@ -1452,6 +1452,12 @@ const SOURCE_DEFAULTS = {
   'Battery 24V DC':     { device: 'Bag', location: 'On Equipment', verification: 'Controls' },
   'Battery 48V DC':     { device: 'Bag', location: 'On Equipment', verification: 'Controls' },
   'Battery 125V DC':    { device: 'Bag', location: 'On Equipment', verification: 'Controls' },
+  // Chemical lines (build 162, wilkins 2026-11-06, after build 161 offered it:
+  // "Still didnt see the 'Flow' verification on a chemical out auto population"):
+  // a new Chemical In / Out row starts on loto-web's "Visual" ("Visually confirm
+  // absence of flow through lines."). Device and location stay the tech's.
+  'Chemical In':        { verification: 'Visual' },
+  'Chemical Out':       { verification: 'Visual' },
 };
 
 // Steam at the site's own pressure (build 149, wilkins 2026-11-03: "MPS could be
@@ -1808,6 +1814,28 @@ function updateSimpleVerif(index, which, checked) {
 }
 function showClassicVerif(index) {
   sources[index]._classicVerif = true;
+  renderSources();
+}
+// The checks a water row's source adds that are no drain/gauge answer (build 162,
+// wilkins 2026-11-06: condenser water's Visual should "include visual, not start on
+// it"): drawn as chips under the two boxes, so they need no "More options…".
+function simpleVerifExtras(src) {
+  const es = String((src && src.energySource) || '');
+  if (!es) return [];
+  const offered = getFilteredVerifications(src.deviceType, es);
+  const out = [];
+  for (const [prefix, extras] of Object.entries(SOURCE_EXTRA_VERIFICATIONS)) {
+    if (!es.startsWith(prefix)) continue;
+    for (const v of extras) if (offered.includes(v) && !parseWaterVerification(v).recognized && !out.includes(v)) out.push(v);
+  }
+  return out;
+}
+// A tap on one: the list's own pick, as if made under More options…
+function pickSimpleVerifExtra(index, k) {
+  const src = sources[index];
+  const v = src && simpleVerifExtras(src)[k];
+  if (!v) return;
+  updateSource(index, 'verification', v);
   renderSources();
 }
 // Render-time normalize pass (simplified mode only, idempotent):
@@ -9513,6 +9541,9 @@ function buildSourceCard(src, i) {
                       <input type="checkbox" class="simple-verif-check" ${p.gauge ? 'checked' : ''} onchange="updateSimpleVerif(${i},'gauge',this.checked)">
                       Gauge present
                     </label>
+                    ${(() => { const extras = simpleVerifExtras(src); return extras.length ? html`<div class="qp-row simple-verif-extras" style="margin-bottom:6px;">
+                      ${extras.map((v, k) => html`<button type="button" class="qp-chip" onclick="pickSimpleVerifExtra(${i},${k})">${v}</button>`)}
+                    </div>` : ''; })()}
                     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
                       <span style="font-size:11px;color:var(--text-dim);">Saves as: ${derived}</span>
                       <button type="button" onclick="showClassicVerif(${i})" style="background:none;border:none;color:var(--text-dim);font-size:11px;text-decoration:underline;padding:4px;">More options&hellip;</button>
@@ -10053,9 +10084,9 @@ function updateSource(index, field, value) {
   if (field === 'verification') delete sources[index]._drainDefault;   // the tech picked the code
   if (field === 'energySource' && value && sourceDefaultsOf(value)) {
     const defaults = sourceDefaultsOf(value);
-    if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
-    if (!sources[index].location) sources[index].location = value === 'Kinetic' ? kineticDefaultLocation() : defaults.location;
-    if (!sources[index].verification) { sources[index].verification = defaults.verification; noteDefaultDrain(sources[index]); }
+    if (!sources[index].deviceType && defaults.device) sources[index].deviceType = defaults.device;
+    if (!sources[index].location && (value === 'Kinetic' || defaults.location)) sources[index].location = value === 'Kinetic' ? kineticDefaultLocation() : defaults.location;
+    if (!sources[index].verification && defaults.verification) { sources[index].verification = defaults.verification; noteDefaultDrain(sources[index]); }
     applyNoPhotoDefault(index);
     const cleared = reconcileSourceMarks(index, true);
     renderSources();
@@ -10759,9 +10790,11 @@ function handleEnergySourceChange(index, value) {
     // Auto-fill defaults for special energy sources
     if (value && sourceDefaultsOf(value)) {
       const defaults = sourceDefaultsOf(value);
-      if (!sources[index].deviceType) sources[index].deviceType = defaults.device;
-      if (!sources[index].location) sources[index].location = value === 'Kinetic' ? kineticDefaultLocation() : defaults.location;
-      if (!sources[index].verification) { sources[index].verification = defaults.verification; noteDefaultDrain(sources[index]); }
+      // only the fields its defaults name (build 162: a chemical row names only its
+      // check; a steam row's location had been set to undefined)
+      if (!sources[index].deviceType && defaults.device) sources[index].deviceType = defaults.device;
+      if (!sources[index].location && (value === 'Kinetic' || defaults.location)) sources[index].location = value === 'Kinetic' ? kineticDefaultLocation() : defaults.location;
+      if (!sources[index].verification && defaults.verification) { sources[index].verification = defaults.verification; noteDefaultDrain(sources[index]); }
       showToast(`Auto-filled defaults for ${value}`);
     }
     applyNoPhotoDefault(index);
