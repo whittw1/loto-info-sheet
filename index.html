@@ -1816,6 +1816,28 @@ function showClassicVerif(index) {
   sources[index]._classicVerif = true;
   renderSources();
 }
+// The checks a water row's source adds that are no drain/gauge answer (build 162,
+// wilkins 2026-11-06: condenser water's Visual should "include visual, not start on
+// it"): drawn as chips under the two boxes, so they need no "More options…".
+function simpleVerifExtras(src) {
+  const es = String((src && src.energySource) || '');
+  if (!es) return [];
+  const offered = getFilteredVerifications(src.deviceType, es);
+  const out = [];
+  for (const [prefix, extras] of Object.entries(SOURCE_EXTRA_VERIFICATIONS)) {
+    if (!es.startsWith(prefix)) continue;
+    for (const v of extras) if (offered.includes(v) && !parseWaterVerification(v).recognized && !out.includes(v)) out.push(v);
+  }
+  return out;
+}
+// A tap on one: the list's own pick, as if made under More options…
+function pickSimpleVerifExtra(index, k) {
+  const src = sources[index];
+  const v = src && simpleVerifExtras(src)[k];
+  if (!v) return;
+  updateSource(index, 'verification', v);
+  renderSources();
+}
 // Render-time normalize pass (simplified mode only, idempotent):
 //  - blank water verifications get the synthesized default (Temp Only
 //    variant; Drain pre-checked for CHW/HHW on AHU-family equipment —
@@ -9519,6 +9541,9 @@ function buildSourceCard(src, i) {
                       <input type="checkbox" class="simple-verif-check" ${p.gauge ? 'checked' : ''} onchange="updateSimpleVerif(${i},'gauge',this.checked)">
                       Gauge present
                     </label>
+                    ${(() => { const extras = simpleVerifExtras(src); return extras.length ? html`<div class="qp-row simple-verif-extras" style="margin-bottom:6px;">
+                      ${extras.map((v, k) => html`<button type="button" class="qp-chip" onclick="pickSimpleVerifExtra(${i},${k})">${v}</button>`)}
+                    </div>` : ''; })()}
                     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
                       <span style="font-size:11px;color:var(--text-dim);">Saves as: ${derived}</span>
                       <button type="button" onclick="showClassicVerif(${i})" style="background:none;border:none;color:var(--text-dim);font-size:11px;text-decoration:underline;padding:4px;">More options&hellip;</button>

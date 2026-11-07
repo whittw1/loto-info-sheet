@@ -168,6 +168,7 @@
 //   T484      build 160: Location's Custom… (a damper row's Other…) is always a chip beside More…; a tap opens its box
 //   T485      build 161: Chemical In / Chemical Out rows offer "Visual" (loto-web's "Visually confirm absence of flow through lines.") on every chemical device; a chip on the card; exported as is
 //   T486      build 162: a new Chemical In / Chemical Out row starts on "Visual" (its device and location left to the tech); leaving chemical clears it; a steam row's location stays empty, never undefined
+//   T487      build 162: a hand-added Condenser Water row with the simplified checks shows a Visual chip under the Drain/Gauge boxes (not picked); a tap picks it; no other water row gets one
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8841,6 +8842,59 @@
       const st = fresh('LPS 10 PSI');
       got.steam = [sources[st].deviceType, JSON.stringify(sources[st].location)].join('|');
       want(got.steam === 'Gate Valve|""', 'steam: ' + got.steam);
+      record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+    });
+  }
+
+  // T487 — condenser water's Visual as a chip beside the simplified checks (build 162)
+  // wilkins, 2026-11-06: "you're talking about the chips that show up? make it
+  // include visual, not start on it"
+  async function t487_condenserWaterVisualChipBesideTheBoxes() {
+    const N = 'T487 build 162: with the simplified checks on, a hand-added Condenser Water In / Gate Valve row shows the Drain present / Gauge present boxes and ONE chip "Visual" under them, not picked (the row keeps its own Temp Only); a tap picks Visual (the card then shows the list\'s chips with "✓ Visual"); Condenser Water Out and In/Out get the chip too; HHW In, CHW Out, DW In and Energy Recovery Water In rows get none; with the simplified checks off there is no such chip (the list has Visual)';
+    await resetAppState();
+    await withQuickPicksSetting(async () => {
+      const fails = [], got = {};
+      const want = (ok, what) => { if (!ok) fails.push(what); };
+      let simpleWas = null;
+      try { simpleWas = localStorage.getItem('loto_simple_verification'); localStorage.setItem('loto_simple_verification', '1'); } catch (e) {}
+      try {
+        fillFormNoSources('CDW-487');
+        document.getElementById('equipType').value = 'Standard Pump';
+        const add = (es, dev) => { sources.forEach(x => { x.collapsed = true; }); addSource(); const i = sources.length - 1; handleEnergySourceChange(i, es); if (dev) handleDeviceTypeChange(i, dev); return i; };
+        const extrasOf = () => { const ex = document.querySelector('.simple-verif-extras'); return ex ? [...ex.querySelectorAll('button')].map(b => b.textContent.trim()).join(',') : ''; };
+        // 1. the chip, not picked
+        let i = add('Condenser Water In', 'Gate Valve');
+        await sleep(0);
+        got.first = [extrasOf(), document.querySelectorAll('.simple-verif-check').length, sources[i].verification].join('|');
+        want(got.first === 'Visual|2|Temp Only', 'the chip under the boxes, not picked: ' + got.first);
+        // 2. a tap picks it
+        const chip = document.querySelector('.simple-verif-extras button');
+        if (chip) chip.click();
+        await sleep(0);
+        const lit = document.querySelector('#qp_verification_' + i + ' .qp-pick.on');
+        got.tap = [sources[i].verification, lit ? lit.textContent : 'no lit chip', document.querySelectorAll('.simple-verif-check').length].join('|');
+        want(got.tap === 'Visual|✓ Visual|0', 'a tap picks Visual: ' + got.tap);
+        // 3. the other condenser water rows, and none on the other water rows
+        got.rows = {};
+        for (const [es, dev] of [['Condenser Water Out', 'Butterfly Valve'], ['Condenser Water In/Out', 'Gate Valve'], ['HHW In', 'Ball Valve'], ['CHW Out', 'Butterfly Valve'], ['DW In', 'Ball Valve'], ['Energy Recovery Water In', 'Ball Valve']]) {
+          sources.length = 0; renderSources();
+          add(es, dev);
+          await sleep(0);
+          got.rows[es] = extrasOf() || 'none';
+        }
+        want(got.rows['Condenser Water Out'] === 'Visual' && got.rows['Condenser Water In/Out'] === 'Visual', 'condenser water rows: ' + JSON.stringify(got.rows));
+        want(['HHW In', 'CHW Out', 'DW In', 'Energy Recovery Water In'].every(k => got.rows[k] === 'none'), 'no chip on other water rows: ' + JSON.stringify(got.rows));
+        // 4. simplified checks off: no such chip, the list has Visual
+        try { localStorage.setItem('loto_simple_verification', '0'); } catch (e) {}
+        sources.length = 0; renderSources();
+        i = add('Condenser Water In', 'Gate Valve');
+        await sleep(0);
+        const sel = document.getElementById('src_ver_' + i);
+        got.off = [document.querySelectorAll('.simple-verif-extras').length, !!sel && [...sel.options].some(o => o.value === 'Visual')].join('|');
+        want(got.off === '0|true', 'simplified off: ' + got.off);
+      } finally {
+        try { if (simpleWas === null) localStorage.removeItem('loto_simple_verification'); else localStorage.setItem('loto_simple_verification', simpleWas); } catch (e) {}
+      }
       record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
     });
   }
@@ -17628,7 +17682,7 @@
     t473_mainPhotoArrowDialog, t474_mainPhotoArrowExport, t475_mainPhotoArrowLifecycle, t476_mainPhotoArrowGeometry, t477_dockLevelerTypeAndTemplate,
     t478_chipCheckFollowsEveryPick, t479_condenserWaterPumpTypeAndTemplate, t480_coolingTowerCondenserWaterVisual,
     t481_sameNameSameRoomAsksBeforeExport, t482_sameNameFormAndEarlierUnits, t483_feedwaterPumpRowsAndBoilerPlant,
-    t484_customLocationIsAlwaysAChip, t485_chemicalLinesOfferVisual, t486_chemicalRowStartsOnVisual];
+    t484_customLocationIsAlwaysAChip, t485_chemicalLinesOfferVisual, t486_chemicalRowStartsOnVisual, t487_condenserWaterVisualChipBesideTheBoxes];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
