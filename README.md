@@ -98,7 +98,7 @@ Collapsible section that auto-expands when a template's diagram is available or 
 - **Hot** (Steam, HPS, LPS, MPS, HHW, DHW, Feedwater, Condensate, Glycol HW): Gauge/Drain - Hot, GaugeOnly - Hot, Drain Only - Hot, Temp Only - Hot (shown first)
 - **CHW** (CHW only): Gauge/Drain - CHW, GaugeOnly - CHW
 - **Other** (DW, Domestic, CW / Condenser Water — the warm tower side — Pneumatic, Fuel, etc.): Gauge/Drain, GaugeOnly, Drain Only (plain)
-- **Visual** (Condenser Water rows since build 157, Chemical In / Chemical Out rows since build 161): loto-web's "Visually confirm absence of flow through lines." — a Cooling Tower's Condenser Water In / Out default to it
+- **Visual** (Condenser Water rows since build 157, Chemical In / Chemical Out rows since build 161): loto-web's "Visually confirm absence of flow through lines." — a Cooling Tower's Condenser Water In / Out default to it, and a new Chemical In / Chemical Out row starts on it (build 162). On a condenser water row still on the Drain/Gauge boxes it is a chip under them (build 162; not picked)
 
 ### Template Filtering (by Equipment Type)
 
