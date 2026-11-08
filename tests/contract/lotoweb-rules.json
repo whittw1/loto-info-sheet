@@ -3051,16 +3051,16 @@
   {
    "energySource": "LPS 20 PSI",
    "code": "S",
-   "printed": "Steam\n20 PSI @ 250 F",
+   "printed": "Steam\n20 PSI @ 259 F",
    "psi": 20.0,
-   "tempF": 250
+   "tempF": 259
   },
   {
    "energySource": "MPS 20 PSI",
    "code": "S",
-   "printed": "Steam\n20 PSI @ 250 F",
+   "printed": "Steam\n20 PSI @ 259 F",
    "psi": 20.0,
-   "tempF": 250
+   "tempF": 259
   },
   {
    "energySource": "MPS 15 PSI",
@@ -3072,9 +3072,9 @@
   {
    "energySource": "MPS 30 PSI",
    "code": "S",
-   "printed": "Steam\n30 PSI @ 275 F",
+   "printed": "Steam\n30 PSI @ 274 F",
    "psi": 30.0,
-   "tempF": 275
+   "tempF": 274
   },
   {
    "energySource": "MPS 40 PSI",
@@ -3086,9 +3086,9 @@
   {
    "energySource": "MPS 50 PSI",
    "code": "S",
-   "printed": "Steam\n30 PSI @ 275 F",
+   "printed": "Steam\n30 PSI @ 274 F",
    "psi": 30.0,
-   "tempF": 275
+   "tempF": 274
   },
   {
    "energySource": "MPS 60 PSI",
@@ -3100,9 +3100,9 @@
   {
    "energySource": "HPS 100 PSI",
    "code": "S",
-   "printed": "Steam \n100 PSI @ 350 F",
+   "printed": "Steam\n100 PSI @ 338 F",
    "psi": 100.0,
-   "tempF": 350
+   "tempF": 338
   },
   {
    "energySource": "HPS 60 PSI",
