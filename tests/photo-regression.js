@@ -172,6 +172,8 @@
 //   T488      build 163: a link fills the existing LOTO tag of each unit left unchecked from its target (Both / one valve / a breaker / No tag); a
 //             re-link from Out to In swaps the copied tag; the tech's own tag stays (the toast warns); exported in column 16 and entries.json
 //   T489      build 163: ✕ Discard of a new unit and Delete of the unit open on the form keep the building and room
+//   T490      build 163's code review: what a link copied follows a re-link to another source and a side picked from the list; Both → one valve;
+//             tags only up to the row's Quantity and only where the facility asks; a twin tag named; Discard with no place; Bulk delete
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8928,7 +8930,7 @@
       };
       // 1. the pair, both valves
       addSource(); row = 0; got.both = await link(0, 'both');
-      want(got.both.energy === 'HHW In/Out' && got.both.deviceId === 'V-1; V-2' && got.both.tag === '[{"tag":"W-1"},{"tag":"W-2"}]' && /existing LOTO tag: W-1; W-2/.test(got.both.toast), 'pair, both: ' + JSON.stringify(got.both));
+      want(got.both.energy === 'HHW In/Out' && got.both.deviceId === 'V-1; V-2' && got.both.tag === '[{"tag":"W-1"},{"tag":"W-2"}]' && /existing LOTO tag: In W-1, Out W-2/.test(got.both.toast), 'pair, both: ' + JSON.stringify(got.both));
       // 2. one valve of the pair, then the same row re-linked to the other valve
       addSource(); row = 1; got.out = await link(0, 'out');
       want(got.out.energy === 'HHW Out' && got.out.deviceId === 'V-2' && got.out.tag === '[{"tag":"W-2"}]', 'Out valve: ' + JSON.stringify(got.out));
@@ -8977,6 +8979,83 @@
       const je = ((u.entriesJson && u.entriesJson.entries) || []).find(e => e.equipName === 'ET-488');
       got.json = je ? je.sources.map(x => JSON.stringify(x.existingTag)) : 'no entry';
       want(Array.isArray(got.json) && got.json.join('|') === '[{"tag":"W-1"},{"tag":"W-2"}]|[{"tag":"W-1"}]|[{"tag":"E-3"}]|[{"tag":"E-7"}]|[{"none":true}]|[null]', 'entries.json: ' + JSON.stringify(got.json));
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T490 — the build 163 code review: what a link copied follows a re-link and a side change
+  async function t490_linkCopiesFollowARelinkAndASideChange() {
+    const N = 'T490 build 163 review: a row linked to one breaker (LP-1 #3, Panel LP-1, E-3) and re-linked to another (LP-2 #9, Panel LP-2, E-5) takes the new one\'s ID, location and tag, with no "differs" warning; Both → the Out valve leaves only the Out tag (no answer past Quantity); a row linked to the Out valve and picked as HHW In from the list follows to the In valve (linkedTo.valve, "— In valve", V-1, W-1); a Qty 1 row of its own linked to a Qty 2 source takes unit 1\'s tag only; a copied tag another row of the unit wears is named in the toast; the toast lists the units that took one ("Out No tag", never "; No tag"); a unit whose facility doesn\'t ask takes no tag; Discard of a unit with no building or room says nothing about keeping them; Bulk delete of the open unit keeps its building and room';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const place = () => getBuilding() + ' / ' + document.getElementById('equipRoom').value;
+    await withTagSetting(async () => {
+      setHospitalCode('Atlanta');
+      const S = (es, extra) => Object.assign(mkSrc(es), { sourceId: genUuid() }, extra || {});
+      const T = Object.assign(mkEntry('ET-490-T', { sources: [
+        S('HHW In/Out', { deviceType: 'Ball Valve', quantity: 2, deviceId: 'V-1; V-2', verification: 'Temp Only - Hot', location: 'Ceiling', existingTag: [{ tag: 'W-1' }, { tag: 'W-2' }] }),
+        S('Electrical 480V', { deviceId: 'LP-1 #3', location: 'Panel LP-1', existingTag: [{ tag: 'E-3' }] }),
+        S('Electrical 480V', { quantity: 2, deviceId: 'B-1; B-2', existingTag: [{ tag: 'E-1' }, { tag: 'E-2' }] }),
+        S('CHW In/Out', { deviceType: 'Butterfly Valve', quantity: 2, verification: 'Temp Only - CHW', existingTag: [null, { none: true }] })] }), { hospitalCode: 'Atlanta' });
+      const U = Object.assign(mkEntry('ET-490-U', { sources: [S('Electrical 480V', { deviceId: 'LP-2 #9', location: 'Panel LP-2', existingTag: [{ tag: 'E-5' }] })] }), { hospitalCode: 'Atlanta' });
+      savedEquipment = [T, U]; saveAll();
+      fillFormNoSources('ET-490');
+      let row = 0;
+      const link = async (ei, si, answer) => {
+        const msgs = await withToasts(async () => {
+          await withDialogs({ choice: { 'link-valve': answer || 'cancel' } }, async () => { showLinkDialog(row); await applyLink(ei, si); });
+        });
+        closeLinkDialog();
+        const s = sources[row];
+        return { energy: s.energySource, qty: s.quantity, deviceId: s.deviceId, location: s.location, tag: JSON.stringify(s.existingTag || null), toast: msgs[msgs.length - 1] || '' };
+      };
+      // 1. a re-link to another breaker
+      addSource(); row = 0; got.first = await link(0, 1);
+      got.relink = await link(1, 0);
+      want(got.first.deviceId === 'LP-1 #3' && got.relink.deviceId === 'LP-2 #9' && got.relink.location === 'Panel LP-2' && got.relink.tag === '[{"tag":"E-5"}]' && !/differs/.test(got.relink.toast) && /existing LOTO tag: E-5/.test(got.relink.toast), 're-link: ' + JSON.stringify(got.relink));
+      // 2. Both, then the Out valve only
+      addSource(); row = 1; got.both = await link(0, 0, 'both');
+      got.outOnly = await link(0, 0, 'out');
+      want(got.both.tag === '[{"tag":"W-1"},{"tag":"W-2"}]' && got.outOnly.qty === 1 && got.outOnly.tag === '[{"tag":"W-2"}]' && got.outOnly.deviceId === 'V-2', 'Both → Out: ' + JSON.stringify(got.outOnly));
+      // 3. the row picked as HHW In from the list follows to the In valve
+      handleEnergySourceChange(1, 'HHW In');
+      const lt = sources[1].linkedTo || {};
+      got.flip = [lt.valve, / — In valve$/.test(lt.sourceLabel || ''), sources[1].deviceId, JSON.stringify(sources[1].existingTag || null)].join(' | ');
+      want(got.flip === 'in | true | V-1 | [{"tag":"W-1"}]', 'the side picked from the list: ' + got.flip);
+      // 4. a Qty 1 row of its own linked to a Qty 2 source: unit 1's tag only
+      addSource(); row = 2; handleEnergySourceChange(2, 'Electrical 480V'); got.qty = await link(0, 2);
+      want(got.qty.qty === 1 && got.qty.tag === '[{"tag":"E-1"}]', 'Qty 1 to Qty 2: ' + JSON.stringify(got.qty));
+      // 5. a copied tag another row of this unit wears
+      addSource(); handleEnergySourceChange(3, 'Electrical 208V'); updateExistingTag(3, 0, 'E-3');
+      addSource(); row = 4; got.twin = await link(0, 1);
+      want(got.twin.tag === '[{"tag":"E-3"}]' && /E-3 is also on source #4 of this unit/.test(got.twin.toast), 'a twin tag: ' + got.twin.toast);
+      // 6. the toast names the units that took an answer
+      addSource(); row = 5; got.names = await link(0, 3, 'both');
+      want(/existing LOTO tag: Out No tag/.test(got.names.toast) && !/: ;/.test(got.names.toast), 'the toast\'s units: ' + got.names.toast);
+      // 7. a facility that doesn't ask
+      setHospitalCode('Marion');
+      fillFormNoSources('ET-490-M');
+      addSource(); row = 0; got.off = await link(0, 1);
+      want(got.off.deviceId === 'LP-1 #3' && got.off.tag === 'null' && !/existing LOTO tag/.test(got.off.toast), 'facility off: ' + JSON.stringify(got.off));
+      // 8. Discard with no building or room
+      fillFormNoSources('ET-490-D'); setBuilding(''); document.getElementById('equipRoom').value = ''; autoSaveCurrent();
+      let r;
+      const dm = await withToasts(async () => { r = await withDialogs({ confirm: true }, async () => { discardForm(); }); });
+      got.noPlace = [r.log.join(' '), dm[dm.length - 1] || ''].join(' / ');
+      want(!/building and room/.test(got.noPlace) && /Unit discarded/.test(got.noPlace), 'Discard with no place: ' + got.noPlace);
+      // 9. Bulk delete of the open unit
+      const V = Object.assign(mkEntry('ET-490-V', { building: '3', room: 'R-7' }), { hospitalCode: 'Marion' });
+      savedEquipment = [V]; saveAll();
+      fillFormNoSources(''); setBuilding(''); document.getElementById('equipRoom').value = ''; autoSaveCurrent();
+      await withDialogs({ confirm: true }, async () => { editSaved(0); });
+      showBulkDeleteDialog();
+      document.getElementById('bulkDeleteDateFilter').value = 'all';
+      document.getElementById('bulkDeleteConfirmInput').value = 'DELETE';
+      updateBulkDeleteSummary();
+      confirmBulkDelete();
+      got.bulk = [place(), savedEquipment.length, !!formEditTarget()].join(' | ');
+      want(got.bulk === '3 / R-7 | 0 | false', 'Bulk delete: ' + got.bulk);
     });
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -17813,7 +17892,7 @@
     t478_chipCheckFollowsEveryPick, t479_condenserWaterPumpTypeAndTemplate, t480_coolingTowerCondenserWaterVisual,
     t481_sameNameSameRoomAsksBeforeExport, t482_sameNameFormAndEarlierUnits, t483_feedwaterPumpRowsAndBoilerPlant,
     t484_customLocationIsAlwaysAChip, t485_chemicalLinesOfferVisual, t486_chemicalRowStartsOnVisual, t487_condenserWaterVisualChipBesideTheBoxes,
-    t488_linkCarriesTheExistingTag, t489_discardAndDeleteKeepThePlace];
+    t488_linkCarriesTheExistingTag, t489_discardAndDeleteKeepThePlace, t490_linkCopiesFollowARelinkAndASideChange];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
