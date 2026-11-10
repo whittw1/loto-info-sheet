@@ -171,6 +171,7 @@
 //   T487      build 162: a hand-added Condenser Water row with the simplified checks shows a Visual chip under the Drain/Gauge boxes (not picked); a tap picks it; no other water row gets one
 //   T488      build 163: a link fills the existing LOTO tag of each unit left unchecked from its target (Both / one valve / a breaker / No tag); a
 //             re-link from Out to In swaps the copied tag; the tech's own tag stays (the toast warns); exported in column 16 and entries.json
+//   T489      build 163: ✕ Discard of a new unit and Delete of the unit open on the form keep the building and room
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -7452,7 +7453,7 @@
 
   // T461 — Cancel edit goes on to a new unit where the saved one is
   async function t461_cancelEditKeepsTheBuildingAndRoom() {
-    const N = 'T461 build 150 (wilkins: after cancelling an edit the next unit\'s location had to be entered again): Cancel edit of a changed unit leaves a blank new unit at the saved unit\'s building and room — not the dropped edit\'s — and the autosave holds them; the saved unit is untouched; "No" keeps the edit; Close on an unchanged unit goes back to where the tech was (build 151); a Discard of a new unit still clears the whole form';
+    const N = 'T461 build 150 (wilkins: after cancelling an edit the next unit\'s location had to be entered again): Cancel edit of a changed unit leaves a blank new unit at the saved unit\'s building and room — not the dropped edit\'s — and the autosave holds them; the saved unit is untouched; "No" keeps the edit; Close on an unchanged unit goes back to where the tech was (build 151); a Discard of a new unit clears the form but keeps its building and room (build 163)';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -7482,11 +7483,11 @@
     const closed = await withDialogs({ confirm: false }, async () => { discardForm(); });
     got.close = [closed.log.length, place()].join(' | ');
     want(!closed.log.length && place() === ' | Bldg 1 | R-1', 'Close: ' + got.close);
-    // a new unit's Discard clears the form, building and room too (as before)
+    // a new unit's Discard clears the form but keeps its building and room (build 163; it cleared them before — T489)
     fillForm('N-461', { building: 'Bldg 8', room: 'R-8' });
     await withDialogs({ confirm: true }, async () => { discardForm(); });
     got.discard = place();
-    want(got.discard === ' |  | ', 'Discard of a new unit: ' + got.discard);
+    want(got.discard === ' | Bldg 8 | R-8', 'Discard of a new unit: ' + got.discard);
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -8977,6 +8978,54 @@
       got.json = je ? je.sources.map(x => JSON.stringify(x.existingTag)) : 'no entry';
       want(Array.isArray(got.json) && got.json.join('|') === '[{"tag":"W-1"},{"tag":"W-2"}]|[{"tag":"W-1"}]|[{"tag":"E-3"}]|[{"tag":"E-7"}]|[{"none":true}]|[null]', 'entries.json: ' + JSON.stringify(got.json));
     });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T489 — Discard of a new unit and Delete of the open unit keep the building and room (build 163)
+  async function t489_discardAndDeleteKeepThePlace() {
+    const N = 'T489 build 163 (wilkins 2026-11-10: "I am still having the issue of the location being wiped - it just happened on an air compressor tank template"): a NEW unit (Air Compressor → the prompt\'s Compressed Air Tank) discarded with ✕ Discard leaves a blank form — no type, template, name or sources, the Discard button hidden — at the SAME building and room, the question says so and the toast says they stay, and a relaunch keeps them; No keeps the unit; a saved unit opened from a blank form and deleted while open leaves a blank form at ITS building and room (it used to blank both); one opened from another place still goes back there (build 151)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const place = () => getBuilding() + ' / ' + document.getElementById('equipRoom').value;
+    // 1. Discard a new tank unit
+    fillFormNoSources('');
+    setBuilding('101'); document.getElementById('equipRoom').value = 'B-12'; autoSaveCurrent();
+    const t = document.getElementById('equipType');
+    t.value = 'Air Compressor'; t.dispatchEvent(new Event('change', { bubbles: true }));
+    applyTemplatePromptChoice('Compressed Air Tank');
+    closeAllPrompts();
+    got.before = [place(), document.getElementById('equipTemplate').value, sources.map(s => s.energySource).join(',')].join(' | ');
+    want(got.before === '101 / B-12 | Compressed Air Tank | Compressed Air In', 'the tank unit: ' + got.before);
+    let r = await withDialogs({ confirm: false }, async () => { discardForm(); });
+    want(sources.length === 1 && place() === '101 / B-12', 'No keeps the unit');
+    let msgs;
+    msgs = await withToasts(async () => { r = await withDialogs({ confirm: true }, async () => { discardForm(); }); });
+    got.asked = r.log.join(' | ');
+    got.after = [place(), document.getElementById('equipType').value, document.getElementById('equipTemplate').value, document.getElementById('equipName').value, sources.length, document.getElementById('discardFormBtn').style.display].join(' | ');
+    got.toast = msgs[msgs.length - 1] || '';
+    want(got.after === '101 / B-12 |  |  |  | 0 | none', 'after Discard: ' + got.after);
+    want(/but the building and room/.test(got.asked) && /building and room stay/.test(got.toast), 'the question and toast: ' + got.asked + ' / ' + got.toast);
+    const wip = buildWipState();
+    got.wip = (wip.equipBuilding || '') + ' / ' + (wip.equipRoom || '');
+    want(got.wip === '101 / B-12', 'the autosave (what a relaunch restores): ' + got.wip);
+    // 2. Delete the open unit, opened from a blank form
+    const T = Object.assign(mkEntry('Tank 2', { building: '2', room: 'R-5', sources: [Object.assign(mkSrc('Compressed Air In'), { sourceId: genUuid(), deviceType: 'Ball Valve' })] }), { equipType: 'Compressed Air Tank', template: 'Compressed Air Tank' });
+    savedEquipment = [T]; saveAll();
+    fillFormNoSources(''); setBuilding(''); document.getElementById('equipRoom').value = ''; autoSaveCurrent();
+    await withDialogs({ confirm: true }, async () => { editSaved(0); });
+    got.opened = place();
+    await withDialogs({ confirm: true }, async () => { deleteSaved(0); });
+    got.deleted = [place(), savedEquipment.length, document.getElementById('equipName').value, !!formEditTarget()].join(' | ');
+    want(got.opened === '2 / R-5' && got.deleted === '2 / R-5 | 0 |  | false', 'Delete while open: ' + got.opened + ' → ' + got.deleted);
+    // 3. …opened from another place: back there (build 151, unchanged)
+    const U = Object.assign(mkEntry('Tank 3', { building: '2', room: 'R-6', sources: [Object.assign(mkSrc('Compressed Air In'), { sourceId: genUuid() })] }), { equipType: 'Compressed Air Tank' });
+    savedEquipment = [U]; saveAll();
+    fillFormNoSources(''); setBuilding('101'); document.getElementById('equipRoom').value = 'B-12'; autoSaveCurrent();
+    await withDialogs({ confirm: true }, async () => { editSaved(0); });
+    await withDialogs({ confirm: true }, async () => { deleteSaved(0); });
+    got.back = place();
+    want(got.back === '101 / B-12', 'opened from another place, deleted: ' + got.back);
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -17764,7 +17813,7 @@
     t478_chipCheckFollowsEveryPick, t479_condenserWaterPumpTypeAndTemplate, t480_coolingTowerCondenserWaterVisual,
     t481_sameNameSameRoomAsksBeforeExport, t482_sameNameFormAndEarlierUnits, t483_feedwaterPumpRowsAndBoilerPlant,
     t484_customLocationIsAlwaysAChip, t485_chemicalLinesOfferVisual, t486_chemicalRowStartsOnVisual, t487_condenserWaterVisualChipBesideTheBoxes,
-    t488_linkCarriesTheExistingTag];
+    t488_linkCarriesTheExistingTag, t489_discardAndDeleteKeepThePlace];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

@@ -15325,18 +15325,20 @@ function discardForm() {
   }
   const msg = editing
     ? 'Cancel the edit of “' + (name || 'this unit') + '”?\n\nYour changes are dropped; the saved unit stays exactly as it was.'
-    : 'Discard ' + (name ? '“' + name + '”' : 'this unit') + '?\n\nEverything on the form is cleared. Photos already taken stay on the iPad (Settings → Photo Store Report).';
+    : 'Discard ' + (name ? '“' + name + '”' : 'this unit') + '?\n\nEverything on the form is cleared but the building and room. Photos already taken stay on the iPad (Settings → Photo Store Report).';
   if (!confirm(msg)) return;
   if (!tabMayWrite()) return;   // another tab took over while the dialog was open
   // A cancelled edit goes on to the next unit as Close and Save & New do (build
   // 150, wilkins 2026-11-03: the cancel wiped the location): where the tech was
   // before opening it (build 151), else where the saved unit is — never the
-  // dropped edit's own
+  // dropped edit's own. A discarded NEW unit keeps the form's building and room
+  // too (build 163, wilkins 2026-11-10: "I am still having the issue of the
+  // location being wiped"): the tech is still in that room.
   if (editing) startNextUnit({ building: editing.equipBuilding, room: editing.equipRoom });
-  else clearForm(false);
+  else startNextUnit();
   renderSavedPanel();
   updateHeaderBadge();
-  showToast(editing ? 'Edit cancelled — “' + (name || 'the unit') + '” is unchanged' : 'Unit discarded');
+  showToast(editing ? 'Edit cancelled — “' + (name || 'the unit') + '” is unchanged' : 'Unit discarded — the building and room stay');
 }
 function updateDiscardButton() {
   const b = document.getElementById('discardFormBtn');
@@ -15937,8 +15939,9 @@ function formHoldsEntry(entry) {
 // no longer holds their photos.
 function closeFormIfRemoving(rows) {
   if (!(rows || []).some(formHoldsEntry)) return false;
-  // back where the tech was before opening it (build 151), else a blank form
-  if (returnPlaceFor(currentEntryId)) startNextUnit(); else clearForm(false);
+  // back where the tech was before opening it (build 151), else at the open
+  // unit's building and room (build 163: a blank form wiped the location)
+  startNextUnit();
   return true;
 }
 function deleteSaved(index) {
