@@ -174,6 +174,8 @@
 //   T489      build 163: ✕ Discard of a new unit and Delete of the unit open on the form keep the building and room
 //   T490      build 163's code review: what a link copied follows a re-link to another source and a side picked from the list; Both → one valve;
 //             tags only up to the row's Quantity and only where the facility asks; a twin tag named; Discard with no place; Bulk delete
+//   T491      build 164: a Medical Vacuum Pump's inlet vent (loto-web 2026-11-10): no "No vent found" note on its inlet, the Union/Flange
+//             note dropped once the inlet has a vent found, "bleed valve on inlet filter cover" as the example
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -9060,6 +9062,68 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T491 — a Medical Vacuum Pump's inlet vent (build 164, loto-web 2026-11-10)
+  async function t491_vacuumPumpInletVent() {
+    const N = 'T491 build 164 (loto-web 2026-11-10, wilkins: "Yes, every hospital"): on the Medical Vacuum Pump template a "None found" vent on the inlet (Vacuum Air In, a combined Vacuum In / Out) writes no "No vent found" note, at Atlanta and on an answer held at Marion; Medical Vacuum and Lab Vacuum keep it; Union/Flange No keeps its note with None found or no answer, and drops it when the inlet row has a vent found (all three found answers), but not when that row is locked open; the "Where exactly" example on those rows is "bleed valve on inlet filter cover" (Medical Vacuum keeps "vent valve on the inlet line"); a Pump-device inlet row holding None found says nothing about a Change Later note';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      const S = (es, extra) => Object.assign(mkSrc(es), { sourceId: genUuid(), deviceType: 'Butterfly Valve', verification: 'Gauge/Drain' }, extra || {});
+      const E = Object.assign(mkSrc('Electrical 208V'), { sourceId: genUuid(), deviceType: 'Disconnect', location: 'Panel', verification: 'SW (Hand/Off/Auto)' });
+      const vent = (where, text) => ({ drainLocation: { where, text: text || '' } });
+      const unit = (template, srcs, joint, fac) => Object.assign(mkEntry('VP-491', { sources: [E].concat(srcs) }),
+        { equipType: 'Vacuum Pump', template, hospitalCode: fac || 'Atlanta', unitAnswers: joint ? { reliefJoint: joint } : {} });
+      const note = (template, srcs, joint, fac) => changeLaterSheetText(unit(template, srcs, joint, fac));
+      // Tweak 1: the "No vent found" note
+      got.mvpIn = note('Medical Vacuum Pump', [S('Vacuum Air In', vent('None found'))]);
+      want(got.mvpIn === '', 'MVP Vacuum Air In None found: ' + got.mvpIn);
+      got.mvpInOut = note('Medical Vacuum Pump', [S('Vacuum In / Out', vent('None found'))]);
+      want(got.mvpInOut === '', 'MVP In/Out None found: ' + got.mvpInOut);
+      got.mvpMarion = note('Medical Vacuum Pump', [S('Vacuum Air In', vent('None found'))], '', 'Marion');
+      want(got.mvpMarion === '', 'MVP held at Marion: ' + got.mvpMarion);
+      got.system = note('Medical Vacuum', [S('Vacuum Air In', vent('None found'))]);
+      want(got.system === 'No vent found for source #2 (Vacuum Air In)', 'Medical Vacuum keeps it: ' + got.system);
+      got.lab = note('Lab Vacuum', [S('Vacuum Air In', vent('None found'))]);
+      want(got.lab === 'No vent found for source #2 (Vacuum Air In)', 'Lab Vacuum keeps it: ' + got.lab);
+      // Tweak 3: Union/Flange No
+      got.jointNone = note('Medical Vacuum Pump', [S('Vacuum Air In', vent('None found'))], 'No');
+      want(got.jointNone === RELIEF_JOINT_NOTE, 'No + None found keeps the joint note: ' + got.jointNone);
+      got.jointBlank = note('Medical Vacuum Pump', [S('Vacuum Air In')], 'No');
+      want(got.jointBlank === RELIEF_JOINT_NOTE, 'No + no answer keeps the joint note: ' + got.jointBlank);
+      got.jointFound = DRAIN_FOUND.map(w => note('Medical Vacuum Pump', [S('Vacuum Air In', vent(w, 'bleed valve on inlet filter cover'))], 'No')).join('|');
+      want(got.jointFound === '||', 'a found vent drops the joint note: ' + got.jointFound);
+      got.jointInOut = note('Medical Vacuum Pump', [S('Vacuum In / Out', vent('Between this valve and the equipment'))], 'No');
+      want(got.jointInOut === '', 'a found vent on In/Out drops it: ' + got.jointInOut);
+      const locked = S('Vacuum Air In', Object.assign({ lockOpen: true }, vent('Between this valve and the equipment')));
+      got.lockedRow = lockOpenWholeRow(locked);
+      got.jointLocked = note('Medical Vacuum Pump', [locked], 'No');
+      want(got.lockedRow && got.jointLocked === RELIEF_JOINT_NOTE, 'a locked-open row\'s vent is not on the sheet: ' + got.jointLocked);
+      got.jointCover = note('Medical Vacuum Pump', [S('Vacuum Air In', vent('None found'))], 'Cover');
+      want(got.jointCover === '', 'Cover: no note: ' + got.jointCover);
+      // Tweak 2: the example, and the held note
+      const placeholders = (template) => {
+        formOfType('VP-491', 'Vacuum Pump', template);
+        sources = [S('Vacuum Air In', vent('Between this valve and the equipment')), S('Vacuum In / Out', vent('On this valve')), S('Vacuum Air Out')].map(s => Object.assign(s, { collapsed: false }));
+        sources.forEach(ensureSourceId); renderSources();
+        return getTemplate() + ': ' + sources.map((s, i) => { const el = document.getElementById('src_draintext_' + i); return el ? el.placeholder : '-'; }).join(' | ');
+      };
+      got.mvpEg = placeholders('Medical Vacuum Pump');
+      want(got.mvpEg === 'Medical Vacuum Pump: Where exactly, e.g. bleed valve on inlet filter cover | Where exactly, e.g. bleed valve on inlet filter cover | -', 'MVP example: ' + got.mvpEg);
+      got.systemEg = placeholders('Medical Vacuum');
+      want(got.systemEg === 'Medical Vacuum: Where exactly, e.g. vent valve on the inlet line | Where exactly, e.g. vent valve on the inlet line | -', 'Medical Vacuum example: ' + got.systemEg);
+      formOfType('VP-491', 'Vacuum Pump', 'Medical Vacuum Pump');
+      sources = [S('Vacuum Air In', Object.assign({ deviceType: 'Pump', collapsed: false }, vent('None found')))];
+      sources.forEach(ensureSourceId); renderSources();
+      const g = document.getElementById('drainLocGroup_0');
+      got.held = g ? g.textContent.replace(/\s+/g, ' ') : 'no group';
+      want(/None found” still goes on the sheet\. Set it/.test(got.held) && !/Change Later/.test(got.held), 'held note: ' + got.held);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // T489 — Discard of a new unit and Delete of the open unit keep the building and room (build 163)
   async function t489_discardAndDeleteKeepThePlace() {
     const N = 'T489 build 163 (wilkins 2026-11-10: "I am still having the issue of the location being wiped - it just happened on an air compressor tank template"): a NEW unit (Air Compressor → the prompt\'s Compressed Air Tank) discarded with ✕ Discard leaves a blank form — no type, template, name or sources, the Discard button hidden — at the SAME building and room, the question says so and the toast says they stay, and a relaunch keeps them; No keeps the unit; a saved unit opened from a blank form and deleted while open leaves a blank form at ITS building and room (it used to blank both); one opened from another place still goes back there (build 151)';
@@ -11254,18 +11318,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 163 (was build 122\'s): APP_BUILD and the header label say 163, the service worker\'s cache is loto-collector-v7.158, Xcode\'s CURRENT_PROJECT_VERSION is 163 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 164 (was build 122\'s): APP_BUILD and the header label say 164, the service worker\'s cache is loto-collector-v7.159, Xcode\'s CURRENT_PROJECT_VERSION is 164 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 163 && !!label && +label[1] === 163, 'the build');
+    want(APP_BUILD === 164 && !!label && +label[1] === 164, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.158', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.159', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 163;,CURRENT_PROJECT_VERSION = 163;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 164;,CURRENT_PROJECT_VERSION = 164;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -17892,7 +17956,8 @@
     t478_chipCheckFollowsEveryPick, t479_condenserWaterPumpTypeAndTemplate, t480_coolingTowerCondenserWaterVisual,
     t481_sameNameSameRoomAsksBeforeExport, t482_sameNameFormAndEarlierUnits, t483_feedwaterPumpRowsAndBoilerPlant,
     t484_customLocationIsAlwaysAChip, t485_chemicalLinesOfferVisual, t486_chemicalRowStartsOnVisual, t487_condenserWaterVisualChipBesideTheBoxes,
-    t488_linkCarriesTheExistingTag, t489_discardAndDeleteKeepThePlace, t490_linkCopiesFollowARelinkAndASideChange];
+    t488_linkCarriesTheExistingTag, t489_discardAndDeleteKeepThePlace, t490_linkCopiesFollowARelinkAndASideChange,
+    t491_vacuumPumpInletVent];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
