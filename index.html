@@ -552,7 +552,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b162</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b163</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1272,7 +1272,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 162;
+const APP_BUILD = 163;
 
 // ============================================================================
 // DATA
@@ -10175,8 +10175,10 @@ function updateUnitDeviceId(index, unit, value) {
 // In then Out, as for Device ID): { tag: "E-2" } / { none: true } / null = not
 // checked. A single tag never covers every unit (unlike Device ID), and the
 // tag never goes into Device ID: loto-web splices Device ID into Section 1's
-// Method. Asked on every row, linked or not; a link never copies its target's
-// tag, and Duplicate / Copy Source / the count's copies start not checked.
+// Method. Asked on every row, linked or not. A link fills the units left
+// unchecked with its target's answers (build 163, takeLinkedExistingTag: one
+// device, one tag; build 119 copied none). Duplicate / Copy Source / the
+// count's copies start not checked (another device).
 // The question follows the UNIT's own facility: on by default for the three
 // Atlanta codes, off elsewhere, changeable per facility in Settings.
 const EXISTING_TAG_DEFAULT_ON = ['Atlanta', 'Atlanta - Fort McPherson', 'Atlanta - Trinka Davis'];
@@ -10532,12 +10534,16 @@ function sourceHasExistingTagAnswer(src) { return existingTagsForJson(src).some(
 function existingTagAppliesToEntry(entryLike) {
   return existingTagPromptOn(entryHospitalCode(entryLike)) || (entryLike.sources || []).some(sourceHasExistingTagAnswer);
 }
+// A unit of a row by name: "In" / "Out" on a pair, "Unit 2", '' on a quantity-1 row.
+function unitWordOf(src, k) {
+  return valveMarkSlots(src) < 2 ? '' : (isInOutPair(src) ? (k ? 'Out' : 'In') : 'Unit ' + (k + 1));
+}
 // The units of a row nobody answered, by name ("Unit 2", "Out"); [""] for a quantity-1 row.
 function existingTagGaps(src) {
-  const n = valveMarkSlots(src), inOut = isInOutPair(src);
+  const n = valveMarkSlots(src);
   const list = existingTagEntries(src);
   const out = [];
-  for (let k = 0; k < n; k++) if (existingTagState(list[k]) === 'unchecked') out.push(n < 2 ? '' : (inOut ? (k ? 'Out' : 'In') : 'Unit ' + (k + 1)));
+  for (let k = 0; k < n; k++) if (existingTagState(list[k]) === 'unchecked') out.push(unitWordOf(src, k));
   return out;
 }
 function setExistingTagEntry(src, k, value) {
@@ -10817,6 +10823,10 @@ function handleEnergySourceChange(index, value) {
       if (sources[index].quantity === 2) sources[index].quantity = 1;
       delete sources[index]._autoQty2;
     }
+    // A one-valve link follows the row picked from the list or a chip too (build
+    // 163 review: only updateSource and the custom box settled it, so "CHW Out"
+    // picked on a row linked to the In valve kept "— In valve")
+    settleLinkedValve(sources[index]);
     // …and each valve's own answer follows the count (build 146 review: an In/Out
     // row's Out valve left a Qty 1 row "Mixed", its Normally Closed dropped unsaid)
     const valveNote = settleValveUnits(sources[index]);
@@ -11419,14 +11429,46 @@ const LINK_VALVE_SUFFIX_RE = / \u2014 (In|Out) valve$/;
 // A one-valve link follows its row (review): an edit to the row's energy or
 // count names the valve again from its side ("CHW In" at Quantity 1 = the In
 // valve), or makes it a link to the whole source once the row is no side.
+// What the link copied follows too (build 163 review): the other valve's
+// Device ID and existing tag on a row that changed sides exported that valve's
+// on this one. A Device ID or tag the tech typed stays.
 function settleLinkedValve(src) {
   const lt = src && src.linkedTo;
   if (!lt || !lt.valve) return;
+  const was = lt.valve;
   const m = sourceQty(src) === 1 ? / (In|Out)$/.exec(String(src.energySource || '')) : null;
   const base = String(lt.sourceLabel || '').replace(LINK_VALVE_SUFFIX_RE, '');
   if (m) { lt.valve = m[1].toLowerCase(); lt.sourceLabel = base + ' \u2014 ' + LINK_VALVE_WORDS[lt.valve]; }
   else { delete lt.valve; lt.sourceLabel = base; }
+  if (lt.valve === was) return;
+  const target = linkTargetSource(lt);
+  // now the other valve, or the whole pair again (Quantity 2): else nothing to follow
+  const side = lt.valve || (isInOutPair(src) && sourceQty(src) === 2 && target && isInOutPair(target) ? 'both' : '');
+  if (!target || !side) return;
+  const theirs = String(target.deviceId || '').trim();
+  if (theirs && copiedFromValue(src.deviceId, theirs)) src.deviceId = side === 'both' ? theirs : sideDeviceId(theirs, side);
+  takeLinkedExistingTag(src, target, side, null);
 }
+// The saved source a link points at (build 163 review): its unit by id (by
+// name for a link from before build 89), the source by its id, else (no id)
+// by its number. null when either is gone.
+function entrySourceById(entry, sourceId) {
+  return (sourceId && ((entry && entry.sources) || []).find(x => x && x.sourceId === sourceId)) || null;
+}
+function linkTargetSource(lt) {
+  if (!lt) return null;
+  const entry = lt.entryId ? savedEquipment.find(e => e && sameEntryId(e.id, lt.entryId))
+    : savedEquipment.find(e => e && e.equipName === lt.equipName);
+  if (!entry) return null;
+  return lt.sourceId ? entrySourceById(entry, lt.sourceId) : ((entry.sources || [])[lt.sourceIndex] || null);
+}
+// A row's value a link copied from `from`: the same text, or one valve's own
+// part of a per-valve list ("V-2" of "V-1; V-2").
+function copiedFromValue(value, from) {
+  const a = String(value || '').trim(), b = String(from || '').trim();
+  return !!a && !!b && (a === b || splitUnitIds(b).map(x => x.trim()).includes(a));
+}
+const LINK_FILL_FIELDS = ['energySource', 'deviceType', 'deviceId', 'location', 'verification'];
 
 async function applyLink(equipIndex, sourceIndex) {
   let entry = savedEquipment[equipIndex];
@@ -11463,7 +11505,7 @@ async function applyLink(equipIndex, sourceIndex) {
     // …and another writer's save may have replaced the saved list's objects
     // meanwhile: link to the unit and source as stored now (review)
     const nowEntry = savedEquipment.find(e => sameEntryId(e.id, entry.id));
-    const nowSrc = nowEntry && ((src.sourceId && (nowEntry.sources || []).find(x => x && x.sourceId === src.sourceId)) || (nowEntry.sources || [])[sourceIndex]);
+    const nowSrc = nowEntry && (entrySourceById(nowEntry, src.sourceId) || (nowEntry.sources || [])[sourceIndex]);
     if (!nowSrc || !inOutSideNames(nowSrc)) { closeLinkDialog(); showToast('That unit changed while the question was open \u2014 link it again', true); return; }
     entry = nowEntry; src = nowSrc; sourceIndex = entry.sources.indexOf(src);
     if (v !== 'both') { valve = v; label += ' \u2014 ' + LINK_VALVE_WORDS[v]; }
@@ -11480,20 +11522,31 @@ async function applyLink(equipIndex, sourceIndex) {
   // the procedure.
   const mine = sources[pendingLinkSourceIndex];
   const energyBefore = mine.energySource || '';
+  // A re-link to another source ("Linked — change or unlink"): what the earlier
+  // link copied is its old target's, not the tech's, so it follows the new
+  // target (build 163 review: linking to the wrong breaker and then the right
+  // one kept the wrong breaker's ID, tag and location; build 151 did this only
+  // within one pair). A value the new target lacks stays.
+  const prevTarget = mine.linkedTo ? linkTargetSource(mine.linkedTo) : null;
+  const prev = (prevTarget && prevTarget !== src && !(prevTarget.sourceId && prevTarget.sourceId === src.sourceId)) ? prevTarget : null;
   // A pair's answer sets the row (build 151): one valve is its side, Quantity
   // 1, with that valve's own tag; both is the pair, Quantity 2
   if (sides) {
     mine.energySource = valve ? sides[valve] : src.energySource;
     mine.quantity = valve ? 1 : 2;
     // The tag: this valve's, or the pair's. One the tech typed stays, but one an
-    // earlier link to this pair copied is replaced (review: re-linking from the
-    // Out valve to the In valve kept V-2)
+    // earlier link to this pair (or to the old target) copied is replaced
+    // (review: re-linking from the Out valve to the In valve kept V-2)
     const own = String(mine.deviceId || '').trim(), theirs = String(src.deviceId || '').trim();
-    const copied = !own || own === theirs || splitUnitIds(theirs).map(x => x.trim()).includes(own);
+    const copied = !own || copiedFromValue(own, theirs) || (!!prev && copiedFromValue(own, prev.deviceId));
     if (theirs && copied) mine.deviceId = valve ? sideDeviceId(theirs, valve) : theirs;
   }
+  if (prev) for (const f of LINK_FILL_FIELDS) {
+    if (sides && (f === 'energySource' || f === 'deviceId')) continue;   // set above
+    if (src[f] && copiedFromValue(mine[f], prev[f]) && !copiedFromValue(mine[f], src[f])) mine[f] = '';
+  }
   const tookEnergy = sides ? mine.energySource !== energyBefore : (!mine.energySource && !!src.energySource);
-  for (const f of ['energySource', 'deviceType', 'deviceId', 'location', 'verification']) {
+  for (const f of LINK_FILL_FIELDS) {
     if (!mine[f] && src[f]) mine[f] = src[f];
   }
   // …and the SAME point has the same device count (build 94): "HHW In/Out"
@@ -11505,6 +11558,7 @@ async function applyLink(equipIndex, sourceIndex) {
   const drainNotes = tookEnergy ? settleSourceChange(mine, energyBefore, photos, 'source_' + pendingLinkSourceIndex) : [];   // build 123 review
   const valveNote = settleValveUnits(mine);   // the target's count: each valve's answer follows it (build 146 review)
   if (valveNote) drainNotes.push(valveNote);
+  const tookTag = takeLinkedExistingTag(mine, src, sides ? (valve || 'both') : '', prev);   // build 163
   const marksCleared = reconcileSourceMarks(pendingLinkSourceIndex, true);
   mine.userEdited = true;
   sources[pendingLinkSourceIndex].linkedTo = {
@@ -11525,8 +11579,63 @@ async function applyLink(equipIndex, sourceIndex) {
   closeLinkDialog();
   renderSources();
   autoSaveCurrent();
-  showToast(`Linked to ${entry.equipName}` + (valve ? ' \u2014 ' + LINK_VALVE_WORDS[valve] + ' (' + mine.energySource + ')' : '') + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '') + noteClause(drainNotes),
-    marksCleared || drainNotes.length > 0);
+  // what came over, unit by unit ("In W-1, Out W-2"), and what loto-web's pre-QC
+  // would flag: the tech's own tag differing, or a copied tag another row of
+  // this unit already wears (Atlanta's tags restart at 1 on each unit)
+  const tagText = tookTag.copied.map(c => (unitWordOf(mine, c.k) ? unitWordOf(mine, c.k) + ' ' : '') + (c.e.none ? 'No tag' : c.e.tag)).join(', ');
+  const twin = tookTag.copied.filter(c => !c.e.none).map(c => {
+    const j = sources.findIndex((s, i) => s !== mine && existingTagsForJson(s).some(e => e && e.tag && sameExistingTagAnswer(e, c.e)));
+    return j < 0 ? '' : c.e.tag + ' is also on source #' + (j + 1) + ' of this unit';
+  }).filter(Boolean);
+  const tagWarn = (tookTag.clash ? ['its existing LOTO tag differs from ' + (entry.equipName || 'that unit') + '\u2019s'] : []).concat(twin);
+  showToast(`Linked to ${entry.equipName}` + (valve ? ' \u2014 ' + LINK_VALVE_WORDS[valve] + ' (' + mine.energySource + ')' : '') + (tagText ? ' \u2014 existing LOTO tag: ' + tagText : '') + (tagWarn.length ? ' \u2014 ' + tagWarn.join('; ') + ': check the tags' : '') + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '') + noteClause(drainNotes),
+    marksCleared || drainNotes.length > 0 || tagWarn.length > 0);
+}
+
+// A link carries the target's existing LOTO tag (build 163, wilkins 2026-11-10:
+// "if I have typed in a Tag ID, it doesnt save it from the other valve"). A
+// link says this is the SAME device, and one device wears one tag: loto-web
+// prints the one tag on both units (Atlanta spec decision 3), and its pre-QC
+// flags a shared device recorded with two tags, or a tag and "No tag". Build
+// 119 copied none, so the linked row came up "not checked". Each unit of the
+// row the tech left unchecked takes the target's answer for that unit: one
+// valve of a pair takes that valve's ('in' / 'out'), the pair both ('both'),
+// any other row unit by unit, only up to the row's own Quantity (loto-web
+// pairs a shared row's units in order, up to the smaller count). An answer the
+// tech gave stays, except one an earlier link copied: on a pair, one of the
+// pair's answers (re-linking from the Out valve to the In valve must not keep
+// the Out valve's tag; Both → one valve drops the other valve's), and on a
+// re-link, one of the old target's (`prev`), as Device ID does. Copied only
+// where the unit's facility asks the question (review: a Palo Alto unit
+// linked to an Atlanta one took its tags).
+// { copied: [{ k, e }] the units that took a new answer, clash: a unit the
+// tech answered differs from the target's (loto-web's pre-QC would flag it) }.
+function sameExistingTagAnswer(a, b) {
+  const sa = existingTagState(a);
+  if (sa === 'unchecked' || sa !== existingTagState(b)) return false;
+  return sa === 'none' || cleanExistingTag(a.tag).toUpperCase() === cleanExistingTag(b.tag).toUpperCase();
+}
+function takeLinkedExistingTag(mine, target, side, prev) {
+  const copied = [];
+  let clash = false;
+  if (!existingTagPromptOn(formFacilityCode())) return { copied, clash };
+  const theirs = existingTagsForJson(target);   // the target's printed units, cleaned
+  const old = prev ? existingTagsForJson(prev).filter(Boolean) : [];
+  if (!theirs.some(Boolean) && !old.length) return { copied, clash };
+  const want = (side === 'in' || side === 'out') ? [theirs[side === 'out' ? 1 : 0] || null] : theirs.slice(0, valveMarkSlots(mine));
+  const own = existingTagEntries(mine);
+  const earlierCopy = cur => (side && theirs.some(t => sameExistingTagAnswer(cur, t))) || old.some(t => sameExistingTagAnswer(cur, t));
+  for (let k = 0; k < Math.max(want.length, own.length); k++) {
+    const cur = own[k], w = want[k] || null;
+    if (existingTagState(cur) === 'unchecked') {
+      if (w) { setExistingTagEntry(mine, k, Object.assign({}, w)); copied.push({ k, e: w }); }
+    } else if (earlierCopy(cur)) {
+      if (w && sameExistingTagAnswer(cur, w)) continue;
+      setExistingTagEntry(mine, k, w ? Object.assign({}, w) : null);
+      if (w) copied.push({ k, e: w });
+    } else if (w && !sameExistingTagAnswer(cur, w)) clash = true;   // the tech's own answer
+  }
+  return { copied, clash };
 }
 
 function unlinkSource(index) {
@@ -14958,7 +15067,7 @@ function collectIncompleteFields(opts) {
     if (s.linkedTo) {
       // Linked sources skip the rest, but not the energy source (build 93):
       // without it the office import drops the row. Nor the existing tag
-      // (build 119): a link never carries its target's.
+      // (build 119): a link carries only the answers its target holds (build 163).
       const lg = [];
       if (!s.energySource) lg.push('Energy Source');
       if (tagGap(s)) lg.push(tagGap(s));
@@ -15280,20 +15389,22 @@ function discardForm() {
     showToast('Closed \u201c' + (name || 'the unit') + '\u201d \u2014 unchanged, still as saved');
     return;
   }
+  const keepsPlace = !editing && !!formPlace();   // only say it when there is one (build 163 review)
   const msg = editing
     ? 'Cancel the edit of “' + (name || 'this unit') + '”?\n\nYour changes are dropped; the saved unit stays exactly as it was.'
-    : 'Discard ' + (name ? '“' + name + '”' : 'this unit') + '?\n\nEverything on the form is cleared. Photos already taken stay on the iPad (Settings → Photo Store Report).';
+    : 'Discard ' + (name ? '“' + name + '”' : 'this unit') + '?\n\nEverything on the form is cleared' + (keepsPlace ? ' but the building and room' : '') + '. Photos already taken stay on the iPad (Settings → Photo Store Report).';
   if (!confirm(msg)) return;
   if (!tabMayWrite()) return;   // another tab took over while the dialog was open
   // A cancelled edit goes on to the next unit as Close and Save & New do (build
   // 150, wilkins 2026-11-03: the cancel wiped the location): where the tech was
   // before opening it (build 151), else where the saved unit is — never the
-  // dropped edit's own
+  // dropped edit's own. A discarded NEW unit keeps the form's building and room
+  // too (build 163, wilkins 2026-11-10: "I am still having the issue of the
+  // location being wiped"): the tech is still in that room. startNextUnit
+  // also redraws the saved list and the header badge.
   if (editing) startNextUnit({ building: editing.equipBuilding, room: editing.equipRoom });
-  else clearForm(false);
-  renderSavedPanel();
-  updateHeaderBadge();
-  showToast(editing ? 'Edit cancelled — “' + (name || 'the unit') + '” is unchanged' : 'Unit discarded');
+  else startNextUnit();
+  showToast(editing ? 'Edit cancelled — “' + (name || 'the unit') + '” is unchanged' : 'Unit discarded' + (keepsPlace ? ' — the building and room stay' : ''));
 }
 function updateDiscardButton() {
   const b = document.getElementById('discardFormBtn');
@@ -15894,8 +16005,9 @@ function formHoldsEntry(entry) {
 // no longer holds their photos.
 function closeFormIfRemoving(rows) {
   if (!(rows || []).some(formHoldsEntry)) return false;
-  // back where the tech was before opening it (build 151), else a blank form
-  if (returnPlaceFor(currentEntryId)) startNextUnit(); else clearForm(false);
+  // back where the tech was before opening it (build 151), else at the open
+  // unit's building and room (build 163: a blank form wiped the location)
+  startNextUnit();
   return true;
 }
 function deleteSaved(index) {
