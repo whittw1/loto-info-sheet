@@ -169,6 +169,8 @@
 //   T485      build 161: Chemical In / Chemical Out rows offer "Visual" (loto-web's "Visually confirm absence of flow through lines.") on every chemical device; a chip on the card; exported as is
 //   T486      build 162: a new Chemical In / Chemical Out row starts on "Visual" (its device and location left to the tech); leaving chemical clears it; a steam row's location stays empty, never undefined
 //   T487      build 162: a hand-added Condenser Water row with the simplified checks shows a Visual chip under the Drain/Gauge boxes (not picked); a tap picks it; no other water row gets one
+//   T488      build 163: a link fills the existing LOTO tag of each unit left unchecked from its target (Both / one valve / a breaker / No tag); a
+//             re-link from Out to In swaps the copied tag; the tech's own tag stays (the toast warns); exported in column 16 and entries.json
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8899,6 +8901,85 @@
     });
   }
 
+  // T488 — a link carries the target's existing LOTO tag (build 163)
+  async function t488_linkCarriesTheExistingTag() {
+    const N = 'T488 build 163 (wilkins 2026-11-10: "if I have typed in a Tag ID, it doesnt save it from the other valve"): a link fills the existing LOTO tag of each unit the tech left unchecked from the unit it links to — the pair (Both) both valves\' tags, one valve of the pair (Out) that valve\'s, a breaker its one tag, "No tag" too — and the box shows it; re-linking the same row from the Out valve to the In valve swaps the copied Out tag for the In tag; a tag the tech typed stays and the toast warns it differs; a target unit nobody checked fills nothing (Save & New still lists the gap); Device ID copies as before; the export carries the copied tags in column 16 and entries.json';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await withTagSetting(async () => {
+      setHospitalCode('Atlanta');
+      const S = (es, extra) => Object.assign(mkSrc(es), { sourceId: genUuid() }, extra || {});
+      const T = Object.assign(mkEntry('ET-488-T', { sources: [
+        S('HHW In/Out', { deviceType: 'Ball Valve', quantity: 2, deviceId: 'V-1; V-2', verification: 'Temp Only - Hot', existingTag: [{ tag: 'W-1' }, { tag: 'W-2' }] }),
+        S('Electrical 480V', { deviceId: 'LP-1 #3', existingTag: [{ tag: 'E-3' }] }),
+        S('CHW In/Out', { deviceType: 'Butterfly Valve', quantity: 2, verification: 'Temp Only - CHW', existingTag: [null, { none: true }] })] }), { hospitalCode: 'Atlanta' });
+      savedEquipment = [T]; saveAll();
+      fillFormNoSources('ET-488');
+      let row = 0;
+      const link = async (si, answer) => {
+        const msgs = await withToasts(async () => {
+          await withDialogs({ choice: { 'link-valve': answer || 'cancel' } }, async () => { showLinkDialog(row); await applyLink(0, si); });
+        });
+        closeLinkDialog();
+        const s = sources[row];
+        return { energy: s.energySource, deviceId: s.deviceId, tag: JSON.stringify(s.existingTag || null), toast: msgs[msgs.length - 1] || '' };
+      };
+      // 1. the pair, both valves
+      addSource(); row = 0; got.both = await link(0, 'both');
+      want(got.both.energy === 'HHW In/Out' && got.both.deviceId === 'V-1; V-2' && got.both.tag === '[{"tag":"W-1"},{"tag":"W-2"}]' && /existing LOTO tag: W-1; W-2/.test(got.both.toast), 'pair, both: ' + JSON.stringify(got.both));
+      // 2. one valve of the pair, then the same row re-linked to the other valve
+      addSource(); row = 1; got.out = await link(0, 'out');
+      want(got.out.energy === 'HHW Out' && got.out.deviceId === 'V-2' && got.out.tag === '[{"tag":"W-2"}]', 'Out valve: ' + JSON.stringify(got.out));
+      got.relink = await link(0, 'in');
+      want(got.relink.energy === 'HHW In' && got.relink.deviceId === 'V-1' && got.relink.tag === '[{"tag":"W-1"}]', 're-linked to the In valve: ' + JSON.stringify(got.relink));
+      // 3. a breaker
+      addSource(); row = 2; got.breaker = await link(1);
+      want(got.breaker.deviceId === 'LP-1 #3' && got.breaker.tag === '[{"tag":"E-3"}]' && /existing LOTO tag: E-3/.test(got.breaker.toast), 'breaker: ' + JSON.stringify(got.breaker));
+      // 4. the tech's own tag stays, and the toast says it differs
+      addSource(); row = 3; updateExistingTag(3, 0, 'E-7'); got.own = await link(1);
+      want(got.own.tag === '[{"tag":"E-7"}]' && /differs from ET-488-T/.test(got.own.toast) && !/existing LOTO tag:/.test(got.own.toast), 'own tag kept: ' + JSON.stringify(got.own));
+      // 5. No tag travels; a valve nobody checked fills nothing
+      addSource(); row = 4; got.none = await link(2, 'out');
+      want(got.none.energy === 'CHW Out' && got.none.tag === '[{"none":true}]', 'No tag: ' + JSON.stringify(got.none));
+      addSource(); row = 5; got.unchecked = await link(2, 'in');
+      want(got.unchecked.energy === 'CHW In' && got.unchecked.tag === 'null' && !/existing LOTO tag/.test(got.unchecked.toast), 'unchecked target: ' + JSON.stringify(got.unchecked));
+      got.gaps = collectIncompleteFields().filter(m => /Existing LOTO tag/.test(m));
+      want(got.gaps.length === 1 && /Source #6 \(linked\)/.test(got.gaps[0]), 'only the unchecked valve is a gap: ' + JSON.stringify(got.gaps));
+      // 6. the card shows the copied tags
+      sources.forEach(x => { x.collapsed = false; }); renderSources();
+      got.boxes = [[0, 0], [0, 1], [1, 0], [2, 0]].map(([i, k]) => { const b = document.getElementById('src_extag_' + i + '_' + k); return b ? b.value : 'no box'; }).join(',');
+      got.noneBox = !!(document.getElementById('src_extagnone_4_0') || {}).checked;
+      want(got.boxes === 'W-1,W-2,W-1,E-3' && got.noneBox, 'card boxes: ' + got.boxes + ' / No tag ' + got.noneBox);
+      // 7. the export
+      const E = saveEntry();
+      if (!E) { fails.push('not saved'); return; }
+      const { zip, confirms } = await runExport({ confirmResponse: true, choice: () => 'export' });
+      if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); return; }
+      const u = await unzipExport(zip.blob);
+      const col16 = [];
+      for (const xpath of Object.keys(u.files).filter(p => /Information_Sheet_.*\.xlsx$/.test(p))) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        const ws = wb.worksheets[0];
+        let cur = null;
+        ws.eachRow(r => {
+          const a = String(r.getCell(1).value || '');
+          if (a === 'Equipment ID/Name') cur = String(ws.getRow(r.number + 1).getCell(1).value || '');
+          if (cur === 'ET-488' && /^Energy Source #\d+$/.test(a)) {
+            const d = ws.getRow(r.number + 1);
+            if (String(d.getCell(1).value || '')) col16.push(String(d.getCell(16).value || ''));
+          }
+        });
+      }
+      got.col16 = col16;
+      want(JSON.stringify(col16) === JSON.stringify(['W-1; W-2', 'W-1', 'E-3', 'E-7', 'No tag', '']), 'column 16: ' + JSON.stringify(col16));
+      const je = ((u.entriesJson && u.entriesJson.entries) || []).find(e => e.equipName === 'ET-488');
+      got.json = je ? je.sources.map(x => JSON.stringify(x.existingTag)) : 'no entry';
+      want(Array.isArray(got.json) && got.json.join('|') === '[{"tag":"W-1"},{"tag":"W-2"}]|[{"tag":"W-1"}]|[{"tag":"E-3"}]|[{"tag":"E-7"}]|[{"none":true}]|[null]', 'entries.json: ' + JSON.stringify(got.json));
+    });
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   // T470 / T471 turn Settings → Quick picks off and on: the browser's own setting
   // comes back whatever happens in the test (the build 154 review)
   async function withQuickPicksSetting(fn) {
@@ -9867,7 +9948,7 @@
 
   // T248 — the prompt follows the unit's own facility; one box per unit
   async function t248_theExistingTagPromptFollowsTheUnitsFacility() {
-    const N = 'T248 the existing-tag question is on by default for the three Atlanta facilities and off elsewhere, a Settings change per facility wins; it follows the UNIT\'s facility (an Atlanta unit opened while the setting is Marion still asks); each row gets one box per unit (In/Out names on a pair) with a scan button, the hint "e.g. E-1" and a painted "No tag" box; a typed tag loses its ";" and never touches Device ID; No tag disables the box and a typed tag disables No tag; off, a row that holds an answer still shows it; a linked row asks too and never takes its target\'s tag';
+    const N = 'T248 the existing-tag question is on by default for the three Atlanta facilities and off elsewhere, a Settings change per facility wins; it follows the UNIT\'s facility (an Atlanta unit opened while the setting is Marion still asks); each row gets one box per unit (In/Out names on a pair) with a scan button, the hint "e.g. E-1" and a painted "No tag" box; a typed tag loses its ";" and never touches Device ID; No tag disables the box and a typed tag disables No tag; off, a row that holds an answer still shows it; a linked row asks too and takes its target\'s tag (build 163; T488)';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -9911,14 +9992,14 @@
       renderSources();
       got.ownFacility = !!document.getElementById('extagGroup_0');
       want(got.ownFacility, 'follows the unit\'s facility');
-      // a linked row asks too and takes nothing of its target's tag
+      // a linked row asks too, and takes its target's tag (build 163; build 119 took none — T488)
       showLinkDialog(0);
-      applyLink(1, 0);
+      await applyLink(1, 0);
       closeLinkDialog();
       sources[0].collapsed = false;
       renderSources();
-      got.linked = { linked: !!sources[0].linkedTo, tag: sources[0].existingTag === undefined, shown: !!document.getElementById('extagGroup_0') };
-      want(got.linked.linked && got.linked.tag && got.linked.shown, 'linked row');
+      got.linked = { linked: !!sources[0].linkedTo, tag: JSON.stringify(sources[0].existingTag || null), shown: !!document.getElementById('extagGroup_0') };
+      want(got.linked.linked && got.linked.tag === '[{"tag":"E-9"}]' && got.linked.shown, 'linked row');
     });
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -11045,18 +11126,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 162 (was build 122\'s): APP_BUILD and the header label say 162, the service worker\'s cache is loto-collector-v7.157, Xcode\'s CURRENT_PROJECT_VERSION is 162 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 163 (was build 122\'s): APP_BUILD and the header label say 163, the service worker\'s cache is loto-collector-v7.158, Xcode\'s CURRENT_PROJECT_VERSION is 163 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 162 && !!label && +label[1] === 162, 'the build');
+    want(APP_BUILD === 163 && !!label && +label[1] === 163, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.157', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.158', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 162;,CURRENT_PROJECT_VERSION = 162;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 163;,CURRENT_PROJECT_VERSION = 163;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -17682,7 +17763,8 @@
     t473_mainPhotoArrowDialog, t474_mainPhotoArrowExport, t475_mainPhotoArrowLifecycle, t476_mainPhotoArrowGeometry, t477_dockLevelerTypeAndTemplate,
     t478_chipCheckFollowsEveryPick, t479_condenserWaterPumpTypeAndTemplate, t480_coolingTowerCondenserWaterVisual,
     t481_sameNameSameRoomAsksBeforeExport, t482_sameNameFormAndEarlierUnits, t483_feedwaterPumpRowsAndBoilerPlant,
-    t484_customLocationIsAlwaysAChip, t485_chemicalLinesOfferVisual, t486_chemicalRowStartsOnVisual, t487_condenserWaterVisualChipBesideTheBoxes];
+    t484_customLocationIsAlwaysAChip, t485_chemicalLinesOfferVisual, t486_chemicalRowStartsOnVisual, t487_condenserWaterVisualChipBesideTheBoxes,
+    t488_linkCarriesTheExistingTag];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

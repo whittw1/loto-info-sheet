@@ -552,7 +552,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b162</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b163</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1272,7 +1272,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 162;
+const APP_BUILD = 163;
 
 // ============================================================================
 // DATA
@@ -10175,8 +10175,10 @@ function updateUnitDeviceId(index, unit, value) {
 // In then Out, as for Device ID): { tag: "E-2" } / { none: true } / null = not
 // checked. A single tag never covers every unit (unlike Device ID), and the
 // tag never goes into Device ID: loto-web splices Device ID into Section 1's
-// Method. Asked on every row, linked or not; a link never copies its target's
-// tag, and Duplicate / Copy Source / the count's copies start not checked.
+// Method. Asked on every row, linked or not. A link fills the units left
+// unchecked with its target's answers (build 163, takeLinkedExistingTag: one
+// device, one tag; build 119 copied none). Duplicate / Copy Source / the
+// count's copies start not checked (another device).
 // The question follows the UNIT's own facility: on by default for the three
 // Atlanta codes, off elsewhere, changeable per facility in Settings.
 const EXISTING_TAG_DEFAULT_ON = ['Atlanta', 'Atlanta - Fort McPherson', 'Atlanta - Trinka Davis'];
@@ -11505,6 +11507,7 @@ async function applyLink(equipIndex, sourceIndex) {
   const drainNotes = tookEnergy ? settleSourceChange(mine, energyBefore, photos, 'source_' + pendingLinkSourceIndex) : [];   // build 123 review
   const valveNote = settleValveUnits(mine);   // the target's count: each valve's answer follows it (build 146 review)
   if (valveNote) drainNotes.push(valveNote);
+  const tookTag = takeLinkedExistingTag(mine, src, sides ? (valve || 'both') : '');   // build 163
   const marksCleared = reconcileSourceMarks(pendingLinkSourceIndex, true);
   mine.userEdited = true;
   sources[pendingLinkSourceIndex].linkedTo = {
@@ -11525,8 +11528,48 @@ async function applyLink(equipIndex, sourceIndex) {
   closeLinkDialog();
   renderSources();
   autoSaveCurrent();
-  showToast(`Linked to ${entry.equipName}` + (valve ? ' \u2014 ' + LINK_VALVE_WORDS[valve] + ' (' + mine.energySource + ')' : '') + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '') + noteClause(drainNotes),
-    marksCleared || drainNotes.length > 0);
+  const tagText = tookTag.changed ? existingTagCellText(mine) : '';
+  const tagClash = tookTag.clash ? 'its existing LOTO tag differs from ' + (entry.equipName || 'that unit') + '\u2019s: check the tag' : '';
+  showToast(`Linked to ${entry.equipName}` + (valve ? ' \u2014 ' + LINK_VALVE_WORDS[valve] + ' (' + mine.energySource + ')' : '') + (tagText ? ' \u2014 existing LOTO tag: ' + tagText : '') + (tagClash ? ' \u2014 ' + tagClash : '') + (marksCleared ? ' \u2014 ' + MARKS_CLEARED_NOTE : '') + noteClause(drainNotes),
+    marksCleared || drainNotes.length > 0 || !!tagClash);
+}
+
+// A link carries the target's existing LOTO tag (build 163, wilkins 2026-11-10:
+// "if I have typed in a Tag ID, it doesnt save it from the other valve"). A
+// link says this is the SAME device, and one device wears one tag: loto-web
+// prints the one tag on both units (Atlanta spec decision 3), and its pre-QC
+// flags a shared device recorded with two tags, or a tag and "No tag". Build
+// 119 copied none, so the linked row came up "not checked". Each unit of the
+// row the tech left unchecked takes the target's answer for that unit: one
+// valve of a pair takes that valve's ('in' / 'out'), the pair both ('both'),
+// any other row unit by unit. An answer the tech gave stays, except, on a
+// pair, one an earlier link to this pair copied (re-linking from the Out valve
+// to the In valve must not keep the Out valve's tag), as Device ID does.
+// { changed: the row's answers changed, clash: a unit the tech answered
+// differs from the target's answer (loto-web's pre-QC would flag it) }.
+function sameExistingTagAnswer(a, b) {
+  const sa = existingTagState(a);
+  if (sa === 'unchecked' || sa !== existingTagState(b)) return false;
+  return sa === 'none' || cleanExistingTag(a.tag).toUpperCase() === cleanExistingTag(b.tag).toUpperCase();
+}
+function takeLinkedExistingTag(mine, target, side) {
+  const theirs = existingTagsForJson(target);   // the target's printed units, cleaned
+  if (!theirs.some(Boolean)) return { changed: false, clash: false };
+  const want = (side === 'in' || side === 'out') ? [theirs[side === 'out' ? 1 : 0] || null] : theirs;
+  const own = existingTagEntries(mine).slice();
+  let changed = false, clash = false;
+  want.forEach((w, k) => {
+    const cur = own[k];
+    const unchecked = existingTagState(cur) === 'unchecked';
+    if (!unchecked && !(side && theirs.some(t => sameExistingTagAnswer(cur, t)))) {   // the tech's own answer
+      if (w && !sameExistingTagAnswer(cur, w)) clash = true;
+      return;
+    }
+    if (unchecked && !w) return;
+    setExistingTagEntry(mine, k, w ? Object.assign({}, w) : null);
+    changed = true;
+  });
+  return { changed, clash };
 }
 
 function unlinkSource(index) {
@@ -14958,7 +15001,7 @@ function collectIncompleteFields(opts) {
     if (s.linkedTo) {
       // Linked sources skip the rest, but not the energy source (build 93):
       // without it the office import drops the row. Nor the existing tag
-      // (build 119): a link never carries its target's.
+      // (build 119): a link carries only the answers its target holds (build 163).
       const lg = [];
       if (!s.energySource) lg.push('Energy Source');
       if (tagGap(s)) lg.push(tagGap(s));
