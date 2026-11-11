@@ -374,6 +374,10 @@ if ('serviceWorker' in navigator) {
   .src-mag input { width: 4.5em; }
   .src-mag-hint { flex-basis: 100%; font-size: 12px; }
   .src-mag-sum { color: var(--text-dim); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  /* the device's own room (build 167): under Location, only on a row that has one */
+  .src-room { margin-top: 8px; font-size: 13px; color: var(--text-dim); }
+  .src-room-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 4px; }
+  .src-room-row input { flex: 1 1 4.5em; min-width: 4em; }
   .src-head-btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
   .src-head-btns .src-move { background: var(--card); border: 1px solid var(--border); color: var(--text-dim); padding: 6px 10px; }
   .src-head-btns .src-move:disabled { color: #555; }
@@ -557,7 +561,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b166</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b167</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1277,7 +1281,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 166;
+const APP_BUILD = 167;
 
 // ============================================================================
 // DATA
@@ -4215,6 +4219,176 @@ function clearMagnitude(index) {
   // With nothing typed loto-web prints the site's Source Magnitude, else its Mapping
   // Sheet's; and it never clears a value it imported (a blank cell is "not typed")
   showToast('Cleared ' + magnitudeText(typed) + ': the row goes back to loto-web\u2019s own value (the site\u2019s, else the default). If this unit was already exported with ' + magnitudeText(typed) + ', tell the office.');
+}
+
+// ---- In another room (build 167) ----------------------------------------------
+// wilkins 2026-11-11: "When I have something that feeds a piece of equipment in
+// another room, I do a custom location and say 'Breaker 2 in 3C101' … these valve
+// tags, either new or existing, are not being tracked since they are a custom
+// location." loto-web numbers IDs per room: every unit in a room draws its E-, W-,
+// S-… numbers from that room's one sequence. A row whose device sits in ANOTHER
+// room continues THAT room's sequence only when its numbering_building /
+// numbering_room is set, which until now only a person could do (loto-web's Shared
+// ID dialog, "Number in another room"): the Location text is printed, never read.
+// So the breaker took a number from its unit's room and could wear a number 3C101
+// already uses. (Existing tags are per row and unit, and a site numbered per piece
+// of equipment ignores rooms: neither was affected.)
+// The row records the room as data: src.deviceRoom = { building, room }, from its
+// More menu ("In another room…"), Building prefilled with the unit's and Room with
+// a trailing "in <room>" of its Location. The boxes sit under the Custom Location box
+// (the usual case), else under Location. Sent in sheet column 25 "Device Room"
+// ("Main | 3C101", a room alone with no building), the CSV's last column and
+// entries.json deviceRoom, for loto-web's numbering room. Never on a linked row
+// (it wears its target's ID, numbered where the target is), and never the unit's
+// own room. The Location text is untouched and still prints as typed.
+const DEVICE_ROOM_BUILDING_MAX = 50, DEVICE_ROOM_ROOM_MAX = 100;
+// loto-web's answers (2026-11-11): the rows its templates add (K, T, ES, RG) always
+// number in the unit's room, so they get no box; a device already recorded on a unit
+// IN that room is linked to it instead (one breaker, one number), as the box says.
+const DEVICE_ROOM_NOT_ON = ['Kinetic', 'Thermal', 'Stored Electrical Energy', 'Refrigerant'];
+// A row that can carry a room of its own: not linked, not one loto-web keeps in the unit's room
+function deviceRoomTakes(src) {
+  return !!src && !src.linkedTo && !DEVICE_ROOM_NOT_ON.includes(String(src.energySource || '').trim());
+}
+// Typed text as sent: spaces collapsed, no "|" (it splits the cell), capped
+function deviceRoomClean(text, max) {
+  return String(text || '').replace(/\|/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+// A room as loto-web folds it to match one (its 2026-11-11 answer, the importer's
+// location matching): case, spaces and - . / ignored, a leading "Building" / "Bldg"
+// dropped from the building, EXT = Exterior. A blank building is the unit's own
+// (`unitBuilding`): loto-web reads a room alone in the unit's building.
+function roomKeyOf(building, room, unitBuilding) {
+  const fold = v => String(v || '').toLowerCase().replace(/[\s\-.\/\u2010-\u2015]+/g, '');
+  const b = String(building || '').trim() || String(unitBuilding || '');
+  const r = fold(room);
+  return fold(b.replace(/^\s*(?:building|bldg)\b\.?/i, '')) + '|' + (r === 'ext' ? 'exterior' : r);
+}
+// The room a row's device sits in: { building, room }, or null (none, a linked row, or
+// a row that takes none)
+function deviceRoomOf(src) {
+  const d = deviceRoomTakes(src) && src.deviceRoom;
+  if (!d || typeof d !== 'object') return null;
+  const room = deviceRoomClean(d.room, DEVICE_ROOM_ROOM_MAX);
+  return room ? { building: deviceRoomClean(d.building, DEVICE_ROOM_BUILDING_MAX), room } : null;
+}
+// …for a unit at building / room: never the unit's own room
+function deviceRoomForUnit(src, building, room) {
+  const d = deviceRoomOf(src);
+  return d && roomKeyOf(d.building, d.room, building) !== roomKeyOf(building, room) ? d : null;
+}
+// Column 25, the CSV's Device Room: "Main | 3C101", "3C101" with no building, '' for none
+function deviceRoomSheetText(src, entry) {
+  const d = deviceRoomForUnit(src, entry && entry.equipBuilding, entry && entry.equipRoom);
+  return d ? (d.building ? d.building + ' | ' + d.room : d.room) : '';
+}
+// As the card says it: "Main 3C101"
+function deviceRoomLabel(d) { return d ? [d.building, d.room].filter(Boolean).join(' ') : ''; }
+// The room a Location names at its end: "Breaker 2 in 3C101" / "… in Room 3C101" → "3C101".
+// Only a prefill for the box the tech opens: never acted on by itself.
+function roomNamedIn(location) {
+  const m = /\bin\s+(?:room\s+|rm\.?\s*)?([A-Za-z0-9][A-Za-z0-9.\-\/]*)\s*$/i.exec(String(location || '').trim());
+  return m && /\d/.test(m[1]) ? m[1] : '';
+}
+// The form's unit's own room (formPlace, build 151), blank parts for none
+function formUnitRoom() { return formPlace() || { building: '', room: '' }; }
+// The room a row's Location names, unless it is the unit's own (then nothing to prefill)
+function roomPrefillOf(src) {
+  const r = roomNamedIn(src && src.location), u = formUnitRoom();
+  return r && roomKeyOf(u.building, r, u.building) !== roomKeyOf(u.building, u.room) ? r : '';
+}
+function deviceRoomMenuLabel(src) {
+  return deviceRoomTakes(src) && !deviceRoomOf(src) ? 'In another room…' : '';
+}
+function deviceRoomControl(src, i, open) {
+  if (!deviceRoomTakes(src)) return '';
+  const d = deviceRoomOf(src);
+  if (!open && !d) return html`<span id="src_room_${i}" hidden></span>`;
+  const building = d ? d.building : deviceRoomClean(getBuilding(), DEVICE_ROOM_BUILDING_MAX);
+  const room = d ? d.room : roomPrefillOf(src);
+  const list = buildingListFor(formFacilityCode()).map(it => it.v);
+  return html`<div class="src-room" id="src_room_${i}">
+    <div>In another room (building, room): its tag is numbered there. Already on a unit in that room? Link to it instead.</div>
+    <div class="src-room-row">
+      <input type="text" id="src_room_b_${i}" value="${building}" maxlength="${DEVICE_ROOM_BUILDING_MAX}" list="src_room_bl_${i}" placeholder="Building"
+        aria-label="Building of the device's room" oninput="typeDeviceRoom(${i})" onchange="commitDeviceRoom(${i},'b')">
+      <datalist id="src_room_bl_${i}">${list.map(v => html`<option value="${v}"></option>`)}</datalist>
+      <input type="text" id="src_room_r_${i}" value="${room}" maxlength="${DEVICE_ROOM_ROOM_MAX}" placeholder="Room, e.g. 3C101"
+        aria-label="Room the device is in" oninput="typeDeviceRoom(${i})" onchange="commitDeviceRoom(${i},'r')">
+      <button type="button" class="btn btn-sm btn-outline src-room-clear" ${d ? '' : 'hidden'} onclick="clearDeviceRoom(${i})">Clear</button>
+    </div></div>`;
+}
+function redrawDeviceRoomControl(index, open) {
+  const slot = document.getElementById('src_room_' + index), t = document.createElement('div');
+  t.innerHTML = String(deviceRoomControl(sources[index], index, open));
+  if (slot && t.firstElementChild) slot.replaceWith(t.firstElementChild);
+}
+// The boxes' text into the row: a room set (or changed) as it is typed; a blank room
+// waits for the box to be left. True when the row now holds that room.
+function takeDeviceRoomBoxes(index) {
+  const src = sources[index], b = document.getElementById('src_room_b_' + index), r = document.getElementById('src_room_r_' + index);
+  if (!src || !b || !r) return false;
+  const next = { building: deviceRoomClean(b.value, DEVICE_ROOM_BUILDING_MAX), room: deviceRoomClean(r.value, DEVICE_ROOM_ROOM_MAX) };
+  const clear = document.querySelector('#src_room_' + index + ' .src-room-clear');
+  if (!next.room) {
+    // emptied: off at once, so a Save & New that never leaves the box (iPad) saves it off
+    // too; the next letter typed puts it back. The boxes stay until the box is left.
+    if (src.deviceRoom) { markSourceEdited(index); delete src.deviceRoom; autoSaveCurrent(); }
+    if (clear) clear.hidden = true;
+    return false;
+  }
+  const now = deviceRoomOf(src);
+  if (!now || now.building !== next.building || now.room !== next.room) {
+    markSourceEdited(index);
+    src.deviceRoom = next;
+    autoSaveCurrent();
+  }
+  if (clear) clear.hidden = false;
+  return true;
+}
+// "In another room…": the boxes, prefilled. A room the Location names is taken at
+// once, so what the boxes show is what the row holds (Clear takes it back off).
+function openDeviceRoom(index) {
+  if (!sources[index] || !document.getElementById('src_room_' + index)) return;
+  if (!document.getElementById('src_room_r_' + index)) redrawDeviceRoomControl(index, true);
+  const r = document.getElementById('src_room_r_' + index);
+  if (r && r.value && takeDeviceRoomBoxes(index)) {   // the prefill is never the unit's own room
+    showToast('Numbered in ' + deviceRoomLabel(deviceRoomOf(sources[index])) + ' (from its Location) — change it or Clear');
+    refreshSourceDependents(index);
+  }
+  if (r) { r.focus(); r.select(); }
+}
+function typeDeviceRoom(index) { takeDeviceRoomBoxes(index); }
+// A box left: its text tidied. The room box left blank, or naming the unit's own room,
+// takes the room off (the unit's own room is where its rows number anyway).
+function commitDeviceRoom(index, which) {
+  const src = sources[index], b = document.getElementById('src_room_b_' + index), r = document.getElementById('src_room_r_' + index);
+  if (!src || !b || !r) return;
+  const had = !!src.deviceRoom, set = takeDeviceRoomBoxes(index), u = formUnitRoom(), d = deviceRoomOf(src);
+  if (set && d && roomKeyOf(d.building, d.room, u.building) === roomKeyOf(u.building, u.room)) {
+    showToast(deviceRoomLabel(d) + ' is this unit’s own room: its rows are numbered there already', true);
+    return dropDeviceRoom(index);
+  }
+  if (!set && which === 'r') {
+    // the room box left blank: the boxes go (the room went off as it was emptied)
+    if (had || r.defaultValue) showToast('No room: this row’s tag is numbered with its unit again');
+    return dropDeviceRoom(index);
+  }
+  if (d) { b.value = d.building; r.value = d.room; }
+  refreshSourceDependents(index);
+}
+function dropDeviceRoom(index) {
+  const src = sources[index];
+  if (!src) return;
+  if (src.deviceRoom) { markSourceEdited(index); delete src.deviceRoom; autoSaveCurrent(); }
+  redrawDeviceRoomControl(index);
+  refreshSourceDependents(index);
+}
+function clearDeviceRoom(index) {
+  const d = deviceRoomOf(sources[index]);
+  if (!d) return;
+  dropDeviceRoom(index);
+  showToast('Cleared ' + deviceRoomLabel(d) + ': the row’s tag is numbered with its unit. If this unit was already exported with it, tell the office.');
 }
 
 // ---- Drive feeder -------------------------------------------------------------
@@ -8499,6 +8673,7 @@ function countCopyOf(base) {
   delete c.driveIsolates;   // …nor its drive's disconnect (build 122)
   delete c._drivesTogether;   // …nor the count prompt's Quantity (build 148)
   delete c.typedMagnitude;   // …nor a pressure & temperature typed on the first (build 166)
+  delete c.deviceRoom;   // …nor the room its device sits in (build 167)
   return c;
 }
 // A lower count removes only rows that hold nothing of the user's (build 113):
@@ -9570,13 +9745,14 @@ function buildSourceCard(src, i) {
       const isLast = i === sources.length - 1;
       const qty = sourceQty(src);   // Quantity 2+ reads "×2" (build 148)
       const magText = magnitudeSheetText(src);   // a typed pressure & temperature (build 166)
+      const roomText = deviceRoomLabel(deviceRoomOf(src));   // the device's own room (build 167)
       card.innerHTML = html`
         <div class="source-summary" onclick="expandSource(${i})">
           <span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
           <div class="source-summary-text">
             <strong>${src.energySource || 'Empty source'}</strong>${magText ? html` <span class="src-mag-sum">${magText}</span>` : ''}${autoBadge}${atsSideTag(i)}${valveStateBadgeText(src) ? html` <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">${valveStateBadgeText(src)}</span>` : ''}${photoData && photoData.dbKey && fittingMarks(photoData, src).length ? raw(' <span title="Valve location marked">&#128205;</span>') : ''}${src.linkedTo ? raw(' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>') : ''}${summaryLinkChips(src)}
             ${src.deviceType ? html` &mdash; ${src.deviceType}` : ''}${qty > 1 ? html` <span class="src-qty" style="font-weight:700;">&times;${qty}</span>` : ''}${src.deviceId ? html` <span style="color:#7eb8da;">(${src.deviceId})</span>` : ''}
-            ${src.location ? html` &mdash; ${src.location}` : ''}
+            ${src.location ? html` &mdash; ${src.location}` : ''}${roomText ? html` <span class="src-mag-sum">(in ${roomText})</span>` : ''}
             ${src.detail ? html` <span style="color:var(--accent);font-weight:600;font-family:monospace;">(${src.detail})</span>` : ''}
             ${src.linkedTo ? html`<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">→ ${src.linkedTo.equipName} / ${src.linkedTo.sourceLabel}</div>` : ''}
           </div>
@@ -9638,6 +9814,7 @@ function buildSourceCard(src, i) {
       const isLastExp = i === sources.length - 1;
       const energyChoices = energyChoicesFor(src);   // a typed steam pressure in its class's place (build 149)
       const magItem = magnitudeMenuLabel(src);   // "Change pressure & temperature" (build 166)
+      const roomItem = deviceRoomMenuLabel(src);   // "In another room…" (build 167)
       const role = sourceRoleOf(src);
       // The tech's Duplicate answer, as tap buttons under the photo (build 138: a
       // dropdown beside Quantity, far from the photo it is about).
@@ -9661,6 +9838,7 @@ function buildSourceCard(src, i) {
                 <button type="button" onclick="closeSrcMenus();duplicateSource(${i})">Duplicate this source</button>
                 ${steamPressureAtUsual(src) ? html`<button type="button" onclick="closeSrcMenus();openSteamPressure(${i})">Change steam pressure</button>` : ''}
                 ${magItem ? html`<button type="button" onclick="closeSrcMenus();openMagnitude(${i})">${magItem}</button>` : ''}
+                ${roomItem ? html`<button type="button" onclick="closeSrcMenus();openDeviceRoom(${i})">${roomItem}</button>` : ''}
                 ${src.quantity >= 2 ? html`<button type="button" onclick="closeSrcMenus();splitSource(${i})" title="Pull one valve out as its own quantity-1 source (own photo + valve state)">Split 1 out</button>` : ''}
                 <button type="button" class="danger" onclick="closeSrcMenus();removeSource(${i})">Remove this source</button>
               </div>
@@ -9762,6 +9940,7 @@ function buildSourceCard(src, i) {
                   ${src.location && !src._customLoc && !sourceLocationChoices(src).includes(src.location) && !locationIdInfo(src.location) ? html`<option value="${src.location}" selected>${src.location}</option>` : ''}
                   <option value="** Custom Location **" ${src._customLoc?'selected':''}>${isDamperRow(src) ? 'Other\u2026' : 'Custom...'}</option>
                 </select>
+                ${src._customLoc ? '' : deviceRoomControl(src, i)}
               </div>
               ${(() => { const li = !src._customLoc ? locationIdInfo(src.location) : null; return li ? html`<div class="form-group">
                 <label>${li.prefix} ID</label>
@@ -9775,6 +9954,7 @@ function buildSourceCard(src, i) {
                 <label>Custom Location</label>
                 <input type="text" id="src_loc_custom_${i}" value="${src.location||''}" placeholder="Enter custom location"
                   oninput="updateSourceCustomLoc(${i},this.value)" onchange="commitSourceLocation(${i})">
+                ${deviceRoomControl(src, i)}
               </div>` : html`<div id="customLocGroup_${i}" style="display:none;"></div>`}
               ${(() => {
                 const ov = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource);
@@ -10310,6 +10490,14 @@ function refreshSourceDependents(index) {
   else if (!ga && gb) {
     const group = (live.querySelector('#src_energy_' + index) || { closest: () => null }).closest('.form-group');
     if (group) group.appendChild(gb);
+  }
+  // …and so does the device's own room under Location (build 167), by the same rule
+  const ra = live.querySelector('#src_room_' + index), rb = fresh.querySelector('#src_room_' + index);
+  if (ra && !rb) ra.remove();
+  else if (!ra && rb) {
+    // under the custom location's box when the row has one (the usual case), else under Location
+    const group = (live.querySelector('#src_loc_custom_' + index) || live.querySelector('#src_loc_' + index) || { closest: () => null }).closest('.form-group');
+    if (group) group.appendChild(rb);
   }
   // build 118: they follow the source and device too (build 122: the drive's answer)
   ['lockOpenGroup_', 'drainLocGroup_', 'feederGroup_', 'driveIsoGroup_', 'roleGroup_'].forEach(p =>
@@ -11430,6 +11618,9 @@ function applyCopySource(entryIndex, sourceIndex) {
   const copiedMagnitude = typedMagnitudeOf(src);
   if (copiedMagnitude) dest.typedMagnitude = Object.assign({ medium: magnitudeMediumOfRow(src) }, copiedMagnitude);
   else delete dest.typedMagnitude;
+  // …and the room its device sits in (build 167), or none: the same panel. Not one its link hides
+  const copiedRoom = deviceRoomOf(src);
+  if (copiedRoom) dest.deviceRoom = copiedRoom; else delete dest.deviceRoom;
   // …and is that source, not the role this row had (build 122 second review): a
   // copied Location that says a role still reads as one, as typed
   delete dest.role; delete dest.altKind; delete dest.feeds;
@@ -11491,6 +11682,8 @@ function duplicateSource(index) {
   // The same line's pressure & temperature (build 166) — only one the row shows: a value
   // hidden by its link (dropped above) or typed for another medium would show on the copy
   if (!typedMagnitudeOf(src)) delete newSrc.typedMagnitude;
+  // …and the room its device sits in (build 167, the same panel), not one its link hides
+  if (!deviceRoomOf(src)) delete newSrc.deviceRoom;
   // A copy of a feeder / secondary main / alternate source row is an ordinary
   // row (build 122 third review): one breaker, one role — another feeder comes
   // from "+ Add the breaker that feeds this drive", another source from the
@@ -11802,6 +11995,8 @@ async function applyLink(equipIndex, sourceIndex) {
   // A pressure & temperature typed on the row stops going out once it is linked (build
   // 166, loto-web's rule: the linked row's own value prints); the message says so
   const magnitudeBefore = magnitudeSheetText(mine);
+  // …and so does the room its device sits in (build 167): the linked row's tag is used
+  const roomBefore = deviceRoomLabel(deviceRoomOf(mine));
   // A re-link to another source ("Linked — change or unlink"): what the earlier
   // link copied is its old target's, not the tech's, so it follows the new
   // target (build 163 review: linking to the wrong breaker and then the right
@@ -11839,6 +12034,7 @@ async function applyLink(equipIndex, sourceIndex) {
   const valveNote = settleValveUnits(mine);   // the target's count: each valve's answer follows it (build 146 review)
   if (valveNote) drainNotes.push(valveNote);
   if (magnitudeBefore) drainNotes.push('Its typed ' + magnitudeBefore + ' isn\u2019t sent while it is linked: the linked row\u2019s value prints');
+  if (roomBefore) drainNotes.push('Its room ' + roomBefore + ' isn\u2019t sent while it is linked: the linked row\u2019s tag is used');
   const tookTag = takeLinkedExistingTag(mine, src, sides ? (valve || 'both') : '', prev);   // build 163
   const marksCleared = reconcileSourceMarks(pendingLinkSourceIndex, true);
   mine.userEdited = true;
@@ -17925,7 +18121,7 @@ async function buildAndSendExport(opts, run) {
   }
 
   // ---- PASS 2: build CSV ----
-  let csv = 'Hospital Code,Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Valve State,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames,Valve Marks,Arc Flash Photo Filename,Main Photo Arrow,Magnitude\n';
+  let csv = 'Hospital Code,Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Valve State,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames,Valve Marks,Arc Flash Photo Filename,Main Photo Arrow,Magnitude,Device Room\n';
 
   allEntries.forEach((entry, ei) => {
     const map = entryMaps[ei];
@@ -17955,8 +18151,10 @@ async function buildAndSendExport(opts, run) {
         quote(map.afH || ''),
         // The Main Photo's arrow at this unit (build 156)
         quote(mainArrowSheetText(map.mainArrow)),
-        // The pressure & temperature typed on the row (build 166): the last column
-        quote(magnitudeSheetText(src))
+        // The pressure & temperature typed on the row (build 166)
+        quote(magnitudeSheetText(src)),
+        // The room its device sits in (build 167): the last column
+        quote(deviceRoomSheetText(src, entry))
       ].join(',') + '\n';
     });
   });
@@ -18019,6 +18217,9 @@ async function buildAndSendExport(opts, run) {
       // The pressure & temperature typed on the row (build 166), as column 24 writes it; else no key
       const mag = magnitudeSheetText(src);
       if (mag) out.magnitude = mag; else delete out.magnitude;
+      // The room its device sits in (build 167), as column 25 sends it; else no key
+      const room = deviceRoomForUnit(src, entry.equipBuilding, entry.equipRoom);
+      if (room) out.deviceRoom = room; else delete out.deviceRoom;
       return out;
     });
     const miscOut = miscFileNames[ei]
@@ -18120,7 +18321,8 @@ async function buildAndSendExport(opts, run) {
         { width: 14 },  // 21: Drive Isolates (build 122)
         { width: 12 },  // 22: Powered By (build 130)
         { width: 30 },  // 23: Mark Layout (build 135)
-        { width: 16 }   // 24: Magnitude (build 166)
+        { width: 16 },  // 24: Magnitude (build 166)
+        { width: 22 }   // 25: Device Room (build 167)
       ];
 
       // Style definitions matching original info sheet
@@ -18223,6 +18425,8 @@ async function buildAndSendExport(opts, run) {
           const markLayoutCell = srcH ? valveMarkLayoutText(sourceMarksForExport(entry, s)) : '';
           // The pressure & temperature the tech typed (build 166): "45 PSI @ 180 F", "90 PSI"
           const magnitudeCell = src ? magnitudeSheetText(src) : '';
+          // The room its device sits in when not the unit's (build 167): "Main | 3C101"
+          const deviceRoomCell = src ? deviceRoomSheetText(src, entry) : '';
 
           // Source label row (light fill)
           const srcLabelRow = ws.addRow([
@@ -18243,7 +18447,9 @@ async function buildAndSendExport(opts, run) {
             // build 135, on a row whose photo has a box the tech placed
             markLayoutCell ? 'Mark Layout' : '',
             // build 166, on a row the tech typed a pressure & temperature on
-            magnitudeCell ? 'Magnitude' : ''
+            magnitudeCell ? 'Magnitude' : '',
+            // build 167, on a row whose device sits in another room
+            deviceRoomCell ? 'Device Room' : ''
           ]);
           applyRow(srcLabelRow, labelFont, labelFill, allBorders);
 
@@ -18299,7 +18505,9 @@ async function buildAndSendExport(opts, run) {
             // Mark Layout (build 135): the placed box + arrow of each valve mark
             markLayoutCell,
             // Magnitude (build 166): loto-web's magnitude_override for the row
-            magnitudeCell
+            magnitudeCell,
+            // Device Room (build 167): loto-web's numbering_building / numbering_room
+            deviceRoomCell
           ]);
           applyRow(srcDataRow, dataFont, null, allBorders);
         }

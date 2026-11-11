@@ -17,7 +17,10 @@ block against its unit in entries.json:
   - column 24 "Magnitude" (field build 166), read by loto-web's
     labeled_source_value: the typed "45 PSI @ 180 F" / "90 PSI" against
     entries.json's `magnitude`, and no header on a row with none. Until
-    loto-web's layout has "col_magnitude", the agreed (24, "Magnitude") is used.
+    loto-web's layout has "col_magnitude", the agreed (24, "Magnitude") is used;
+  - column 25 "Device Room" (field build 167) the same way: "building | room" (the
+    room alone with no building) against entries.json's `deviceRoom`; until
+    loto-web's layout has "col_device_room", the agreed (25, "Device Room").
 
 Make an export in the app (any export; a page can POST one to
 tests/fuzz/fuzz_receiver.py), then:
@@ -64,6 +67,8 @@ ANSWER_KEYS = {
 
 # Column 24 "Magnitude" (field build 166, agreed with loto-web 2026-11-11)
 MAGNITUDE_COLUMN = (24, "Magnitude")
+# Column 25 "Device Room" (field build 167, agreed with loto-web 2026-11-11)
+DEVICE_ROOM_COLUMN = (25, "Device Room")
 
 
 def text(v):
@@ -84,6 +89,8 @@ def check(zpath, problems, counts):
             continue
         blocks = {b.base_row: b for b in isp.read_grid_blocks(ws, layout, sp)}
         mag_layout = layout if layout.get("col_magnitude") else dict(layout, col_magnitude=MAGNITUDE_COLUMN)
+        if not mag_layout.get("col_device_room"):
+            mag_layout = dict(mag_layout, col_device_room=DEVICE_ROOM_COLUMN)
         for g in isp.grid_blocks(ws, layout):
             name, place = text(ws.cell(g.base_row + 3, 1).value), text(ws.cell(g.base_row + 3, 4).value)
             tag = f'{where} "{name}" (header row {g.header_row})'
@@ -125,6 +132,14 @@ def check(zpath, problems, counts):
                     counts["magnitudes"] += 1
                 if (mag or None) != (text(s.get("magnitude")) or None) or mag == "":
                     problems.append(f"{tag} source {i}: magnitude {s.get('magnitude')!r} in entries.json, {mag!r} on the sheet")
+                # Device Room (build 167): None = no header (none), else "building | room" or "room"
+                room = isp.labeled_source_value(ws, g.data_row(i), mag_layout, "col_device_room")
+                if room is not None:
+                    counts["device_rooms"] += 1
+                dr = s.get("deviceRoom") or {}
+                want_room = (f"{dr.get('building')} | {dr.get('room')}" if dr.get("building") else text(dr.get("room"))) if dr else ""
+                if (room or None) != (text(want_room) or None) or room == "":
+                    problems.append(f"{tag} source {i}: deviceRoom {s.get('deviceRoom')!r} in entries.json, {room!r} on the sheet")
             tied = text(e.get("tiedTo"))
             if (tied and not text(b.tied_to).startswith(tied)) or (not tied and b.tied_to):
                 problems.append(f"{tag}: Tied to {b.tied_to!r}, entries.json {tied!r}")
@@ -149,7 +164,7 @@ def main():
     zips = sys.argv[1:]
     if not zips:
         sys.exit(__doc__)
-    problems, counts = [], {"blocks": 0, "sources": 0, "answers": 0, "magnitudes": 0}
+    problems, counts = [], {"blocks": 0, "sources": 0, "answers": 0, "magnitudes": 0, "device_rooms": 0}
     for zp in zips:
         check(zp, problems, counts)
     print(json.dumps({"zips": len(zips), "counts": counts, "problems": problems[:40], "n_problems": len(problems)}, indent=1))

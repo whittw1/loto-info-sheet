@@ -182,6 +182,9 @@
 //   T494      build 166 (wilkins 2026-11-11): pressure & temperature typed on an HHW / CHW / DHW / DW row (pressure only on
 //             Compressed Air) from its More menu; the name unchanged; sheet column 24 "Magnitude", the CSV and entries.json
 //             carry "45 PSI @ 160 F"; never on a linked or custom row; above 212 F asked; Clear; another medium hides it
+//   T495      build 167 (wilkins 2026-11-11): a row's device in another room ("Breaker 2 in 3C101") — More → In another room…,
+//             Building + Room (prefilled from the unit and the Location), sheet column 25 "Device Room" ("Main | 3C101"), the CSV's
+//             last column and entries.json deviceRoom for loto-web's numbering room; never on a linked row, K / ES / RG rows or the unit's own room
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8026,11 +8029,11 @@
     want(sb.h14 === '' && sb.v14 === '' && !!sb.main, 'sheet B: no header');
     const cp = Object.keys(u.files).find(q => /\.csv$/.test(q));
     const rows = parseCsvRows(new TextDecoder().decode(u.files[cp]));
-    // by its header (build 166 put "Magnitude" after it, the last column)
+    // by its header (build 166 put "Magnitude" after it, build 167 "Device Room", the last column)
     const arCol = (rows[0] || []).indexOf('Main Photo Arrow');
     const last = r => r[arCol];
     got.csv = { head: last(rows[0] || []), col: arCol, a: rows.filter(r => r[2] === 'ARW-474-A').map(last).join('|'), b: rows.filter(r => r[2] === 'ARW-474-B').map(last).join('|') };
-    want(got.csv.head === 'Main Photo Arrow' && arCol === (rows[0] || []).length - 2 && got.csv.a === sa.v14 && got.csv.b === '', 'CSV');
+    want(got.csv.head === 'Main Photo Arrow' && arCol === (rows[0] || []).indexOf('Arc Flash Photo Filename') + 1 && got.csv.a === sa.v14 && got.csv.b === '', 'CSV');
     // no Main Photo in the export: no arrow (exportMainArrow)
     const ghost = { photos: { equip_main: { dbKey: 'x', pointer: arrow } } };
     want(exportMainArrow(ghost, null) === null && JSON.stringify(exportMainArrow(ghost, 'H1.jpg')) === JSON.stringify(cleanMainArrow(arrow)), 'only with the photo');
@@ -11095,11 +11098,11 @@
       want(!!rec && rec.entries.some(e => e.slot === 'arcflash'), 'manifest slot');
       const cp = Object.keys(u.files).find(q => /\.csv$/.test(q));
       const rows = parseCsvRows(new TextDecoder().decode(u.files[cp]));
-      // by its header: build 156 added "Main Photo Arrow" after it, and build 166 "Magnitude", the last column
+      // by its header: build 156 added "Main Photo Arrow" after it, build 166 "Magnitude" and build 167 "Device Room"
       const afCol = (rows[0] || []).indexOf('Arc Flash Photo Filename');
       const last = r => r[afCol];
       got.csv = { head: (rows[0] || [])[afCol], col: afCol, ats: rows.filter(r => r[2] === 'ATS-263').map(last).join(), gen: rows.filter(r => r[2] === 'GEN-263').map(last).join() };
-      want(afCol === (rows[0] || []).length - 3 && got.csv.ats === ats.v13 && got.csv.gen === '', 'the CSV\'s third column from the last');
+      want(afCol >= 0 && afCol === (rows[0] || []).indexOf('Main Photo Arrow') - 1 && got.csv.ats === ats.v13 && got.csv.gen === '', 'the CSV\'s column before Main Photo Arrow');
       want((savedEquipment.find(e => e.equipName === 'ATS-263') || {}).exportedAllPhotos === true, 'stamped exported with every photo');
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
@@ -11436,18 +11439,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 166 (was build 122\'s): APP_BUILD and the header label say 166, the service worker\'s cache is loto-collector-v7.161, Xcode\'s CURRENT_PROJECT_VERSION is 166 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 167 (was build 122\'s): APP_BUILD and the header label say 167, the service worker\'s cache is loto-collector-v7.162, Xcode\'s CURRENT_PROJECT_VERSION is 167 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 166 && !!label && +label[1] === 166, 'the build');
+    want(APP_BUILD === 167 && !!label && +label[1] === 167, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.161', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.162', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 166;,CURRENT_PROJECT_VERSION = 166;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 167;,CURRENT_PROJECT_VERSION = 167;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -15834,8 +15837,9 @@
       got.buttons = [...head.querySelectorAll('.src-head-btns > button')].map(b => b.textContent.trim());
       got.menu = [...head.querySelectorAll('.src-more-menu button')].map(b => b.textContent.trim());
       want(got.title === 'Electrical 480V · VFD' && /^Energy Source #1$/.test(got.sub), 'the title: ' + got.title + ' / ' + got.sub);
-      want(JSON.stringify(got.buttons) === JSON.stringify(['▲', '▼', 'Done']) && got.menu.length === 4 && /Link/.test(got.menu[0])
-        && /Copy/.test(got.menu[1]) && /Duplicate/.test(got.menu[2]) && /Remove/.test(got.menu[3]), 'the header and More');
+      // build 167 added "In another room…" (an Electrical row's device can sit in another room)
+      want(JSON.stringify(got.buttons) === JSON.stringify(['▲', '▼', 'Done']) && got.menu.length === 5 && /Link/.test(got.menu[0])
+        && /Copy/.test(got.menu[1]) && /Duplicate/.test(got.menu[2]) && got.menu[3] === 'In another room…' && /Remove/.test(got.menu[4]), 'the header and More');
       got.dup = [...document.querySelectorAll('#src_dup_3 button')].map(b => b.textContent + ':' + b.classList.contains('on') + ':' + /updateSource\(3,'duplicate','(No|Yes)'\)/.test(b.getAttribute('onclick'))).join(' ');
       want(got.dup === 'No:true:true Yes:false:true', 'Duplicate buttons: ' + got.dup);
       // a Device typed by hand: the band follows when the box is left (refreshSourceDependents), the card is not rebuilt
@@ -18087,9 +18091,165 @@
       } else fails.push('no XLSX in the ZIP');
       const csvName = Object.keys(u.files).find(f => /\.csv$/.test(f));
       const csvText = csvName ? new TextDecoder().decode(u.files[csvName]) : '';
-      const lines = csvText.trim().split('\n');
-      got.csv = [/,Main Photo Arrow,Magnitude$/.test(lines[0]), lines.filter(l => /,45 PSI @ 180 F$/.test(l)).length, lines.filter(l => /,90 PSI$/.test(l)).length, lines.filter(l => /,(DW In|Electrical 480V),.*,$/.test(l)).length].join(',');
-      want(got.csv === 'true,1,1,2', 'CSV ' + got.csv);
+      const crow = parseCsvRows(csvText), mc = (crow[0] || []).indexOf('Magnitude'), ec = (crow[0] || []).indexOf('Energy Source');
+      got.csv = [mc === (crow[0] || []).indexOf('Main Photo Arrow') + 1, crow.slice(1).filter(r => r[2] === 'AHU-494x').map(r => r[ec] + '=' + r[mc]).join('|')].join(',');
+      want(got.csv === 'true,HHW In/Out=45 PSI @ 180 F|Compressed Air In=90 PSI|DW In=|Electrical 480V=', 'CSV ' + got.csv);
+    } else fails.push('no zip: ' + confirms.join(' | '));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T495 — a row's device in another room (build 167)
+  async function t495_deviceInAnotherRoom() {
+    const N = 'T495 build 167 (wilkins 2026-11-11: "When I have something that feeds a piece of equipment in another room, I do a custom location and say \'Breaker 2 in 3C101\' … these valve tags … are not being tracked"; loto-web\'s contract the same day): a row\'s More menu offers "In another room…" (nothing new on the card until it is used), its Building prefilled with the unit\'s and Room with the Location\'s trailing "in <room>", taken at once; typing changes it; a blank room or the unit\'s own room takes it off; "|" can\'t reach the cell; the closed card says it; none on a linked, Kinetic, Stored Electrical Energy or Refrigerant row; Duplicate and Copy Source keep it, the count copy drops it; a link says it stops it going out; Clear; a refresh puts a missing group back; exported in sheet column 25 "Device Room" ("Main | 3C101", its header only on that row), the CSV\'s last column and entries.json deviceRoom, never the unit\'s own room';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const card = (i = 0) => document.querySelectorAll('#sourcesContainer > .source-card')[i];
+    const menuItem = (i = 0) => [...card(i).querySelectorAll('.src-more-menu button')].find(b => /^In another room/.test(b.textContent));
+    const bBox = (i = 0) => document.getElementById('src_room_b_' + i), rBox = (i = 0) => document.getElementById('src_room_r_' + i);
+    const typeIn = (el, text, i = 0) => { el.value = text; typeDeviceRoom(i); return deviceRoomLabel(deviceRoomOf(sources[i])); };
+    // the Location's trailing room, only a prefill
+    got.named = ['Breaker 2 in 3C101', 'Panel LP-2 bkr 4 in Room 3C-101', 'Breaker 7 in rm 2B-229', 'Breaker in MCC', 'Panel in Mech Room', 'On Wall', 'in 3C101 now', '']
+      .map(t => roomNamedIn(t) || '-').join(',');
+    want(got.named === '3C101,3C-101,2B-229,-,-,-,-,-', 'roomNamedIn ' + got.named);
+    want(deviceRoomClean(' Ma|in   2 ', 50) === 'Ma in 2' && roomKeyOf('Main ', '3C 101') === roomKeyOf('main', '3c101'), 'clean and key');
+    // the room as loto-web folds it: - . / ignored, "Building" / "Bldg" dropped, EXT = Exterior, a blank building the unit's
+    got.fold = [roomKeyOf('Building C', '3C-101') === roomKeyOf('C', '3c101'), roomKeyOf('Bldg. 4', 'Ext') === roomKeyOf('4', 'Exterior'),
+      roomKeyOf('', 'B100', 'Main') === roomKeyOf('Main', 'B 100'), roomKeyOf('Main', '3C101') === roomKeyOf('Main', '3C102')].join(',');
+    want(got.fold === 'true,true,true,false', 'the fold ' + got.fold);
+    want(deviceRoomSheetText({ energySource: 'Electrical 480V', deviceRoom: { building: '', room: 'b-100' } }, { equipBuilding: 'Main', equipRoom: 'B100' }) === ''
+      && deviceRoomSheetText({ energySource: 'Electrical 480V', deviceRoom: { building: '', room: '3C101' } }, { equipBuilding: 'Main', equipRoom: 'B100' }) === '3C101',
+      'a room alone is in the unit\'s building');
+    // a breaker in another room, recorded as a custom Location
+    fillFormNoSources('AHU-495');
+    addSource(); handleEnergySourceChange(0, 'Electrical 480V');
+    sources[0].location = 'Breaker 2 in 3C101'; sources[0]._customLoc = true; renderSources();
+    const slot = card().querySelector('#src_room_0');
+    got.start = [slot ? slot.tagName + (slot.hidden ? ' hidden' : '') : '-', !!rBox(), menuItem() ? menuItem().textContent : '-'].join(',');
+    want(got.start === 'SPAN hidden,false,In another room…', 'a new row ' + got.start);
+    got.openToasts = await withToasts(async () => { menuItem().click(); });
+    got.opened = [bBox() && bBox().value, rBox() && rBox().value, document.activeElement === rBox(), JSON.stringify(sources[0].deviceRoom || null),
+      !document.querySelector('#src_room_0 .src-room-clear').hidden, !!menuItem(), sources[0].userEdited, sources[0].location].join(',');
+    want(got.opened === 'Main,3C101,true,{"building":"Main","room":"3C101"},true,false,true,Breaker 2 in 3C101', 'opened ' + got.opened);
+    want(got.openToasts.some(m => /^Numbered in Main 3C101 \(from its Location\)/.test(m)), 'the toast ' + JSON.stringify(got.openToasts));
+    want(/Link to it instead/.test(document.getElementById('src_room_0').textContent), 'the link hint');
+    // typing changes it; "|" never reaches the cell
+    const r0 = rBox(), b0 = bBox();
+    got.typed = [typeIn(r0, '3C102'), typeIn(b0, 'East|Wing'), deviceRoomSheetText(sources[0], { equipBuilding: 'Main', equipRoom: 'B100' })].join(',');
+    want(got.typed === 'Main 3C102,East Wing 3C102,East Wing | 3C102' && rBox() === r0 && bBox() === b0, 'typing ' + got.typed);
+    typeIn(b0, ''); commitDeviceRoom(0, 'b');
+    want(deviceRoomSheetText(sources[0], { equipBuilding: 'Main', equipRoom: 'B100' }) === '3C102', 'no building: the room alone ' + deviceRoomSheetText(sources[0], { equipBuilding: 'Main', equipRoom: 'B100' }));
+    typeIn(b0, 'Main'); commitDeviceRoom(0, 'b');
+    // emptied as it is typed: off at once (a Save & New that never leaves the box saves it off), back with the next letter
+    rBox().value = ''; typeDeviceRoom(0);
+    got.emptied = [sources[0].deviceRoom === undefined, !!rBox(), document.querySelector('#src_room_0 .src-room-clear').hidden].join(',');
+    rBox().value = '3C102'; typeDeviceRoom(0);
+    got.emptied += ',' + deviceRoomLabel(deviceRoomOf(sources[0]));
+    want(got.emptied === 'true,true,true,Main 3C102', 'emptied as typed ' + got.emptied);
+    // a blank room takes it off; the unit's own room is refused
+    let ms = await withToasts(async () => { rBox().value = ''; typeDeviceRoom(0); commitDeviceRoom(0, 'r'); });
+    got.blank = [sources[0].deviceRoom === undefined, !!rBox(), !!menuItem(), ms.some(m => /^No room: this row’s tag is numbered with its unit again/.test(m))].join(',');
+    want(got.blank === 'true,false,true,true', 'blank room ' + got.blank);
+    openDeviceRoom(0);
+    ms = await withToasts(async () => { bBox().value = 'Main'; rBox().value = 'B 100'; typeDeviceRoom(0); commitDeviceRoom(0, 'r'); });
+    got.own = [sources[0].deviceRoom === undefined, ms.some(m => /Main B 100 is this unit’s own room/.test(m))].join(',');
+    want(got.own === 'true,true', 'the unit\'s own room ' + got.own + ' ' + JSON.stringify(ms));
+    // …however it is spelled (loto-web's fold) or with no building
+    openDeviceRoom(0);
+    ms = await withToasts(async () => { bBox().value = ''; rBox().value = 'b-100'; typeDeviceRoom(0); commitDeviceRoom(0, 'r'); });
+    want(sources[0].deviceRoom === undefined && ms.some(m => /is this unit’s own room/.test(m)), 'the unit\'s own room, spelled another way ' + JSON.stringify(ms));
+    // a Location naming the unit's own room prefills nothing
+    sources[0].location = 'Breaker 2 in Room B-100'; renderSources();
+    openDeviceRoom(0);
+    want(rBox().value === '' && sources[0].deviceRoom === undefined, 'no prefill of the unit\'s own room: ' + rBox().value);
+    sources[0].location = 'Breaker 2 in 3C101'; renderSources();
+    openDeviceRoom(0); rBox().value = '3C101'; typeDeviceRoom(0); commitDeviceRoom(0, 'r');
+    // drawn again: the boxes at once; the closed card says it
+    renderSources();
+    want(rBox() && rBox().value === '3C101', 'redrawn');
+    sources[0].collapsed = true; renderSources();
+    got.closed = ((card().querySelector('.source-summary-text') || {}).textContent || '').replace(/\s+/g, ' ');
+    want(/Breaker 2 in 3C101 \(in Main 3C101\)/.test(got.closed), 'closed card ' + got.closed);
+    sources[0].collapsed = false; renderSources();
+    // a refresh puts a missing group back
+    document.getElementById('src_room_0').remove();
+    refreshSourceDependents(0);
+    want(!!rBox() && document.getElementById('src_room_0').parentNode === document.getElementById('src_loc_custom_0').closest('.form-group'), 'put back by the refresh, under the custom location');
+    want(document.getElementById('src_room_0').parentNode.id === 'customLocGroup_0', 'drawn under the custom location');
+    // none on a Kinetic, Stored Electrical Energy or Refrigerant row, nor a linked one
+    addSource(); handleEnergySourceChange(1, 'Kinetic');
+    addSource(); handleEnergySourceChange(2, 'Stored Electrical Energy');
+    addSource(); handleEnergySourceChange(3, 'CHW In');
+    sources[3].deviceRoom = { building: 'Main', room: '2A200' };
+    sources[3].linkedTo = { equipName: 'CH-1', equipType: '', sourceIndex: 0, sourceLabel: 'CHW In', entryId: '' };
+    sources.forEach(x => { x.collapsed = false; }); renderSources();
+    got.others = [1, 2, 3].map(i => [!!document.getElementById('src_room_' + i), menuItem(i) ? 'menu' : '-', deviceRoomSheetText(sources[i], { equipBuilding: 'Main', equipRoom: 'B100' }) || '-'].join('/')).join(',');
+    want(got.others === 'false/-/-,false/-/-,false/-/-', 'other rows ' + got.others);
+    // Duplicate keeps it (the same panel), not the room a link hides; the count copy drops it
+    duplicateSource(0);
+    duplicateSource(4);
+    got.dup = [deviceRoomLabel(deviceRoomOf(sources[1])), sources[5].energySource, JSON.stringify(sources[5].deviceRoom || null)].join(',');
+    want(got.dup === 'Main 3C101,CHW In,null', 'Duplicate ' + got.dup);
+    want(countCopyOf(sources[0]).deviceRoom === undefined, 'the count copy');
+    // Copy Source brings the copied row's room, or none
+    const A = saveEntry();
+    const ai = savedEquipment.indexOf(A);
+    fillFormNoSources('AHU-495c');
+    addSource(); handleEnergySourceChange(0, 'Electrical 208V');
+    sources[0].deviceRoom = { building: 'Main', room: '9Z999' };
+    addSource(); handleEnergySourceChange(1, 'Electrical 208V');
+    sources.forEach(x => { x.collapsed = false; }); renderSources();
+    showCopySourceDialog(1); applyCopySource(ai, A.sources.findIndex(x => x.energySource === 'Electrical 480V'));
+    showCopySourceDialog(0); applyCopySource(ai, A.sources.findIndex(x => x.linkedTo));
+    got.copied = [deviceRoomLabel(deviceRoomOf(sources[1])), JSON.stringify(sources[0].deviceRoom || null)].join(',');
+    want(got.copied === 'Main 3C101,null', 'Copy Source ' + got.copied);
+    // a link says the room stops going out
+    await resetAppState();
+    const T = mkEntry('PNL-495', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Breaker' })] });
+    savedEquipment = [T]; saveAll();
+    fillFormNoSources('P-495l');
+    addSource(); handleEnergySourceChange(0, 'Electrical 480V');
+    sources[0].deviceRoom = { building: 'Main', room: '3C101' };
+    got.linkToast = await withToasts(async () => { await withDialogs({ choice: () => 'both' }, async () => { pendingLinkSourceIndex = 0; await applyLink(0, 0); }); });
+    want(!!sources[0].linkedTo && !deviceRoomOf(sources[0]) && got.linkToast.some(m => /its room Main 3C101 isn’t sent while it is linked: the linked row’s tag is used/.test(m)), 'the link ' + JSON.stringify(got.linkToast));
+    // exported: column 25 under its own header on that row only, the CSV's last column, entries.json
+    await resetAppState();
+    fillFormNoSources('AHU-495x');
+    addSource(); handleEnergySourceChange(0, 'Electrical 480V');
+    sources[0].location = 'Breaker 2 in 3C101'; sources[0]._customLoc = true;
+    addSource(); handleEnergySourceChange(1, 'Electrical 120V');
+    sources[1].deviceRoom = { building: 'Main', room: 'B100' };   // the unit's own room: never sent
+    addSource(); handleEnergySourceChange(2, 'HHW In');
+    sources.forEach(x => { x.collapsed = false; }); renderSources();
+    openDeviceRoom(0);
+    const X = saveEntry();
+    want(X && JSON.stringify(X.sources[0].deviceRoom) === '{"building":"Main","room":"3C101"}', 'saved ' + JSON.stringify(X && X.sources[0].deviceRoom));
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (zip) {
+      const u = await unzipExport(zip.blob);
+      const je = jsonEntryFor(u.entriesJson, X);
+      got.json = je ? (je.sources || []).map(x => x.energySource + '=' + JSON.stringify(x.deviceRoom === undefined ? 'none' : x.deviceRoom)).join(',') : null;
+      want(got.json === 'Electrical 480V={"building":"Main","room":"3C101"},Electrical 120V="none",HHW In="none"', 'entries.json ' + got.json);
+      const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+      if (xpath) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        const ws = wb.worksheets[0], rows = [];
+        ws.eachRow(row => {
+          const a = String(row.getCell(1).value || '');
+          if (/^Energy Source #[1-3]$/.test(a)) {
+            const d = ws.getRow(row.number + 1);
+            rows.push(String(d.getCell(1).value || '') + '=' + String(row.getCell(25).value || '') + ':' + String(d.getCell(25).value || '') + ':' + String(d.getCell(5).value || ''));
+          }
+        });
+        got.sheet = rows.join(',');
+        want(got.sheet === 'Electrical 480V=Device Room:Main | 3C101:Breaker 2 in 3C101,Electrical 120V=::,HHW In=::', 'sheet ' + got.sheet);
+        want(ws.getColumn(25).width === 22, 'column 25 width ' + ws.getColumn(25).width);
+      } else fails.push('no XLSX in the ZIP');
+      const csvName = Object.keys(u.files).find(f => /\.csv$/.test(f));
+      const crow = parseCsvRows(csvName ? new TextDecoder().decode(u.files[csvName]) : '');
+      const dc = (crow[0] || []).indexOf('Device Room'), ec = (crow[0] || []).indexOf('Energy Source');
+      got.csv = [dc === (crow[0] || []).length - 1, crow.slice(1).map(r => r[ec] + '=' + r[dc]).join('|')].join(',');
+      want(got.csv === 'true,Electrical 480V=Main | 3C101|Electrical 120V=|HHW In=', 'CSV ' + got.csv);
     } else fails.push('no zip: ' + confirms.join(' | '));
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -18292,7 +18452,7 @@
     t484_customLocationIsAlwaysAChip, t485_chemicalLinesOfferVisual, t486_chemicalRowStartsOnVisual, t487_condenserWaterVisualChipBesideTheBoxes,
     t488_linkCarriesTheExistingTag, t489_discardAndDeleteKeepThePlace, t490_linkCopiesFollowARelinkAndASideChange,
     t491_vacuumPumpInletVent, t492_vacuumPumpInletVentReview,
-    t493_visualChipOnTheMoreOptionsLine, t494_typedPressureAndTemperature];
+    t493_visualChipOnTheMoreOptionsLine, t494_typedPressureAndTemperature, t495_deviceInAnotherRoom];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
