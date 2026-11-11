@@ -176,6 +176,8 @@
 //             tags only up to the row's Quantity and only where the facility asks; a twin tag named; Discard with no place; Bulk delete
 //   T491      build 164: a Medical Vacuum Pump's inlet vent (loto-web 2026-11-10): no "No vent found" note on its inlet, the Union/Flange
 //             note dropped once the inlet has a vent found, "bleed valve on inlet filter cover" as the example
+//   T492      build 164's code review (build 165): the union note only when every inlet row isolated there is vented; the
+//             dialog names the vent; the form's note follows the answer; "On this valve" keeps the medium's example
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -9111,7 +9113,7 @@
         return getTemplate() + ': ' + sources.map((s, i) => { const el = document.getElementById('src_draintext_' + i); return el ? el.placeholder : '-'; }).join(' | ');
       };
       got.mvpEg = placeholders('Medical Vacuum Pump');
-      want(got.mvpEg === 'Medical Vacuum Pump: Where exactly, e.g. bleed valve on inlet filter cover | Where exactly, e.g. bleed valve on inlet filter cover | -', 'MVP example: ' + got.mvpEg);
+      want(got.mvpEg === 'Medical Vacuum Pump: Where exactly, e.g. bleed valve on inlet filter cover | Where exactly, e.g. vent valve on the inlet line | -', 'MVP example (On this valve keeps the medium\'s own since build 165): ' + got.mvpEg);
       got.systemEg = placeholders('Medical Vacuum');
       want(got.systemEg === 'Medical Vacuum: Where exactly, e.g. vent valve on the inlet line | Where exactly, e.g. vent valve on the inlet line | -', 'Medical Vacuum example: ' + got.systemEg);
       formOfType('VP-491', 'Vacuum Pump', 'Medical Vacuum Pump');
@@ -9120,6 +9122,63 @@
       const g = document.getElementById('drainLocGroup_0');
       got.held = g ? g.textContent.replace(/\s+/g, ' ') : 'no group';
       want(/None found” still goes on the sheet\. Set it/.test(got.held) && !/Change Later/.test(got.held), 'held note: ' + got.held);
+    } finally { setHospitalCode(prevCode); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T492 — build 164's code review (build 165)
+  async function t492_vacuumPumpInletVentReview() {
+    const N = 'T492 build 164 review (build 165): on a Medical Vacuum Pump with Union/Flange No, the union note goes only when every inlet row isolated there has a vent found (Vacuum Air In vented + Vacuum In / Out None found keeps it; both vented, or the other locked open, drops it; only a locked-open inlet keeps it); the Union or flange dialog says a vent on the Vacuum Air In row is used instead; on the form the For loto-web note follows the inlet vent answer (gone with a vent, back with None found, never "No vent found"); the example is the bleed valve for Between and On the equipment, the medium\'s own for On this valve; the held-answer note follows the template it is given';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const prevCode = getHospitalCode();
+    try {
+      setHospitalCode('Atlanta');
+      const S = (es, extra) => Object.assign(mkSrc(es), { sourceId: genUuid(), deviceType: 'Butterfly Valve', verification: 'Gauge/Drain' }, extra || {});
+      const vent = (where) => ({ drainLocation: { where, text: '' } });
+      const note = (srcs) => changeLaterSheetText(Object.assign(mkEntry('VP-492', { sources: srcs }),
+        { equipType: 'Vacuum Pump', template: 'Medical Vacuum Pump', hospitalCode: 'Atlanta', unitAnswers: { reliefJoint: 'No' } }));
+      const between = 'Between this valve and the equipment';
+      got.oneOfTwo = note([S('Vacuum Air In', vent(between)), S('Vacuum In / Out', vent('None found'))]);
+      want(got.oneOfTwo === RELIEF_JOINT_NOTE, 'one inlet vented, the other None found keeps the note: ' + got.oneOfTwo);
+      got.both = note([S('Vacuum Air In', vent(between)), S('Vacuum In / Out', vent('On the equipment'))]);
+      want(got.both === '', 'both vented: ' + got.both);
+      got.otherLocked = note([S('Vacuum Air In', vent(between)), S('Vacuum In / Out', { lockOpen: true })]);
+      want(got.otherLocked === '', 'the other inlet locked open: ' + got.otherLocked);
+      got.onlyLocked = note([S('Vacuum In / Out', Object.assign({ lockOpen: true }, vent(between)))]);
+      want(got.onlyLocked === RELIEF_JOINT_NOTE, 'only a locked-open inlet: ' + got.onlyLocked);
+      // the dialog, then the form's For loto-web note as the vent answer changes
+      let q = null;
+      await vacuumUnitViaType('VP-492', (o) => {
+        if (o.id === 'vacuum-cover') return 'Medical Vacuum Pump';
+        if (o.id === 'pump-inlet-valve') return 'yes';
+        if (o.id === 'vacuum-exhaust') return 'own';
+        if (o.id === 'vacuum-relief-joint') { q = o; return 'No'; }
+        if (o.id === 'vacuum-other-power') return 'No';
+        return 'cancel';
+      });
+      closeAllPrompts();
+      got.dialog = q ? /A vent you record on the Vacuum Air In row is used instead\./.test(q.html) : 'no dialog';
+      want(got.dialog === true, 'the dialog names the vent: ' + got.dialog);
+      const inlet = sources.findIndex(s => s && s.energySource === 'Vacuum Air In');
+      const box = () => (document.getElementById('unitQuestions') || {}).textContent || '';
+      got.form = [getTemplate(), unitAnswers.reliefJoint, inlet >= 0].join();
+      want(got.form === 'Medical Vacuum Pump,No,true', 'the form: ' + got.form);
+      got.before = box().includes(RELIEF_JOINT_NOTE);
+      updateDrainWhere(inlet, between);
+      got.vented = box().includes(RELIEF_JOINT_NOTE);
+      updateDrainWhere(inlet, 'None found');
+      got.noneFound = [box().includes(RELIEF_JOINT_NOTE), /No vent found/.test(box())].join();
+      want(got.before && !got.vented && got.noneFound === 'true,false', 'the note follows the answer: ' + JSON.stringify([got.before, got.vented, got.noneFound]));
+      // the example per answer
+      const eg = (where) => { sources[inlet].collapsed = false; updateDrainWhere(inlet, where); const el = document.getElementById('src_draintext_' + inlet); return el ? el.placeholder : '-'; };
+      got.eg = [eg(between), eg('On the equipment'), eg('On this valve')].join(' | ');
+      want(got.eg === 'Where exactly, e.g. bleed valve on inlet filter cover | Where exactly, e.g. bleed valve on inlet filter cover | Where exactly, e.g. vent valve on the inlet line', 'examples: ' + got.eg);
+      // the held-answer note follows the template it is given
+      const held = Object.assign(S('Vacuum Air In', vent('None found')), { deviceType: 'Pump' });
+      got.held = [releaseHeldNote(held, 'Medical Vacuum Pump'), releaseHeldNote(held, 'Medical Vacuum')].map(t => /Change Later/.test(t)).join();
+      want(got.held === 'false,true', 'held notes: ' + got.held);
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -11318,18 +11377,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 164 (was build 122\'s): APP_BUILD and the header label say 164, the service worker\'s cache is loto-collector-v7.159, Xcode\'s CURRENT_PROJECT_VERSION is 164 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 165 (was build 122\'s): APP_BUILD and the header label say 165, the service worker\'s cache is loto-collector-v7.160, Xcode\'s CURRENT_PROJECT_VERSION is 165 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 164 && !!label && +label[1] === 164, 'the build');
+    want(APP_BUILD === 165 && !!label && +label[1] === 165, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.159', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.160', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 164;,CURRENT_PROJECT_VERSION = 164;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 165;,CURRENT_PROJECT_VERSION = 165;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -17957,7 +18016,7 @@
     t481_sameNameSameRoomAsksBeforeExport, t482_sameNameFormAndEarlierUnits, t483_feedwaterPumpRowsAndBoilerPlant,
     t484_customLocationIsAlwaysAChip, t485_chemicalLinesOfferVisual, t486_chemicalRowStartsOnVisual, t487_condenserWaterVisualChipBesideTheBoxes,
     t488_linkCarriesTheExistingTag, t489_discardAndDeleteKeepThePlace, t490_linkCopiesFollowARelinkAndASideChange,
-    t491_vacuumPumpInletVent];
+    t491_vacuumPumpInletVent, t492_vacuumPumpInletVentReview];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
