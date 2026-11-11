@@ -178,6 +178,7 @@
 //             note dropped once the inlet has a vent found, "bleed valve on inlet filter cover" as the example
 //   T492      build 164's code review (build 165): the union note only when every inlet row isolated there is vented; the
 //             dialog names the vent; the form's note follows the answer; "On this valve" keeps the medium's example
+//   T493      build 165: condenser water's Visual chip sits on the "Saves as" line beside "More options…" (wilkins)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -9183,6 +9184,49 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T493 — condenser water's Visual chip on the "More options…" line (build 165)
+  async function t493_visualChipOnTheMoreOptionsLine() {
+    const N = 'T493 build 165 (wilkins 2026-11-11: "Have Visual sit on the line with \'More Options\'"): on a Condenser Water In / Gate Valve row with the simplified checks, the Visual chip sits beside "More options…" on the "Saves as" line (same row, vertically overlapping, below the Gauge present box, inside the card), still not picked; an HHW In row\'s line has no chip';
+    await resetAppState();
+    await withQuickPicksSetting(async () => {
+      const fails = [], got = {};
+      const want = (ok, what) => { if (!ok) fails.push(what); };
+      let simpleWas = null;
+      try { simpleWas = localStorage.getItem('loto_simple_verification'); localStorage.setItem('loto_simple_verification', '1'); } catch (e) {}
+      try {
+        fillFormNoSources('CDW-493');
+        document.getElementById('equipType').value = 'Standard Pump';
+        const add = (es, dev) => { sources.forEach(x => { x.collapsed = true; }); addSource(); const i = sources.length - 1; handleEnergySourceChange(i, es); if (dev) handleDeviceTypeChange(i, dev); return i; };
+        const i = add('Condenser Water In', 'Gate Valve');
+        await sleep(0);
+        const card = document.querySelectorAll('#sourcesContainer > .source-card')[i];
+        const line = card && card.querySelector('.simple-verif-more');
+        const chip = line && line.querySelector('.simple-verif-extras .qp-chip');
+        const more = line && [...line.querySelectorAll('button')].find(b => /More options/.test(b.textContent));
+        const gauge = card && [...card.querySelectorAll('label')].find(l => /Gauge present/.test(l.textContent));
+        got.parts = [!!line, chip ? chip.textContent.trim() : 'no chip', !!more, sources[i].verification].join('|');
+        want(got.parts === 'true|Visual|true|Temp Only', 'the chip and the link on one line, not picked: ' + got.parts);
+        if (chip && more && gauge && card) {
+          const c = chip.getBoundingClientRect(), m = more.getBoundingClientRect(), g = gauge.getBoundingClientRect(), k = card.getBoundingClientRect();
+          got.rects = { chip: [Math.round(c.left), Math.round(c.top), Math.round(c.right), Math.round(c.bottom)], more: [Math.round(m.left), Math.round(m.top), Math.round(m.bottom)], gaugeBottom: Math.round(g.bottom), cardRight: Math.round(k.right) };
+          want(c.top < m.bottom && c.bottom > m.top, 'same line as More options');
+          want(c.right <= m.left + 1, 'the chip is just before the link');
+          want(c.top >= g.bottom - 1, 'below the Gauge present box');
+          want(c.right <= k.right && m.right <= k.right, 'inside the card');
+        } else want(false, 'missing parts');
+        sources.length = 0; renderSources();
+        add('HHW In', 'Ball Valve');
+        await sleep(0);
+        const hhw = document.querySelector('#sourcesContainer .simple-verif-more');
+        got.hhw = hhw ? hhw.querySelectorAll('.qp-chip').length : 'no line';
+        want(got.hhw === 0, 'HHW In has no chip: ' + got.hhw);
+      } finally {
+        try { if (simpleWas === null) localStorage.removeItem('loto_simple_verification'); else localStorage.setItem('loto_simple_verification', simpleWas); } catch (e) {}
+      }
+      record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+    });
+  }
+
   // T489 — Discard of a new unit and Delete of the open unit keep the building and room (build 163)
   async function t489_discardAndDeleteKeepThePlace() {
     const N = 'T489 build 163 (wilkins 2026-11-10: "I am still having the issue of the location being wiped - it just happened on an air compressor tank template"): a NEW unit (Air Compressor → the prompt\'s Compressed Air Tank) discarded with ✕ Discard leaves a blank form — no type, template, name or sources, the Discard button hidden — at the SAME building and room, the question says so and the toast says they stay, and a relaunch keeps them; No keeps the unit; a saved unit opened from a blank form and deleted while open leaves a blank form at ITS building and room (it used to blank both); one opened from another place still goes back there (build 151)';
@@ -18016,7 +18060,8 @@
     t481_sameNameSameRoomAsksBeforeExport, t482_sameNameFormAndEarlierUnits, t483_feedwaterPumpRowsAndBoilerPlant,
     t484_customLocationIsAlwaysAChip, t485_chemicalLinesOfferVisual, t486_chemicalRowStartsOnVisual, t487_condenserWaterVisualChipBesideTheBoxes,
     t488_linkCarriesTheExistingTag, t489_discardAndDeleteKeepThePlace, t490_linkCopiesFollowARelinkAndASideChange,
-    t491_vacuumPumpInletVent, t492_vacuumPumpInletVentReview];
+    t491_vacuumPumpInletVent, t492_vacuumPumpInletVentReview,
+    t493_visualChipOnTheMoreOptionsLine];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
