@@ -176,7 +176,7 @@
 //             tags only up to the row's Quantity and only where the facility asks; a twin tag named; Discard with no place; Bulk delete
 //   T491      build 164: a Medical Vacuum Pump's inlet vent (loto-web 2026-11-10): no "No vent found" note on its inlet, the Union/Flange
 //             note dropped once the inlet has a vent found, "bleed valve on inlet filter cover" as the example
-//   T492      build 164's code review (build 165): the union note only when every inlet row isolated there is vented; the
+//   T492      build 164's code review (build 165): one vented inlet row (not locked open) drops the union note unit-wide; the
 //             dialog names the vent; the form's note follows the answer; "On this valve" keeps the medium's example
 //   T493      build 165: condenser water's Visual chip sits on the "Saves as" line beside "More options…" (wilkins)
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
@@ -8860,7 +8860,7 @@
   // wilkins, 2026-11-06: "you're talking about the chips that show up? make it
   // include visual, not start on it"
   async function t487_condenserWaterVisualChipBesideTheBoxes() {
-    const N = 'T487 build 162: with the simplified checks on, a hand-added Condenser Water In / Gate Valve row shows the Drain present / Gauge present boxes and ONE chip "Visual" under them, not picked (the row keeps its own Temp Only); a tap picks Visual (the card then shows the list\'s chips with "✓ Visual"); Condenser Water Out and In/Out get the chip too; HHW In, CHW Out, DW In and Energy Recovery Water In rows get none; with the simplified checks off there is no such chip (the list has Visual)';
+    const N = 'T487 build 162: with the simplified checks on, a hand-added Condenser Water In / Gate Valve row shows the Drain present / Gauge present boxes and ONE chip "Visual" (under them in builds 162–164, on the "More options…" line since build 165 — T493), not picked (the row keeps its own Temp Only); a tap picks Visual (the card then shows the list\'s chips with "✓ Visual"); Condenser Water Out and In/Out get the chip too; HHW In, CHW Out, DW In and Energy Recovery Water In rows get none; with the simplified checks off there is no such chip (the list has Visual)';
     await resetAppState();
     await withQuickPicksSetting(async () => {
       const fails = [], got = {};
@@ -8876,7 +8876,7 @@
         let i = add('Condenser Water In', 'Gate Valve');
         await sleep(0);
         got.first = [extrasOf(), document.querySelectorAll('.simple-verif-check').length, sources[i].verification].join('|');
-        want(got.first === 'Visual|2|Temp Only', 'the chip under the boxes, not picked: ' + got.first);
+        want(got.first === 'Visual|2|Temp Only', 'the chip beside the boxes, not picked: ' + got.first);
         // 2. a tap picks it
         const chip = document.querySelector('.simple-verif-extras button');
         if (chip) chip.click();
@@ -9129,7 +9129,7 @@
 
   // T492 — build 164's code review (build 165)
   async function t492_vacuumPumpInletVentReview() {
-    const N = 'T492 build 164 review (build 165): on a Medical Vacuum Pump with Union/Flange No, the union note goes only when every inlet row isolated there has a vent found (Vacuum Air In vented + Vacuum In / Out None found keeps it; both vented, or the other locked open, drops it; only a locked-open inlet keeps it); the Union or flange dialog says a vent on the Vacuum Air In row is used instead; on the form the For loto-web note follows the inlet vent answer (gone with a vent, back with None found, never "No vent found"); the example is the bleed valve for Between and On the equipment, the medium\'s own for On this valve; the held-answer note follows the template it is given';
+    const N = 'T492 build 164 review (build 165): on a Medical Vacuum Pump with Union/Flange No, one vent found on any inlet row not locked open drops the union note for the unit, as loto-web prints it (confirmed 2026-11-11: Vacuum Air In vented + Vacuum In / Out None found drops it, both vented or the other locked open too; a vent only on a locked-open inlet keeps it); the Union or flange dialog says a vent on the Vacuum Air In row is used instead; on the form the For loto-web note follows the inlet vent answer (gone with a vent, back with None found, never "No vent found"); the example is the bleed valve for Between and On the equipment, the medium\'s own for On this valve; the held-answer note follows the template it is given';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -9142,13 +9142,13 @@
         { equipType: 'Vacuum Pump', template: 'Medical Vacuum Pump', hospitalCode: 'Atlanta', unitAnswers: { reliefJoint: 'No' } }));
       const between = 'Between this valve and the equipment';
       got.oneOfTwo = note([S('Vacuum Air In', vent(between)), S('Vacuum In / Out', vent('None found'))]);
-      want(got.oneOfTwo === RELIEF_JOINT_NOTE, 'one inlet vented, the other None found keeps the note: ' + got.oneOfTwo);
+      want(got.oneOfTwo === '', 'one inlet vented, the other None found: loto-web uses the one vent unit-wide: ' + got.oneOfTwo);
       got.both = note([S('Vacuum Air In', vent(between)), S('Vacuum In / Out', vent('On the equipment'))]);
       want(got.both === '', 'both vented: ' + got.both);
       got.otherLocked = note([S('Vacuum Air In', vent(between)), S('Vacuum In / Out', { lockOpen: true })]);
       want(got.otherLocked === '', 'the other inlet locked open: ' + got.otherLocked);
       got.onlyLocked = note([S('Vacuum In / Out', Object.assign({ lockOpen: true }, vent(between)))]);
-      want(got.onlyLocked === RELIEF_JOINT_NOTE, 'only a locked-open inlet: ' + got.onlyLocked);
+      want(got.onlyLocked === RELIEF_JOINT_NOTE, 'a vent only on a locked-open inlet: ' + got.onlyLocked);
       // the dialog, then the form's For loto-web note as the vent answer changes
       let q = null;
       await vacuumUnitViaType('VP-492', (o) => {
@@ -9186,7 +9186,7 @@
 
   // T493 — condenser water's Visual chip on the "More options…" line (build 165)
   async function t493_visualChipOnTheMoreOptionsLine() {
-    const N = 'T493 build 165 (wilkins 2026-11-11: "Have Visual sit on the line with \'More Options\'"): on a Condenser Water In / Gate Valve row with the simplified checks, the Visual chip sits beside "More options…" on the "Saves as" line (same row, vertically overlapping, below the Gauge present box, inside the card), still not picked; an HHW In row\'s line has no chip';
+    const N = 'T493 build 165 (wilkins 2026-11-11: "Have Visual sit on the line with \'More Options\'"): on a Condenser Water In / Gate Valve row with the simplified checks, the Visual chip sits beside "More options…" on the "Saves as" line (same row, vertically overlapping, below the Gauge present box, inside the card), still not picked, and at a phone\'s width (335 px) it and the link stay together inside the card; an HHW In row\'s line has no chip';
     await resetAppState();
     await withQuickPicksSetting(async () => {
       const fails = [], got = {};
@@ -9214,6 +9214,16 @@
           want(c.top >= g.bottom - 1, 'below the Gauge present box');
           want(c.right <= k.right && m.right <= k.right, 'inside the card');
         } else want(false, 'missing parts');
+        // a phone's width: the line wraps inside the card if it must, the link stays beside the chip
+        const box = document.getElementById('sourcesContainer'), wasWidth = box.style.width;
+        if (chip && more && card) try {
+          box.style.width = '335px';
+          await sleep(0);
+          const c2 = chip.getBoundingClientRect(), m2 = more.getBoundingClientRect(), k2 = card.getBoundingClientRect();
+          got.narrow = { chipRight: Math.round(c2.right), moreRight: Math.round(m2.right), cardRight: Math.round(k2.right), cardWidth: Math.round(k2.width) };
+          want(c2.right <= k2.right && m2.right <= k2.right && c2.left >= k2.left, 'inside the card at 335 px: ' + JSON.stringify(got.narrow));
+          want(c2.top < m2.bottom && c2.bottom > m2.top, 'the link stays beside the chip at 335 px');
+        } finally { box.style.width = wasWidth; }
         sources.length = 0; renderSources();
         add('HHW In', 'Ball Valve');
         await sleep(0);

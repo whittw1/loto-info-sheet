@@ -5225,14 +5225,16 @@ function changeLaterAutoNotes(entryLike) {
   // generic procedure, which nobody chose
   if (entryLike.equipType === 'Vacuum Pump' && !String(entryLike.template || '').trim()) notes.push(TEMPLATE_NOT_CHOSEN_NOTE);
   const fac = entryHospitalCode(entryLike);
-  // Build 164: a vent found on the pump's inlet replaces the union/cover step for
-  // that row, so the note goes only when every inlet row isolated there (not
-  // locked open) has one on the sheet; one without still gets the union/cover
-  // step (build 165 review: any one vent used to drop it)
-  const inletRows = (entryLike.sources || []).filter(s => vacPumpInletRow(entryLike.template, s) && !lockOpenWholeRow(s));
-  const inletVented = inletRows.length > 0 && inletRows.every(s => DRAIN_FOUND.includes((s.drainLocation || {}).where)
-    && sourceTakesDrainLocation(s, fac));
-  if (k.vacPump && a.reliefJoint === 'No' && !inletVented) notes.push(RELIEF_JOINT_NOTE);
+  // Build 164: a vent found on any inlet row of the pump (not locked open) replaces
+  // the union/cover step for the whole unit, so with one on the sheet there's no
+  // relief step left to check. loto-web confirmed it 2026-11-11 (_vacuum_pump_vents
+  // gathers the vents of every inlet row and uses them unit-wide: two inlet valves
+  // isolate the same leg into the pump); build 165's review had briefly asked for
+  // every inlet row to be vented. Worked out only for a Medical Vacuum Pump
+  // answered No: this runs for every saved unit on each list render.
+  const inletVented = () => (entryLike.sources || []).some(s => vacPumpInletRow(entryLike.template, s)
+    && DRAIN_FOUND.includes((s.drainLocation || {}).where) && sourceTakesDrainLocation(s, fac));
+  if (k.vacPump && a.reliefJoint === 'No' && !inletVented()) notes.push(RELIEF_JOINT_NOTE);
   // The point is named for the medium since build 122 ("No purge point found…").
   // Every "None found" that goes on the sheet: loto-web prints its stop line
   // whatever the Device, so one held on a pump row writes it too (build 123
