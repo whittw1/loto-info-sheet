@@ -179,6 +179,9 @@
 //   T492      build 164's code review (build 165): one vented inlet row (not locked open) drops the union note unit-wide; the
 //             dialog names the vent; the form's note follows the answer; "On this valve" keeps the medium's example
 //   T493      build 165: condenser water's Visual chip sits on the "Saves as" line beside "More options…" (wilkins)
+//   T494      build 166 (wilkins 2026-11-11): pressure & temperature typed on an HHW / CHW / DHW / DW row (pressure only on
+//             Compressed Air) from its More menu; the name unchanged; sheet column 24 "Magnitude", the CSV and entries.json
+//             carry "45 PSI @ 160 F"; never on a linked or custom row; above 212 F asked; Clear; another medium hides it
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -7982,7 +7985,7 @@
 
   // T474 — the export
   async function t474_mainPhotoArrowExport() {
-    const N = 'T474 build 156: the arrow goes out with its Main Photo — entries.json mainPhotoArrow {x, y, dir, len, layout} (layout = loto-web\'s equipment pointer keys arrow_x, arrow_y, arrow_dir, arrow_len), the name row\'s column 14 headed "Main Photo Arrow" with "arrow_x,arrow_y,arrow_dir,arrow_len", and the CSV\'s last column "Main Photo Arrow"; a unit without one: null, no column 14 header, an empty CSV cell; no Main Photo exported, no arrow';
+    const N = 'T474 build 156: the arrow goes out with its Main Photo — entries.json mainPhotoArrow {x, y, dir, len, layout} (layout = loto-web\'s equipment pointer keys arrow_x, arrow_y, arrow_dir, arrow_len), the name row\'s column 14 headed "Main Photo Arrow" with "arrow_x,arrow_y,arrow_dir,arrow_len", and the CSV\'s column "Main Photo Arrow" (the last until build 166 added "Magnitude"); a unit without one: null, no column 14 header, an empty CSV cell; no Main Photo exported, no arrow';
     await resetAppState();
     if (typeof mainArrowOverride !== 'function') return record(N, false, 'this build has no main photo arrow');
     const fails = [], got = {};
@@ -8023,9 +8026,11 @@
     want(sb.h14 === '' && sb.v14 === '' && !!sb.main, 'sheet B: no header');
     const cp = Object.keys(u.files).find(q => /\.csv$/.test(q));
     const rows = parseCsvRows(new TextDecoder().decode(u.files[cp]));
-    const last = r => r[r.length - 1];
-    got.csv = { head: last(rows[0] || []), a: rows.filter(r => r[2] === 'ARW-474-A').map(last).join('|'), b: rows.filter(r => r[2] === 'ARW-474-B').map(last).join('|') };
-    want(got.csv.head === 'Main Photo Arrow' && got.csv.a === sa.v14 && got.csv.b === '', 'CSV');
+    // by its header (build 166 put "Magnitude" after it, the last column)
+    const arCol = (rows[0] || []).indexOf('Main Photo Arrow');
+    const last = r => r[arCol];
+    got.csv = { head: last(rows[0] || []), col: arCol, a: rows.filter(r => r[2] === 'ARW-474-A').map(last).join('|'), b: rows.filter(r => r[2] === 'ARW-474-B').map(last).join('|') };
+    want(got.csv.head === 'Main Photo Arrow' && arCol === (rows[0] || []).length - 2 && got.csv.a === sa.v14 && got.csv.b === '', 'CSV');
     // no Main Photo in the export: no arrow (exportMainArrow)
     const ghost = { photos: { equip_main: { dbKey: 'x', pointer: arrow } } };
     want(exportMainArrow(ghost, null) === null && JSON.stringify(exportMainArrow(ghost, 'H1.jpg')) === JSON.stringify(cleanMainArrow(arrow)), 'only with the photo');
@@ -11040,7 +11045,7 @@
 
   // T263 — the arc flash label in the export
   async function t263_theArcFlashLabelInTheExport() {
-    const N = 'T263 the export numbers the arc flash label photo after EE Number and before the sources, ships it under manifest slot "arcflash", in entries.json photoFiles.arcflash / photoCaptured.arcflash and the CSV\'s last column "Arc Flash Photo Filename"; the name row\'s column 13 is headed "Arc Flash Label" on ATS, Generator and Transformer blocks only, with the file name, "No label" or blank; the unit is stamped exported with every photo';
+    const N = 'T263 the export numbers the arc flash label photo after EE Number and before the sources, ships it under manifest slot "arcflash", in entries.json photoFiles.arcflash / photoCaptured.arcflash and the CSV\'s column "Arc Flash Photo Filename"; the name row\'s column 13 is headed "Arc Flash Label" on ATS, Generator and Transformer blocks only, with the file name, "No label" or blank; the unit is stamped exported with every photo';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -11090,11 +11095,11 @@
       want(!!rec && rec.entries.some(e => e.slot === 'arcflash'), 'manifest slot');
       const cp = Object.keys(u.files).find(q => /\.csv$/.test(q));
       const rows = parseCsvRows(new TextDecoder().decode(u.files[cp]));
-      // by its header: build 156 added "Main Photo Arrow" after it, the last column
+      // by its header: build 156 added "Main Photo Arrow" after it, and build 166 "Magnitude", the last column
       const afCol = (rows[0] || []).indexOf('Arc Flash Photo Filename');
       const last = r => r[afCol];
       got.csv = { head: (rows[0] || [])[afCol], col: afCol, ats: rows.filter(r => r[2] === 'ATS-263').map(last).join(), gen: rows.filter(r => r[2] === 'GEN-263').map(last).join() };
-      want(afCol === (rows[0] || []).length - 2 && got.csv.ats === ats.v13 && got.csv.gen === '', 'the CSV\'s column before the last');
+      want(afCol === (rows[0] || []).length - 3 && got.csv.ats === ats.v13 && got.csv.gen === '', 'the CSV\'s third column from the last');
       want((savedEquipment.find(e => e.equipName === 'ATS-263') || {}).exportedAllPhotos === true, 'stamped exported with every photo');
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
@@ -11431,18 +11436,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 165 (was build 122\'s): APP_BUILD and the header label say 165, the service worker\'s cache is loto-collector-v7.160, Xcode\'s CURRENT_PROJECT_VERSION is 165 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 166 (was build 122\'s): APP_BUILD and the header label say 166, the service worker\'s cache is loto-collector-v7.161, Xcode\'s CURRENT_PROJECT_VERSION is 166 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 165 && !!label && +label[1] === 165, 'the build');
+    want(APP_BUILD === 166 && !!label && +label[1] === 166, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.160', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.161', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 165;,CURRENT_PROJECT_VERSION = 165;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 166;,CURRENT_PROJECT_VERSION = 166;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -12196,6 +12201,14 @@
         what: c.energySource + ' prints ' + JSON.stringify(c.printed) + ' (' + c.code + '), the box ' + (made ? 'makes' : 'refuses') + ' it' };
     });
     want((fx.steam || []).length >= 15, 'the fixture carries the typed steam pressures');
+    // A typed pressure & temperature (build 166): the box starts at, and calls "default", what
+    // loto-web prints for the name with nothing typed (its Mapping Sheet), for all 15 names
+    check('magnitudes', fx.magnitudes || [], c => {
+      const medium = magnitudeMediumOf(c.energySource);
+      return { ok: !!medium && magnitudeText(MAGNITUDE_MEDIA[medium]) === c.magnitude && (c.code === 'W' || c.code === 'P'),
+        what: c.energySource + ': app ' + JSON.stringify(medium && magnitudeText(MAGNITUDE_MEDIA[medium])) + ', loto-web prints ' + JSON.stringify(c.magnitude) + ' (' + c.code + ')' };
+    });
+    want((fx.magnitudes || []).length === 15, 'the fixture carries the 15 magnitude names');
     // A state and Lock Open per valve (build 146): columns 11 and 15 as the app writes each case's
     // states, and loto-web's valve_state.parse_cell reading them back, with no import warning. Held
     // either way: as one row answer and, when the valves agree, as a "mixed" list that agrees.
@@ -17873,6 +17886,214 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T494 — pressure & temperature typed on a water or air row (build 166)
+  async function t494_typedPressureAndTemperature() {
+    const N = 'T494 build 166 (wilkins 2026-11-11: "manually change the magnitude of the sources that are not electrical like we do for steam … Where there is a temperature and pressure, I would like to change both"; loto-web\'s contract the same day): an HHW / CHW / DHW / DW row\'s More menu offers "Change pressure & temperature" (Compressed Air: "Change air pressure"), nothing new on the card until it is used; the boxes start at loto-web\'s default (HHW 50 PSI @ 180 F), save as typed (a temperature short of 32 F waits), refuse what can\'t be one (kept, with one word), show "default …" and Clear; a temperature newly above 212 F is asked about as it is typed, without waiting for the box to be left ("No" puts back what the row had before that box was typed in); an In/Out row says both valves print it; the closed card shows it; the name never changes; another medium hides it (kept), a linked or custom row has none and a link says it stops it going out; Duplicate and Copy Source bring only a value the row shows, the count copy none; a refresh puts a missing group back; Clear takes it off; exported in sheet column 24 "Magnitude" (its header only on a typed row), the CSV\'s last column and entries.json `magnitude`';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const card = (i = 0) => document.querySelectorAll('#sourcesContainer > .source-card')[i];
+    const psi = (i = 0) => document.getElementById('src_mag_psi_' + i);
+    const deg = (i = 0) => document.getElementById('src_mag_f_' + i);
+    const menuItem = (i = 0) => [...card(i).querySelectorAll('.src-more-menu button')].find(b => /^Change (pressure & temperature|air pressure)$/.test(b.textContent));
+    const type = (el, kind, text, i = 0) => { el.value = text; typeMagnitude(i, kind, el); return magnitudeSheetText(sources[i]); };
+    const leave = (el, kind, i = 0) => withToasts(async () => { commitMagnitude(i, kind, el); await new Promise(r => setTimeout(r, 0)); });
+    // the media and the names
+    got.media = ['HHW In/Out', 'HHW In', 'CHW Out', 'DHW In', 'DW In/Out', 'Compressed Air In', 'Compressed Air Out', 'Glycol HW In/Out', 'Condenser Water In', 'MPS 20 PSI', 'Electrical 480V', 'HHW In ', 'Compressed Air', 'HHW']
+      .map(n => magnitudeMediumOf(n) || '-').join(',');
+    want(got.media === 'HHW,HHW,CHW,DHW,DW,CA,CA,-,-,-,-,-,-,-', 'the media ' + got.media);
+    want(DATA.energySources.filter(n => magnitudeMediumOf(n)).length === 15, 'fifteen list names take it');
+    // an HHW In/Out row: nothing new until the menu item is used
+    fillFormNoSources('AHU-494');
+    addSource();
+    handleEnergySourceChange(0, 'HHW In/Out');
+    const slot = card().querySelector('#src_mag_0');
+    got.start = [slot ? slot.tagName + (slot.hidden ? ' hidden' : '') : '-', !!psi(), menuItem() ? menuItem().textContent : '-'].join(',');
+    want(got.start === 'SPAN hidden,false,Change pressure & temperature', 'a new HHW row ' + got.start);
+    if (menuItem()) menuItem().click();
+    const box = document.getElementById('src_mag_0');
+    got.opened = [psi() && psi().value, deg() && deg().value, document.activeElement === psi(), !!(box && box.querySelector('.src-mag-hint')), box && box.querySelector('.src-mag-clear').hidden, magnitudeSheetText(sources[0])].join(',');
+    want(got.opened === '50,180,true,true,true,', 'opened ' + got.opened);
+    want(/Both valves print this/.test((box && box.textContent) || ''), 'the In/Out hint');
+    // the temperature: "1", "16" wait (short of 32 F); "160" saved; the boxes never redrawn meanwhile
+    const p0 = psi(), f0 = deg();
+    f0.focus();
+    got.typedF = [type(f0, 'f', '1'), type(f0, 'f', '16'), type(f0, 'f', '160')].join('|');
+    want(got.typedF === '||50 PSI @ 160 F' && deg() === f0 && psi() === p0 && sources[0].userEdited && sources[0].energySource === 'HHW In/Out', 'typing the temperature ' + got.typedF);
+    want(JSON.stringify(sources[0].typedMagnitude) === '{"medium":"HHW","psi":50,"f":160}', 'saved as ' + JSON.stringify(sources[0].typedMagnitude));
+    // left as the browser leaves it (blurred first, then changed): the boxes stay the same
+    // nodes, or the focus a Tab hands to the other box or Clear is dropped (found by hand)
+    f0.blur();
+    got.leftF = await leave(f0, 'f');
+    want(deg() === f0 && psi() === p0, 'the boxes were redrawn when one was left');
+    got.after = [document.getElementById('src_mag_0').querySelector('.src-mag-note').textContent, document.getElementById('src_mag_0').querySelector('.src-mag-clear').hidden, !!menuItem()].join(',');
+    want(got.after === '· default 50 PSI @ 180 F,false,false' && !got.leftF.length, 'left ' + got.after + ' ' + JSON.stringify(got.leftF));
+    // what can't be a pressure keeps the one it had, with one word
+    got.badPsi = [];
+    for (const t of ['500', '2.5', 'abc', '', '0', '-5']) {
+      const ms = await withToasts(async () => { psi().focus(); type(psi(), 'psi', t); commitMagnitude(0, 'psi', psi()); });
+      got.badPsi.push(t + ':' + magnitudeSheetText(sources[0]) + '/' + psi().value + '/' + ms.filter(m => /1 to 300 PSI .*kept 50 PSI/.test(m)).length);
+    }
+    want(got.badPsi.join(',') === ['500', '2.5', 'abc', '', '0', '-5'].map(t => t + ':50 PSI @ 160 F/50/1').join(','), 'refused pressures ' + got.badPsi.join(','));
+    got.badF = [];
+    for (const t of ['20', '010', '451', '']) {
+      const ms = await withToasts(async () => { deg().focus(); type(deg(), 'f', t); commitMagnitude(0, 'f', deg()); });
+      got.badF.push(t + ':' + magnitudeSheetText(sources[0]) + '/' + deg().value + '/' + ms.filter(m => /32 to 450 F .*kept 160 F/.test(m)).length);
+    }
+    want(got.badF.join(',') === ['20', '010', '451', ''].map(t => t + ':50 PSI @ 160 F/160/1').join(','), 'refused temperatures ' + got.badF.join(','));
+    want(psi().getAttribute('aria-invalid') === 'false' && deg().getAttribute('aria-invalid') === 'false', 'not marked after');
+    // above 212 F: asked as it is typed, never waiting for the box to be left (an iPad tap on
+    // Save & New may not take the focus); "No" puts back what the row had before THIS box was
+    // typed in (a pressure typed meanwhile and not left stays)
+    psi().focus(); type(psi(), 'psi', '55');   // not left: no change event
+    const rTyped = await withDialogs({ choice: { 'magnitude-hot': 'no' } }, async () => { deg().focus(); type(deg(), 'f', '275'); await new Promise(res => setTimeout(res, 0)); });
+    got.hotTyped = [magnitudeSheetText(sources[0]), rTyped.log.filter(l => /CHOICE magnitude-hot/.test(l)).length].join(',');
+    want(got.hotTyped === '55 PSI @ 160 F,1', 'asked as typed, the pressure kept: ' + got.hotTyped);
+    psi().focus(); type(psi(), 'psi', '50'); commitMagnitude(0, 'psi', psi()); endMagnitudeEdit();
+    // above 212 F: asked; "No" puts back what the row had and the box takes the focus; "Yes" keeps it
+    let r = await withDialogs({ choice: { 'magnitude-hot': 'no' } }, async () => { deg().focus(); type(deg(), 'f', '250'); commitMagnitude(0, 'f', deg()); await new Promise(res => setTimeout(res, 0)); });
+    got.hotNo = [magnitudeSheetText(sources[0]), deg() && deg().value, document.activeElement === deg(), r.log.filter(l => /CHOICE magnitude-hot/.test(l)).length].join(',');
+    want(got.hotNo === '50 PSI @ 160 F,160,true,1', '212 F, No: ' + got.hotNo);
+    endMagnitudeEdit();   // the box left, as the browser's blur does
+    r = await withDialogs({ choice: { 'magnitude-hot': 'yes' } }, async () => { deg().focus(); type(deg(), 'f', '250'); commitMagnitude(0, 'f', deg()); await new Promise(res => setTimeout(res, 0)); });
+    got.hotYes = [magnitudeSheetText(sources[0]), r.log.length].join(',');
+    want(got.hotYes === '50 PSI @ 250 F,1', '212 F, Yes: ' + got.hotYes);
+    // asked once: the pressure changed later, or the temperature box left unchanged, asks nothing
+    r = await withDialogs({ choice: { 'magnitude-hot': 'no' } }, async () => {
+      psi().focus(); type(psi(), 'psi', '45'); commitMagnitude(0, 'psi', psi());
+      deg().focus(); type(deg(), 'f', '250'); commitMagnitude(0, 'f', deg()); await new Promise(res => setTimeout(res, 0)); });
+    got.hotAgain = [magnitudeSheetText(sources[0]), r.log.length].join(',');
+    want(got.hotAgain === '45 PSI @ 250 F,0', 'not asked again ' + got.hotAgain);
+    // drawn again: the boxes at once; the closed card says it; the name never changed
+    renderSources();
+    got.redrawn = [psi() && psi().value, deg() && deg().value, /default 50 PSI @ 180 F/.test(document.getElementById('src_mag_0').textContent)].join(',');
+    want(got.redrawn === '45,250,true', 'redrawn ' + got.redrawn);
+    sources[0].collapsed = true; renderSources();
+    got.closed = [((card().querySelector('.source-summary-text strong') || {}).textContent || '').trim(), ((card().querySelector('.src-mag-sum') || {}).textContent || '')].join('|');
+    want(got.closed === 'HHW In/Out|45 PSI @ 250 F', 'closed card ' + got.closed);
+    sources[0].collapsed = false; renderSources();
+    // another medium hides it and exports nothing (kept); picked back it is there again
+    handleEnergySourceChange(0, 'CHW In/Out');
+    got.otherMedium = [!!psi(), magnitudeSheetText(sources[0]), sources[0].typedMagnitude && sources[0].typedMagnitude.medium, menuItem() ? menuItem().textContent : '-'].join(',');
+    want(got.otherMedium === 'false,,HHW,Change pressure & temperature', 'CHW ' + got.otherMedium);
+    handleEnergySourceChange(0, 'HHW In');
+    got.back = [psi() && psi().value, magnitudeSheetText(sources[0]), !!document.querySelector('#src_mag_0 .src-mag-hint')].join(',');
+    want(got.back === '45,45 PSI @ 250 F,false', 'HHW In ' + got.back);
+    // typed, not left, then saved (a tap on Save & New may not take the focus)
+    psi().focus(); type(psi(), 'psi', '55');
+    let A = saveEntry();
+    got.savedTyped = A && A.sources && JSON.stringify(A.sources[0].typedMagnitude);
+    want(got.savedTyped === '{"medium":"HHW","psi":55,"f":250}', 'saved while typing ' + got.savedTyped);
+    // compressed air: the pressure only
+    await resetAppState();
+    fillFormNoSources('AC-494');
+    addSource(); handleEnergySourceChange(0, 'Compressed Air In');
+    got.air = [menuItem() ? menuItem().textContent : '-'].join();
+    if (menuItem()) menuItem().click();
+    got.air += ',' + [psi() && psi().value, !!deg()].join(',');
+    want(psi() && psi().getAttribute('aria-label') === 'Compressed air pressure (PSI)', 'the air box\'s spoken label ' + (psi() && psi().getAttribute('aria-label')));
+    psi().focus(); type(psi(), 'psi', '9'); type(psi(), 'psi', '90'); await leave(psi(), 'psi');
+    got.air += ',' + magnitudeSheetText(sources[0]) + ',' + document.querySelector('#src_mag_0 .src-mag-note').textContent;
+    want(got.air === 'Change air pressure,100,false,90 PSI,· default 100 PSI', 'compressed air ' + got.air);
+    // Clear: back to loto-web's default, the item in the menu again
+    got.clear = await withToasts(async () => { document.querySelector('#src_mag_0 .src-mag-clear').click(); });
+    got.cleared = [sources[0].typedMagnitude === undefined, !!psi(), !!menuItem(), magnitudeSheetText(sources[0])].join(',');
+    want(got.cleared === 'true,false,true,' && got.clear.some(m => /^Cleared 90 PSI: the row goes back to loto-web\u2019s own value \(the site\u2019s, else the default\)\. If this unit was already exported with 90 PSI, tell the office\.$/.test(m)), 'Clear ' + got.cleared + ' ' + JSON.stringify(got.clear));
+    // never on a linked row, a custom one named like a medium, or an Electrical row
+    await resetAppState();
+    fillFormNoSources('P-494');
+    addSource(); handleEnergySourceChange(0, 'DW In');
+    openMagnitude(0); deg().focus(); type(deg(), 'f', '65'); await leave(deg(), 'f');
+    addSource(); handleEnergySourceChange(1, '** Custom Energy **');
+    updateSourceCustomField(1, 'energySource', 'HHW In'); commitCustomEnergy(1);
+    addSource(); handleEnergySourceChange(2, 'Electrical 480V');
+    addSource(); handleEnergySourceChange(3, 'DHW Out');
+    sources[3].typedMagnitude = { medium: 'DHW', psi: 70, f: 120 };
+    sources[3].linkedTo = { equipName: 'WH-1', equipType: 'Water Heater - Gas', sourceIndex: 1, sourceLabel: 'DHW Out', entryId: '' };
+    sources.forEach(x => { x.collapsed = false; });
+    renderSources();
+    got.others = [0, 1, 2, 3].map(i => [!!document.getElementById('src_mag_psi_' + i), menuItem(i) ? 'menu' : '-', magnitudeSheetText(sources[i]) || '-'].join('/')).join(',');
+    want(got.others === 'true/-/40 PSI @ 65 F,false/-/-,false/-/-,false/-/-', 'rows ' + got.others);
+    // Duplicate keeps it (the same line); the count prompt's copy of a row drops it; a duplicate
+    // of the linked row doesn't bring back the value its link hides
+    duplicateSource(3);
+    got.dupLinked = [sources[4].energySource, !!sources[4].linkedTo, JSON.stringify(sources[4].typedMagnitude || null), magnitudeSheetText(sources[4]) || '-'].join(',');
+    want(got.dupLinked === 'DHW Out,false,null,-', 'Duplicate of the linked row ' + got.dupLinked);
+    duplicateSource(0);
+    got.dup = magnitudeSheetText(sources[1]);
+    want(got.dup === '40 PSI @ 65 F', 'Duplicate ' + got.dup);
+    want(countCopyOf(sources[0]).typedMagnitude === undefined, 'the count copy');
+    // a row whose group went missing gets it back when the card is refreshed in place
+    sources.forEach((x, k) => { x.collapsed = k !== 0; }); renderSources();
+    document.getElementById('src_mag_0').remove();
+    refreshSourceDependents(0);
+    got.reinserted = [!!document.getElementById('src_mag_psi_0'), (document.getElementById('src_mag_0') || {}).parentNode === (document.getElementById('src_energy_0') || { closest: () => null }).closest('.form-group')].join(',');
+    want(got.reinserted === 'true,true', 'put back by the refresh ' + got.reinserted);
+    // Copy Source brings what the copied row shows and sends: its value, or none (never one its link hides)
+    const P = saveEntry();
+    const pi = savedEquipment.indexOf(P);
+    fillFormNoSources('P-494c');
+    addSource(); handleEnergySourceChange(0, 'DW In');
+    sources[0].typedMagnitude = { medium: 'DW', psi: 99, f: 99 };
+    addSource(); handleEnergySourceChange(1, 'Electrical 480V');
+    sources.forEach(x => { x.collapsed = false; }); renderSources();
+    const from = (k) => P.sources.findIndex(x => x.energySource === k && !x.linkedTo);
+    showCopySourceDialog(1); applyCopySource(pi, from('DW In'));
+    showCopySourceDialog(0); applyCopySource(pi, P.sources.findIndex(x => x.linkedTo));
+    got.copied = [sources[1].energySource + '=' + magnitudeSheetText(sources[1]), sources[0].energySource + '=' + (magnitudeSheetText(sources[0]) || '-') + '/' + JSON.stringify(sources[0].typedMagnitude || null)].join(',');
+    want(got.copied === 'DW In=40 PSI @ 65 F,DHW Out=-/null', 'Copy Source ' + got.copied);
+    // a link stops a typed value going out, and the link's message says so
+    await resetAppState();
+    const T = mkEntry('AHU-494t', { sources: [Object.assign(mkSrc('HHW Out'), { sourceId: genUuid(), deviceType: 'Gate Valve' })] });
+    savedEquipment = [T]; saveAll();
+    fillFormNoSources('P-494l');
+    addSource(); handleEnergySourceChange(0, 'HHW Out');
+    sources[0].typedMagnitude = { medium: 'HHW', psi: 45, f: 160 };
+    got.linkToast = await withToasts(async () => { await withDialogs({ choice: () => 'both' }, async () => { pendingLinkSourceIndex = 0; await applyLink(0, 0); }); });
+    want(!!sources[0].linkedTo && magnitudeSheetText(sources[0]) === '' && got.linkToast.some(m => /its typed 45 PSI @ 160 F isn\u2019t sent while it is linked: the linked row\u2019s value prints/.test(m)),
+      'the link ' + JSON.stringify(got.linkToast));
+    // exported: column 24 under its own header on the typed rows only, the CSV, entries.json
+    await resetAppState();
+    fillFormNoSources('AHU-494x');
+    addSource(); handleEnergySourceChange(0, 'HHW In/Out');
+    openMagnitude(0); psi().focus(); type(psi(), 'psi', '45'); await leave(psi(), 'psi');
+    addSource(); handleEnergySourceChange(1, 'Compressed Air In');
+    openMagnitude(1); psi(1).focus(); type(psi(1), 'psi', '90', 1); await leave(psi(1), 'psi', 1);
+    addSource(); handleEnergySourceChange(2, 'DW In');
+    addSource(); handleEnergySourceChange(3, 'Electrical 480V');
+    A = saveEntry();
+    got.saved = ((A && A.sources) || []).map(x => x.energySource + '=' + magnitudeSheetText(x)).join(',');
+    want(got.saved === 'HHW In/Out=45 PSI @ 180 F,Compressed Air In=90 PSI,DW In=,Electrical 480V=', 'saved ' + got.saved);
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (zip) {
+      const u = await unzipExport(zip.blob);
+      const je = jsonEntryFor(u.entriesJson, A);
+      got.json = je ? (je.sources || []).map(x => x.energySource + '=' + (x.magnitude === undefined ? 'none' : x.magnitude)).join(',') : null;
+      want(got.json === 'HHW In/Out=45 PSI @ 180 F,Compressed Air In=90 PSI,DW In=none,Electrical 480V=none', 'entries.json ' + got.json);
+      const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+      if (xpath) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        const ws = wb.worksheets[0], rows = [];
+        ws.eachRow(row => {
+          const a = String(row.getCell(1).value || '');
+          if (/^Energy Source #[1-4]$/.test(a)) {
+            const d = ws.getRow(row.number + 1);
+            rows.push(String(d.getCell(1).value || '') + '=' + String(row.getCell(24).value || '') + ':' + String(d.getCell(24).value || ''));
+          }
+        });
+        got.sheet = rows.join(',');
+        want(got.sheet === 'HHW In/Out=Magnitude:45 PSI @ 180 F,Compressed Air In=Magnitude:90 PSI,DW In=:,Electrical 480V=:', 'sheet ' + got.sheet);
+        want(ws.getColumn(24).width === 16, 'column 24 width ' + ws.getColumn(24).width);
+      } else fails.push('no XLSX in the ZIP');
+      const csvName = Object.keys(u.files).find(f => /\.csv$/.test(f));
+      const csvText = csvName ? new TextDecoder().decode(u.files[csvName]) : '';
+      const lines = csvText.trim().split('\n');
+      got.csv = [/,Main Photo Arrow,Magnitude$/.test(lines[0]), lines.filter(l => /,45 PSI @ 180 F$/.test(l)).length, lines.filter(l => /,90 PSI$/.test(l)).length, lines.filter(l => /,(DW In|Electrical 480V),.*,$/.test(l)).length].join(',');
+      want(got.csv === 'true,1,1,2', 'CSV ' + got.csv);
+    } else fails.push('no zip: ' + confirms.join(' | '));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
     t9_removeMiscThenDiscard, t10_reattachOrphans, t11_duplicateSourceThenRetakeCopy,
@@ -18071,7 +18292,7 @@
     t484_customLocationIsAlwaysAChip, t485_chemicalLinesOfferVisual, t486_chemicalRowStartsOnVisual, t487_condenserWaterVisualChipBesideTheBoxes,
     t488_linkCarriesTheExistingTag, t489_discardAndDeleteKeepThePlace, t490_linkCopiesFollowARelinkAndASideChange,
     t491_vacuumPumpInletVent, t492_vacuumPumpInletVentReview,
-    t493_visualChipOnTheMoreOptionsLine];
+    t493_visualChipOnTheMoreOptionsLine, t494_typedPressureAndTemperature];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

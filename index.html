@@ -369,6 +369,11 @@ if ('serviceWorker' in navigator) {
   .src-psi { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-dim); }
   .src-psi input { width: 5.5em; }
   .src-psi input[aria-invalid="true"] { border-color: var(--danger); }
+  /* typed pressure & temperature (build 166): two boxes, the note and Clear wrap under them */
+  .src-mag { flex-wrap: wrap; margin-top: 6px; gap: 6px 8px; }
+  .src-mag input { width: 4.5em; }
+  .src-mag-hint { flex-basis: 100%; font-size: 12px; }
+  .src-mag-sum { color: var(--text-dim); font-size: 12px; font-weight: 600; white-space: nowrap; }
   .src-head-btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
   .src-head-btns .src-move { background: var(--card); border: 1px solid var(--border); color: var(--text-dim); padding: 6px 10px; }
   .src-head-btns .src-move:disabled { color: #555; }
@@ -552,7 +557,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b165</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b166</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1272,7 +1277,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 165;
+const APP_BUILD = 166;
 
 // ============================================================================
 // DATA
@@ -1486,6 +1491,55 @@ function listEnergyName(energySource) {
   const p = steamPressureOf(energySource);
   return p ? STEAM_LIST_NAMES[p.cls] : energySource;
 }
+// Pressure and temperature typed on a water or air row (build 166, wilkins
+// 2026-11-11: "manually change the magnitude of the sources that are not
+// electrical like we do for steam … Where there is a temperature and pressure, I
+// would like to change both"). Unlike steam, the name stays as it is: loto-web
+// maps these rows, letters them and writes their steps by the name. The numbers go
+// out on their own, in sheet column 24 "Magnitude" ("45 PSI @ 180 F"; compressed
+// air "90 PSI"). loto-web imports that as the row's magnitude_override: Section 1
+// prints it under the family name ("Hot Water" / "45 PSI @ 180 F"), and the
+// unit's Thermal row reads the temperature. A row with nothing typed writes
+// nothing there. loto-web then prints the site's magnitude, or its Mapping
+// Sheet's: the defaults below.
+// Saved as src.typedMagnitude = { medium, psi, f } (no f for air). The medium is
+// saved with it: a row re-picked as another medium neither shows nor exports the
+// numbers, and nothing is deleted (picked back, they are there again).
+const MAGNITUDE_MEDIA = {
+  HHW: { psi: 50, f: 180 }, CHW: { psi: 65, f: 50 },
+  DHW: { psi: 60, f: 140 }, DW:  { psi: 40, f: 70 },
+  CA:  { psi: 100 }   // compressed air: a pressure only
+};
+// What each medium is called aloud (the boxes' labels); kept out of MAGNITUDE_MEDIA,
+// whose entries are copied into a row's typed pair
+const MAGNITUDE_WORDS = { HHW: 'Heating hot water', CHW: 'Chilled water', DHW: 'Domestic hot water', DW: 'Domestic water', CA: 'Compressed air' };
+const MAGNITUDE_NAME_RE = /^(HHW|CHW|DHW|DW|Compressed Air) (In\/Out|In|Out)$/;
+const MAGNITUDE_PSI_MAX = 300, MAGNITUDE_F_MIN = 32, MAGNITUDE_F_MAX = 450;
+// 'HHW', 'CHW', 'DHW', 'DW' or 'CA' for a list name of those media, else ''
+function magnitudeMediumOf(energySource) {
+  const m = MAGNITUDE_NAME_RE.exec(String(energySource || ''));
+  return m ? (m[1] === 'Compressed Air' ? 'CA' : m[1]) : '';
+}
+// …of a row: never a custom (typed) energy source, as steam's box, nor a linked
+// row: the row it is linked to owns the value (loto-web, 2026-11-11), and
+// loto-web skips column 24 on a linked row
+function magnitudeMediumOfRow(src) {
+  return src && !src._customEnergy && !src.linkedTo ? magnitudeMediumOf(src.energySource) : '';
+}
+function magnitudeHasTemp(medium) { return !!MAGNITUDE_MEDIA[medium] && 'f' in MAGNITUDE_MEDIA[medium]; }
+function magnitudeNumberOk(kind, n) {
+  return Number.isInteger(n) && (kind === 'f' ? n >= MAGNITUDE_F_MIN && n <= MAGNITUDE_F_MAX : n >= 1 && n <= MAGNITUDE_PSI_MAX);
+}
+// The row's typed { psi, f } while its source is still that medium, else null
+function typedMagnitudeOf(src) {
+  const medium = magnitudeMediumOfRow(src), t = src && src.typedMagnitude;
+  if (!medium || !t || t.medium !== medium || !magnitudeNumberOk('psi', t.psi)) return null;
+  if (!magnitudeHasTemp(medium)) return { psi: t.psi };
+  return magnitudeNumberOk('f', t.f) ? { psi: t.psi, f: t.f } : null;
+}
+function magnitudeText(m) { return m ? m.psi + ' PSI' + (m.f != null ? ' @ ' + m.f + ' F' : '') : ''; }
+// Column 24, the CSV's Magnitude and entries.json's `magnitude`: what was typed, or ''
+function magnitudeSheetText(src) { return magnitudeText(typedMagnitudeOf(src)); }
 // A source's defaults, a typed steam pressure's from its class.
 function sourceDefaultsOf(energySource) {
   return SOURCE_DEFAULTS[energySource] || SOURCE_DEFAULTS[listEnergyName(energySource)];
@@ -4001,6 +4055,166 @@ function commitSteamPressure(index, el) {
   const note = el.nextElementSibling;   // "PSI · usual 20", as the card draws it
   if (note) note.textContent = 'PSI' + (now.psi !== usual ? ' \u00b7 usual ' + usual : '');
   refreshSourceDependents(index);
+}
+
+// ---- Pressure and temperature (build 166) -------------------------------------
+// Works like the steam box. A row with nothing typed shows nothing new: "Change
+// pressure & temperature" (compressed air: "Change air pressure") is in its More
+// menu. The boxes show once a number is typed and stay while it is. Each box
+// saves as it is typed and is never redrawn meanwhile. Text that can't make a
+// whole number in range keeps what the row had, and says so as it is typed. A
+// number still short of the range ("4" on the way to 45 F) is waited on, and
+// settled when the box is left. Clear puts the row back on loto-web's default
+// (nothing typed, nothing in column 24).
+// loto-web's answers (2026-11-11): a LINKED row gets no box and sends nothing,
+// because the row it is linked to owns the value. An "In/Out" row's one value
+// prints on both valves. Above 212 F the water flashes when a line opens:
+// loto-web prints a flash hazard, so the number is confirmed as it is typed.
+const MAGNITUDE_FLASH_F = 212;
+function magnitudeMenuLabel(src) {
+  const medium = magnitudeMediumOfRow(src);
+  if (!medium || typedMagnitudeOf(src)) return '';
+  return magnitudeHasTemp(medium) ? 'Change pressure & temperature' : 'Change air pressure';
+}
+// "· default 50 PSI @ 180 F" beside typed numbers that aren't the default ones
+function magnitudeNoteText(medium, typed) {
+  const usual = magnitudeText(MAGNITUDE_MEDIA[medium]);
+  return typed && magnitudeText(typed) !== usual ? '· default ' + usual : '';
+}
+function magnitudeControl(src, i, open) {
+  const medium = magnitudeMediumOfRow(src);
+  if (!medium) return '';
+  const typed = typedMagnitudeOf(src);
+  if (!open && !typed) return html`<span id="src_mag_${i}" hidden></span>`;
+  const m = typed || MAGNITUDE_MEDIA[medium];
+  const box = (kind, label) => html`<input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" id="src_mag_${kind}_${i}" value="${m[kind]}"
+      aria-label="${label}" oninput="typeMagnitude(${i},'${kind}',this)" onchange="commitMagnitude(${i},'${kind}',this)" onblur="endMagnitudeEdit()">`;
+  return html`<div class="src-psi src-mag" id="src_mag_${i}">
+    ${box('psi', MAGNITUDE_WORDS[medium] + ' pressure (PSI)')}<span>PSI</span>
+    ${magnitudeHasTemp(medium) ? html`<span>@</span>${box('f', MAGNITUDE_WORDS[medium] + ' temperature (F)')}<span>F</span>` : ''}
+    <span class="src-mag-note">${magnitudeNoteText(medium, typed)}</span>
+    <button type="button" class="btn btn-sm btn-outline src-mag-clear" ${typed ? '' : 'hidden'} onclick="clearMagnitude(${i})">Clear</button>
+    ${/In\/Out$/.test(src.energySource) ? html`<div class="src-mag-hint">Both valves print this. In and Out differ? Make them separate In and Out rows.</div>` : ''}</div>`;
+}
+// The row's control drawn again in its place (`open`: the boxes even with nothing typed)
+function redrawMagnitudeControl(index, open) {
+  const slot = document.getElementById('src_mag_' + index), t = document.createElement('div');
+  t.innerHTML = String(magnitudeControl(sources[index], index, open));
+  if (slot && t.firstElementChild) slot.replaceWith(t.firstElementChild);
+}
+function openMagnitude(index) {
+  if (!sources[index] || !document.getElementById('src_mag_' + index)) return;
+  const open = document.getElementById('src_mag_psi_' + index);
+  if (open) { open.focus(); return; }   // the boxes are up already
+  redrawMagnitudeControl(index, true);
+  const el = document.getElementById('src_mag_psi_' + index);
+  if (el) { el.focus(); el.select(); }
+}
+// What a box's text makes: a number, 'wait' (blank, or a start of one too small
+// yet: "4" on the way to 45 F) or 'no' (never one in range: "2.5", "500", "010")
+function magnitudeBoxReads(kind, text) {
+  const t = String(text || '').trim();
+  if (t === '') return 'wait';
+  if (!/^\d{1,3}$/.test(t)) return 'no';
+  const n = +t;
+  if (magnitudeNumberOk(kind, n)) return n;
+  return n > (kind === 'f' ? MAGNITUDE_F_MAX : MAGNITUDE_PSI_MAX) || t.length === 3 ? 'no' : 'wait';
+}
+// The number a box keeps: the typed one, else the default
+function magnitudeKept(src, medium, kind) {
+  return (typedMagnitudeOf(src) || MAGNITUDE_MEDIA[medium])[kind];
+}
+function magnitudeRefusedNote(kind, kept) {
+  return kind === 'f'
+    ? 'Temperature is a whole number from ' + MAGNITUDE_F_MIN + ' to ' + MAGNITUDE_F_MAX + ' F — kept ' + kept + ' F'
+    : 'Pressure is a whole number from 1 to ' + MAGNITUDE_PSI_MAX + ' PSI — kept ' + kept + ' PSI';
+}
+// One number into the row's typed pair; the other stays as it is, or the default
+function setTypedMagnitude(index, kind, n) {
+  const src = sources[index], medium = magnitudeMediumOfRow(src);
+  if (!medium) return;
+  const now = typedMagnitudeOf(src);
+  if (now && now[kind] === n) return;
+  markSourceEdited(index);
+  src.typedMagnitude = Object.assign({ medium }, now || MAGNITUDE_MEDIA[medium], { [kind]: n });
+  autoSaveCurrent();
+}
+// What the row held before this box was typed in: a "No" to the 212 F question puts
+// it back. Taken at the box's first keystroke (not on focus: a box that has the
+// focus already gets no focus event) and dropped when the box loses the focus, so
+// it never outlives one box's edit (a box left unchanged fires no change event).
+let magnitudeEdit = null;
+function endMagnitudeEdit() { magnitudeEdit = null; }
+function typeMagnitude(index, kind, el) {
+  const src = sources[index], medium = magnitudeMediumOfRow(src);
+  if (!medium) return;
+  if (!magnitudeEdit || magnitudeEdit.src !== src || magnitudeEdit.kind !== kind) {
+    magnitudeEdit = { src, kind, before: src.typedMagnitude ? Object.assign({}, src.typedMagnitude) : null };
+  }
+  const n = magnitudeBoxReads(kind, el.value);
+  el.setAttribute('aria-invalid', n === 'no' ? 'true' : 'false');
+  if (n === 'no') { showToast(magnitudeRefusedNote(kind, magnitudeKept(src, medium, kind)), true); return; }
+  if (n === 'wait') return;
+  setTypedMagnitude(index, kind, n);
+  // Above 212 F is three digits, the box's limit: the number is whole as it is typed,
+  // so it is asked about now. Leaving the box can't be counted on: a tap on Save &
+  // New doesn't always take the focus on the iPad (no change event).
+  const edit = magnitudeEdit;
+  if (kind === 'f' && n > MAGNITUDE_FLASH_F && edit.asked !== n) { edit.asked = n; confirmHotMagnitude(src, edit.before); }
+}
+function commitMagnitude(index, kind, el) {
+  const src = sources[index], medium = magnitudeMediumOfRow(src);
+  if (!medium) return;
+  const n = magnitudeBoxReads(kind, el.value);
+  if (typeof n === 'number') setTypedMagnitude(index, kind, n);
+  // a refused text was told as it was typed; one left blank or short is told now
+  else if (el.getAttribute('aria-invalid') !== 'true') showToast(magnitudeRefusedNote(kind, magnitudeKept(src, medium, kind)), true);
+  el.value = magnitudeKept(src, medium, kind);
+  el.setAttribute('aria-invalid', 'false');
+  paintMagnitudeNote(index);
+  refreshSourceDependents(index);
+}
+// The note and Clear follow the numbers, in place: the other box may have the focus
+function paintMagnitudeNote(index) {
+  const box = document.getElementById('src_mag_' + index), src = sources[index];
+  const medium = magnitudeMediumOfRow(src);
+  if (!box || !medium) return;
+  const typed = typedMagnitudeOf(src);
+  const note = box.querySelector('.src-mag-note'), clear = box.querySelector('.src-mag-clear');
+  if (note) note.textContent = magnitudeNoteText(medium, typed);
+  if (clear) clear.hidden = !typed;
+}
+// A temperature newly typed above 212 F is asked about once (typeMagnitude). "No"
+// puts back what the row held before the box was typed in, and the box takes the
+// focus again.
+async function confirmHotMagnitude(src, before) {
+  const typed = typedMagnitudeOf(src);
+  if (!typed || typed.f == null || typed.f <= MAGNITUDE_FLASH_F) return;
+  if (before && before.medium === src.typedMagnitude.medium && before.f === typed.f) return;   // not new
+  const v = await askChoice({ id: 'magnitude-hot', defaultValue: 'yes', title: 'Above 212 F?',
+    html: html`${src.energySource} at ${typed.f} F is above boiling: the water flashes to steam when the line is opened. loto-web prints a flash hazard for it. Is ${typed.f} F right?`,
+    choices: [{ value: 'yes', label: 'Yes, ' + typed.f + ' F', primary: true }, { value: 'no', label: 'No, fix it' }] });
+  const index = sources.indexOf(src);
+  if (v !== 'no' || index < 0) return;
+  markSourceEdited(index);
+  if (before) src.typedMagnitude = before; else delete src.typedMagnitude;
+  autoSaveCurrent();
+  redrawMagnitudeControl(index, true);
+  refreshSourceDependents(index);
+  const el = document.getElementById('src_mag_f_' + index);
+  if (el) { el.focus(); el.select(); }
+}
+function clearMagnitude(index) {
+  const src = sources[index], typed = typedMagnitudeOf(src);
+  if (!typed) return;
+  markSourceEdited(index);
+  delete src.typedMagnitude;
+  autoSaveCurrent();
+  redrawMagnitudeControl(index);
+  refreshSourceDependents(index);
+  // With nothing typed loto-web prints the site's Source Magnitude, else its Mapping
+  // Sheet's; and it never clears a value it imported (a blank cell is "not typed")
+  showToast('Cleared ' + magnitudeText(typed) + ': the row goes back to loto-web\u2019s own value (the site\u2019s, else the default). If this unit was already exported with ' + magnitudeText(typed) + ', tell the office.');
 }
 
 // ---- Drive feeder -------------------------------------------------------------
@@ -8284,6 +8498,7 @@ function countCopyOf(base) {
   delete c.labelWait; delete c.dcBusV;   // …nor its label (build 121)
   delete c.driveIsolates;   // …nor its drive's disconnect (build 122)
   delete c._drivesTogether;   // …nor the count prompt's Quantity (build 148)
+  delete c.typedMagnitude;   // …nor a pressure & temperature typed on the first (build 166)
   return c;
 }
 // A lower count removes only rows that hold nothing of the user's (build 113):
@@ -9354,11 +9569,12 @@ function buildSourceCard(src, i) {
       const isFirst = i === 0;
       const isLast = i === sources.length - 1;
       const qty = sourceQty(src);   // Quantity 2+ reads "×2" (build 148)
+      const magText = magnitudeSheetText(src);   // a typed pressure & temperature (build 166)
       card.innerHTML = html`
         <div class="source-summary" onclick="expandSource(${i})">
           <span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
           <div class="source-summary-text">
-            <strong>${src.energySource || 'Empty source'}</strong>${autoBadge}${atsSideTag(i)}${valveStateBadgeText(src) ? html` <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">${valveStateBadgeText(src)}</span>` : ''}${photoData && photoData.dbKey && fittingMarks(photoData, src).length ? raw(' <span title="Valve location marked">&#128205;</span>') : ''}${src.linkedTo ? raw(' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>') : ''}${summaryLinkChips(src)}
+            <strong>${src.energySource || 'Empty source'}</strong>${magText ? html` <span class="src-mag-sum">${magText}</span>` : ''}${autoBadge}${atsSideTag(i)}${valveStateBadgeText(src) ? html` <span style="background:#b5451b;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px;">${valveStateBadgeText(src)}</span>` : ''}${photoData && photoData.dbKey && fittingMarks(photoData, src).length ? raw(' <span title="Valve location marked">&#128205;</span>') : ''}${src.linkedTo ? raw(' <span style="color:var(--accent);font-size:11px;">🔗 LINKED</span>') : ''}${summaryLinkChips(src)}
             ${src.deviceType ? html` &mdash; ${src.deviceType}` : ''}${qty > 1 ? html` <span class="src-qty" style="font-weight:700;">&times;${qty}</span>` : ''}${src.deviceId ? html` <span style="color:#7eb8da;">(${src.deviceId})</span>` : ''}
             ${src.location ? html` &mdash; ${src.location}` : ''}
             ${src.detail ? html` <span style="color:var(--accent);font-weight:600;font-family:monospace;">(${src.detail})</span>` : ''}
@@ -9421,6 +9637,7 @@ function buildSourceCard(src, i) {
       const isFirstExp = i === 0;
       const isLastExp = i === sources.length - 1;
       const energyChoices = energyChoicesFor(src);   // a typed steam pressure in its class's place (build 149)
+      const magItem = magnitudeMenuLabel(src);   // "Change pressure & temperature" (build 166)
       const role = sourceRoleOf(src);
       // The tech's Duplicate answer, as tap buttons under the photo (build 138: a
       // dropdown beside Quantity, far from the photo it is about).
@@ -9443,6 +9660,7 @@ function buildSourceCard(src, i) {
                 <button type="button" onclick="closeSrcMenus();showCopySourceDialog(${i})" title="Copy source config from a saved entry">Copy from a saved unit&hellip;</button>
                 <button type="button" onclick="closeSrcMenus();duplicateSource(${i})">Duplicate this source</button>
                 ${steamPressureAtUsual(src) ? html`<button type="button" onclick="closeSrcMenus();openSteamPressure(${i})">Change steam pressure</button>` : ''}
+                ${magItem ? html`<button type="button" onclick="closeSrcMenus();openMagnitude(${i})">${magItem}</button>` : ''}
                 ${src.quantity >= 2 ? html`<button type="button" onclick="closeSrcMenus();splitSource(${i})" title="Pull one valve out as its own quantity-1 source (own photo + valve state)">Split 1 out</button>` : ''}
                 <button type="button" class="danger" onclick="closeSrcMenus();removeSource(${i})">Remove this source</button>
               </div>
@@ -9465,6 +9683,7 @@ function buildSourceCard(src, i) {
                   <option value="** Custom Energy **" ${src._customEnergy?'selected':''}>Custom...</option>
                 </select>
                 ${steamPressureControl(src, i)}
+                ${magnitudeControl(src, i)}
               </div>
               ${src._customEnergy ? html`<div class="form-group" id="customEnergyGroup_${i}">
                 <label>Custom Energy Source</label>
@@ -10082,6 +10301,16 @@ function refreshSourceDependents(index) {
   if (va && vb && live.querySelector('#src_ver_' + index) && fresh.querySelector('#src_ver_' + index)) swapInner('src_ver_' + index);
   else swapNode(va, vb);
   swapNode(live.querySelector('#valveStateGroup_' + index), fresh.querySelector('#valveStateGroup_' + index));
+  // the typed pressure & temperature go with a source that takes none, and come
+  // with one that does, at the end of the Energy Source group (build 166). Never
+  // redrawn otherwise: a box just left hands the focus to the other box or Clear,
+  // which a redraw would drop (each box paints its own note).
+  const ga = live.querySelector('#src_mag_' + index), gb = fresh.querySelector('#src_mag_' + index);
+  if (ga && !gb) ga.remove();
+  else if (!ga && gb) {
+    const group = (live.querySelector('#src_energy_' + index) || { closest: () => null }).closest('.form-group');
+    if (group) group.appendChild(gb);
+  }
   // build 118: they follow the source and device too (build 122: the drive's answer)
   ['lockOpenGroup_', 'drainLocGroup_', 'feederGroup_', 'driveIsoGroup_', 'roleGroup_'].forEach(p =>
     swapNode(live.querySelector('#' + p + index), fresh.querySelector('#' + p + index)));
@@ -11195,6 +11424,12 @@ function applyCopySource(entryIndex, sourceIndex) {
   }
   if (dest.valveState === 'mixed' && Array.isArray(dest.unitValveStates)) dest.unitValveStates = dest.unitValveStates.slice();
   else delete dest.unitValveStates;   // per-valve states only with a mixed state (build 146)
+  // …and the pressure & temperature typed on it (build 166), or none: the copy is that
+  // source's. Only a value it shows and sends: never one hidden by its link or typed
+  // for another medium, which would show and go out on the copy
+  const copiedMagnitude = typedMagnitudeOf(src);
+  if (copiedMagnitude) dest.typedMagnitude = Object.assign({ medium: magnitudeMediumOfRow(src) }, copiedMagnitude);
+  else delete dest.typedMagnitude;
   // …and is that source, not the role this row had (build 122 second review): a
   // copied Location that says a role still reads as one, as typed
   delete dest.role; delete dest.altKind; delete dest.feeds;
@@ -11253,6 +11488,9 @@ function duplicateSource(index) {
   delete newSrc.poweredBy;       // …and its own power, not traced yet (build 130)
   delete newSrc.labelWait; delete newSrc.dcBusV;   // …and its own label's wait (build 121)
   delete newSrc.driveIsolates;   // …and its own drive's disconnect, not checked yet (build 122)
+  // The same line's pressure & temperature (build 166) — only one the row shows: a value
+  // hidden by its link (dropped above) or typed for another medium would show on the copy
+  if (!typedMagnitudeOf(src)) delete newSrc.typedMagnitude;
   // A copy of a feeder / secondary main / alternate source row is an ordinary
   // row (build 122 third review): one breaker, one role — another feeder comes
   // from "+ Add the breaker that feeds this drive", another source from the
@@ -11561,6 +11799,9 @@ async function applyLink(equipIndex, sourceIndex) {
   // the procedure.
   const mine = sources[pendingLinkSourceIndex];
   const energyBefore = mine.energySource || '';
+  // A pressure & temperature typed on the row stops going out once it is linked (build
+  // 166, loto-web's rule: the linked row's own value prints); the message says so
+  const magnitudeBefore = magnitudeSheetText(mine);
   // A re-link to another source ("Linked — change or unlink"): what the earlier
   // link copied is its old target's, not the tech's, so it follows the new
   // target (build 163 review: linking to the wrong breaker and then the right
@@ -11597,6 +11838,7 @@ async function applyLink(equipIndex, sourceIndex) {
   const drainNotes = tookEnergy ? settleSourceChange(mine, energyBefore, photos, 'source_' + pendingLinkSourceIndex) : [];   // build 123 review
   const valveNote = settleValveUnits(mine);   // the target's count: each valve's answer follows it (build 146 review)
   if (valveNote) drainNotes.push(valveNote);
+  if (magnitudeBefore) drainNotes.push('Its typed ' + magnitudeBefore + ' isn\u2019t sent while it is linked: the linked row\u2019s value prints');
   const tookTag = takeLinkedExistingTag(mine, src, sides ? (valve || 'both') : '', prev);   // build 163
   const marksCleared = reconcileSourceMarks(pendingLinkSourceIndex, true);
   mine.userEdited = true;
@@ -17683,7 +17925,7 @@ async function buildAndSendExport(opts, run) {
   }
 
   // ---- PASS 2: build CSV ----
-  let csv = 'Hospital Code,Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Valve State,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames,Valve Marks,Arc Flash Photo Filename,Main Photo Arrow\n';
+  let csv = 'Hospital Code,Equipment Type,Equipment Name,LOTO ID,Room,Building,Template,Tied To,Tied To Equipment Name,Notes,Source #,Energy Source,Device Type,Device ID,Quantity,Location,Duplicate,Verification,Valve State,Photo Filename,Detail,Linked To,Main Photo Filename,DataPlate Photo Filename,EE Photo Filename,Diagram Filename,Misc Photo Filenames,Valve Marks,Arc Flash Photo Filename,Main Photo Arrow,Magnitude\n';
 
   allEntries.forEach((entry, ei) => {
     const map = entryMaps[ei];
@@ -17711,8 +17953,10 @@ async function buildAndSendExport(opts, run) {
         quote(map.sourceHs[i] ? valveMarksText(sourceMarksForExport(entry, i)) : ''),
         // The arc flash label's photo (build 122)
         quote(map.afH || ''),
-        // The Main Photo's arrow at this unit (build 156): the last column
-        quote(mainArrowSheetText(map.mainArrow))
+        // The Main Photo's arrow at this unit (build 156)
+        quote(mainArrowSheetText(map.mainArrow)),
+        // The pressure & temperature typed on the row (build 166): the last column
+        quote(magnitudeSheetText(src))
       ].join(',') + '\n';
     });
   });
@@ -17772,6 +18016,9 @@ async function buildAndSendExport(opts, run) {
       if (lockText === 'Yes') out.lockOpen = true;
       else if (lockText) out.unitLockOpen = unitLockOpenOf(src);
       if (out.valveState === 'mixed') out.unitValveStates = unitValveStatesOf(src); else delete out.unitValveStates;
+      // The pressure & temperature typed on the row (build 166), as column 24 writes it; else no key
+      const mag = magnitudeSheetText(src);
+      if (mag) out.magnitude = mag; else delete out.magnitude;
       return out;
     });
     const miscOut = miscFileNames[ei]
@@ -17872,7 +18119,8 @@ async function buildAndSendExport(opts, run) {
         { width: 18 },  // 20: Drains To (build 122)
         { width: 14 },  // 21: Drive Isolates (build 122)
         { width: 12 },  // 22: Powered By (build 130)
-        { width: 30 }   // 23: Mark Layout (build 135)
+        { width: 30 },  // 23: Mark Layout (build 135)
+        { width: 16 }   // 24: Magnitude (build 166)
       ];
 
       // Style definitions matching original info sheet
@@ -17973,6 +18221,8 @@ async function buildAndSendExport(opts, run) {
           // Where the tech put each box (build 135): "box_x,box_y,arrow_x,arrow_y,
           // arrow_dir,arrow_len" per mark — loto-web prints the box there
           const markLayoutCell = srcH ? valveMarkLayoutText(sourceMarksForExport(entry, s)) : '';
+          // The pressure & temperature the tech typed (build 166): "45 PSI @ 180 F", "90 PSI"
+          const magnitudeCell = src ? magnitudeSheetText(src) : '';
 
           // Source label row (light fill)
           const srcLabelRow = ws.addRow([
@@ -17991,7 +18241,9 @@ async function buildAndSendExport(opts, run) {
             // build 130, on a Damper Actuator's own label row only: what powers it
             (src && isDamperRow(src)) ? 'Powered By' : '',
             // build 135, on a row whose photo has a box the tech placed
-            markLayoutCell ? 'Mark Layout' : ''
+            markLayoutCell ? 'Mark Layout' : '',
+            // build 166, on a row the tech typed a pressure & temperature on
+            magnitudeCell ? 'Magnitude' : ''
           ]);
           applyRow(srcLabelRow, labelFont, labelFill, allBorders);
 
@@ -18045,7 +18297,9 @@ async function buildAndSendExport(opts, run) {
             // Powered By (build 130): "Source #n" (the linked row's number in this block), "Unit power", "Can't tell"
             (src && isDamperRow(src)) ? poweredBySheetText(src, entry.sources) : '',
             // Mark Layout (build 135): the placed box + arrow of each valve mark
-            markLayoutCell
+            markLayoutCell,
+            // Magnitude (build 166): loto-web's magnitude_override for the row
+            magnitudeCell
           ]);
           applyRow(srcDataRow, dataFont, null, allBorders);
         }

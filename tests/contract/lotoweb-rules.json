@@ -3146,5 +3146,97 @@
    "psi": 300.0,
    "tempF": 422
   }
+ ],
+ "magnitudes": [
+  {
+   "energySource": "HHW In/Out",
+   "code": "W",
+   "family": "Hot Water",
+   "magnitude": "50 PSI @ 180 F"
+  },
+  {
+   "energySource": "HHW In",
+   "code": "W",
+   "family": "Hot Water",
+   "magnitude": "50 PSI @ 180 F"
+  },
+  {
+   "energySource": "HHW Out",
+   "code": "W",
+   "family": "Hot Water",
+   "magnitude": "50 PSI @ 180 F"
+  },
+  {
+   "energySource": "CHW In/Out",
+   "code": "W",
+   "family": "Chilled Water",
+   "magnitude": "65 PSI @ 50 F"
+  },
+  {
+   "energySource": "CHW In",
+   "code": "W",
+   "family": "Chilled Water",
+   "magnitude": "65 PSI @ 50 F"
+  },
+  {
+   "energySource": "CHW Out",
+   "code": "W",
+   "family": "Chilled Water",
+   "magnitude": "65 PSI @ 50 F"
+  },
+  {
+   "energySource": "DHW In/Out",
+   "code": "W",
+   "family": "Domestic Water",
+   "magnitude": "60 PSI @ 140 F"
+  },
+  {
+   "energySource": "DHW In",
+   "code": "W",
+   "family": "Domestic Water",
+   "magnitude": "60 PSI @ 140 F"
+  },
+  {
+   "energySource": "DHW Out",
+   "code": "W",
+   "family": "Domestic Water",
+   "magnitude": "60 PSI @ 140 F"
+  },
+  {
+   "energySource": "DW In/Out",
+   "code": "W",
+   "family": "Domestic Water",
+   "magnitude": "40 PSI @ 70 F"
+  },
+  {
+   "energySource": "DW In",
+   "code": "W",
+   "family": "Domestic Water",
+   "magnitude": "40 PSI @ 70 F"
+  },
+  {
+   "energySource": "DW Out",
+   "code": "W",
+   "family": "Domestic Water",
+   "magnitude": "40 PSI @ 70 F"
+  },
+  {
+   "energySource": "Compressed Air In/Out",
+   "code": "P",
+   "family": "Compressed Air",
+   "magnitude": "100 PSI"
+  },
+  {
+   "energySource": "Compressed Air In",
+   "code": "P",
+   "family": "Compressed Air",
+   "magnitude": "100 PSI"
+  },
+  {
+   "energySource": "Compressed Air Out",
+   "code": "P",
+   "family": "Compressed Air",
+   "magnitude": "100 PSI"
+  }
  ]
 }

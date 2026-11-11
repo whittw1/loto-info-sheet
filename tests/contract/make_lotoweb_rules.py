@@ -217,6 +217,26 @@ def steam_answers():
                     "psi": float(psi.group(1)) if psi else None, "tempF": int(temp.group(1)) if temp else None})
     return out
 
+# A pressure & temperature typed on a water or air row (field app build 166): the
+# app's box starts at what loto-web prints for the name with nothing typed, its
+# Mapping Sheet magnitude (the lines under the family name), and calls it the
+# default. T290 asserts the app's MAGNITUDE_MEDIA matches for all 15 names.
+MAGNITUDE_NAMES = [f"{m} {side}" for m in ("HHW", "CHW", "DHW", "DW", "Compressed Air") for side in ("In/Out", "In", "Out")]
+
+
+def magnitude_answers():
+    ms = MappingService()
+    ms.init_from_file(os.path.join(LOTO_WEB, "data", "mapping", "Mapping_Sheet.xlsx"))
+    sheet = ms.mappings["energy_sources"]
+    out = []
+    for name in MAGNITUDE_NAMES:
+        m = pgm._energy_source_mapping(sheet, name) or {}
+        lines = [" ".join(ln.split()) for ln in str(m.get("procedure_source") or "").split("\n")]
+        out.append({"energySource": name, "code": str(m.get("code") or ""), "family": lines[0] if lines else "",
+                    "magnitude": " ".join(ln for ln in lines[1:] if ln)})
+    return out
+
+
 UNITS = {
     "two tagged drives, one feeder each": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-2"),
                                            row(loc="Feeder: MCC-2A bkr 14 (VFD-1)"), row(loc="Feeder: MCC-2A bkr 15 (VFD-2)")],
@@ -353,6 +373,7 @@ def main():
                        "parsed": vs.parse_cell("lock_open", t, q),
                        "warns": bool(vs.cell_problem("lock_open", t, q))} for a, q, t in LOCK_CELLS],
         "steam": steam_answers(),
+        "magnitudes": magnitude_answers(),
     }
     out = os.path.join(HERE, "lotoweb-rules.json")
     with open(out, "w", encoding="utf-8") as f:

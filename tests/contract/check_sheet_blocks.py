@@ -13,7 +13,11 @@ block against its unit in entries.json:
   - its sources, slot by slot: energy source, device, device ID, quantity,
     location and photo;
   - Tied to, Template and Notes, and the unit answers (Shop, Change Later,
-    UV Lights, ...) where loto-web reads them, moved down with the Tied to row.
+    UV Lights, ...) where loto-web reads them, moved down with the Tied to row;
+  - column 24 "Magnitude" (field build 166), read by loto-web's
+    labeled_source_value: the typed "45 PSI @ 180 F" / "90 PSI" against
+    entries.json's `magnitude`, and no header on a row with none. Until
+    loto-web's layout has "col_magnitude", the agreed (24, "Magnitude") is used.
 
 Make an export in the app (any export; a page can POST one to
 tests/fuzz/fuzz_receiver.py), then:
@@ -58,6 +62,10 @@ ANSWER_KEYS = {
 }
 
 
+# Column 24 "Magnitude" (field build 166, agreed with loto-web 2026-11-11)
+MAGNITUDE_COLUMN = (24, "Magnitude")
+
+
 def text(v):
     return "" if v is None else " ".join(str(v).split())
 
@@ -75,6 +83,7 @@ def check(zpath, problems, counts):
             problems.append(f"{where}: not read as the field-app layout")
             continue
         blocks = {b.base_row: b for b in isp.read_grid_blocks(ws, layout, sp)}
+        mag_layout = layout if layout.get("col_magnitude") else dict(layout, col_magnitude=MAGNITUDE_COLUMN)
         for g in isp.grid_blocks(ws, layout):
             name, place = text(ws.cell(g.base_row + 3, 1).value), text(ws.cell(g.base_row + 3, 4).value)
             tag = f'{where} "{name}" (header row {g.header_row})'
@@ -110,6 +119,12 @@ def check(zpath, problems, counts):
                 for k in want:
                     if want[k] != have[k]:
                         problems.append(f"{tag} source {i}: {k} {want[k]!r} in entries.json, {have[k]!r} on the sheet")
+                # Magnitude (build 166): None = no header (not typed), else the text
+                mag = isp.labeled_source_value(ws, g.data_row(i), mag_layout, "col_magnitude")
+                if mag is not None:
+                    counts["magnitudes"] += 1
+                if (mag or None) != (text(s.get("magnitude")) or None) or mag == "":
+                    problems.append(f"{tag} source {i}: magnitude {s.get('magnitude')!r} in entries.json, {mag!r} on the sheet")
             tied = text(e.get("tiedTo"))
             if (tied and not text(b.tied_to).startswith(tied)) or (not tied and b.tied_to):
                 problems.append(f"{tag}: Tied to {b.tied_to!r}, entries.json {tied!r}")
@@ -134,7 +149,7 @@ def main():
     zips = sys.argv[1:]
     if not zips:
         sys.exit(__doc__)
-    problems, counts = [], {"blocks": 0, "sources": 0, "answers": 0}
+    problems, counts = [], {"blocks": 0, "sources": 0, "answers": 0, "magnitudes": 0}
     for zp in zips:
         check(zp, problems, counts)
     print(json.dumps({"zips": len(zips), "counts": counts, "problems": problems[:40], "n_problems": len(problems)}, indent=1))
