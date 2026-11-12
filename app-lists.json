@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 168,
+  "build": 169,
   "hospitals": [
     {
       "code": "Marion",
@@ -222,7 +222,8 @@
     ],
     "Boiler": [
       "Boiler - Natural Gas - HHW",
-      "Boiler - Natural Gas - STM"
+      "Boiler - Natural Gas - STM",
+      "Large Steam Boiler"
     ],
     "Transformer": [
       "Standard Electrical",
@@ -301,7 +302,8 @@
     "Heat Exchanger - CHW/Glycol",
     "Steam PRV Station",
     "Boiler - Natural Gas - HHW",
-    "Boiler - Natural Gas - STM"
+    "Boiler - Natural Gas - STM",
+    "Large Steam Boiler"
   ],
   "energySources": [
     "Electrical 24V",
@@ -320,6 +322,17 @@
     "LPS 10 PSI",
     "MPS 20 PSI",
     "HPS 100 PSI",
+    "Main Steam Stop",
+    "Non-Return",
+    "Steam Header Drain",
+    "Steam Warm Up",
+    "Blanket Steam",
+    "Boiler Vent",
+    "Atomizing Steam",
+    "Atomizing Air",
+    "Surface Blowdown",
+    "Bottom Blowdown",
+    "Low Water Cutoff Drain",
     "Condensate In/Out",
     "Condensate In",
     "Condensate Out",
@@ -411,6 +424,7 @@
     "G/Tmp/Drain - CHW",
     "Zero Flow",
     "Visual",
+    "Sight Glass",
     "SW (On/Off)",
     "SW (Hand/Off/Auto)",
     "SW (H/O/A)",

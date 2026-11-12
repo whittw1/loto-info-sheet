@@ -561,7 +561,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b168</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b169</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1281,7 +1281,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 168;
+const APP_BUILD = 169;
 
 // ============================================================================
 // DATA
@@ -1306,6 +1306,11 @@ const DATA = {
     // Marion's ~480V). loto-web prints the office UPS profile's DC voltage, not the name's.
     "Battery 240V DC","Battery 480V DC",
     "LPS 10 PSI","MPS 20 PSI","HPS 100 PSI",
+    // Build 169: a Large Steam Boiler's roles, spelled as loto-web's boiler_sheet.py
+    // lists them (never "Non-Return (closest to boiler)": that gets no role). Offered
+    // only on that template (offeredEnergySources).
+    "Main Steam Stop","Non-Return","Steam Header Drain","Steam Warm Up","Blanket Steam","Boiler Vent",
+    "Atomizing Steam","Atomizing Air","Surface Blowdown","Bottom Blowdown","Low Water Cutoff Drain",
     "Condensate In/Out","Condensate In","Condensate Out",
     "HHW In/Out","HHW In","HHW Out",
     "CHW In/Out","CHW In","CHW Out",
@@ -1359,6 +1364,10 @@ const DATA = {
     // loto-web's Mapping Sheet "Visual": "Visually confirm absence of flow through
     // lines." (build 157, wilkins 2026-11-05: a cooling tower's condenser water)
     "Visual",
+    // A Large Steam Boiler's bottom blowdown and LWCO drain (build 169, loto-web spec D5):
+    // "Verify zero water level in the boiler at the sight glass." Offered through the
+    // template's own lists only.
+    "Sight Glass",
     "SW (On/Off)","SW (Hand/Off/Auto)","SW (H/O/A)",
     "SW (Drive/Off/Bypass)","SW (VFD/Off/Bypass)","SW (Other)",
     // A bypass drive with its own keypad (build 147, wilkins: a Danfoss VLT with
@@ -1393,7 +1402,7 @@ const DATA = {
     "Elevator - Traction","Elevator - Hydraulic","Overhead Door","Dock Leveler",
     "ATS - Generic","Humidifier",
     "Standard Electrical","Electrical with Stored Energy","Switchgear","UPS","Heat Exchanger - Steam","DA Tank","Heat Exchanger - CHW/Glycol",
-    "Steam PRV Station","Boiler - Natural Gas - HHW","Boiler - Natural Gas - STM"
+    "Steam PRV Station","Boiler - Natural Gas - HHW","Boiler - Natural Gas - STM","Large Steam Boiler"
   ],
   tiedToOptions: ["Shut Down","Shut Down & LOTO"],
   // ---- Answers for loto-web (build 118) ----------------------------------------
@@ -1517,38 +1526,112 @@ function listEnergyName(energySource) {
 const MAGNITUDE_MEDIA = {
   HHW: { psi: 50, f: 180 }, CHW: { psi: 65, f: 50 },
   DHW: { psi: 60, f: 140 }, DW:  { psi: 40, f: 70 },
-  CA:  { psi: 100 }   // compressed air: a pressure only
+  CA:  { psi: 100 },   // compressed air: a pressure only
+  // Build 169: on a Large Steam Boiler only (loto-web spec rev 2 §2.4, wilkins: "Extend
+  // the magnitude per row values to this"), the boiler's own lines, at loto-web's
+  // Mapping Sheet defaults. fOpt: the temperature may be left blank — on a steam role
+  // loto-web then adds the saturated one ("90 PSI" → "90 PSI @ 331 F"); fStart: the
+  // temperature box starts at the default (feedwater, condensate) or blank (steam, air).
+  // noFlash: no 212 F question (steam is above it by nature; air isn't water).
+  STEAM: { psi: 100, f: 338, fOpt: true, fStart: false, sat: true, noFlash: true },
+  AIR:   { psi: 100, fOpt: true, fStart: false, noFlash: true },
+  FW:    { psi: 200, f: 240, fOpt: true, fStart: true },
+  COND:  { psi: 5, f: 200, fOpt: true, fStart: true },
+  NG: { psi: 10 }, LP: { psi: 5 }, FO: { psi: 50 }, CHEM: { psi: 40 }   // whole PSI only (D13)
 };
 // What each medium is called aloud (the boxes' labels); kept out of MAGNITUDE_MEDIA,
 // whose entries are copied into a row's typed pair
-const MAGNITUDE_WORDS = { HHW: 'Heating hot water', CHW: 'Chilled water', DHW: 'Domestic hot water', DW: 'Domestic water', CA: 'Compressed air' };
+const MAGNITUDE_WORDS = { HHW: 'Heating hot water', CHW: 'Chilled water', DHW: 'Domestic hot water', DW: 'Domestic water', CA: 'Compressed air',
+  STEAM: 'Steam', AIR: 'Atomizing air', FW: 'Feedwater', COND: 'Condensate', NG: 'Natural gas', LP: 'Propane', FO: 'Fuel oil', CHEM: 'Chemical' };
 const MAGNITUDE_NAME_RE = /^(HHW|CHW|DHW|DW|Compressed Air) (In\/Out|In|Out)$/;
 const MAGNITUDE_PSI_MAX = 300, MAGNITUDE_F_MIN = 32, MAGNITUDE_F_MAX = 450;
-// 'HHW', 'CHW', 'DHW', 'DW' or 'CA' for a list name of those media, else ''
-function magnitudeMediumOf(energySource) {
-  const m = MAGNITUDE_NAME_RE.exec(String(energySource || ''));
-  return m ? (m[1] === 'Compressed Air' ? 'CA' : m[1]) : '';
+// 'HHW', 'CHW', 'DHW', 'DW' or 'CA' for a list name of those media; on a Large Steam
+// Boiler (`template`, build 169) also its own lines: 'STEAM' (the ten steam-side roles),
+// 'AIR', 'FW', 'COND', 'NG', 'LP', 'FO', 'CHEM'. Else ''.
+function magnitudeMediumOf(energySource, template) {
+  const name = String(energySource || '');
+  const m = MAGNITUDE_NAME_RE.exec(name);
+  if (m) return m[1] === 'Compressed Air' ? 'CA' : m[1];
+  if (template !== LARGE_STEAM_BOILER) return '';
+  const role = boilerRoleOf(name);
+  if (role) return role === 'atom_air' ? 'AIR' : 'STEAM';
+  if (/^Feedwater (In\/Out|In|Out)$/.test(name)) return 'FW';
+  if (/^Condensate (In\/Out|In|Out)$/.test(name)) return 'COND';
+  if (name === 'Natural Gas') return 'NG';
+  if (name === 'Propane') return 'LP';
+  if (/^Fuel Oil (In\/Out|In|Out)$/.test(name)) return 'FO';
+  if (/^Chemical (In\/Out|In|Out)$/.test(name)) return 'CHEM';
+  return '';
 }
 // …of a row: never a custom (typed) energy source, as steam's box, nor a linked
 // row: the row it is linked to owns the value (loto-web, 2026-11-11), and
-// loto-web skips column 24 on a linked row
-function magnitudeMediumOfRow(src) {
-  return src && !src._customEnergy && !src.linkedTo ? magnitudeMediumOf(src.energySource) : '';
+// loto-web skips column 24 on a linked row. `template`: the unit's (the form's when
+// left out); an export passes the saved unit's.
+function magnitudeMediumOfRow(src, template) {
+  const tmpl = template === undefined ? getTemplate() : template;
+  return src && !src._customEnergy && !src.linkedTo ? magnitudeMediumOf(src.energySource, tmpl) : '';
 }
-function magnitudeHasTemp(medium) { return !!MAGNITUDE_MEDIA[medium] && 'f' in MAGNITUDE_MEDIA[medium]; }
+function magnitudeHasTemp(medium) { const md = MAGNITUDE_MEDIA[medium]; return !!md && ('f' in md || !!md.fOpt); }
+// The pair the boxes start from: the default pressure, and the default temperature
+// unless it starts blank (fOpt without fStart)
+function magnitudeStartPair(medium) {
+  const md = MAGNITUDE_MEDIA[medium];
+  return ('f' in md && (!md.fOpt || md.fStart)) ? { psi: md.psi, f: md.f } : { psi: md.psi };
+}
 function magnitudeNumberOk(kind, n) {
   return Number.isInteger(n) && (kind === 'f' ? n >= MAGNITUDE_F_MIN && n <= MAGNITUDE_F_MAX : n >= 1 && n <= MAGNITUDE_PSI_MAX);
 }
-// The row's typed { psi, f } while its source is still that medium, else null
-function typedMagnitudeOf(src) {
-  const medium = magnitudeMediumOfRow(src), t = src && src.typedMagnitude;
+// The row's typed { psi, f } while its source is still that medium, else null. An
+// optional temperature (fOpt) left blank is { psi } alone.
+function typedMagnitudeOf(src, template) {
+  const medium = magnitudeMediumOfRow(src, template), t = src && src.typedMagnitude;
   if (!medium || !t || t.medium !== medium || !magnitudeNumberOk('psi', t.psi)) return null;
   if (!magnitudeHasTemp(medium)) return { psi: t.psi };
+  if (t.f == null && MAGNITUDE_MEDIA[medium].fOpt) return { psi: t.psi };
   return magnitudeNumberOk('f', t.f) ? { psi: t.psi, f: t.f } : null;
 }
 function magnitudeText(m) { return m ? m.psi + ' PSI' + (m.f != null ? ' @ ' + m.f + ' F' : '') : ''; }
 // Column 24, the CSV's Magnitude and entries.json's `magnitude`: what was typed, or ''
-function magnitudeSheetText(src) { return magnitudeText(typedMagnitudeOf(src)); }
+function magnitudeSheetText(src, template) { return magnitudeText(typedMagnitudeOf(src, template)); }
+// ---- A Large Steam Boiler's roles (build 169) -----------------------------------
+// loto-web's spec rev 2 (2026-11-11, wilkins' answers): eleven role names, read by
+// loto-web's boiler_source_role. The app mirrors that function exactly (the contract
+// test, T290): the name lower-cased with a pressure ("90 PSI"), a pressure class and
+// punctuation dropped, then a trailing "valve" — then looked up.
+const LARGE_STEAM_BOILER = 'Large Steam Boiler';
+const BOILER_ROLES = [
+  ['main_stop', ['main steam stop', 'main stop']],
+  ['non_return', ['non return', 'nonreturn']],
+  ['surface_bd', ['surface blowdown', 'surface blow down']],
+  ['bottom_bd', ['bottom blowdown', 'bottom blow down']],
+  ['lwco', ['low water cutoff drain', 'low water cutoff', 'high low water cutoff', 'high low water cutoff drain', 'lwco', 'lwco drain']],
+  ['warm_up', ['steam warm up', 'steam warmup', 'warm up', 'warmup', 'header warm up']],
+  ['header_drain', ['steam header drain', 'header drain']],
+  ['blanket', ['blanket steam', 'blanketing steam', 'steam blanket']],
+  ['atom_steam', ['atomizing steam', 'atomization steam', 'steam atomizing']],
+  ['vent', ['boiler vent', 'drum vent', 'boiler drum vent']],
+  ['atom_air', ['atomizing air', 'atomization air']],
+];
+function boilerRoleKey(name) {
+  let low = String(name || '').toLowerCase().replace(/(\d+(?:\.\d+)?)\s*psig?\b/gi, ' ');
+  low = low.replace(/\b(?:[lmh]ps|[lmh]p|(?:low|med(?:ium)?|high)\s+press(?:ure)?)\b/gi, ' ');
+  low = low.replace(/[^a-z0-9]+/g, ' ').split(/\s+/).filter(Boolean).join(' ');
+  return low.replace(/\s+valves?$/, '').trim();
+}
+// The role code of a source name ('main_stop' … 'atom_air'), or '' for none
+function boilerRoleOf(name) {
+  const key = boilerRoleKey(name);
+  if (!key) return '';
+  const hit = BOILER_ROLES.find(([, names]) => names.includes(key));
+  return hit ? hit[0] : '';
+}
+// The role list names (DATA.energySources' eleven), offered only on the template
+const BOILER_ROLE_SOURCES = ['Main Steam Stop', 'Non-Return', 'Steam Header Drain', 'Steam Warm Up', 'Blanket Steam',
+  'Boiler Vent', 'Atomizing Steam', 'Atomizing Air', 'Surface Blowdown', 'Bottom Blowdown', 'Low Water Cutoff Drain'];
+// D11: Lock Open only where Section 2 opens the valve and leaves it open
+const BOILER_LOCK_OPEN_ROLES = ['vent', 'header_drain'];
+// A steam-side role (all but atomizing air): hot, and checked at the boiler's gauge
+function boilerSteamRole(name) { const r = boilerRoleOf(name); return !!r && r !== 'atom_air'; }
 // A source's defaults, a typed steam pressure's from its class.
 function sourceDefaultsOf(energySource) {
   return SOURCE_DEFAULTS[energySource] || SOURCE_DEFAULTS[listEnergyName(energySource)];
@@ -1670,6 +1753,7 @@ function getTempSuffixFor(energySource) {
   // so it is never the water family and is never offered or given a water code
   // (build 124)
   if (energySource && !releaseMediumOf(energySource)) {
+    if (boilerSteamRole(energySource)) return 'hot';   // build 169: a boiler's steam-side role
     for (const hot of HOT_ENERGY_SOURCES) {
       if (energySource.startsWith(hot)) { tempSuffix = 'hot'; break; }
     }
@@ -1720,7 +1804,9 @@ function getFilteredVerifications(deviceType, energySource) {
     }
   }
 
-  if (!workingList) return DATA.verificationTypes; // truly unknown → full list
+  // truly unknown → the full list, but never Sight Glass: a boiler's bottom blowdown and
+  // LWCO drain only, through that template's own lists (build 169, spec F5)
+  if (!workingList) return DATA.verificationTypes.filter(v => v !== 'Sight Glass');
 
   // Some equipment (e.g. Domestic Water Heater) always offers the "- Hot"
   // verification choices in addition to whatever the source temperature implies.
@@ -1848,10 +1934,15 @@ function noteDefaultDrain(src) {
 // override is exactly the four "- Hot" combos). Mixed/electrical overrides
 // keep the classic select.
 function overrideAllowsSimple(list) {
-  return !!(list && list.length && list.every(v => {
+  if (!(list && list.length && list.every(v => {
     const p = parseWaterVerification(v);
     return p.recognized && !p.blank;
-  }));
+  }))) return false;
+  // …and only when the boxes can't make a code outside it (build 169): Drain / Gauge
+  // ticks make all four, so a list without the drain codes (a boiler's role rows,
+  // "no-drain only") keeps the classic select
+  const bases = new Set(list.map(v => v.replace(/\s*-\s*(Hot|CHW)$/i, '')));
+  return ['Temp Only', 'GaugeOnly', 'Drain Only', 'Gauge/Drain'].every(b => bases.has(b));
 }
 // Temperature suffix for a source, honoring a template override's own
 // suffix when one exists (a curated all-"- Hot" list wins over keyword
@@ -2166,6 +2257,22 @@ const TEMPLATE_SOURCE_DEVICE_OVERRIDES = {
     'Feedwater In': ['Ball Valve','Gate Valve','Gate Valve w/Cable','Chain'],
     'HPS 100 PSI':  ['Ball Valve','Gate Valve','Gate Valve w/Cable','Chain'],
   },
+  // Build 169 (loto-web spec rev 2 §2.2): the roles' devices. Valves (the main stop with
+  // the circuit setter); the blowdowns' Cable (KC Boiler 1); atomizing air its fittings.
+  'Large Steam Boiler': {
+    'Main Steam Stop':        VALVE_DEVICES_WITH_CKT,
+    'Non-Return':             VALVE_DEVICES_NO_CKT,
+    'Steam Header Drain':     VALVE_DEVICES_NO_CKT,
+    'Steam Warm Up':          VALVE_DEVICES_NO_CKT,
+    'Blanket Steam':          VALVE_DEVICES_NO_CKT,
+    'Boiler Vent':            VALVE_DEVICES_NO_CKT,
+    'Atomizing Steam':        VALVE_DEVICES_NO_CKT,
+    'Atomizing Air':          FITTING_DEVICES,
+    'Surface Blowdown':       VALVE_DEVICES_NO_CKT,
+    'Bottom Blowdown':        VALVE_DEVICES_NO_CKT,
+    'Low Water Cutoff Drain': VALVE_DEVICES_NO_CKT,
+    'Feedwater In': ['Ball Valve','Gate Valve','Gate Valve w/Cable','Chain'],
+  },
 };
 
 const TEMPLATE_SOURCE_VERIFICATION_OVERRIDES = {
@@ -2179,6 +2286,25 @@ const TEMPLATE_SOURCE_VERIFICATION_OVERRIDES = {
                      'Button (Start/Stop) - VFD','Button (Start/Stop) - Retractable','Button (Other)'],
     'Feedwater In': ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot','Drain Only - Hot'],
     'HPS 100 PSI':  ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot','Drain Only - Hot'],
+  },
+  // Build 169: the roles offer only the no-drain checks (wilkins 2026-11-11: "Yes, no-drain
+  // only"; loto-web prints "Verify zero pressure at the gauge on the boiler." for them),
+  // Sight Glass on the bottom blowdown and the LWCO drain (D5); atomizing air its gauge.
+  'Large Steam Boiler': {
+    'Electrical':             ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)',
+                               'Button (Start/Stop) - VFD','Button (Start/Stop) - Retractable','Button (Other)'],
+    'Main Steam Stop':        ['Temp Only - Hot','GaugeOnly - Hot'],
+    'Non-Return':             ['Temp Only - Hot','GaugeOnly - Hot'],
+    'Steam Header Drain':     ['Temp Only - Hot','GaugeOnly - Hot'],
+    'Steam Warm Up':          ['Temp Only - Hot','GaugeOnly - Hot'],
+    'Blanket Steam':          ['Temp Only - Hot','GaugeOnly - Hot'],
+    'Boiler Vent':            ['Temp Only - Hot','GaugeOnly - Hot'],
+    'Atomizing Steam':        ['Temp Only - Hot','GaugeOnly - Hot'],
+    'Atomizing Air':          ['GaugeOnly'],
+    'Surface Blowdown':       ['Temp Only - Hot','GaugeOnly - Hot'],
+    'Bottom Blowdown':        ['Sight Glass','Temp Only - Hot','GaugeOnly - Hot'],
+    'Low Water Cutoff Drain': ['Sight Glass','Temp Only - Hot','GaugeOnly - Hot'],
+    'Feedwater In': ['Temp Only - Hot','GaugeOnly - Hot','Gauge/Drain - Hot','Drain Only - Hot'],
   },
 };
 
@@ -2235,6 +2361,14 @@ function sourceOffersValveState(src) {
   if (!src || !takesValveState(src.energySource, src.deviceType)) return false;
   if (src.deviceType) return isValveDevice(src.deviceType);
   return getFilteredDevices(src.energySource).some(isValveDevice);
+}
+// Lock Open where Valve State is offered, but on a boiler's role rows only on the vent
+// and the header drain (build 169, D11): Section 2 opens those and leaves them open;
+// the blowdowns and LWCO drains are drained and then closed and locked
+function sourceOffersLockOpen(src) {
+  if (!sourceOffersValveState(src)) return false;
+  const role = boilerRoleOf(src.energySource);
+  return !role || BOILER_LOCK_OPEN_ROLES.includes(role);
 }
 // …and shows a non-normal state wherever a row holds one: nothing saved is hidden.
 // Where the export won't write it, the card says so (valveAnswerNote).
@@ -3161,6 +3295,12 @@ const EQUIPMENT_TEMPLATE_LABELS = {
     'Water Heater - Steam':    'Steam',
   },
   // (The Vacuum Pump type asks askVacuumCover's question instead, build 112.)
+  // build 169 (wilkins 2026-11-11: "Keep the same name and prompts")
+  'Boiler': {
+    'Boiler - Natural Gas - HHW': 'Hot water',
+    'Boiler - Natural Gas - STM': 'Steam (small)',
+    'Large Steam Boiler':         'Plant steam boiler (large)',
+  },
   'Transformer': {
     'Standard Electrical':           'Standard Electrical',
     'Electrical with Stored Energy': 'With a capacitor bank (Electrical with Stored Energy)',
@@ -3355,7 +3495,8 @@ const TEMPLATE_DEFAULT_SHOP = (() => {
       'Water Heater - Electric'],
     // Feedwater Pump: build 159 (wilkins: "Default should be Boiler Plant"; loto-web's own template)
     // Fuel Oil Pump: build 168 (wilkins 2026-11-11: "Standard POCs will be Boiler Plant")
-    'Boiler Plant': ['Chemical Pump', 'DA Tank', 'Feedwater Pump', 'Fuel Oil Pump'],
+    // Large Steam Boiler: build 169 (loto-web's template prints "Boiler Plant Personnel only.")
+    'Boiler Plant': ['Chemical Pump', 'DA Tank', 'Feedwater Pump', 'Fuel Oil Pump', 'Large Steam Boiler'],
     // UPS: build 168 (loto-web's UPS template prints Electric Shop)
     'Electric Shop': ['ATS - Generic', 'Standard Electrical', 'Switchgear', 'Electrical with Stored Energy', 'Day Tank', 'UPS'],
     // Steam Sterilizer: build 168 (wilkins, in loto-web's chat: "Clinical Engineering"; a blank
@@ -3388,6 +3529,7 @@ function unitKinds(type, template, srcs) {
     ats: !xfmr && (type === 'ATS' || t === 'ATS - Generic'),
     chiller: !xfmr && (type === 'Chiller' || t === 'Chiller'),
     vacPump: !xfmr && t === 'Medical Vacuum Pump',
+    plantBoiler: !xfmr && t === LARGE_STEAM_BOILER,   // build 169: Purge Seconds
     exhaustFan: !xfmr && t === 'Exhaust Fan',   // build 145: the biohazard question
     xfmr: xfmr,
     refrigerant: REFRIGERANT_TEMPLATES.includes(t)
@@ -3407,6 +3549,13 @@ function refrigerantSheetValue(a) {
 // The first whole number in the box: a data plate often lists both sides
 // ("450/250", "HI 450 LO 250") and the high side comes first; "185.5" → 185.
 function refrigerantPsiValue(a) { return (String(a.refrigerantPsi == null ? '' : a.refrigerantPsi).match(/\d+/) || [''])[0]; }
+// A Large Steam Boiler's burner purge (build 169, loto-web L5): whole seconds 1–3600
+// (its editor's range), '' for none or anything else — loto-web warns on what it can't use
+const PURGE_SECONDS_MAX = 3600;
+function purgeSecondsValue(a) {
+  const t = String(a.purgeSeconds == null ? '' : a.purgeSeconds).trim();
+  return /^\d{1,4}$/.test(t) && +t >= 1 && +t <= PURGE_SECONDS_MAX ? String(+t) : '';
+}
 function atsBackfeedList(a) {
   const got = Array.isArray(a.atsBackfeed) ? a.atsBackfeed : [];
   return DATA.atsBackfeed.filter(c => got.includes(c));   // always in the list's order
@@ -3519,6 +3668,9 @@ const DRAINS_TO_LABEL = { 'Containment': 'Containment (drip pan or bucket)' };
 // the other media never changes the code.
 function drainCodeFollowsDrain(src) {
   const es = String((src && src.energySource) || '');
+  // D12 (build 169): a boiler's role rows are the drains and vents themselves, and
+  // Section 2's drain-down through them is the release: no drain question on them
+  if (boilerRoleOf(es)) return false;
   // loto-web's medium_kind comes first (2026-10-26), for compressed-air names too
   // (the water family checks it in getTempSuffixFor)
   if (releaseMediumOf(es)) return false;
@@ -3683,7 +3835,7 @@ function drainsToSheetText(src, facility) {
 // Column 15: "Yes" when every valve is locked open; a mixed row (build 146) one
 // part per valve, "No; Yes", unit 1 first; blank when none is.
 function lockOpenSheetText(src) {
-  if (!src || !sourceOffersValveState(src)) return '';
+  if (!src || !sourceOffersLockOpen(src)) return '';
   const u = unitLockOpenOf(src);
   if (!u.some(Boolean)) return '';
   return u.every(Boolean) ? 'Yes' : u.map(on => on ? 'Yes' : 'No').join('; ');
@@ -3976,6 +4128,9 @@ function offeredEnergySources() {
     ? DATA.energySources.filter(s => s !== 'Refrigerant') : DATA.energySources;
   // Damper Actuator only where the unit is asked about dampers (build 120)
   if (!damperAskedOnForm()) list = list.filter(s => s !== 'Damper Actuator');
+  // A Large Steam Boiler's roles only on that template (build 169); a row that holds
+  // one elsewhere still shows it (the select keeps an unlisted value)
+  if (getTemplate() !== LARGE_STEAM_BOILER) list = list.filter(s => !BOILER_ROLE_SOURCES.includes(s));
   return list;
 }
 // …with a steam row's typed pressure in its class's place (build 149): the list
@@ -4088,7 +4243,10 @@ const MAGNITUDE_FLASH_F = 212;
 function magnitudeMenuLabel(src) {
   const medium = magnitudeMediumOfRow(src);
   if (!medium || typedMagnitudeOf(src)) return '';
-  return magnitudeHasTemp(medium) ? 'Change pressure & temperature' : 'Change air pressure';
+  if (medium === 'CA') return 'Change air pressure';
+  const md = MAGNITUDE_MEDIA[medium];
+  // a temperature that starts blank (a boiler's steam, its atomizing air) is optional
+  return magnitudeHasTemp(medium) && !(md.fOpt && !md.fStart) ? 'Change pressure & temperature' : 'Change pressure';
 }
 // "· default 50 PSI @ 180 F" beside typed numbers that aren't the default ones
 function magnitudeNoteText(medium, typed) {
@@ -4100,15 +4258,16 @@ function magnitudeControl(src, i, open) {
   if (!medium) return '';
   const typed = typedMagnitudeOf(src);
   if (!open && !typed) return html`<span id="src_mag_${i}" hidden></span>`;
-  const m = typed || MAGNITUDE_MEDIA[medium];
-  const box = (kind, label) => html`<input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" id="src_mag_${kind}_${i}" value="${m[kind]}"
-      aria-label="${label}" oninput="typeMagnitude(${i},'${kind}',this)" onchange="commitMagnitude(${i},'${kind}',this)" onblur="endMagnitudeEdit()">`;
+  const m = typed || magnitudeStartPair(medium), md = MAGNITUDE_MEDIA[medium];
+  const box = (kind, label, ph) => html`<input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" id="src_mag_${kind}_${i}" value="${m[kind] == null ? '' : m[kind]}"
+      placeholder="${ph || ''}" aria-label="${label}" oninput="typeMagnitude(${i},'${kind}',this)" onchange="commitMagnitude(${i},'${kind}',this)" onblur="endMagnitudeEdit()">`;
   return html`<div class="src-psi src-mag" id="src_mag_${i}">
     ${box('psi', MAGNITUDE_WORDS[medium] + ' pressure (PSI)')}<span>PSI</span>
-    ${magnitudeHasTemp(medium) ? html`<span>@</span>${box('f', MAGNITUDE_WORDS[medium] + ' temperature (F)')}<span>F</span>` : ''}
+    ${magnitudeHasTemp(medium) ? html`<span>@</span>${box('f', MAGNITUDE_WORDS[medium] + ' temperature (F)' + (md.sat ? ', blank for saturated' : md.fOpt ? ', optional' : ''), md.sat ? 'sat.' : '')}<span>F</span>` : ''}
     <span class="src-mag-note">${magnitudeNoteText(medium, typed)}</span>
     <button type="button" class="btn btn-sm btn-outline src-mag-clear" ${typed ? '' : 'hidden'} onclick="clearMagnitude(${i})">Clear</button>
-    ${/In\/Out$/.test(src.energySource) ? html`<div class="src-mag-hint">Both valves print this. In and Out differ? Make them separate In and Out rows.</div>` : ''}</div>`;
+    ${/In\/Out$/.test(src.energySource) ? html`<div class="src-mag-hint">Both valves print this. In and Out differ? Make them separate In and Out rows.</div>` : ''}
+    ${md.sat ? html`<div class="src-mag-hint">Leave &deg;F blank: loto-web adds the saturated temperature.</div>` : ''}</div>`;
 }
 // The row's control drawn again in its place (`open`: the boxes even with nothing typed)
 function redrawMagnitudeControl(index, open) {
@@ -4134,24 +4293,32 @@ function magnitudeBoxReads(kind, text) {
   if (magnitudeNumberOk(kind, n)) return n;
   return n > (kind === 'f' ? MAGNITUDE_F_MAX : MAGNITUDE_PSI_MAX) || t.length === 3 ? 'no' : 'wait';
 }
-// The number a box keeps: the typed one, else the default
+// The number a box keeps: the typed one, else the default ('' for a blank optional temperature)
 function magnitudeKept(src, medium, kind) {
-  return (typedMagnitudeOf(src) || MAGNITUDE_MEDIA[medium])[kind];
+  const v = (typedMagnitudeOf(src) || magnitudeStartPair(medium))[kind];
+  return v == null ? '' : v;
 }
 function magnitudeRefusedNote(kind, kept) {
   return kind === 'f'
-    ? 'Temperature is a whole number from ' + MAGNITUDE_F_MIN + ' to ' + MAGNITUDE_F_MAX + ' F — kept ' + kept + ' F'
+    ? 'Temperature is a whole number from ' + MAGNITUDE_F_MIN + ' to ' + MAGNITUDE_F_MAX + ' F — kept ' + (kept === '' ? 'it blank' : kept + ' F')
     : 'Pressure is a whole number from 1 to ' + MAGNITUDE_PSI_MAX + ' PSI — kept ' + kept + ' PSI';
 }
 // One number into the row's typed pair; the other stays as it is, or the default
+// `n` null: an optional temperature emptied (build 169), so "NN PSI" alone
 function setTypedMagnitude(index, kind, n) {
   const src = sources[index], medium = magnitudeMediumOfRow(src);
   if (!medium) return;
   const now = typedMagnitudeOf(src);
-  if (now && now[kind] === n) return;
+  if (now ? (now[kind] == null ? null : now[kind]) === n : n == null) return;   // nothing typed and nothing to empty
   markSourceEdited(index);
-  src.typedMagnitude = Object.assign({ medium }, now || MAGNITUDE_MEDIA[medium], { [kind]: n });
+  const next = Object.assign({ medium }, now || magnitudeStartPair(medium));
+  if (n == null) delete next[kind]; else next[kind] = n;
+  src.typedMagnitude = next;
   autoSaveCurrent();
+}
+// An optional temperature (fOpt) whose box is empty: "NN PSI" alone, never refused
+function magnitudeTempEmptied(medium, kind, el) {
+  return kind === 'f' && MAGNITUDE_MEDIA[medium].fOpt && String(el.value || '').trim() === '';
 }
 // What the row held before this box was typed in: a "No" to the 212 F question puts
 // it back. Taken at the box's first keystroke (not on focus: a box that has the
@@ -4168,19 +4335,20 @@ function typeMagnitude(index, kind, el) {
   const n = magnitudeBoxReads(kind, el.value);
   el.setAttribute('aria-invalid', n === 'no' ? 'true' : 'false');
   if (n === 'no') { showToast(magnitudeRefusedNote(kind, magnitudeKept(src, medium, kind)), true); return; }
-  if (n === 'wait') return;
+  if (n === 'wait') { if (magnitudeTempEmptied(medium, kind, el)) setTypedMagnitude(index, kind, null); return; }
   setTypedMagnitude(index, kind, n);
   // Above 212 F is three digits, the box's limit: the number is whole as it is typed,
   // so it is asked about now. Leaving the box can't be counted on: a tap on Save &
   // New doesn't always take the focus on the iPad (no change event).
   const edit = magnitudeEdit;
-  if (kind === 'f' && n > MAGNITUDE_FLASH_F && edit.asked !== n) { edit.asked = n; confirmHotMagnitude(src, edit.before); }
+  if (kind === 'f' && n > MAGNITUDE_FLASH_F && !MAGNITUDE_MEDIA[medium].noFlash && edit.asked !== n) { edit.asked = n; confirmHotMagnitude(src, edit.before); }
 }
 function commitMagnitude(index, kind, el) {
   const src = sources[index], medium = magnitudeMediumOfRow(src);
   if (!medium) return;
   const n = magnitudeBoxReads(kind, el.value);
   if (typeof n === 'number') setTypedMagnitude(index, kind, n);
+  else if (magnitudeTempEmptied(medium, kind, el)) setTypedMagnitude(index, kind, null);   // "NN PSI" alone
   // a refused text was told as it was typed; one left blank or short is told now
   else if (el.getAttribute('aria-invalid') !== 'true') showToast(magnitudeRefusedNote(kind, magnitudeKept(src, medium, kind)), true);
   el.value = magnitudeKept(src, medium, kind);
@@ -5731,6 +5899,7 @@ function unitSheetCells(entryLike) {
   else if (k.ats) { cells.U3 = ['ATS Make', a.atsMake || '']; cells.U4 = ['Backfeed', atsBackfeedList(a).join('; ')]; }
   else if (k.chiller) cells.U3 = ['Capacitors', a.capacitors || ''];
   else if (k.vacPump) { cells.U3 = ['Exhaust', a.vacuumExhaust || '']; cells.U4 = ['Union/Flange', a.reliefJoint || '']; }
+  else if (k.plantBoiler) cells.U3 = ['Purge Seconds', purgeSecondsValue(a)];   // build 169 (spec rev 2 §2.5)
   else if (k.xfmr) {   // build 122 (spec §1.3)
     cells.U3 = ['Alternate Sources', xfmrAltSheetText(entryLike)];
     cells.U4 = ['Terminal Access', xfmrTerminalText(a)];
@@ -5762,6 +5931,7 @@ function unitAnswersForJson(entryLike) {
    ['Capacitors', 'capacitors'], ['Exhaust', 'vacuumExhaust'], ['Union/Flange', 'reliefJoint'], ['Biohazard', 'biohazard'],
    // build 122: a transformer's survey, as the sheet carries it
    ['Alternate Sources', 'alternateSources'], ['Terminal Access', 'terminalAccess'],
+   ['Purge Seconds', 'purgeSeconds'],   // build 169
    ['Transformer Nameplate', 'transformerNameplate'], ['SPD / Capacitors / Grounding', 'spdCapacitorsGrounding']]
     .forEach(([label, key]) => { if (label in byLabel) out[key] = byLabel[label]; });
   if ('Backfeed' in byLabel) out.atsBackfeed = atsBackfeedList(entryLike.unitAnswers || {});
@@ -5848,6 +6018,13 @@ function buildUnitQuestionsHtml(k, template, auto) {
           onchange="toggleUnitBackfeed(${jsArg(c)},this.checked)"> ${c}</label>`)}`, 'tick all that apply'));
   }
   if (k.chiller) parts.push(group('Capacitor bank?', pick('capacitors', DATA.yesNoCantTell)));
+  if (k.plantBoiler) {   // build 169 (wilkins: "Ask in the field"): the light-off SOP's purge
+    const typed = String(a.purgeSeconds == null ? '' : a.purgeSeconds).trim();
+    parts.push(group('Burner purge (seconds)', html`<input type="text" id="uq_purgeSeconds" inputmode="numeric" maxlength="4"
+        value="${typed}" placeholder="e.g. 130" oninput="setUnitText('purgeSeconds',this.value)" onchange="renderUnitQuestions(true)">
+        ${typed && !purgeSecondsValue(a) ? html`<div style="font-size:12px;color:#b5451b;margin-top:4px;">1 to ${PURGE_SECONDS_MAX} whole seconds &mdash; not sent as typed</div>` : ''}`,
+      'from the plant\u2019s light-off procedure; blank if not known'));
+  }
   if (k.vacPump) {
     parts.push(group('This pump\u2019s exhaust', pick('vacuumExhaust', DATA.vacuumExhaust)));
     // build 144: Cover, and the photo it belongs in
@@ -6564,7 +6741,9 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Dock Leveler': ['Dock Leveler'],
   'ATS': ['ATS - Generic'],
   'Heat Exchanger': ['Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol'],
-  'Boiler': ['Boiler - Natural Gas - HHW','Boiler - Natural Gas - STM'],
+  // Build 169: a plant steam boiler (loto-web's Large Steam Boiler, wilkins 2026-11-11);
+  // the smaller steam boilers stay on STM, which loto-web prints as Gas Boiler
+  'Boiler': ['Boiler - Natural Gas - HHW','Boiler - Natural Gas - STM','Large Steam Boiler'],
   // Transformer: generic electrical equipment — one Electrical source with a
   // Meter verification, and the voltage prompt offers up to 4160V.
   // Build 111: "Electrical with Stored Energy" (loto-web adds the capacitor
@@ -6647,7 +6826,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Heat Exchanger - CHW/Glycol': 'heat_exchanger',
   'Exhaust Fan': 'exhaust_fan',
   'Condensing Unit': 'ac_unit', 'Mini Split': 'ac_unit', 'Air Compressor': 'air_compressor', 'Medical Air': 'air_compressor', 'Dental Air Compressor': 'air_compressor',
-  'Boiler': 'boiler', 'Boiler - Natural Gas - HHW': 'boiler', 'Boiler - Natural Gas - STM': 'boiler', 'Air Dryer': 'general',
+  'Boiler': 'boiler', 'Boiler - Natural Gas - HHW': 'boiler', 'Boiler - Natural Gas - STM': 'boiler', 'Large Steam Boiler': 'boiler', 'Air Dryer': 'general',
   'ATS - Generic': 'ats',
   'Water Heater - Steam': 'steam_water_heater', 'Steam Sterilizer': 'steam_water_heater', 'Water Heater - Gas': 'electric_water_heater',
   'Water Heater - Electric': 'general',
@@ -7333,6 +7512,9 @@ const ENERGY_LABEL_PREFIX = {
   'Natural Gas': 'G', 'Propane': 'G', 'Gas': 'G',
   'Hydraulic': 'H', 'Glycol': 'W', 'Kinetic': 'K', 'Gravity': 'GP', 'Stored Electrical Energy': 'ES',
   'Chemical': 'CH', 'Thermal': 'TH', 'Refrigerant': 'R',
+  // build 169: a Large Steam Boiler's roles (loto-web: S, atomizing air P, the LWCO drain S not W)
+  'Main Steam Stop': 'S', 'Non-Return': 'S', 'Blanket Steam': 'S', 'Boiler Vent': 'S', 'Atomizing Steam': 'S',
+  'Atomizing Air': 'P', 'Surface Blowdown': 'S', 'Bottom Blowdown': 'S', 'Low Water Cutoff Drain': 'S',
 };
 
 const ENERGY_LABEL_COLORS = {
@@ -8456,6 +8638,7 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'Switchgear':              ['120V', '208V', '240V', '480V', '4160V'],
   // Steam boiler: control/burner circuit — 120/208/480V only.
   'Boiler - Natural Gas - STM': ['120V', '208V', '480V'],
+  'Large Steam Boiler':         ['120V', '208V', '480V'],   // build 169: its fan / burner feed
   // Glycol Pump: 120/208/480 — no 240V realistic for a glycol loop.
   'Glycol Pump':             ['120V', '208V', '480V'],
 };
@@ -8500,7 +8683,8 @@ function applyTemplateVoltageChoice(voltage) {
   // voltage. Non-auto sources (user-added) are left alone.
   let updated = 0;
   for (const src of sources) {
-    if (isAutoElectricalRow(src)) {
+    // a row the template fixed at its own voltage keeps it (build 169: a boiler's 120V controls)
+    if (isAutoElectricalRow(src) && !src.keepVoltage) {
       src.energySource = 'Electrical ' + voltage;
       updated++;
     }
@@ -9130,6 +9314,21 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Natural Gas', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Feedwater In', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'HPS 100 PSI', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Large Steam Boiler (build 169, loto-web spec rev 2 D4, wilkins: "Default nine proposed
+  // rows"): the 120V control panel / SCADA (its voltage kept: keepVoltage), the fan /
+  // burner feed (voltage asked), the steam roles, the gas, the feedwater, the drains.
+  // The tech deletes what the boiler lacks and adds the rest (KC Boiler 1 had 20).
+  'Large Steam Boiler': [
+    { energySource: 'Electrical 120V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true, keepVoltage: true },
+    { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Main Steam Stop', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Non-Return', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Natural Gas', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Feedwater In', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Surface Blowdown', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Bottom Blowdown', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Low Water Cutoff Drain', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
   ],
 };
 
@@ -10038,7 +10237,7 @@ function buildSourceCard(src, i) {
               </div>` : html`<div id="customLocGroup_${i}" style="display:none;"></div>`}
               ${(() => {
                 const ov = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource);
-                const useSimple = simpleVerifEnabled() && !src._classicVerif
+                const useSimple = simpleVerifEnabled() && !src._classicVerif && !boilerRoleOf(src.energySource)
                   && (ov ? overrideAllowsSimple(ov)
                          : isWaterFamilySource(src.energySource)
                            && (!src.deviceType || isValveVerifDevice(src.deviceType)))
@@ -10108,7 +10307,7 @@ function buildSourceCard(src, i) {
                 </select>
                 ${src.valveState === 'mixed' ? valveUnitToggles(src, i, 'state') : ''}
               </div>` : html`<div id="valveStateGroup_${i}" style="display:none;"></div>`}
-              ${(sourceOffersValveState(src) || lockOpenTicked(src)) ? html`<div class="form-group" id="lockOpenGroup_${i}">
+              ${(sourceOffersLockOpen(src) || lockOpenTicked(src)) ? html`<div class="form-group" id="lockOpenGroup_${i}">
                 <label>Locked open</label>
                 ${valveAnswerNote(src, 'lock') ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${valveAnswerNote(src, 'lock')}</div>` : ''}
                 <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;font-size:14px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500;">
@@ -11697,8 +11896,8 @@ function applyCopySource(entryIndex, sourceIndex) {
   // …and the pressure & temperature typed on it (build 166), or none: the copy is that
   // source's. Only a value it shows and sends: never one hidden by its link or typed
   // for another medium, which would show and go out on the copy
-  const copiedMagnitude = typedMagnitudeOf(src);
-  if (copiedMagnitude) dest.typedMagnitude = Object.assign({ medium: magnitudeMediumOfRow(src) }, copiedMagnitude);
+  const copiedMagnitude = typedMagnitudeOf(src, entry.template || '');
+  if (copiedMagnitude) dest.typedMagnitude = Object.assign({ medium: magnitudeMediumOfRow(src, entry.template || '') }, copiedMagnitude);
   else delete dest.typedMagnitude;
   // …and the room its device sits in (build 167), or none: the same panel. Not one its link hides
   const copiedRoom = deviceRoomOf(src);
@@ -18235,7 +18434,7 @@ async function buildAndSendExport(opts, run) {
         // The Main Photo's arrow at this unit (build 156)
         quote(mainArrowSheetText(map.mainArrow)),
         // The pressure & temperature typed on the row (build 166)
-        quote(magnitudeSheetText(src)),
+        quote(magnitudeSheetText(src, entry.template || '')),
         // The room its device sits in (build 167): the last column
         quote(deviceRoomSheetText(src, entry))
       ].join(',') + '\n';
@@ -18298,7 +18497,7 @@ async function buildAndSendExport(opts, run) {
       else if (lockText) out.unitLockOpen = unitLockOpenOf(src);
       if (out.valveState === 'mixed') out.unitValveStates = unitValveStatesOf(src); else delete out.unitValveStates;
       // The pressure & temperature typed on the row (build 166), as column 24 writes it; else no key
-      const mag = magnitudeSheetText(src);
+      const mag = magnitudeSheetText(src, entry.template || '');
       if (mag) out.magnitude = mag; else delete out.magnitude;
       // The room its device sits in (build 167), as column 25 sends it; else no key
       const room = deviceRoomForUnit(src, entry.equipBuilding, entry.equipRoom);
@@ -18507,7 +18706,7 @@ async function buildAndSendExport(opts, run) {
           // arrow_dir,arrow_len" per mark — loto-web prints the box there
           const markLayoutCell = srcH ? valveMarkLayoutText(sourceMarksForExport(entry, s)) : '';
           // The pressure & temperature the tech typed (build 166): "45 PSI @ 180 F", "90 PSI"
-          const magnitudeCell = src ? magnitudeSheetText(src) : '';
+          const magnitudeCell = src ? magnitudeSheetText(src, entry.template || '') : '';
           // The room its device sits in when not the unit's (build 167): "Main | 3C101"
           const deviceRoomCell = src ? deviceRoomSheetText(src, entry) : '';
 

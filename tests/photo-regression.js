@@ -190,6 +190,9 @@
 //   T497      build 168: the UPS type and template (loto-web's own): input, bypass input and output isolation breakers (one
 //             voltage), the battery disconnect, Electric Shop, loto-web's UPS name rule and its exclusions, no label wait, 240/480V DC
 //   T498      build 168: the Steam Sterilizer type and template: Electrical, LPS, Condensate Out, DW In, Clinical Engineering, its words
+//   T499      build 169: the Large Steam Boiler (loto-web spec rev 2): the Boiler prompt's three choices, the nine rows (120V kept),
+//             the eleven roles only on it (letters, devices, no-drain checks, Sight Glass, Lock Open only on the vent / header drain,
+//             no drain question), col 24 on its lines (steam "90 PSI", feedwater "PSI @ F", gas whole PSI), Purge Seconds in U3
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -11444,18 +11447,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 168 (was build 122\'s): APP_BUILD and the header label say 168, the service worker\'s cache is loto-collector-v7.163, Xcode\'s CURRENT_PROJECT_VERSION is 168 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 169 (was build 122\'s): APP_BUILD and the header label say 169, the service worker\'s cache is loto-collector-v7.164, Xcode\'s CURRENT_PROJECT_VERSION is 169 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 168 && !!label && +label[1] === 168, 'the build');
+    want(APP_BUILD === 169 && !!label && +label[1] === 169, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.163', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.164', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 168;,CURRENT_PROJECT_VERSION = 168;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 169;,CURRENT_PROJECT_VERSION = 169;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -12217,6 +12220,11 @@
         what: c.energySource + ': app ' + JSON.stringify(medium && magnitudeText(MAGNITUDE_MEDIA[medium])) + ', loto-web prints ' + JSON.stringify(c.magnitude) + ' (' + c.code + ')' };
     });
     want((fx.magnitudes || []).length === 15, 'the fixture carries the 15 magnitude names');
+    // A Large Steam Boiler's roles (build 169): the app's boilerRoleOf is loto-web's
+    // boiler_source_role on every case, the eleven list names each a role
+    check('boilerRole', fx.boilerRole || [], c => ({ ok: boilerRoleOf(c.energySource) === c.role,
+      what: JSON.stringify(c.energySource) + ' app ' + JSON.stringify(boilerRoleOf(c.energySource)) + ' loto-web ' + JSON.stringify(c.role) }));
+    want((fx.boilerRole || []).length >= 20 && BOILER_ROLE_SOURCES.every(n => (fx.boilerRole || []).some(c => c.energySource === n && c.role)), 'the fixture carries the eleven roles');
     // A state and Lock Open per valve (build 146): columns 11 and 15 as the app writes each case's
     // states, and loto-web's valve_state.parse_cell reading them back, with no import warning. Held
     // either way: as one row answer and, when the valves agree, as a "mixed" list that agrees.
@@ -18399,6 +18407,135 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T499 — the Large Steam Boiler (build 169)
+  async function t499_largeSteamBoiler() {
+    const N = 'T499 build 169 (wilkins 2026-11-11, Q1–Q7 and Q8–Q10; loto-web spec rev 2, its half live 2026-11-12 00:22:50Z): the Boiler type asks "Hot water" / "Steam (small)" / "Plant steam boiler (large)"; the large one asks 120V / 208V / 480V and fills the nine rows, the 120V controls keeping their voltage; the eleven roles are offered only on it, lettered S (atomizing air P), with valves (the main stop\'s circuit setter, the blowdowns\' Cable) and only the no-drain hot checks (Sight Glass on the bottom blowdown and LWCO drain, atomizing air GaugeOnly), never the simplified boxes; Normally Closed on every valve role, Lock Open only on the vent and the header drain; no drain question on a role row; Boiler Plant; col 24 on its lines only on this template (a steam role "90 PSI", its temperature optional and never asked about; feedwater "150 PSI @ 230 F", asked above 212 F; natural gas whole PSI); Purge Seconds in U3 (1–3600, else blank); the export: Template cell, col 24, U3, Lock Open';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('B-499');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'Boiler';
+    await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+    const tp = document.getElementById('templatePromptOverlay');
+    got.prompt = tp ? [...tp.querySelectorAll('button.btn-primary')].map(b => b.textContent.trim()).join('|') : null;
+    want(got.prompt === 'Hot water|Steam (small)|Plant steam boiler (large)', 'the Boiler prompt ' + got.prompt);
+    await withDialogs({ confirm: true }, async () => { applyTemplatePromptChoice('Large Steam Boiler'); });
+    const ov = document.getElementById('templateVoltageOverlay');
+    got.voltages = ov ? [...ov.querySelectorAll('button.btn-primary')].map(b => b.textContent.trim()).join() : null;
+    want(getTemplate() === 'Large Steam Boiler' && got.voltages === '120V,208V,480V', 'the template and its voltages ' + got.voltages);
+    if (ov) applyTemplateVoltageChoice('480V');
+    closeAllPrompts();
+    got.rows = sources.map(x => x.energySource + '/' + x.deviceType).join('|');
+    want(got.rows === 'Electrical 120V/|Electrical 480V/|Main Steam Stop/|Non-Return/|Natural Gas/Ball Valve|Feedwater In/|Surface Blowdown/|Bottom Blowdown/|Low Water Cutoff Drain/', 'the nine rows ' + got.rows);
+    want(defaultShopFor('Large Steam Boiler', sources) === 'Boiler Plant', 'Boiler Plant');
+    // the roles: offered here only, letters, devices, checks
+    const roles = BOILER_ROLE_SOURCES;
+    want(roles.every(r => offeredEnergySources().includes(r)), 'offered on the template');
+    want(roles.every(r => prefixByEnergyName(r) === (r === 'Atomizing Air' ? 'P' : 'S')), 'letters ' + roles.map(prefixByEnergyName).join());
+    got.devices = [getFilteredDevices('Main Steam Stop').includes('Ckt Setter - Universal Valve'), getFilteredDevices('Non-Return').includes('Ckt Setter - Universal Valve'),
+      getFilteredDevices('Bottom Blowdown').includes('Cable'), getFilteredDevices('Atomizing Air').includes('Quick Disconnect')].join();
+    want(got.devices === 'true,false,true,true', 'devices ' + got.devices);
+    got.checks = ['Main Steam Stop', 'Boiler Vent', 'Bottom Blowdown', 'Low Water Cutoff Drain', 'Atomizing Air'].map(r => getFilteredVerifications(r === 'Bottom Blowdown' ? 'Cable' : 'Gate Valve', r).join('/'));
+    want(got.checks.join('|') === 'Temp Only - Hot/GaugeOnly - Hot|Temp Only - Hot/GaugeOnly - Hot|Sight Glass/Temp Only - Hot/GaugeOnly - Hot|Sight Glass/Temp Only - Hot/GaugeOnly - Hot|GaugeOnly', 'checks ' + got.checks.join('|'));
+    want(roles.every(r => !getFilteredVerifications('Gate Valve', r).some(v => /Drain/.test(v))), 'no drain code on a role');
+    want(!getFilteredVerifications('Mystery Device', 'Mystery Source').includes('Sight Glass') && DATA.verificationTypes.includes('Sight Glass'), 'Sight Glass only through the template\'s lists');
+    // valve state and Lock Open; no drain question
+    const row = (es, dev) => ({ energySource: es, deviceType: dev || 'Gate Valve', quantity: 1 });
+    got.state = roles.filter(r => r !== 'Atomizing Air').map(r => [sourceOffersValveState(row(r)), sourceOffersLockOpen(row(r))].map(Number).join('')).join(',');
+    want(got.state === '10,10,11,10,10,11,10,10,10,10', 'Normally Closed on every valve role, Lock Open on the vent and header drain only ' + got.state);
+    want(roles.every(r => !drainTakingSource(row(r)) && !sourceTakesDrainLocation(row(r), 'Atlanta')), 'no drain question on a role row');
+    want(sourceOffersLockOpen(row('Feedwater In')) && drainTakingSource(row('Feedwater In')), 'the feedwater keeps both');
+    // the simplified boxes never on a role row
+    let simpleWas = null;
+    try { simpleWas = localStorage.getItem('loto_simple_verification'); localStorage.setItem('loto_simple_verification', '1'); } catch (e) {}
+    try {
+      sources.forEach(x => { x.collapsed = true; }); renderSources();
+      const mi = sources.findIndex(x => x.energySource === 'Main Steam Stop');
+      sources[mi].deviceType = 'Gate Valve'; expandSource(mi);
+      const card = document.querySelectorAll('#sourcesContainer > .source-card')[mi];
+      got.simple = [!!card.querySelector('.simple-verif-check'), !!document.getElementById('src_ver_' + mi)].join();
+      want(got.simple === 'false,true', 'classic select on a role row ' + got.simple);
+    } finally { try { if (simpleWas === null) localStorage.removeItem('loto_simple_verification'); else localStorage.setItem('loto_simple_verification', simpleWas); } catch (e) {} }
+    // col 24 on its lines, only on this template
+    got.media = ['Main Steam Stop', 'Atomizing Air', 'Feedwater In', 'Condensate Out', 'Natural Gas', 'Propane', 'Fuel Oil In', 'Chemical In', 'HHW In', 'Electrical 480V', 'HPS 100 PSI']
+      .map(n => magnitudeMediumOf(n, 'Large Steam Boiler') || '-').join();
+    want(got.media === 'STEAM,AIR,FW,COND,NG,LP,FO,CHEM,HHW,-,-', 'media ' + got.media);
+    want(magnitudeMediumOf('Main Steam Stop', 'Boiler - Natural Gas - STM') === '' && magnitudeMediumOf('Natural Gas', 'Standard Pump') === '', 'none elsewhere');
+    const idx = n => sources.findIndex(x => x.energySource === n);
+    const menu = i => { const c = document.querySelectorAll('#sourcesContainer > .source-card')[i]; const b = [...c.querySelectorAll('.src-more-menu button')].find(x => /^Change /.test(x.textContent)); return b ? b.textContent : '-'; };
+    const ms = idx('Main Steam Stop'), fw = idx('Feedwater In'), ng = idx('Natural Gas');
+    sources.forEach(x => { x.collapsed = false; }); renderSources();
+    got.menus = [menu(ms), menu(fw), menu(ng)].join('|');
+    want(got.menus === 'Change pressure|Change pressure & temperature|Change pressure', 'menus ' + got.menus);
+    const P = i => document.getElementById('src_mag_psi_' + i), F = i => document.getElementById('src_mag_f_' + i);
+    // the starting values are only shown: opened and left untouched, nothing is saved or sent (build 166's
+    // contract, which loto-web asked to keep: a per-row value outranks a site's own magnitude)
+    got.untouched = [ms, fw, ng].map(i => { openMagnitude(i); return (sources[i].typedMagnitude === undefined) + ':' + (magnitudeSheetText(sources[i]) || '-'); }).join(',');
+    want(got.untouched === 'true:-,true:-,true:-', 'opened, untouched: nothing sent ' + got.untouched);
+    sources.forEach(x => { x.collapsed = false; }); renderSources();
+    const typeIn = (el, kind, text, i) => { el.value = text; typeMagnitude(i, kind, el); return magnitudeSheetText(sources[i]); };
+    openMagnitude(ms);
+    got.steamBoxes = [P(ms).value, F(ms).value, F(ms).placeholder, /saturated/.test(document.getElementById('src_mag_' + ms).textContent)].join();
+    want(got.steamBoxes === '100,,sat.,true', 'steam boxes ' + got.steamBoxes);
+    let r = await withDialogs({ choice: { 'magnitude-hot': 'no' } }, async () => {
+      got.steam = [typeIn(P(ms), 'psi', '90', ms), typeIn(F(ms), 'f', '331', ms), typeIn(F(ms), 'f', '', ms)].join('|'); });
+    want(got.steam === '90 PSI|90 PSI @ 331 F|90 PSI' && r.log.length === 0, 'steam: pressure, an optional temperature never asked about ' + got.steam + ' ' + r.log.length);
+    commitMagnitude(ms, 'f', F(ms));
+    want(magnitudeSheetText(sources[ms]) === '90 PSI' && F(ms).value === '', 'left blank stays blank');
+    openMagnitude(fw);
+    want(P(fw).value === '200' && F(fw).value === '240', 'feedwater starts at loto-web\'s default');
+    r = await withDialogs({ choice: { 'magnitude-hot': 'yes' } }, async () => {
+      got.fw = [typeIn(P(fw), 'psi', '150', fw), typeIn(F(fw), 'f', '230', fw)].join('|'); await new Promise(res => setTimeout(res, 0)); });
+    want(got.fw === '150 PSI @ 240 F|150 PSI @ 230 F' && r.log.filter(l => /magnitude-hot/.test(l)).length === 1, 'feedwater, asked above 212 F ' + got.fw);
+    openMagnitude(ng);
+    want(!F(ng) && typeIn(P(ng), 'psi', '2', ng) === '2 PSI', 'natural gas: whole PSI only');
+    // a role row's value is never sent off this template
+    want(magnitudeSheetText(sources[ms], 'Boiler - Natural Gas - STM') === '' && magnitudeSheetText(sources[ms], 'Large Steam Boiler') === '90 PSI', 'only on the template');
+    // Purge Seconds
+    want(unitKinds('Boiler', 'Large Steam Boiler', []).plantBoiler && !unitKinds('Boiler', 'Boiler - Natural Gas - STM', []).plantBoiler, 'the kind');
+    got.purge = ['130', ' 45 ', '3600', '0', '3601', 'abc', '12.5', ''].map(v => purgeSecondsValue({ purgeSeconds: v }) || '-').join();
+    want(got.purge === '130,45,3600,-,-,-,-,-', 'purge values ' + got.purge);
+    renderUnitQuestions(true);
+    want(!!document.getElementById('uq_purgeSeconds'), 'the purge box');
+    // the export
+    await resetAppState();
+    const mk = (es, extra) => Object.assign(mkSrc(es), { sourceId: genUuid() }, extra || {});
+    const A = mkEntry('Boiler 1', { sources: [mk('Electrical 120V', { deviceType: 'Breaker', verification: 'Controls' }),
+      mk('Main Steam Stop', { deviceType: 'Gate Valve', verification: 'GaugeOnly - Hot', typedMagnitude: { medium: 'STEAM', psi: 90 } }),
+      mk('Feedwater In', { deviceType: 'Gate Valve', verification: 'GaugeOnly - Hot', typedMagnitude: { medium: 'FW', psi: 150, f: 230 } }),
+      mk('Natural Gas', { deviceType: 'Ball Valve', verification: 'Controls', typedMagnitude: { medium: 'NG', psi: 2 } }),
+      mk('Boiler Vent', { deviceType: 'Gate Valve', verification: 'Temp Only - Hot', lockOpen: true }),
+      mk('Bottom Blowdown', { deviceType: 'Cable', verification: 'Sight Glass', lockOpen: true })] });
+    A.equipType = 'Boiler'; A.template = 'Large Steam Boiler'; A.unitAnswers = { purgeSeconds: '130' };
+    savedEquipment = [A]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (zip) {
+      const u = await unzipExport(zip.blob);
+      const je = jsonEntryFor(u.entriesJson, A);
+      got.json = je ? [je.template, je.purgeSeconds, (je.sources || []).map(x => x.energySource + '=' + (x.magnitude || '-') + (x.lockOpen ? '/LO' : '')).join(',')].join(' | ') : null;
+      want(got.json === 'Large Steam Boiler | 130 | Electrical 120V=-,Main Steam Stop=90 PSI,Feedwater In=150 PSI @ 230 F,Natural Gas=2 PSI,Boiler Vent=-/LO,Bottom Blowdown=-', 'entries.json ' + got.json);
+      const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+      if (xpath) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        const ws = wb.worksheets[0], rows = []; let u3 = null;
+        ws.eachRow(row => {
+          const a = String(row.getCell(1).value || '');
+          if (/^Energy Source #[1-6]$/.test(a)) {
+            const d = ws.getRow(row.number + 1);
+            rows.push(String(d.getCell(1).value || '') + '=' + String(d.getCell(24).value || '-') + '/' + String(d.getCell(15).value || '-') + '/' + String(d.getCell(14).value || '-'));
+          }
+          if (String(row.getCell(12).value || '') === 'Purge Seconds') u3 = String(ws.getRow(row.number + 1).getCell(12).value || '');
+        });
+        got.sheet = rows.join(',') + ' | U3 ' + u3;
+        want(got.sheet === 'Electrical 120V=-/-/-,Main Steam Stop=90 PSI/-/-,Feedwater In=150 PSI @ 230 F/-/-,Natural Gas=2 PSI/-/-,Boiler Vent=-/Yes/-,Bottom Blowdown=-/-/- | U3 130', 'sheet ' + got.sheet);
+      } else fails.push('no XLSX in the ZIP');
+      const { sheet } = await infoSheetTemplateAndType(u, 'Boiler 1');
+      want(sheet.join() === 'Large Steam Boiler', 'the Template cell ' + sheet.join());
+    } else fails.push('no zip: ' + confirms.join(' | '));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
     t9_removeMiscThenDiscard, t10_reattachOrphans, t11_duplicateSourceThenRetakeCopy,
@@ -18598,7 +18735,7 @@
     t488_linkCarriesTheExistingTag, t489_discardAndDeleteKeepThePlace, t490_linkCopiesFollowARelinkAndASideChange,
     t491_vacuumPumpInletVent, t492_vacuumPumpInletVentReview,
     t493_visualChipOnTheMoreOptionsLine, t494_typedPressureAndTemperature, t495_deviceInAnotherRoom, t496_fuelOilPumpTypeAndTemplate,
-    t497_upsTypeAndTemplate, t498_steamSterilizerTypeAndTemplate];
+    t497_upsTypeAndTemplate, t498_steamSterilizerTypeAndTemplate, t499_largeSteamBoiler];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

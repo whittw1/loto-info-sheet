@@ -3238,5 +3238,119 @@
    "family": "Compressed Air",
    "magnitude": "100 PSI"
   }
+ ],
+ "boilerRole": [
+  {
+   "energySource": "Main Steam Stop",
+   "role": "main_stop"
+  },
+  {
+   "energySource": "Non-Return",
+   "role": "non_return"
+  },
+  {
+   "energySource": "Steam Header Drain",
+   "role": "header_drain"
+  },
+  {
+   "energySource": "Steam Warm Up",
+   "role": "warm_up"
+  },
+  {
+   "energySource": "Blanket Steam",
+   "role": "blanket"
+  },
+  {
+   "energySource": "Boiler Vent",
+   "role": "vent"
+  },
+  {
+   "energySource": "Atomizing Steam",
+   "role": "atom_steam"
+  },
+  {
+   "energySource": "Atomizing Air",
+   "role": "atom_air"
+  },
+  {
+   "energySource": "Surface Blowdown",
+   "role": "surface_bd"
+  },
+  {
+   "energySource": "Bottom Blowdown",
+   "role": "bottom_bd"
+  },
+  {
+   "energySource": "Low Water Cutoff Drain",
+   "role": "lwco"
+  },
+  {
+   "energySource": "Main Steam Stop 90 PSI",
+   "role": "main_stop"
+  },
+  {
+   "energySource": "Non-Return (closest to boiler)",
+   "role": ""
+  },
+  {
+   "energySource": "Bottom Blowdown Valve",
+   "role": "bottom_bd"
+  },
+  {
+   "energySource": "LWCO Drain",
+   "role": "lwco"
+  },
+  {
+   "energySource": "Drum Vent",
+   "role": "vent"
+  },
+  {
+   "energySource": "Header Warm Up",
+   "role": "warm_up"
+  },
+  {
+   "energySource": "HPS Main Stop",
+   "role": "main_stop"
+  },
+  {
+   "energySource": "HPS 100 PSI",
+   "role": ""
+  },
+  {
+   "energySource": "Soot Blower",
+   "role": ""
+  },
+  {
+   "energySource": "Natural Gas",
+   "role": ""
+  },
+  {
+   "energySource": "Feedwater In",
+   "role": ""
+  },
+  {
+   "energySource": "Condensate In",
+   "role": ""
+  },
+  {
+   "energySource": "Steam",
+   "role": ""
+  },
+  {
+   "energySource": "LPS 10 PSI",
+   "role": ""
+  },
+  {
+   "energySource": "Steam Header",
+   "role": ""
+  },
+  {
+   "energySource": "Atomization Air 40 psig",
+   "role": "atom_air"
+  },
+  {
+   "energySource": "Surface Blow Down valves",
+   "role": "surface_bd"
+  }
  ]
 }

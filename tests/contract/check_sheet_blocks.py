@@ -62,6 +62,7 @@ ANSWER_KEYS = {
     "Terminal Access": lambda e: e.get("terminalAccess"),
     "Transformer Nameplate": lambda e: e.get("transformerNameplate"),
     "SPD / Capacitors / Grounding": lambda e: e.get("spdCapacitorsGrounding"),
+    "Purge Seconds": lambda e: e.get("purgeSeconds"),   # field build 169: a Large Steam Boiler's burner purge
 }
 
 

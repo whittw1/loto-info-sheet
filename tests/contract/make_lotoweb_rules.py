@@ -237,6 +237,21 @@ def magnitude_answers():
     return out
 
 
+# A Large Steam Boiler's roles (field app build 169, loto-web spec rev 2): loto-web's
+# own boiler_source_role on the eleven list names and the spellings around them. T290
+# asserts the app's boilerRoleOf gives the same role (or none) for each.
+BOILER_ROLE_NAMES = ["Main Steam Stop", "Non-Return", "Steam Header Drain", "Steam Warm Up", "Blanket Steam",
+                     "Boiler Vent", "Atomizing Steam", "Atomizing Air", "Surface Blowdown", "Bottom Blowdown",
+                     "Low Water Cutoff Drain", "Main Steam Stop 90 PSI", "Non-Return (closest to boiler)",
+                     "Bottom Blowdown Valve", "LWCO Drain", "Drum Vent", "Header Warm Up", "HPS Main Stop",
+                     "HPS 100 PSI", "Soot Blower", "Natural Gas", "Feedwater In", "Condensate In", "Steam",
+                     "LPS 10 PSI", "Steam Header", "Atomization Air 40 psig", "Surface Blow Down valves"]
+
+
+def boiler_role_answers():
+    return [{"energySource": n, "role": pgm.boiler_source_role(n) or ""} for n in BOILER_ROLE_NAMES]
+
+
 UNITS = {
     "two tagged drives, one feeder each": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-2"),
                                            row(loc="Feeder: MCC-2A bkr 14 (VFD-1)"), row(loc="Feeder: MCC-2A bkr 15 (VFD-2)")],
@@ -374,6 +389,7 @@ def main():
                        "warns": bool(vs.cell_problem("lock_open", t, q))} for a, q, t in LOCK_CELLS],
         "steam": steam_answers(),
         "magnitudes": magnitude_answers(),
+        "boilerRole": boiler_role_answers(),
     }
     out = os.path.join(HERE, "lotoweb-rules.json")
     with open(out, "w", encoding="utf-8") as f:
