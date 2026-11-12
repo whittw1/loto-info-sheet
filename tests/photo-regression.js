@@ -185,6 +185,11 @@
 //   T495      build 167 (wilkins 2026-11-11): a row's device in another room ("Breaker 2 in 3C101") — More → In another room…,
 //             Building + Room (prefilled from the unit and the Location), sheet column 25 "Device Room" ("Main | 3C101"), the CSV's
 //             last column and entries.json deviceRoom for loto-web's numbering room; never on a linked row, K / ES / RG rows or the unit's own room
+//   T496      build 168 (wilkins 2026-11-11): the Fuel Oil Pump type and template (loto-web's own): Electrical / Disconnect (voltage
+//             asked), Fuel Oil In and Fuel Oil Out / Gate Valve / GaugeOnly, Boiler Plant, loto-web's name words, the export
+//   T497      build 168: the UPS type and template (loto-web's own): input, bypass input and output isolation breakers (one
+//             voltage), the battery disconnect, Electric Shop, loto-web's UPS name rule and its exclusions, no label wait, 240/480V DC
+//   T498      build 168: the Steam Sterilizer type and template: Electrical, LPS, Condensate Out, DW In, Clinical Engineering, its words
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -11439,18 +11444,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 167 (was build 122\'s): APP_BUILD and the header label say 167, the service worker\'s cache is loto-collector-v7.162, Xcode\'s CURRENT_PROJECT_VERSION is 167 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 168 (was build 122\'s): APP_BUILD and the header label say 168, the service worker\'s cache is loto-collector-v7.163, Xcode\'s CURRENT_PROJECT_VERSION is 168 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 167 && !!label && +label[1] === 167, 'the build');
+    want(APP_BUILD === 168 && !!label && +label[1] === 168, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.162', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.163', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 167;,CURRENT_PROJECT_VERSION = 167;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 168;,CURRENT_PROJECT_VERSION = 168;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -18254,6 +18259,146 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T496 — the Fuel Oil Pump type and template (build 168)
+  async function t496_fuelOilPumpTypeAndTemplate() {
+    const N = 'T496 build 168 (wilkins 2026-11-11: "LOTO web is building a Fuel Oil pump template. Can you add it to the list of equipment types and templates"; loto-web\'s spec and wilkins\' answers in its chat; "Standard POCs will be Boiler Plant"): the new Fuel Oil Pump type picks the Fuel Oil Pump template (the only one) and asks the voltage (120V / 208V / 240V / 480V); three rows — Electrical / Disconnect (its check Controls), Fuel Oil In and Fuel Oil Out / Gate Valve / GaugeOnly (offered and shown on the card), no Kinetic — and the pick sets the voltage; Electrical expected; Boiler Plant by default; custom "Fuel Oil Pump 2", "FO Pump 1", "F.O. Pump 3", "Fuel-Oil Pump A", "Fuel Oil Transfer Pump 1", "Fuel Oil Supply Pump 2" get it, "Lube Oil Pump 1" and "Oil Pump 2" stay Standard Pump and "Fuel Oil Pump VFD" stays the drive; app-lists.json lists it; the export says "Fuel Oil Pump" as template and type';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('FOP-496');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'Fuel Oil Pump';
+    await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+    const ov = document.getElementById('templateVoltageOverlay');
+    got.voltages = ov ? Array.from(ov.querySelectorAll('button.btn-primary')).map(b => b.textContent.trim()) : null;
+    got.template = getTemplate();
+    got.offered = [...document.getElementById('equipTemplate').options].map(o => o.value).filter(v => v && v !== '** New Template **');
+    got.rows = sources.map(x => [x.energySource, x.deviceType, x.location, x.verification, x.quantity].join('/'));
+    want(got.template === 'Fuel Oil Pump' && got.offered.join() === 'Fuel Oil Pump', 'type picks the template');
+    want((got.voltages || []).join() === '120V,208V,240V,480V', 'the voltage asked');
+    want(got.rows.join('|') === 'Electrical 208V/Disconnect//Controls/1|Fuel Oil In/Gate Valve//GaugeOnly/1|Fuel Oil Out/Gate Valve//GaugeOnly/1', 'rows ' + got.rows.join('|'));   // a Disconnect's check fills in as Controls, as on every pump
+    if (ov) applyTemplateVoltageChoice('480V');
+    closeAllPrompts();
+    got.picked = sources.map(x => x.energySource + '/' + x.deviceType).join('|');
+    want(got.picked === 'Electrical 480V/Disconnect|Fuel Oil In/Gate Valve|Fuel Oil Out/Gate Valve', 'the pick sets the voltage ' + got.picked);
+    want(!sources.some(x => x.energySource === 'Kinetic'), 'no Kinetic on a pump');
+    want(getFilteredVerifications('Gate Valve', 'Fuel Oil In').includes('GaugeOnly') && getFilteredVerifications('Gate Valve', 'Fuel Oil Out').includes('GaugeOnly'), 'GaugeOnly offered on fuel oil gate valves');
+    sources.forEach(x => { x.collapsed = true; }); renderSources();
+    got.cards = [1, 2].map(i => { expandSource(i); const sel = document.getElementById('src_ver_' + i); return sel ? sel.value : (sources[i].verification + ':simple'); });
+    want(got.cards.every(v => /^GaugeOnly/.test(v)), 'the cards show GaugeOnly ' + got.cards.join());
+    want(expectsElectricalSource('Fuel Oil Pump', 'Fuel Oil Pump') && defaultShopFor('Fuel Oil Pump', sources) === 'Boiler Plant', 'Electrical expected, Boiler Plant');
+    const names = ['Fuel Oil Pump 2', 'FO Pump 1', 'F.O. Pump 3', 'Fuel-Oil Pump A', 'Fuel Oil Transfer Pump 1', 'Fuel Oil Supply Pump 2', 'Lube Oil Pump 1', 'Oil Pump 2', 'Fuel Oil Pump VFD'];
+    got.custom = await templatesForCustomTypes(names, 'C-496');
+    want(names.slice(0, 6).every(n => got.custom[n] === 'Fuel Oil Pump'), 'custom names ' + JSON.stringify(got.custom));
+    want(got.custom['Lube Oil Pump 1'] === 'Standard Pump' && got.custom['Oil Pump 2'] === 'Standard Pump', 'a bare oil pump stays Standard Pump');
+    want(got.custom['Fuel Oil Pump VFD'] === 'Electrical with Stored Energy', 'its drive stays the drive');
+    const al = appListsSnapshot(APP_BUILD);
+    want(al.equipmentTypes.includes('Fuel Oil Pump') && al.templates.includes('Fuel Oil Pump') && JSON.stringify(al.typeToTemplates['Fuel Oil Pump']) === '["Fuel Oil Pump"]', 'app-lists');
+    await resetAppState();
+    const A = mkEntry('Fuel Oil Pump 1', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Disconnect', location: 'On Wall' }),
+      Object.assign(mkSrc('Fuel Oil In'), { sourceId: genUuid(), deviceType: 'Gate Valve', verification: 'GaugeOnly' }),
+      Object.assign(mkSrc('Fuel Oil Out'), { sourceId: genUuid(), deviceType: 'Gate Valve', verification: 'GaugeOnly' })] });
+    A.equipType = 'Fuel Oil Pump'; A.template = 'Fuel Oil Pump';
+    savedEquipment = [A]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return record(N, false, 'no zip: ' + confirms.join(' | '));
+    const u = await unzipExport(zip.blob);
+    const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
+    const { sheet, types } = await infoSheetTemplateAndType(u, 'Fuel Oil Pump 1');
+    got.export = { json: je.template, type: je.equipType, sheet, types, media: (je.sources || []).map(x => x.energySource + '/' + x.verification) };
+    want(je.template === 'Fuel Oil Pump' && je.equipType === 'Fuel Oil Pump' && sheet.join() === 'Fuel Oil Pump' && types.join() === 'Fuel Oil Pump', 'export');
+    want(got.export.media.join() === 'Electrical 480V/Controls,Fuel Oil In/GaugeOnly,Fuel Oil Out/GaugeOnly', 'export media ' + got.export.media.join());
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // The export of one saved unit of `type` / `template` with `rows`: what entries.json and the sheet say
+  async function exportOneUnit(name, type, template, rows) {
+    await resetAppState();
+    const A = mkEntry(name, { sources: rows.map(r => Object.assign(mkSrc(r[0]), { sourceId: genUuid(), deviceType: r[1], location: r[2] || '', verification: r[3] || '' })) });
+    A.equipType = type; A.template = template;
+    savedEquipment = [A]; saveAll();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) return { err: 'no zip: ' + confirms.join(' | ') };
+    const u = await unzipExport(zip.blob);
+    const je = ((u.entriesJson && u.entriesJson.entries) || [])[0] || {};
+    const { sheet, types } = await infoSheetTemplateAndType(u, name);
+    return { json: je.template, type: je.equipType, sheet: sheet.join(), types: types.join(), media: (je.sources || []).map(x => [x.energySource, x.deviceType, x.location, x.verification].join('/')) };
+  }
+
+  // T497 — the UPS type and template (build 168)
+  async function t497_upsTypeAndTemplate() {
+    const N = 'T497 build 168 (loto-web\'s gap check 2026-11-11, wilkins "Add 1/2"; loto-web\'s UPS spec, wilkins\' picks in its chat): the new UPS type picks the UPS template (the only one) and asks the voltage once for the input, bypass input and output isolation breakers (Breaker / Controls, their Locations hints for the office), plus the battery string\'s disconnect (Battery 480V DC / Disconnect / Meter); no Stored Electrical Energy or maintenance bypass row; Battery 240V DC and 480V DC in the list; Electrical expected; Electric Shop; no label wait on a UPS; loto-web\'s UPS name rule — "UPS 18", "UPS-1", "UPS_SICU", "UPS System A", "Uninterruptible Power Supply 2" get it, "Upstairs", "Backups", "UPS Panel 2", "UPS Bypass Cabinet", "UPS Room Fan", "UPS Battery Charger", "PDU-UPS 3" and "UPS Generator" do not; app-lists.json; the export says "UPS"';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('UPS-497');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'UPS';
+    await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+    const ov = document.getElementById('templateVoltageOverlay');
+    got.voltages = ov ? Array.from(ov.querySelectorAll('button.btn-primary')).map(b => b.textContent.trim()) : null;
+    got.template = getTemplate();
+    got.offered = [...document.getElementById('equipTemplate').options].map(o => o.value).filter(v => v && v !== '** New Template **');
+    want(got.template === 'UPS' && got.offered.join() === 'UPS', 'type picks the template');
+    want((got.voltages || []).join() === '120V,208V,240V,480V', 'the voltage asked');
+    if (ov) applyTemplateVoltageChoice('480V');
+    closeAllPrompts();
+    got.rows = sources.map(x => [x.energySource, x.deviceType, x.location, x.verification, x.quantity].join('/'));
+    want(got.rows.join('|') === 'Electrical 480V/Breaker/UPS input/Controls/1|Electrical 480V/Breaker/Bypass input/Controls/1|Electrical 480V/Breaker/Output isolation/Controls/1|Battery 480V DC/Disconnect/Battery disconnect/Meter/1', 'rows ' + got.rows.join('|'));
+    want(!sources.some(x => /Stored Electrical|Kinetic/.test(x.energySource)), 'no Stored Electrical Energy or Kinetic row');
+    want(getFilteredDevices('Battery 480V DC').includes('Disconnect') && getFilteredVerifications('Disconnect', 'Battery 480V DC').includes('Meter'), 'the battery row\'s device and check are offered');
+    want(['Battery 240V DC', 'Battery 480V DC'].every(b => DATA.energySources.includes(b)) && (sourceDefaultsOf('Battery 480V DC') || {}).device === 'Bag', 'the UPS battery voltages');
+    want(expectsElectricalSource('UPS', 'UPS') && defaultShopFor('UPS', sources) === 'Electric Shop', 'Electrical expected, Electric Shop');
+    want(!sourceTakesLabelWait({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor' }, 'UPS', 'UPS')
+      && sourceTakesLabelWait({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor' }, 'Switchgear', 'Switchgear'), 'no label wait on a UPS (still asked elsewhere)');
+    const yes = ['UPS 18', 'UPS-1', 'UPS_SICU', 'UPS System A', 'Uninterruptible Power Supply 2'];
+    const no = ['Upstairs', 'Backups', 'UPS Panel 2', 'UPS Bypass Cabinet', 'UPS Room Fan', 'UPS Battery Charger', 'PDU-UPS 3', 'UPS Generator'];
+    got.custom = await templatesForCustomTypes(yes.concat(no), 'C-497');
+    want(yes.every(n => got.custom[n] === 'UPS'), 'UPS names ' + JSON.stringify(got.custom));
+    want(no.every(n => got.custom[n] !== 'UPS'), 'not UPS ' + JSON.stringify(got.custom));
+    const al = appListsSnapshot(APP_BUILD);
+    want(al.equipmentTypes.includes('UPS') && al.templates.includes('UPS') && JSON.stringify(al.typeToTemplates['UPS']) === '["UPS"]', 'app-lists');
+    got.export = await exportOneUnit('UPS 1', 'UPS', 'UPS', [['Electrical 480V', 'Breaker', 'UPS input', 'Controls'], ['Battery 480V DC', 'Disconnect', 'Battery disconnect', 'Meter']]);
+    want(got.export.json === 'UPS' && got.export.type === 'UPS' && got.export.sheet === 'UPS' && got.export.types === 'UPS', 'export ' + JSON.stringify(got.export));
+    want((got.export.media || []).join('|') === 'Electrical 480V/Breaker/UPS input/Controls|Battery 480V DC/Disconnect/Battery disconnect/Meter', 'export media');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T498 — the Steam Sterilizer type and template (build 168)
+  async function t498_steamSterilizerTypeAndTemplate() {
+    const N = 'T498 build 168 (loto-web\'s gap check, wilkins "Add 1/2"; loto-web\'s spec, wilkins\' picks in its chat): the new Steam Sterilizer type picks the Steam Sterilizer template (the only one) and asks the voltage (208V / 480V, its vacuum pump\'s feed); four rows — Electrical / Disconnect / Controls, LPS 10 PSI / Gate Valve / Temp Only - Hot, Condensate Out / Gate Valve / Temp Only - Hot, DW In / Ball Valve / Drain Only — each check offered; Electrical expected; Clinical Engineering by default; "Steam Sterilizer 2", "Sterilizer 1", "Autoclave 3", "Autoclave Steam Generator" get it, "Sterilizer Vacuum Pump" stays a pump; app-lists.json; the export says "Steam Sterilizer"';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    fillFormNoSources('STR-498');
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'Steam Sterilizer';
+    await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+    const ov = document.getElementById('templateVoltageOverlay');
+    got.voltages = ov ? Array.from(ov.querySelectorAll('button.btn-primary')).map(b => b.textContent.trim()) : null;
+    got.template = getTemplate();
+    got.offered = [...document.getElementById('equipTemplate').options].map(o => o.value).filter(v => v && v !== '** New Template **');
+    want(got.template === 'Steam Sterilizer' && got.offered.join() === 'Steam Sterilizer', 'type picks the template');
+    want((got.voltages || []).join() === '208V,480V', 'the voltage asked');
+    if (ov) applyTemplateVoltageChoice('480V');
+    closeAllPrompts();
+    got.rows = sources.map(x => [x.energySource, x.deviceType, x.location, x.verification, x.quantity].join('/'));
+    want(got.rows.join('|') === 'Electrical 480V/Disconnect//Controls/1|LPS 10 PSI/Gate Valve//Temp Only - Hot/1|Condensate Out/Gate Valve//Temp Only - Hot/1|DW In/Ball Valve//Drain Only/1', 'rows ' + got.rows.join('|'));
+    got.offeredChecks = [['Gate Valve', 'LPS 10 PSI', 'Temp Only - Hot'], ['Gate Valve', 'Condensate Out', 'Temp Only - Hot'], ['Ball Valve', 'DW In', 'Drain Only']]
+      .map(([d, e, v]) => getFilteredVerifications(d, e).includes(v));
+    want(got.offeredChecks.every(Boolean), 'each check is offered ' + got.offeredChecks.join());
+    want(expectsElectricalSource('Steam Sterilizer', 'Steam Sterilizer') && defaultShopFor('Steam Sterilizer', sources) === 'Clinical Engineering', 'Electrical expected, Clinical Engineering');
+    const yes = ['Steam Sterilizer 2', 'Sterilizer 1', 'Autoclave 3', 'Autoclave Steam Generator'];
+    got.custom = await templatesForCustomTypes(yes.concat(['Sterilizer Vacuum Pump']), 'C-498');
+    want(yes.every(n => got.custom[n] === 'Steam Sterilizer'), 'sterilizer names ' + JSON.stringify(got.custom));
+    want(got.custom['Sterilizer Vacuum Pump'] === 'Standard Pump', 'its vacuum pump stays a pump');
+    const al = appListsSnapshot(APP_BUILD);
+    want(al.equipmentTypes.includes('Steam Sterilizer') && al.templates.includes('Steam Sterilizer') && JSON.stringify(al.typeToTemplates['Steam Sterilizer']) === '["Steam Sterilizer"]', 'app-lists');
+    got.export = await exportOneUnit('Steam Sterilizer 1', 'Steam Sterilizer', 'Steam Sterilizer', [['Electrical 480V', 'Disconnect', '', 'Controls'], ['LPS 10 PSI', 'Gate Valve', '', 'Temp Only - Hot'], ['Condensate Out', 'Gate Valve', '', 'Temp Only - Hot'], ['DW In', 'Ball Valve', '', 'Drain Only']]);
+    want(got.export.json === 'Steam Sterilizer' && got.export.type === 'Steam Sterilizer' && got.export.sheet === 'Steam Sterilizer' && got.export.types === 'Steam Sterilizer', 'export ' + JSON.stringify(got.export));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
     t9_removeMiscThenDiscard, t10_reattachOrphans, t11_duplicateSourceThenRetakeCopy,
@@ -18452,7 +18597,8 @@
     t484_customLocationIsAlwaysAChip, t485_chemicalLinesOfferVisual, t486_chemicalRowStartsOnVisual, t487_condenserWaterVisualChipBesideTheBoxes,
     t488_linkCarriesTheExistingTag, t489_discardAndDeleteKeepThePlace, t490_linkCopiesFollowARelinkAndASideChange,
     t491_vacuumPumpInletVent, t492_vacuumPumpInletVentReview,
-    t493_visualChipOnTheMoreOptionsLine, t494_typedPressureAndTemperature, t495_deviceInAnotherRoom];
+    t493_visualChipOnTheMoreOptionsLine, t494_typedPressureAndTemperature, t495_deviceInAnotherRoom, t496_fuelOilPumpTypeAndTemplate,
+    t497_upsTypeAndTemplate, t498_steamSterilizerTypeAndTemplate];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

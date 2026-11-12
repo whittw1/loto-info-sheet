@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 167,
+  "build": 168,
   "hospitals": [
     {
       "code": "Marion",
@@ -39,6 +39,7 @@
     "Domestic HW Pump",
     "Domestic Water Pump",
     "Feedwater Pump",
+    "Fuel Oil Pump",
     "Glycol Pump",
     "Fire Pump",
     "Fire Jockey Pump",
@@ -59,6 +60,7 @@
     "Switchgear",
     "VFD",
     "Battery Charger",
+    "UPS",
     "Day Tank",
     "DA Tank",
     "Condensate Surge Tank",
@@ -73,7 +75,8 @@
     "Refrigerator",
     "Boiler",
     "Steam PRV Station",
-    "Humidifier"
+    "Humidifier",
+    "Steam Sterilizer"
   ],
   "typeToTemplates": {
     "Air Handler": [
@@ -108,6 +111,15 @@
     ],
     "Feedwater Pump": [
       "Feedwater Pump"
+    ],
+    "Fuel Oil Pump": [
+      "Fuel Oil Pump"
+    ],
+    "UPS": [
+      "UPS"
+    ],
+    "Steam Sterilizer": [
+      "Steam Sterilizer"
     ],
     "Glycol Pump": [
       "Glycol Pump"
@@ -243,6 +255,7 @@
     "Standard Pump",
     "Fire Pump",
     "Feedwater Pump",
+    "Fuel Oil Pump",
     "Glycol Pump",
     "Chemical Pump",
     "Day Tank",
@@ -252,6 +265,7 @@
     "Water Heater - Steam",
     "Water Heater - Gas",
     "Water Heater - Electric",
+    "Steam Sterilizer",
     "Unit Heater - Steam",
     "Unit Heater - HHW",
     "Unit Heater - Natural Gas",
@@ -281,6 +295,7 @@
     "Standard Electrical",
     "Electrical with Stored Energy",
     "Switchgear",
+    "UPS",
     "Heat Exchanger - Steam",
     "DA Tank",
     "Heat Exchanger - CHW/Glycol",
@@ -300,6 +315,8 @@
     "Battery 24V DC",
     "Battery 48V DC",
     "Battery 125V DC",
+    "Battery 240V DC",
+    "Battery 480V DC",
     "LPS 10 PSI",
     "MPS 20 PSI",
     "HPS 100 PSI",

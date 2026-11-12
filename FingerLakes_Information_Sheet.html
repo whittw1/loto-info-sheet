@@ -561,7 +561,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b167</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b168</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1281,7 +1281,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 167;
+const APP_BUILD = 168;
 
 // ============================================================================
 // DATA
@@ -1289,12 +1289,12 @@ const APP_BUILD = 167;
 const DATA = {
   equipmentTypes: [
     "Air Handler","Mini Split","Condensing Unit","Exhaust Fan","Heating HW Pump",
-    "CHW Pump","Condenser Water Pump","Domestic HW Pump","Domestic Water Pump","Feedwater Pump","Glycol Pump",
+    "CHW Pump","Condenser Water Pump","Domestic HW Pump","Domestic Water Pump","Feedwater Pump","Fuel Oil Pump","Glycol Pump",
     "Fire Pump","Fire Jockey Pump","Heat Exchanger",
     "Condensate Return Unit","Condensate Pump","Unit Heater",
     "Domestic Water Heater","Air Compressor","Compressed Air Tank","Blower","Air Dryer","Vacuum Pump","Lab Vacuum","ATS",
-    "Generator","Transformer","Switchgear","VFD","Battery Charger","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Overhead Door","Dock Leveler","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
-    "Chiller","Refrigerator","Boiler","Steam PRV Station","Humidifier",
+    "Generator","Transformer","Switchgear","VFD","Battery Charger","UPS","Day Tank","DA Tank","Condensate Surge Tank","Elevator","Overhead Door","Dock Leveler","Cooling Tower","Chemical Feed Pump","Chemical Pump","Dishwasher",
+    "Chiller","Refrigerator","Boiler","Steam PRV Station","Humidifier","Steam Sterilizer",
     "** New Equipment Type **"
   ],
   energySources: [
@@ -1302,6 +1302,9 @@ const DATA = {
     // A battery is its own source (build 118, loto-web's 2026-10-09 spec): loto-web
     // prints "Battery / 24V DC" with an E ID. The exported name must be exactly this.
     "Battery 12V DC","Battery 24V DC","Battery 48V DC","Battery 125V DC",
+    // A UPS string (build 168, loto-web 2026-11-11: strings run about 240–540V DC;
+    // Marion's ~480V). loto-web prints the office UPS profile's DC voltage, not the name's.
+    "Battery 240V DC","Battery 480V DC",
     "LPS 10 PSI","MPS 20 PSI","HPS 100 PSI",
     "Condensate In/Out","Condensate In","Condensate Out",
     "HHW In/Out","HHW In","HHW Out",
@@ -1380,16 +1383,16 @@ const DATA = {
   templates: [
     "** New Template **",
     "AHU - Steam","AHU - HHW","AHU - Geothermal","AHU - Steam, CHW, HHW",
-    "Chilled Water Pump","Condenser Water Pump","Heating Hot Water Pump","Standard Pump","Fire Pump","Feedwater Pump","Glycol Pump","Chemical Pump",
+    "Chilled Water Pump","Condenser Water Pump","Heating Hot Water Pump","Standard Pump","Fire Pump","Feedwater Pump","Fuel Oil Pump","Glycol Pump","Chemical Pump",
     "Day Tank",
     "Condensate Return Unit","Condensate Return Unit - Steam",
-    "Exhaust Fan","Water Heater - Steam","Water Heater - Gas","Water Heater - Electric",
+    "Exhaust Fan","Water Heater - Steam","Water Heater - Gas","Water Heater - Electric","Steam Sterilizer",
     "Unit Heater - Steam","Unit Heater - HHW","Unit Heater - Natural Gas",
     "Air Compressor","Medical Air","Dental Air Compressor","Compressed Air Tank","Blower","Air Dryer","Vacuum Pump","Medical Vacuum","Medical Vacuum Pump","Lab Vacuum","Dental Vacuum","Condensing Unit","Mini Split",
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
     "Elevator - Traction","Elevator - Hydraulic","Overhead Door","Dock Leveler",
     "ATS - Generic","Humidifier",
-    "Standard Electrical","Electrical with Stored Energy","Switchgear","Heat Exchanger - Steam","DA Tank","Heat Exchanger - CHW/Glycol",
+    "Standard Electrical","Electrical with Stored Energy","Switchgear","UPS","Heat Exchanger - Steam","DA Tank","Heat Exchanger - CHW/Glycol",
     "Steam PRV Station","Boiler - Natural Gas - HHW","Boiler - Natural Gas - STM"
   ],
   tiedToOptions: ["Shut Down","Shut Down & LOTO"],
@@ -1461,6 +1464,8 @@ const SOURCE_DEFAULTS = {
   'Battery 24V DC':     { device: 'Bag', location: 'On Equipment', verification: 'Controls' },
   'Battery 48V DC':     { device: 'Bag', location: 'On Equipment', verification: 'Controls' },
   'Battery 125V DC':    { device: 'Bag', location: 'On Equipment', verification: 'Controls' },
+  'Battery 240V DC':    { device: 'Bag', location: 'On Equipment', verification: 'Controls' },   // build 168
+  'Battery 480V DC':    { device: 'Bag', location: 'On Equipment', verification: 'Controls' },   // build 168
   // Chemical lines (build 162, wilkins 2026-11-06, after build 161 offered it:
   // "Still didnt see the 'Flow' verification on a chemical out auto population"):
   // a new Chemical In / Out row starts on loto-web's "Visual" ("Visually confirm
@@ -3349,8 +3354,13 @@ const TEMPLATE_DEFAULT_SHOP = (() => {
       'Boiler - Natural Gas - STM', 'Overhead Door', 'Dock Leveler', 'Water Heater - Steam', 'Water Heater - Gas',
       'Water Heater - Electric'],
     // Feedwater Pump: build 159 (wilkins: "Default should be Boiler Plant"; loto-web's own template)
-    'Boiler Plant': ['Chemical Pump', 'DA Tank', 'Feedwater Pump'],
-    'Electric Shop': ['ATS - Generic', 'Standard Electrical', 'Switchgear', 'Electrical with Stored Energy', 'Day Tank'],
+    // Fuel Oil Pump: build 168 (wilkins 2026-11-11: "Standard POCs will be Boiler Plant")
+    'Boiler Plant': ['Chemical Pump', 'DA Tank', 'Feedwater Pump', 'Fuel Oil Pump'],
+    // UPS: build 168 (loto-web's UPS template prints Electric Shop)
+    'Electric Shop': ['ATS - Generic', 'Standard Electrical', 'Switchgear', 'Electrical with Stored Energy', 'Day Tank', 'UPS'],
+    // Steam Sterilizer: build 168 (wilkins, in loto-web's chat: "Clinical Engineering"; a blank
+    // shop would print the shared template's mismatched Plumbing POC + HVAC personnel)
+    'Clinical Engineering': ['Steam Sterilizer'],
     'Elevator Contractor': ['Elevator - Traction', 'Elevator - Hydraulic']
   };
   const out = {};
@@ -6460,6 +6470,16 @@ const EQUIPMENT_TEMPLATE_MAP = {
   'Domestic HW Pump': ['Standard Pump'],
   'Domestic Water Pump': ['Standard Pump'],
   'Feedwater Pump': ['Feedwater Pump'],
+  // Fuel Oil Pump (build 168, wilkins 2026-11-11: "LOTO web is building a Fuel Oil
+  // pump template. Can you add it…"): loto-web's own template, the key agreed with
+  // its "LOTO_Web_Fuel Oil Pump Template Check" chat. Until it is live a unit prints
+  // loto-web's generic template.
+  'Fuel Oil Pump': ['Fuel Oil Pump'],
+  // UPS and Steam Sterilizer (build 168, loto-web's gap check 2026-11-11, wilkins
+  // "Add 1/2"): loto-web's own keys. A UPS typed anything else made loto-web refuse
+  // to generate it until the office retyped it; a sterilizer had no type at all.
+  'UPS': ['UPS'],
+  'Steam Sterilizer': ['Steam Sterilizer'],
   'Glycol Pump': ['Glycol Pump'],
   'Day Tank': ['Day Tank'],
   // DA Tank (deaerator) — uses steam to deaerate boiler feedwater.
@@ -6618,7 +6638,7 @@ function selectKeepingValue(sel, value) {
 // Template-to-diagram mapping
 const TEMPLATE_DIAGRAM_MAP = {
   'AHU - Steam': 'ahu', 'AHU - HHW': 'ahu', 'AHU - Geothermal': 'ahu', 'AHU - Steam, CHW, HHW': 'ahu',
-  'Chilled Water Pump': 'pump', 'Condenser Water Pump': 'pump', 'Heating Hot Water Pump': 'pump', 'Standard Pump': 'pump', 'Fire Pump': 'pump', 'Feedwater Pump': 'pump', 'Glycol Pump': 'pump',
+  'Chilled Water Pump': 'pump', 'Condenser Water Pump': 'pump', 'Heating Hot Water Pump': 'pump', 'Standard Pump': 'pump', 'Fire Pump': 'pump', 'Feedwater Pump': 'pump', 'Fuel Oil Pump': 'pump', 'Glycol Pump': 'pump',
   'Day Tank': 'general',
   'Emergency Generator': 'generator',
   'Chiller': 'chiller', 'Refrigerator': 'general',
@@ -6629,7 +6649,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Condensing Unit': 'ac_unit', 'Mini Split': 'ac_unit', 'Air Compressor': 'air_compressor', 'Medical Air': 'air_compressor', 'Dental Air Compressor': 'air_compressor',
   'Boiler': 'boiler', 'Boiler - Natural Gas - HHW': 'boiler', 'Boiler - Natural Gas - STM': 'boiler', 'Air Dryer': 'general',
   'ATS - Generic': 'ats',
-  'Water Heater - Steam': 'steam_water_heater', 'Water Heater - Gas': 'electric_water_heater',
+  'Water Heater - Steam': 'steam_water_heater', 'Steam Sterilizer': 'steam_water_heater', 'Water Heater - Gas': 'electric_water_heater',
   'Water Heater - Electric': 'general',
   'Unit Heater - Steam': 'steam_water_heater', 'Unit Heater - HHW': 'heat_exchanger',
   'Unit Heater - Natural Gas': 'general',
@@ -8392,6 +8412,9 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   // standard building pump.
   'Chilled Water Pump':      ['120V', '208V', '240V', '480V'],
   'Condenser Water Pump':    ['120V', '208V', '240V', '480V'],   // build 157
+  'Fuel Oil Pump':           ['120V', '208V', '240V', '480V'],   // build 168
+  'UPS':                     ['120V', '208V', '240V', '480V'],   // build 168 (KC: 480V and one 208V)
+  'Steam Sterilizer':        ['208V', '480V'],                   // build 168 (its vacuum pump's feed)
   'Heating Hot Water Pump':  ['120V', '208V', '240V', '480V'],
   'Standard Pump':           ['120V', '208V', '240V', '480V'],
   'Fire Pump':               ['120V', '208V', '240V', '480V'],
@@ -8927,6 +8950,42 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Feedwater In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Feedwater Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Gauge/Drain - Hot', duplicate: 'No', detail: '', auto: true },
   ],
+  // Fuel Oil Pump (build 168, loto-web's spec through its "LOTO_Web_Fuel Oil Pump
+  // Template Check" chat, wilkins' answers there, 2026-11-11): the Electrical with the
+  // voltage asked and a Disconnect, then the suction and the discharge valve, each
+  // its own row: Fuel Oil In and Fuel Oil Out, Gate Valve, GaugeOnly. Location left
+  // to the tech. No Kinetic, as every pump template since build 107. The drain /
+  // Drains To and valve-state questions on fuel oil rows are as everywhere.
+  'Fuel Oil Pump': [
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Fuel Oil In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'GaugeOnly', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Fuel Oil Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'GaugeOnly', duplicate: 'No', detail: '', auto: true },
+  ],
+  // UPS (build 168, loto-web's spec, wilkins' picks in its chat 2026-11-11): the input,
+  // bypass input and output isolation breakers (the voltage asked once, for all
+  // three), and the battery string's disconnect. The Locations are hints for the
+  // office, which sets and confirms each row's role in loto-web's UPS tab (loto-web
+  // reads no role from the sheet, and refuses to generate until they are set). A
+  // single-feed UPS deletes the Bypass input row. No maintenance bypass breaker (never
+  // a lockout point) and no Stored Electrical Energy row (the template adds its own
+  // capacitor row). Battery: the tech picks the string's voltage; Meter fits (loto-web
+  // writes its own verification by role).
+  'UPS': [
+    { energySource: 'Electrical 208V', deviceType: 'Breaker', quantity: 1, location: 'UPS input', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Electrical 208V', deviceType: 'Breaker', quantity: 1, location: 'Bypass input', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Electrical 208V', deviceType: 'Breaker', quantity: 1, location: 'Output isolation', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Battery 480V DC', deviceType: 'Disconnect', quantity: 1, location: 'Battery disconnect', verification: 'Meter', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Steam Sterilizer (build 168, loto-web's spec, wilkins' picks in its chat): the vacuum
+  // pump's feed (voltage asked), the steam supply (LPS, changed by the tech), the
+  // condensate and the ejector / cooling water. loto-web prints it on the steam water
+  // heater's procedure, with its own task matrix.
+  'Steam Sterilizer': [
+    { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Drain Only', duplicate: 'No', detail: '', auto: true },
+  ],
   // Glycol Pump: standard pump shape (no Kinetic since build 107) but with the Electrical pre-set to
   // Disconnect / Controls so the user doesn't have to fill those each time.
   'Glycol Pump': [
@@ -9151,9 +9210,17 @@ function handleEquipTypeChange() {
 // loto-web's own name words for its Chemical Pump, Compressed Air Tank,
 // Blower and Electrical with Stored Energy (drive) templates; "vfd" comes
 // first ("Pump VFD" is the drive), the tank words never on medical air.
+// Words that keep a name with "UPS" in it off the UPS template (loto-web's
+// ups_procedure.names_ups, 2026-11-11): things around a UPS, and other machines.
+const UPS_NAME_NOT = /(^|[^a-z])(panels?|panelboards?|bypass|cabinets?|pdus?|rooms?|distribution|chargers?|fans?|pumps?|ahus?|air handler|chillers?|boilers?|compressors?|heaters?|elevators?|generators?|exhaust|transformers?|condensing|cooling tower|dryers?|refrigerators?|ats|transfer switch|switchgear|vfds?)([^a-z]|$)/;
 const CUSTOM_EQUIP_KEYWORD_TEMPLATE = [
   { keyword: 'vfd', template: 'Electrical with Stored Energy' },
   { keyword: 'variable frequency drive', template: 'Electrical with Stored Energy' },
+  // build 168: loto-web's own UPS rule (ups_procedure.names_ups): "ups" with no letter
+  // on either side ("UPS 18", "UPS-1", "UPS_SICU"; never "Upstairs", "Backups"), or
+  // "uninterruptible power supply" — but not a name that says it is something else
+  // around the UPS (a panel, bypass, PDU, room, charger…) or another machine.
+  { keyword: 'uninterruptible power supply', re: /(^|[^a-z])ups([^a-z]|$)|uninterruptible power supply/, unlessRe: UPS_NAME_NOT, template: 'UPS' },
   { keyword: 'fire pump', unless: 'jockey', template: 'Fire Pump' },
   { keyword: 'lab vac', template: 'Lab Vacuum' },
   { keyword: 'laboratory vacuum', template: 'Lab Vacuum' },
@@ -9174,6 +9241,14 @@ const CUSTOM_EQUIP_KEYWORD_TEMPLATE = [
   { keyword: 'feedwater pump', template: 'Feedwater Pump' },
   { keyword: 'feed water pump', template: 'Feedwater Pump' },
   { keyword: 'boiler feed pump', template: 'Feedwater Pump' },
+  // build 168: loto-web's own name words for its Fuel Oil Pump template (2026-11-11).
+  // Hyphens read as spaces here, so "Fuel-Oil Pump" is "fuel oil pump". Never a bare
+  // "oil pump" (lube oil pumps stay Standard Pump).
+  { keyword: 'fuel oil transfer pump', template: 'Fuel Oil Pump' },
+  { keyword: 'fuel oil supply pump', template: 'Fuel Oil Pump' },
+  { keyword: 'fuel oil pump', template: 'Fuel Oil Pump' },
+  { keyword: 'f.o. pump', template: 'Fuel Oil Pump' },
+  { keyword: 'fo pump', template: 'Fuel Oil Pump' },
   // build 157: loto-web's own name words for its Condenser Water Pump template.
   // Never "cw pump": loto-web reads CW as chilled water (wilkins, 2026-11-05).
   { keyword: 'condenser water pump', template: 'Condenser Water Pump' },
@@ -9181,6 +9256,10 @@ const CUSTOM_EQUIP_KEYWORD_TEMPLATE = [
   { keyword: 'cdw pump', template: 'Condenser Water Pump' },
   { keyword: 'cooling tower pump', template: 'Condenser Water Pump' },
   { keyword: 'pump', template: 'Standard Pump' },
+  // build 168: loto-web's sterilizer words (a "Sterilizer Vacuum Pump" is a pump, above)
+  { keyword: 'steam sterilizer', template: 'Steam Sterilizer' },
+  { keyword: 'sterilizer', template: 'Steam Sterilizer' },
+  { keyword: 'autoclave', template: 'Steam Sterilizer' },
 ];
 
 // A keyword counts at the START of a word (build 113): "Repair Tank" holds
@@ -9204,7 +9283,8 @@ function handleCustomEquipTypeChange() {
   // "Boiler-Feed Pump" and "Feed_Water Pump" are the keywords' "boiler feed pump"
   // and "feed water pump"; "VFD-3" still holds "vfd".
   const lower = name.toLowerCase().replace(/[\s_-]+/g, ' ');
-  const match = CUSTOM_EQUIP_KEYWORD_TEMPLATE.find(e => nameHasWord(lower, e.keyword) && !(e.unless && lower.includes(e.unless)));
+  const match = CUSTOM_EQUIP_KEYWORD_TEMPLATE.find(e => (e.re ? e.re.test(lower) : nameHasWord(lower, e.keyword))
+    && !(e.unless && lower.includes(e.unless)) && !(e.unlessRe && e.unlessRe.test(lower)));
   if (match && [...tmplSel.options].some(o => o.value === match.template)) {
     pickTemplate(match.template); // applies the template's auto-sources + diagram
     showToast(`Auto-selected ${match.template} template — change it if needed`);
@@ -10812,7 +10892,9 @@ function refreshPoweredBySelects() {
 // The label photo is a misc photo bound to the row by its sourceId
 // (misc.labelFor): moving or deleting rows can't shift it, and a row that goes
 // (or stops taking the question) leaves it as an ordinary misc photo.
-const LABEL_WAIT_SKIP = ['Chiller', 'Mini Split'];
+// UPS (build 168): loto-web's UPS procedure reads its wait and DC volts from the
+// office UPS profile, so columns 18/19 would be stored and never printed
+const LABEL_WAIT_SKIP = ['Chiller', 'Mini Split', 'UPS'];
 function sourceTakesLabelWait(src, type, template) {
   if (!src || src.linkedTo) return false;
   if (LABEL_WAIT_SKIP.includes(type) || LABEL_WAIT_SKIP.includes(template)) return false;
@@ -15462,7 +15544,8 @@ function renderMiscPhotos() {
 // words in its name. A warning only, like everything else in this list.
 const TYPES_WITH_ELECTRICAL_FEED = new Set([
   'Air Handler','Mini Split','Condensing Unit','Exhaust Fan','Cooling Tower','Chiller',
-  'Heating HW Pump','CHW Pump','Condenser Water Pump','Domestic HW Pump','Domestic Water Pump','Feedwater Pump','Glycol Pump',
+  'Heating HW Pump','CHW Pump','Condenser Water Pump','Domestic HW Pump','Domestic Water Pump','Feedwater Pump','Fuel Oil Pump','Glycol Pump',
+  'UPS','Steam Sterilizer',   // build 168
   'Fire Pump','Fire Jockey Pump','Condensate Pump','Chemical Feed Pump','Chemical Pump','Vacuum Pump','Lab Vacuum',
   'Condensate Return Unit','Unit Heater','Domestic Water Heater','Boiler','Humidifier',
   'Air Compressor','Air Dryer','ATS','Generator','Transformer','Day Tank','Elevator','Overhead Door','Dock Leveler',
