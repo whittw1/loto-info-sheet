@@ -196,6 +196,8 @@
 //   T500      build 170 (wilkins 2026-11-12): VFD - Upstream Breaker / Disconnect — a drive (label wait, Drive band) with no
 //             feeder machinery (no feeder prompt, Fed by, own-disconnect answer or column 21); a feeder left by the change is
 //             named; SW (H/O/A) + Button (Start/Stop) - VFD on the three drive devices only; columns 2 / 9 / 18 / 19 and entries.json
+//   T501      build 171 (wilkins 2026-11-13): VFD - Breaker w/Padlock — a VFD in everything (feeder, own-isolation answer, label
+//             wait, VFD's list) but its name; the question and card say "own breaker"; columns 2 / 18 / 21 and entries.json
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -11450,18 +11452,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 170 (was build 122\'s): APP_BUILD and the header label say 170, the service worker\'s cache is loto-collector-v7.165, Xcode\'s CURRENT_PROJECT_VERSION is 170 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 171 (was build 122\'s): APP_BUILD and the header label say 171, the service worker\'s cache is loto-collector-v7.166, Xcode\'s CURRENT_PROJECT_VERSION is 171 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 170 && !!label && +label[1] === 170, 'the build');
+    want(APP_BUILD === 171 && !!label && +label[1] === 171, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.165', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.166', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 170;,CURRENT_PROJECT_VERSION = 170;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 171;,CURRENT_PROJECT_VERSION = 171;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -12164,6 +12166,9 @@
     // a drive locked out upstream (build 170): loto-web's drive_isolation.upstream_drive_kind
     check('upstreamDrive', fx.upstreamDrive || [], c => ({ ok: upstreamDriveKind(c.deviceType) === c.kind, what: JSON.stringify(c.deviceType) + ' app ' + JSON.stringify(upstreamDriveKind(c.deviceType)) + ' loto-web ' + JSON.stringify(c.kind) }));
     want((fx.upstreamDrive || []).length >= 10 && ['VFD - Upstream Breaker', 'VFD - Upstream Disconnect'].every(d => (fx.upstreamDrive || []).some(c => c.deviceType === d && c.kind)), 'the fixture carries the upstream drive cases');
+    // a drive at a padlocked breaker on it (build 171): loto-web's drive_isolation.is_drive_breaker
+    check('driveBreaker', fx.driveBreaker || [], c => ({ ok: isPadlockBreakerDrive(c.deviceType) === c.isDriveBreaker, what: JSON.stringify(c.deviceType) + ' app ' + isPadlockBreakerDrive(c.deviceType) + ' loto-web ' + c.isDriveBreaker }));
+    want((fx.driveBreaker || []).some(c => c.deviceType === 'VFD - Breaker w/Padlock' && c.isDriveBreaker), 'the fixture carries the drive-breaker cases');
     check('namesTag', fx.namesTag, c => ({ ok: feederNamesTag(c.location, c.tag) === c.names, what: JSON.stringify([c.tag, c.location]) + ' loto-web ' + c.names }));
     check('unitIds', fx.unitIds, c => { const a = driveUnitTags({ deviceId: c.deviceId, quantity: c.quantity }); return { ok: JSON.stringify(a) === JSON.stringify(c.units), what: JSON.stringify([c.deviceId, c.quantity]) + ' app ' + JSON.stringify(a) + ' loto-web ' + JSON.stringify(c.units) }; });
     check('role', fx.role, c => {
@@ -18679,6 +18684,80 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T501 — a drive isolated at a padlocked breaker on it (build 171)
+  async function t501_aDriveAtAPadlockedBreaker() {
+    const N = 'T501 build 171 (wilkins 2026-11-13: "Some VFDs have breakers on them that require padlocks only instead of a disconnect"): "VFD - Breaker w/Padlock" on Electrical rows next to VFD (DATA, app-lists, never on a water row) is a VFD in everything but its name — a drive that takes its feeder (isDriveRow; the pick asks "Feeder: the panel"), the own-isolation answer, the label wait, VFD\'s verification list with the H/O/A + Start code; the question and the card call its own isolation a breaker ("own breaker"), a VFD\'s stays "own disconnect"; Save & New asks its feeder, "Drive breaker answer" and label wait; the Can\'t tell note says breaker; columns 2 / 18 / 21 and entries.json carry it';
+    const DEV = 'VFD - Breaker w/Padlock';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const lists = appListsSnapshot(APP_BUILD);
+    got.lists = [DATA.deviceTypes.includes(DEV), getFilteredDevices('Electrical 480V').includes(DEV), lists.devices.includes(DEV), !getFilteredDevices('CHW In').includes(DEV)].join('/');
+    want(got.lists === 'true/true/true/true', 'lists ' + got.lists);
+    want(JSON.stringify(getFilteredVerifications(DEV, 'Electrical 480V')) === JSON.stringify(getFilteredVerifications('VFD', 'Electrical 480V'))
+      && getFilteredVerifications(DEV, 'Electrical 480V').includes('SW (H/O/A) + Button (Start/Stop) - VFD'), 'VFD\'s verification list');
+    const row = (extra) => Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: DEV, collapsed: false }, extra || {});
+    const s0 = row();
+    got.rules = [isDriveDevice(DEV), isUpstreamDriveDevice(DEV), upstreamDriveKind(DEV) || '-', driveTakesFeeder(DEV), isDriveRow(s0),
+      sourceTakesLabelWait(s0, 'Air Handler', 'AHU - Steam'), isPadlockBreakerDrive('vfd  -  BREAKER w/padlock'), isPadlockBreakerDrive('Breaker w/Padlock')].join('/');
+    want(got.rules === 'true/false/-/true/true/true/true/false', 'rules ' + got.rules);
+    // the pick asks the feeder, as a VFD's does
+    formOfType('AHU-501', 'Air Handler', 'AHU - Steam');
+    sources = [row({ deviceType: 'Breaker', deviceId: 'VFD-4', location: 'Mech Rm' })];
+    renderSources();
+    const { log } = await withDialogs({}, async () => { handleDeviceTypeChange(0, DEV); await sleep(50); });
+    got.pick = log.filter(l => /^\[CHOICE/.test(l)).map(l => l.slice(8, l.indexOf(']'))).join('+') || 'none';
+    want(/feeder-panel/.test(got.pick), 'the pick asks its feeder ' + got.pick);
+    // the own-isolation question: "own breaker" here, "own disconnect" on a VFD
+    const titles = {};
+    for (const d of [DEV, 'VFD']) {
+      sources[0].deviceType = d;
+      const r = await withDialogs({}, async () => { await askDriveIsolates(sources[0], 0, 'VFD-4'); });
+      titles[d] = (r.log.find(l => /CHOICE drive-isolates/.test(l)) || '').replace(/^.*\] /, '');
+    }
+    got.titles = titles;
+    want(/own breaker isolate/.test(titles[DEV]) && /own disconnect isolate/.test(titles.VFD), 'the question ' + JSON.stringify(titles));
+    // the card
+    sources[0].deviceType = DEV;
+    renderSources();
+    const card = document.querySelector('#sourcesContainer > .source-card');
+    const iso = card && card.querySelector('.form-group[id^="driveIsoGroup_"]');
+    got.card = [!!(card && card.querySelector('.form-group[id^="feederGroup_"]')), iso ? /own breaker isolates/.test(iso.textContent) : 'no answer',
+      !!(card && card.querySelector('[id^="lwGroup_"]'))].join('/');
+    want(got.card === 'true/true/true', 'the card ' + got.card);
+    got.gaps = collectIncompleteFields().filter(m => /^Source #1/.test(m)).join(' | ');
+    want(/Feeder for/.test(got.gaps) && /Drive breaker answer/.test(got.gaps) && /Label discharge wait/.test(got.gaps), 'Save & New ' + JSON.stringify(got.gaps));
+    // the office's note for a Can't tell answer says breaker too; a VFD's still says disconnect
+    const noteFor = dev => { const x = Object.assign(mkSrc('Electrical 480V'), { deviceType: dev, deviceId: 'VFD-4', driveIsolates: ['cant_tell'] }); return changeLaterAutoNotes({ sources: [x] }).join(' | '); };
+    got.notes = [noteFor(DEV), noteFor('VFD')];
+    want(/its breaker isolates/.test(got.notes[0]) && /its disconnect isolates/.test(got.notes[1]), 'the Can\'t tell note ' + JSON.stringify(got.notes));
+    // export: its feeder, answer and label wait travel as a VFD's do
+    formOfType('AHU-501X', 'Air Handler', 'AHU - Steam');
+    sources = [row({ deviceId: 'VFD-4', location: 'Mech Rm', verification: 'Button (Hand/Off/Auto) - VFD', labelWait: [{ minutes: 10 }], driveIsolates: ['yes'] }),
+      Object.assign(mkSrc('Electrical 480V'), { location: 'Feeder: MCC-3 bkr 9 (VFD-4)', role: 'feeder' })];
+    renderSources();
+    want(unitDrives(sources).map(d => d.tag + ':' + d.fed).join() === 'VFD-4:true', 'fed by its feeder ' + unitDrives(sources).map(d => d.tag + ':' + d.fed).join());
+    const A = saveEntry();
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); return record(N, false, 'FAILED: ' + fails.join('; ')); }
+    const u = await unzipExport(zip.blob);
+    const je = jsonEntryFor(u.entriesJson, A);
+    const js = je ? je.sources || [] : [];
+    got.json = js[0] ? [js[0].deviceType, JSON.stringify(js[0].driveIsolates)].join('|') : null;
+    want(got.json === DEV + '|["yes"]', 'entries.json ' + got.json);
+    const xpath = Object.keys(u.files).find(p => /Information_Sheet_.*\.xlsx$/.test(p));
+    if (xpath) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      const rows = [];
+      wb.worksheets[0].eachRow(r => rows.push(r));
+      const at = rows.findIndex(r => String(r.getCell(1).value || '') === 'Energy Source #1');
+      const c = (r, k) => String((r && r.getCell(k).value) || '');
+      got.sheet = at >= 0 ? [c(rows[at + 1], 2), c(rows[at], 18) + '=' + c(rows[at + 1], 18), c(rows[at], 21) + '=' + c(rows[at + 1], 21)] : null;
+      want(got.sheet && got.sheet.join('|') === [DEV, 'Label Wait=10', 'Drive Isolates=Yes'].join('|'), 'sheet ' + JSON.stringify(got.sheet));
+    } else fails.push('no XLSX in the ZIP');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
     t9_removeMiscThenDiscard, t10_reattachOrphans, t11_duplicateSourceThenRetakeCopy,
@@ -18879,7 +18958,7 @@
     t491_vacuumPumpInletVent, t492_vacuumPumpInletVentReview,
     t493_visualChipOnTheMoreOptionsLine, t494_typedPressureAndTemperature, t495_deviceInAnotherRoom, t496_fuelOilPumpTypeAndTemplate,
     t497_upsTypeAndTemplate, t498_steamSterilizerTypeAndTemplate, t499_largeSteamBoiler,
-    t500_aDriveLockedOutUpstream];
+    t500_aDriveLockedOutUpstream, t501_aDriveAtAPadlockedBreaker];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

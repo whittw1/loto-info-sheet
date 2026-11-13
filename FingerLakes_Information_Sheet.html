@@ -561,7 +561,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b170</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b171</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1281,7 +1281,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 170;
+const APP_BUILD = 171;
 
 // ============================================================================
 // DATA
@@ -1342,7 +1342,10 @@ const DATA = {
     // disconnect upstream of it (build 170, wilkins 2026-11-12): still a drive to
     // loto-web (its DC bus, the label wait), but no feeder row — this row is the
     // upstream isolation. "VFD" stays the drive with its own disconnect.
-    "Disconnect","VFD","VFD - Upstream Breaker","VFD - Upstream Disconnect","Switch","Switch w/Padlock","Breaker","Breaker w/Padlock",
+    // "VFD - Breaker w/Padlock" (build 171, wilkins 2026-11-13): a drive whose own
+    // isolation is a breaker on the drive, locked with a padlock only — a VFD in
+    // everything (feeder, own-disconnect answer, label wait) but its lockout wording.
+    "Disconnect","VFD","VFD - Breaker w/Padlock","VFD - Upstream Breaker","VFD - Upstream Disconnect","Switch","Switch w/Padlock","Breaker","Breaker w/Padlock",
     "Gate Valve","Gate Valve w/Cable","Ball Valve","Butterfly Valve","Butterfly w/Padlock",
     "Ckt Setter - Universal Valve","Plug","Chain","Cable","Bag",
     "Potential","Capacitor","Rotating","Hydraulic","Fuse","Quick Disconnect"
@@ -1673,9 +1676,10 @@ const DEVICE_VERIFICATION_MAP = {
   'Bag':                  ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)',
                            'Button (Start/Stop) - VFD','Button (Start/Stop) - Retractable','Button (Other)'],
 };
-// A drive locked out upstream (build 170) is verified at the drive's own controls:
-// VFD's list, one list (app-lists reads only the literal above, and these add no code)
-['VFD - Upstream Breaker', 'VFD - Upstream Disconnect'].forEach(d => { DEVICE_VERIFICATION_MAP[d] = DEVICE_VERIFICATION_MAP.VFD; });
+// A drive locked out upstream (build 170) or at a padlocked breaker on it (build 171)
+// is verified at the drive's own controls: VFD's list, one list (app-lists reads only
+// the literal above, and these add no code)
+['VFD - Breaker w/Padlock', 'VFD - Upstream Breaker', 'VFD - Upstream Disconnect'].forEach(d => { DEVICE_VERIFICATION_MAP[d] = DEVICE_VERIFICATION_MAP.VFD; });
 
 // The app's vocabulary as loto-web checks it (build 109, gap review 3.4):
 // app-lists.json in the repo root holds exactly this. tools/gen-app-lists.js
@@ -2183,7 +2187,7 @@ function togglePhotoSlot(index) {
 // air, gas or chemical line (FITTING_DEVICES), which loto-web isolates by
 // disconnecting the fitting. As an electrical device it printed the "move
 // disconnect" Method. A row saved with it before keeps it.
-const ELECTRICAL_DEVICES = ['Disconnect','VFD','VFD - Upstream Breaker','VFD - Upstream Disconnect','Switch','Switch w/Padlock','Breaker','Breaker w/Padlock','Plug','Fuse'];
+const ELECTRICAL_DEVICES = ['Disconnect','VFD','VFD - Breaker w/Padlock','VFD - Upstream Breaker','VFD - Upstream Disconnect','Switch','Switch w/Padlock','Breaker','Breaker w/Padlock','Plug','Fuse'];
 const VALVE_DEVICES_WITH_CKT = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Butterfly Valve','Butterfly w/Padlock','Ckt Setter - Universal Valve','Chain','Cable'];
 const VALVE_DEVICES_NO_CKT = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Butterfly Valve','Butterfly w/Padlock','Chain','Cable'];
 // Propane: butterfly valves aren't used on propane service.
@@ -4855,6 +4859,10 @@ function upstreamDriveKind(device) {
 function isUpstreamDriveDevice(device) { return !!upstreamDriveKind(device); }
 // A drive Device that has a feeder upstream of it: every drive but those (the card's Fed by, isDriveRow)
 function driveTakesFeeder(device) { return isDriveDevice(device) && !isUpstreamDriveDevice(device); }
+// A drive whose own isolation is a breaker on it, padlocked (build 171): its own
+// isolation is called a breaker, not a disconnect, in the questions the app asks
+function isPadlockBreakerDrive(device) { return pySpaces(device).toLowerCase() === 'vfd - breaker w/padlock'; }
+function driveOwnIsolationNoun(device) { return isPadlockBreakerDrive(device) ? 'breaker' : 'disconnect'; }
 function isDriveRow(s) { return !!s && !s.linkedTo && driveTakesFeeder(s.deviceType) && /^Electrical\b/.test(String(s.energySource || '')); }
 function driveIsolatesEntries(src) { return Array.isArray(src && src.driveIsolates) ? src.driveIsolates : []; }
 // Each unit's tag: its own in an "a; b" list, else the one tag (it covers every
@@ -5280,8 +5288,9 @@ async function askDriveIsolates(src, prefer, tag) {
   const own = unitDrives(sources).find(x => x.src === src && x.k === k);
   const d = (own && tagKey(own.tag) === tagKey(t)) ? own : { tag: t, k, n: valveMarkSlots(src) };
   const v = await askChoice({ id: 'drive-isolates', defaultValue: 'cancel', drive: d.tag,
-    title: html`Does ${driveRef(d)}&rsquo;s own disconnect isolate all incoming power?`,
-    html: html`Look for a lockable handle on the drive that switches the incoming line.`,
+    title: html`Does ${driveRef(d)}&rsquo;s own ${driveOwnIsolationNoun(src.deviceType)} isolate all incoming power?`,
+    html: isPadlockBreakerDrive(src.deviceType) ? html`Look at what the drive&rsquo;s padlocked breaker switches: all of the incoming line?`
+      : html`Look for a lockable handle on the drive that switches the incoming line.`,
     choices: [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }, { value: 'cant_tell', label: 'Can’t tell' }, { value: 'cancel', label: 'Cancel' }] });
   if (!DRIVE_ISOLATES_SHEET[v] || !sources.includes(src) || !isDriveRow(src)) return null;
   setUnitEntry(src, 'driveIsolates', driveAnswerPosition(src, d.tag, prefer), v);
@@ -5350,13 +5359,13 @@ function driveIsolatesBlock(src, i) {
   const n = valveMarkSlots(src), list = driveIsolatesForJson(src);
   const drives = unitDrives([src]);   // a row's own drives: their names (a shared tag says its unit)
   return html`<div class="form-group" id="driveIsoGroup_${i}">
-    <label>Drive&rsquo;s own disconnect isolates all incoming power?${n > 1 ? raw(' <span style="font-weight:400;color:var(--text-dim);">&mdash; one per drive</span>') : ''}</label>
+    <label>Drive&rsquo;s own ${driveOwnIsolationNoun(src.deviceType)} isolates all incoming power?${n > 1 ? raw(' <span style="font-weight:400;color:var(--text-dim);">&mdash; one per drive</span>') : ''}</label>
     ${Array.from({ length: n }, (_, k) => html`<div class="scan-input-row" style="margin-bottom:6px;align-items:center;">
       ${n > 1 ? html`<span style="min-width:64px;font-size:12px;color:var(--text-dim);">${(drives[k] && driveName(drives[k])) || 'Unit ' + (k + 1)}</span>` : ''}
       <div class="seg" id="src_driveiso_${i}_${k}" data-value="${list[k] || ''}">${Object.keys(DRIVE_ISOLATES_SHEET).map(v =>
         html`<button type="button" data-v="${v}" class="${list[k] === v ? 'on' : ''}" onclick="setDriveIsolates(${i},${k},'${v}',this)">${DRIVE_ISOLATES_SHEET[v]}</button>`)}</div>
     </div>`)}
-    <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">A lockable handle on the drive that switches the incoming line. No or Can&rsquo;t tell: the feeder is locked out before the drive is opened.</div>
+    <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">${isPadlockBreakerDrive(src.deviceType) ? 'The padlocked breaker on the drive' : 'A lockable handle on the drive'} that switches the incoming line. No or Can&rsquo;t tell: the feeder is locked out before the drive is opened.</div>
   </div>`;
 }
 
@@ -5844,7 +5853,7 @@ function changeLaterAutoNotes(entryLike) {
     if (d.answer !== 'cant_tell') return;
     const i = (entryLike.sources || []).indexOf(d.src);
     const who = d.tag ? 'Drive ' + driveName(d) : 'Drive on source #' + (i + 1) + (d.n > 1 ? ' (unit ' + (d.k + 1) + ')' : '');
-    notes.push(who + ": can't tell whether its disconnect isolates all incoming power");
+    notes.push(who + ": can't tell whether its " + driveOwnIsolationNoun(d.src.deviceType) + " isolates all incoming power");   // a padlocked breaker on it: its breaker (build 171)
   });
   // Build 128: a drive with no ID whose recorded feeder loto-web can't tell is
   // its own (held). On a breaker that also feeds another drive one row can't
@@ -11126,11 +11135,12 @@ function sourceTakesLabelWait(src, type, template) {
   // loto-web's label_wait.asked, word for word (build 122 whole review, the
   // contract test): a stored-electric or capacitor source; or an electric one —
   // its name says "electric" or a voltage — whose Device is "VFD", any case, or
-  // a drive locked out upstream (build 170: its DC bus holds the same charge)
+  // a drive locked out upstream (build 170: its DC bus holds the same charge), or
+  // one at a padlocked breaker on it (build 171)
   const es = String(src.energySource || '').toLowerCase().replace(/\s+/g, ' ').trim();
   const dev = String(src.deviceType || '').toLowerCase().replace(/\s+/g, ' ').trim();
   if (es.includes('stored electric') || es.includes('capacitor')) return true;
-  return (es.includes('electric') || /\d\s*v\b/.test(es)) && (dev === 'vfd' || isUpstreamDriveDevice(dev));
+  return (es.includes('electric') || /\d\s*v\b/.test(es)) && (dev === 'vfd' || isPadlockBreakerDrive(dev) || isUpstreamDriveDevice(dev));
 }
 function formTakesLabelWait(src) { return sourceTakesLabelWait(src, getEquipType(), getTemplate()); }
 function labelWaitEntries(src) { return Array.isArray(src && src.labelWait) ? src.labelWait : []; }
@@ -15934,7 +15944,7 @@ function collectIncompleteFields(opts) {
       const unfed = mine.filter(d => !d.fed).map(d => driveName(d) || (d.n > 1 ? 'Unit ' + (d.k + 1) : 'the drive'));
       if (unfed.length) gaps.push('Feeder for ' + unfed.join(', '));
       const open = mine.filter(d => !d.answer).map(d => d.n < 2 ? '' : 'Unit ' + (d.k + 1));
-      if (open.length) gaps.push('Drive disconnect answer' + (open[0] ? ' (' + open.join(', ') + ')' : ''));
+      if (open.length) gaps.push('Drive ' + driveOwnIsolationNoun(s.deviceType) + ' answer' + (open[0] ? ' (' + open.join(', ') + ')' : ''));   // "breaker" on a padlocked breaker (build 171)
     }
     // build 102: its photo slot is shown but empty (a duplicate, a linked source
     // and a kind that needs no photo are never flagged — sourceExpectsPhoto)
@@ -16053,10 +16063,11 @@ async function askBeforeSave() {
     const d = unitDrives(sources).find(x => x.src === t.src && x.k === t.k);
     if (!d || ((d.fed || d.held) && d.answer)) continue;
     const noFeeder = !d.fed && !d.held;
+    const own = driveOwnIsolationNoun(d.src.deviceType);   // a padlocked breaker on the drive is its breaker (build 171)
     const v = await askChoice({ id: 'drive-save', defaultValue: 'later', drive: d.tag,
-      title: html`${driveRef(d, true)} ${noFeeder ? 'has no feeder recorded' : 'has no answer about its disconnect'}`,
-      html: noFeeder ? html`Record the breaker that feeds it, then whether its own disconnect isolates all incoming power.`
-                   : html`Does its own disconnect isolate all incoming power? Look for a lockable handle on the drive that switches the incoming line.`,
+      title: html`${driveRef(d, true)} ${noFeeder ? 'has no feeder recorded' : 'has no answer about its ' + own}`,
+      html: noFeeder ? html`Record the breaker that feeds it, then whether its own ${own} isolates all incoming power.`
+                   : html`Does its own ${own} isolate all incoming power? ${isPadlockBreakerDrive(d.src.deviceType) ? 'Look at what the drive’s padlocked breaker switches.' : 'Look for a lockable handle on the drive that switches the incoming line.'}`,
       choices: [{ value: 'record', label: 'Record it now', primary: true }, { value: 'later', label: 'Not now' }] });
     if (v === 'record') await recordDrive(d);   // a Cancel inside goes on with the save
     else if (v !== 'later') return false;

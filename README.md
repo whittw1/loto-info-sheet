@@ -71,7 +71,7 @@ Collapsible section that auto-expands when a template's diagram is available or 
 
 | Energy Source Category | Available Devices |
 |---|---|
-| Electrical | Disconnect, VFD, VFD - Upstream Breaker, VFD - Upstream Disconnect (a drive with no disconnect of its own, locked out upstream: no feeder, build 170), Switch, Breaker, Plug, Fuse, Quick Disconnect (+ padlock variants) |
+| Electrical | Disconnect, VFD, VFD - Breaker w/Padlock (a drive whose own isolation is a padlocked breaker on it: a VFD in all but its name, build 171), VFD - Upstream Breaker, VFD - Upstream Disconnect (a drive with no disconnect of its own, locked out upstream: no feeder, build 170), Switch, Breaker, Plug, Fuse, Quick Disconnect (+ padlock variants) |
 | Steam / Water (HHW, CHW, Condensate, DW, Feedwater, Glycol, Energy Recovery Water, etc.) | Gate Valve, Ball Valve, Butterfly Valve, Ckt Setter, Chain (+ cable/padlock variants) |
 | Pneumatic / Gas / Fuel / Refrigerant / Chemical / Thermal | Gate Valve, Ball Valve, Butterfly Valve, Chain (no Ckt Setter) |
 | Kinetic | Rotating |
@@ -85,7 +85,7 @@ Collapsible section that auto-expands when a template's diagram is available or 
 |---|---|
 | Breaker | Meter, Controls, SW (On/Off), SW (Hand/Off/Auto), Button (Start/Stop), Button (Other) |
 | Disconnect | Controls, Meter, SW (On/Off), SW (Hand/Off/Auto), SW (H/O/A), SW (Other), Button (Start/Stop), Button (Other) |
-| VFD | Controls, Meter, SW (Hand/Off/Auto), SW (H/O/A), SW (Drive/Off/Bypass), SW (VFD/Off/Bypass), SW (Drive/Off/Bypass) + Button (H/O/A) - VFD (a bypass drive verified at its selector and its keypad, build 147), SW (H/O/A) + Button (Start/Stop) - VFD (a drive's selector and Start button, build 170; the two VFD - Upstream devices take this same list), SW (Other), Button (Start/Stop) - VFD, Button (Hand/Off/Auto) - VFD, Button (Other) |
+| VFD | Controls, Meter, SW (Hand/Off/Auto), SW (H/O/A), SW (Drive/Off/Bypass), SW (VFD/Off/Bypass), SW (Drive/Off/Bypass) + Button (H/O/A) - VFD (a bypass drive verified at its selector and its keypad, build 147), SW (H/O/A) + Button (Start/Stop) - VFD (a drive's selector and Start button, build 170; the two VFD - Upstream devices and, since build 171, VFD - Breaker w/Padlock take this same list), SW (Other), Button (Start/Stop) - VFD, Button (Hand/Off/Auto) - VFD, Button (Other) |
 | Switch | Controls, Meter, SW (On/Off), SW (Hand/Off/Auto), Button (Start/Stop), Button (Other) |
 | Plug | Controls |
 | All Valves + Ckt Setter + Chain | Gauge/Drain, GaugeOnly, Drain Only (with Hot/CHW variants from energy source) + Temp Only - Hot for hot sources |

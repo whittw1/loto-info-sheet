@@ -1,4 +1,5 @@
 {
+ "_provisional": "build 171: written plainly from loto-web's LOCAL tree (drive_isolation.is_drive_breaker and label_wait.asked built 2026-11-13, NOT deployed) - regenerate from live after loto-web's deploy",
  "_about": "Written by tests/contract/make_lotoweb_rules.py from loto-web's own functions; asserted by the app's T290.",
  "lotoWeb": "/Users/whittw/Desktop/Claude Apps/loto-web",
  "feeder": [
@@ -179,6 +180,10 @@
   {
    "deviceType": "VFD - Upstream Disconnect",
    "isDrive": true
+  },
+  {
+   "deviceType": "VFD - Breaker w/Padlock",
+   "isDrive": true
   }
  ],
  "dcBus": [
@@ -275,6 +280,56 @@
   {
    "deviceType": "",
    "kind": ""
+  },
+  {
+   "deviceType": "VFD - Breaker w/Padlock",
+   "kind": ""
+  }
+ ],
+ "driveBreaker": [
+  {
+   "deviceType": "VFD - Breaker w/Padlock",
+   "isDriveBreaker": true
+  },
+  {
+   "deviceType": "vfd - breaker w/padlock",
+   "isDriveBreaker": true
+  },
+  {
+   "deviceType": "VFD  -  Breaker   w/Padlock",
+   "isDriveBreaker": true
+  },
+  {
+   "deviceType": " VFD - Breaker w/Padlock ",
+   "isDriveBreaker": true
+  },
+  {
+   "deviceType": "VFD",
+   "isDriveBreaker": false
+  },
+  {
+   "deviceType": "Breaker w/Padlock",
+   "isDriveBreaker": false
+  },
+  {
+   "deviceType": "VFD - Upstream Breaker",
+   "isDriveBreaker": false
+  },
+  {
+   "deviceType": "VFD - Breaker",
+   "isDriveBreaker": false
+  },
+  {
+   "deviceType": "VFD Breaker w/Padlock",
+   "isDriveBreaker": false
+  },
+  {
+   "deviceType": "Breaker",
+   "isDriveBreaker": false
+  },
+  {
+   "deviceType": "",
+   "isDriveBreaker": false
   }
  ],
  "namesTag": [
@@ -875,6 +930,53 @@
      "row": 1,
      "unit": 0,
      "tag": "VFD-1",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "a padlocked-breaker drive with its feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD - Breaker w/Padlock",
+     "deviceId": "VFD-4",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-3 bkr 9 (VFD-4)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-4",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a padlocked-breaker drive, no feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD - Breaker w/Padlock",
+     "deviceId": "VFD-4",
+     "quantity": 1,
+     "location": ""
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-4",
      "identified": false
     }
    ]
@@ -2291,6 +2393,30 @@
   {
    "energySource": "Kinetic",
    "deviceType": "VFD - Upstream Breaker",
+   "linked": false,
+   "asked": false
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "VFD - Breaker w/Padlock",
+   "linked": false,
+   "asked": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "vfd  -  breaker w/padlock",
+   "linked": false,
+   "asked": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "VFD - Breaker w/Padlock",
+   "linked": true,
+   "asked": false
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker w/Padlock",
    "linked": false,
    "asked": false
   }

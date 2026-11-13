@@ -67,13 +67,22 @@ FEEDER_ROWS = [
 DRIVE_DEVICES = ["VFD", "vfd", "VFD Bypass", "VFD/Bypass", "Variable Frequency Drive", "Drive", "Breaker",
                  "Disconnect", "Soft Starter", "",
                  # a drive locked out upstream (field app build 170): still a drive
-                 "VFD - Upstream Breaker", "VFD - Upstream Disconnect"]
+                 "VFD - Upstream Breaker", "VFD - Upstream Disconnect",
+                 # a drive at a padlocked breaker on it (field app build 171)
+                 "VFD - Breaker w/Padlock"]
 
 # Field app build 170: the drive Devices that are their own upstream isolation (no
 # feeder, no Drive Isolates answer) — loto-web's drive_isolation.upstream_drive_kind.
 UPSTREAM_DEVICES = ["VFD - Upstream Breaker", "VFD - Upstream Disconnect", "vfd - upstream breaker",
                     "VFD  -  Upstream   Disconnect", " VFD - Upstream Breaker ", "VFD", "Breaker", "Disconnect",
-                    "VFD Bypass", "VFD - Upstream", "Upstream Breaker", "VFD - Upstream Breaker w/Padlock", ""]
+                    "VFD Bypass", "VFD - Upstream", "Upstream Breaker", "VFD - Upstream Breaker w/Padlock", "",
+                    "VFD - Breaker w/Padlock"]   # build 171: a drive at its own breaker, not upstream
+
+# Field app build 171: the drive whose own isolation is a padlocked breaker on it —
+# loto-web's drive_isolation.is_drive_breaker (the exact name, any case, runs of spaces as one)
+DRIVE_BREAKER_DEVICES = ["VFD - Breaker w/Padlock", "vfd - breaker w/padlock", "VFD  -  Breaker   w/Padlock",
+                         " VFD - Breaker w/Padlock ", "VFD", "Breaker w/Padlock", "VFD - Upstream Breaker",
+                         "VFD - Breaker", "VFD Breaker w/Padlock", "Breaker", ""]
 
 DC_BUS_ROWS = [
     row(es="Stored Electrical Energy", dev="Capacitor", loc="VFD DC Bus"),
@@ -122,7 +131,10 @@ LABEL_ASKED = [("Electrical 480V", "VFD", False), ("Electrical 480V", "vfd", Fal
                # field app build 170: a drive locked out upstream takes the wait too
                ("Electrical 480V", "VFD - Upstream Breaker", False), ("Electrical 208V", "VFD - Upstream Disconnect", False),
                ("Electrical 480V", "vfd - upstream breaker", False), ("Electrical 480V", "VFD - Upstream Breaker", True),
-               ("Kinetic", "VFD - Upstream Breaker", False)]
+               ("Kinetic", "VFD - Upstream Breaker", False),
+               # field app build 171: a drive at a padlocked breaker on it
+               ("Electrical 480V", "VFD - Breaker w/Padlock", False), ("Electrical 480V", "vfd  -  breaker w/padlock", False),
+               ("Electrical 480V", "VFD - Breaker w/Padlock", True), ("Electrical 480V", "Breaker w/Padlock", False)]
 WAIT_CELLS = [  # (app's stored labelWait, quantity, the text the app writes)
     ([{"minutes": 20}, {"noLabel": True}], 2, "20; No label"),
     ([{"minutes": 15}], 1, "15"),
@@ -283,6 +295,10 @@ UNITS = {
     "an upstream drive beside a fed VFD": [row(dev="VFD - Upstream Breaker", did="26"), row(dev="VFD", did="VFD-1"),
                                            row(loc="Feeder: MCC-2A bkr 14 (VFD-1)")],
     "an upstream drive beside an unfed VFD": [row(dev="VFD - Upstream Breaker", did="26"), row(dev="VFD", did="VFD-1")],
+    # field app build 171: a drive at a padlocked breaker on it needs its feeder, as a VFD does
+    "a padlocked-breaker drive with its feeder": [row(dev="VFD - Breaker w/Padlock", did="VFD-4"),
+                                                  row(loc="Feeder: MCC-3 bkr 9 (VFD-4)")],
+    "a padlocked-breaker drive, no feeder": [row(dev="VFD - Breaker w/Padlock", did="VFD-4")],
     "an upstream drive beside a no-ID VFD and an unnamed feeder": [row(dev="VFD - Upstream Disconnect"), row(dev="VFD"),
                                                                    row(loc="Feeder: MCC bkr 3")],
     "a drive Located Feeder end": [row(dev="VFD", did="VFD-3", loc="Feeder end of AHU-3"), row(loc="Feeder: MCC-4 bkr 2 (VFD-3)")],
@@ -393,6 +409,7 @@ def main():
         "drive": [{"deviceType": d, "isDrive": bool(PG._is_vfd_device(NS(device=d)))} for d in DRIVE_DEVICES],
         "dcBus": [dict(r, isDcBus=bool(PG._is_vfd_dc_bus(sd(r)))) for r in DC_BUS_ROWS],
         "upstreamDrive": [{"deviceType": d, "kind": di.upstream_drive_kind(d) or ""} for d in UPSTREAM_DEVICES],
+        "driveBreaker": [{"deviceType": d, "isDriveBreaker": bool(di.is_drive_breaker(d))} for d in DRIVE_BREAKER_DEVICES],
         "namesTag": [{"tag": t, "location": l, "names": bool(di.names_tag(t, l))} for t, l in NAMES_TAG],
         "unitIds": [{"deviceId": d, "quantity": q, "units": [u or "" for u in unit_ids(d, q)]} for d, q in UNIT_IDS],
         "role": [{"location": l, "role": ts.role_of_location(l)[0] or "", "kind": ts.role_of_location(l)[1] or ""} for l in ROLES],
