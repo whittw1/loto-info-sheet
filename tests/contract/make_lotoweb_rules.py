@@ -65,7 +65,15 @@ FEEDER_ROWS = [
 ]
 
 DRIVE_DEVICES = ["VFD", "vfd", "VFD Bypass", "VFD/Bypass", "Variable Frequency Drive", "Drive", "Breaker",
-                 "Disconnect", "Soft Starter", ""]
+                 "Disconnect", "Soft Starter", "",
+                 # a drive locked out upstream (field app build 170): still a drive
+                 "VFD - Upstream Breaker", "VFD - Upstream Disconnect"]
+
+# Field app build 170: the drive Devices that are their own upstream isolation (no
+# feeder, no Drive Isolates answer) — loto-web's drive_isolation.upstream_drive_kind.
+UPSTREAM_DEVICES = ["VFD - Upstream Breaker", "VFD - Upstream Disconnect", "vfd - upstream breaker",
+                    "VFD  -  Upstream   Disconnect", " VFD - Upstream Breaker ", "VFD", "Breaker", "Disconnect",
+                    "VFD Bypass", "VFD - Upstream", "Upstream Breaker", "VFD - Upstream Breaker w/Padlock", ""]
 
 DC_BUS_ROWS = [
     row(es="Stored Electrical Energy", dev="Capacitor", loc="VFD DC Bus"),
@@ -110,7 +118,11 @@ ROLES = ["Secondary Main: MDP-2 bkr 1", "secondary main : MDP-2", "Secondary Mai
 LABEL_ASKED = [("Electrical 480V", "VFD", False), ("Electrical 480V", "vfd", False), ("Electrical 480V", "VFD Bypass", False),
                ("Electrical 480V", "Breaker", False), ("Stored Electrical Energy", "Capacitor", False),
                ("Stored Electrical Energy", "", False), ("Electrical 480V", "VFD", True), ("Battery 24V DC", "VFD", False),
-               ("Kinetic", "VFD", False)]
+               ("Kinetic", "VFD", False),
+               # field app build 170: a drive locked out upstream takes the wait too
+               ("Electrical 480V", "VFD - Upstream Breaker", False), ("Electrical 208V", "VFD - Upstream Disconnect", False),
+               ("Electrical 480V", "vfd - upstream breaker", False), ("Electrical 480V", "VFD - Upstream Breaker", True),
+               ("Kinetic", "VFD - Upstream Breaker", False)]
 WAIT_CELLS = [  # (app's stored labelWait, quantity, the text the app writes)
     ([{"minutes": 20}, {"noLabel": True}], 2, "20; No label"),
     ([{"minutes": 15}], 1, "15"),
@@ -265,6 +277,14 @@ UNITS = {
                                 row(loc="Feeder: MCC-2A bkr 14 (VFD-1)"), row(dev="Feeder Breaker", loc="MCC-2A bkr 15 (VFD-2)")],
     "a custom drive device": [row(dev="VFD Bypass", did="VFD-3"), row(loc="Feeder: MCC-4 bkr 2 (VFD-3)")],
     "a custom drive device, no feeder": [row(dev="VFD Bypass", did="VFD-3")],
+    # field app build 170: a drive locked out at its upstream breaker / disconnect is its own feeder
+    "a drive locked out upstream, alone": [row(dev="VFD - Upstream Breaker", did="26")],
+    "a drive locked out upstream, Qty 2": [row(dev="VFD - Upstream Disconnect", did="DS-1; DS-2", qty=2)],
+    "an upstream drive beside a fed VFD": [row(dev="VFD - Upstream Breaker", did="26"), row(dev="VFD", did="VFD-1"),
+                                           row(loc="Feeder: MCC-2A bkr 14 (VFD-1)")],
+    "an upstream drive beside an unfed VFD": [row(dev="VFD - Upstream Breaker", did="26"), row(dev="VFD", did="VFD-1")],
+    "an upstream drive beside a no-ID VFD and an unnamed feeder": [row(dev="VFD - Upstream Disconnect"), row(dev="VFD"),
+                                                                   row(loc="Feeder: MCC bkr 3")],
     "a drive Located Feeder end": [row(dev="VFD", did="VFD-3", loc="Feeder end of AHU-3"), row(loc="Feeder: MCC-4 bkr 2 (VFD-3)")],
     "a half-recorded Qty-2 row": [row(dev="VFD", did="VFD-9"), row(loc="Feeder: MCC-1 bkr 1 (VFD-9)"),
                                   row(dev="VFD", did="VFD-1;", qty=2), row(loc="Feeder: MCC-2A bkr 14 (VFD-1)")],
@@ -314,14 +334,16 @@ def unit_answers(rows):
     drive kept only when the unit is Tier 1 (feeders_cover_drives)."""
     sds = [sd(r) for r in rows]
     feeders = [("E-%d" % (i + 1), r["location"]) for i, (r, s) in enumerate(zip(rows, sds)) if PG._is_drive_feeder(s)]
+    def needs_feeder(r, s):   # loto-web's own rule: a drive, not one locked out upstream (field app build 170)
+        return di.needs_feeder(r["deviceType"])
     unit_tags = []
     for r, s in zip(rows, sds):
-        if PG._is_vfd_device(s):
+        if needs_feeder(r, s):
             unit_tags += [t or "" for t in unit_ids(r["deviceId"], r["quantity"])]
     tier1 = di.feeders_cover_drives([loc for _fid, loc in feeders], unit_tags)
     out = []
     for i, (r, s) in enumerate(zip(rows, sds)):
-        if not PG._is_vfd_device(s):
+        if not needs_feeder(r, s):
             continue
         for k, t in enumerate(unit_ids(r["deviceId"], r["quantity"])):
             ids = di.feeders_for(t or "", feeders, unit_tags)
@@ -370,6 +392,7 @@ def main():
         "feeder": [dict(r, isFeeder=bool(PG._is_drive_feeder(sd(r)))) for r in FEEDER_ROWS],
         "drive": [{"deviceType": d, "isDrive": bool(PG._is_vfd_device(NS(device=d)))} for d in DRIVE_DEVICES],
         "dcBus": [dict(r, isDcBus=bool(PG._is_vfd_dc_bus(sd(r)))) for r in DC_BUS_ROWS],
+        "upstreamDrive": [{"deviceType": d, "kind": di.upstream_drive_kind(d) or ""} for d in UPSTREAM_DEVICES],
         "namesTag": [{"tag": t, "location": l, "names": bool(di.names_tag(t, l))} for t, l in NAMES_TAG],
         "unitIds": [{"deviceId": d, "quantity": q, "units": [u or "" for u in unit_ids(d, q)]} for d, q in UNIT_IDS],
         "role": [{"location": l, "role": ts.role_of_location(l)[0] or "", "kind": ts.role_of_location(l)[1] or ""} for l in ROLES],

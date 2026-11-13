@@ -561,7 +561,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b169</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b170</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1281,7 +1281,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 169;
+const APP_BUILD = 170;
 
 // ============================================================================
 // DATA
@@ -1338,7 +1338,11 @@ const DATA = {
     "Damper Actuator"
   ],
   deviceTypes: [
-    "Disconnect","VFD","Switch","Switch w/Padlock","Breaker","Breaker w/Padlock",
+    // A drive with no disconnect of its own, locked out at the breaker or
+    // disconnect upstream of it (build 170, wilkins 2026-11-12): still a drive to
+    // loto-web (its DC bus, the label wait), but no feeder row — this row is the
+    // upstream isolation. "VFD" stays the drive with its own disconnect.
+    "Disconnect","VFD","VFD - Upstream Breaker","VFD - Upstream Disconnect","Switch","Switch w/Padlock","Breaker","Breaker w/Padlock",
     "Gate Valve","Gate Valve w/Cable","Ball Valve","Butterfly Valve","Butterfly w/Padlock",
     "Ckt Setter - Universal Valve","Plug","Chain","Cable","Bag",
     "Potential","Capacitor","Rotating","Hydraulic","Fuse","Quick Disconnect"
@@ -1374,6 +1378,10 @@ const DATA = {
     // a Drive/Off/Bypass selector). loto-web words it: Bypass, Hand, Off in
     // Section 3; Off first, then Drive and Auto in Section 4.
     "SW (Drive/Off/Bypass) + Button (H/O/A) - VFD",
+    // A drive's Hand/Off/Auto selector and its Start push-button (build 170,
+    // wilkins 2026-11-12; drive rows only). loto-web words it as build 147's:
+    // Hand, push Start, back to Off in Section 3; the switch to Auto in Section 4.
+    "SW (H/O/A) + Button (Start/Stop) - VFD",
     "Screen","Button (Start/Stop)","Button (Start/Stop) - VFD","Button (Hand/Off/Auto) - VFD",
     "Button (FWD/STOP) - VFD","Button (Start/Stop) - Retractable","Button (Other)",
     "Controls","Meter","Rotating","Block"
@@ -1644,7 +1652,7 @@ const DEVICE_VERIFICATION_MAP = {
   'Disconnect':           ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','SW (H/O/A)','SW (Other)','Button (Start/Stop)','Button (Other)'],
   // A fitting on an air, gas or chemical line since build 118: the line's own checks, as for its valves
   'Quick Disconnect':     ['_temponly','_gauge','_gaugeonly','_drain'],
-  'VFD':                  ['Controls','Meter','SW (Hand/Off/Auto)','SW (H/O/A)','SW (Drive/Off/Bypass)','SW (VFD/Off/Bypass)','SW (Drive/Off/Bypass) + Button (H/O/A) - VFD','SW (Other)','Button (Start/Stop) - VFD','Button (Hand/Off/Auto) - VFD','Button (Other)'],
+  'VFD':                  ['Controls','Meter','SW (Hand/Off/Auto)','SW (H/O/A)','SW (Drive/Off/Bypass)','SW (VFD/Off/Bypass)','SW (Drive/Off/Bypass) + Button (H/O/A) - VFD','SW (H/O/A) + Button (Start/Stop) - VFD','SW (Other)','Button (Start/Stop) - VFD','Button (Hand/Off/Auto) - VFD','Button (Other)'],
   'Switch':               ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
   'Switch w/Padlock':     ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)','Button (Start/Stop)','Button (Other)'],
   'Plug':                 ['Controls','SW (On/Off)','Button (Other)'],
@@ -1665,6 +1673,9 @@ const DEVICE_VERIFICATION_MAP = {
   'Bag':                  ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)',
                            'Button (Start/Stop) - VFD','Button (Start/Stop) - Retractable','Button (Other)'],
 };
+// A drive locked out upstream (build 170) is verified at the drive's own controls:
+// VFD's list, one list (app-lists reads only the literal above, and these add no code)
+['VFD - Upstream Breaker', 'VFD - Upstream Disconnect'].forEach(d => { DEVICE_VERIFICATION_MAP[d] = DEVICE_VERIFICATION_MAP.VFD; });
 
 // The app's vocabulary as loto-web checks it (build 109, gap review 3.4):
 // app-lists.json in the repo root holds exactly this. tools/gen-app-lists.js
@@ -2172,7 +2183,7 @@ function togglePhotoSlot(index) {
 // air, gas or chemical line (FITTING_DEVICES), which loto-web isolates by
 // disconnecting the fitting. As an electrical device it printed the "move
 // disconnect" Method. A row saved with it before keeps it.
-const ELECTRICAL_DEVICES = ['Disconnect','VFD','Switch','Switch w/Padlock','Breaker','Breaker w/Padlock','Plug','Fuse'];
+const ELECTRICAL_DEVICES = ['Disconnect','VFD','VFD - Upstream Breaker','VFD - Upstream Disconnect','Switch','Switch w/Padlock','Breaker','Breaker w/Padlock','Plug','Fuse'];
 const VALVE_DEVICES_WITH_CKT = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Butterfly Valve','Butterfly w/Padlock','Ckt Setter - Universal Valve','Chain','Cable'];
 const VALVE_DEVICES_NO_CKT = ['Gate Valve','Gate Valve w/Cable','Ball Valve','Butterfly Valve','Butterfly w/Padlock','Chain','Cable'];
 // Propane: butterfly valves aren't used on propane service.
@@ -4830,7 +4841,21 @@ const DRIVE_ISOLATES_SHEET = { yes: 'Yes', no: 'No', cant_tell: "Can't tell" };
 // "VFD" or "variable frequency", so a custom "VFD Bypass" too (build 122 whole
 // review) — on an Electrical row, not linked.
 function isDriveDevice(device) { return /vfd|variable frequency/i.test(String(device || '')); }
-function isDriveRow(s) { return !!s && !s.linkedTo && isDriveDevice(s.deviceType) && /^Electrical\b/.test(String(s.energySource || '')); }
+// A drive locked out at the breaker or disconnect upstream of it (build 170,
+// wilkins 2026-11-12): 'breaker' / 'disconnect' for the two Device names, any
+// case, runs of spaces as one — else ''. Still a drive (isDriveDevice: loto-web
+// adds its DC bus, the label wait is asked), but the row IS the upstream
+// isolation, so it has no feeder and no "own disconnect" answer: isDriveRow,
+// which carries the feeder machinery, leaves it out.
+const UPSTREAM_DRIVE_DEVICES = { 'vfd - upstream breaker': 'breaker', 'vfd - upstream disconnect': 'disconnect' };
+function upstreamDriveKind(device) {
+  const k = pySpaces(device).toLowerCase();
+  return Object.prototype.hasOwnProperty.call(UPSTREAM_DRIVE_DEVICES, k) ? UPSTREAM_DRIVE_DEVICES[k] : '';
+}
+function isUpstreamDriveDevice(device) { return !!upstreamDriveKind(device); }
+// A drive Device that has a feeder upstream of it: every drive but those (the card's Fed by, isDriveRow)
+function driveTakesFeeder(device) { return isDriveDevice(device) && !isUpstreamDriveDevice(device); }
+function isDriveRow(s) { return !!s && !s.linkedTo && driveTakesFeeder(s.deviceType) && /^Electrical\b/.test(String(s.energySource || '')); }
 function driveIsolatesEntries(src) { return Array.isArray(src && src.driveIsolates) ? src.driveIsolates : []; }
 // Each unit's tag: its own in an "a; b" list, else the one tag (it covers every
 // unit) — loto-web's unit_ids, which also keeps a Quantity-1 row's Device ID
@@ -5493,7 +5518,7 @@ function driveCardLabel(d) {
 // The drive card's "Fed by": each unit's feeder rows by number, with Go to; the
 // add button stays (for a unit with none, else for another breaker).
 function feederGroupBlock(src, i) {
-  if (!isDriveDevice(src.deviceType)) return html`<div id="feederGroup_${i}" style="display:none;"></div>`;
+  if (!driveTakesFeeder(src.deviceType)) return html`<div id="feederGroup_${i}" style="display:none;"></div>`;   // build 170: an upstream one is its own
   const drives = unitDrives(sources).filter(d => d.src === src);
   const n = drives.length;
   const unitName = d => n > 1 ? (driveName(d) || 'Unit ' + (d.k + 1)) + ': ' : '';
@@ -5594,7 +5619,8 @@ function syncKindSections(card) {
     s.style.display = s.querySelector('.form-group') ? '' : 'none';
     const title = s.querySelector('.src-sec-title');
     if (!title) return;
-    if (s.dataset.kind === 'drive') title.textContent = s.querySelector('.form-group[id^="feederGroup_"]') ? 'Drive' : 'Stored energy';
+    // a drive locked out upstream has no feeder group, only its label wait (build 170)
+    if (s.dataset.kind === 'drive') title.textContent = s.querySelector('.form-group[id^="feederGroup_"], .form-group[data-drive="1"]') ? 'Drive' : 'Stored energy';
     if (s.dataset.kind === 'valve') title.textContent = s.querySelector('.form-group[id^="valveStateGroup_"], .form-group[id^="lockOpenGroup_"]') ? 'Valve' : 'Release point';
   });
 }
@@ -10159,7 +10185,7 @@ function buildSourceCard(src, i) {
               ${src._customDevice ? html`<div class="form-group" id="customDeviceGroup_${i}">
                 <label>Custom Device Type</label>
                 <input type="text" id="src_device_custom_${i}" value="${src.deviceType||''}" placeholder="Enter custom device type"
-                  oninput="updateSourceCustomField(${i},'deviceType',this.value)" onchange="refreshSourceDependents(${i})">
+                  oninput="updateSourceCustomField(${i},'deviceType',this.value)" onchange="refreshSourceDependents(${i});offerUpstreamFeederRemoval(sources[${i}])">
               </div>` : html`<div id="customDeviceGroup_${i}" style="display:none;"></div>`}
               <div class="form-group">
                 <label>Quantity</label>
@@ -11099,11 +11125,12 @@ function sourceTakesLabelWait(src, type, template) {
   if (LABEL_WAIT_SKIP.includes(type) || LABEL_WAIT_SKIP.includes(template)) return false;
   // loto-web's label_wait.asked, word for word (build 122 whole review, the
   // contract test): a stored-electric or capacitor source; or an electric one —
-  // its name says "electric" or a voltage — whose Device is "VFD", any case
+  // its name says "electric" or a voltage — whose Device is "VFD", any case, or
+  // a drive locked out upstream (build 170: its DC bus holds the same charge)
   const es = String(src.energySource || '').toLowerCase().replace(/\s+/g, ' ').trim();
   const dev = String(src.deviceType || '').toLowerCase().replace(/\s+/g, ' ').trim();
   if (es.includes('stored electric') || es.includes('capacitor')) return true;
-  return (es.includes('electric') || /\d\s*v\b/.test(es)) && dev === 'vfd';
+  return (es.includes('electric') || /\d\s*v\b/.test(es)) && (dev === 'vfd' || isUpstreamDriveDevice(dev));
 }
 function formTakesLabelWait(src) { return sourceTakesLabelWait(src, getEquipType(), getTemplate()); }
 function labelWaitEntries(src) { return Array.isArray(src && src.labelWait) ? src.labelWait : []; }
@@ -11208,7 +11235,7 @@ function labelWaitBlock(src, i) {
       ${photo ? html`<img src="${photo.thumbnail}" onclick="showMiscPhotoViewer(${pi})" title="The label photo" style="width:44px;border-radius:6px;border:2px solid #333;cursor:pointer;">` : ''}
       <button type="button" class="btn btn-sm" id="src_lwphoto_${i}" onclick="addLabelPhoto(${i})" style="padding:8px 12px;font-size:13px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">&#128247; ${photo ? 'Retake the label photo' : 'Photograph the label'}</button>
     </span>`;
-  return html`<div class="form-group" id="lwGroup_${i}" style="grid-column:1 / -1;">
+  return html`<div class="form-group" id="lwGroup_${i}" data-drive="${isDriveDevice(src.deviceType) ? '1' : ''}" style="grid-column:1 / -1;">
     <label>Discharge wait on the label${n > 1 ? raw(' <span style="font-weight:400;color:var(--text-dim);">&mdash; one per unit</span>') : ''}</label>
     ${Array.from({ length: n }, (_, k) => {
       const e = lw[k], st = labelWaitState(e);
@@ -11595,7 +11622,47 @@ function handleDeviceTypeChange(index, value) {
     autoSaveCurrent();
     // Build 122 (D1): a drive gets its feeder and its disconnect answer, asked now
     if (isDriveDevice(value) && isDriveRow(sources[index])) promptDriveFeeder(index);
+    offerUpstreamFeederRemoval(sources[index]);   // build 170
   }
+}
+// ---- A drive made "locked out upstream": its old feeder (build 170) ----------
+// A drive row changed to VFD - Upstream Breaker / Disconnect is its own feeder,
+// but a Feeder row recorded for it while it was a VFD stays. Left there it is
+// worse than clutter: under loto-web's Tier 1 count (feedersCoverDrives: as many
+// feeder rows as drive units) it would count as another unfed drive's feeder on
+// the unit, which then is never asked for its own. The feeders found by their
+// stored link to this row, or by a "( … )" naming its tags; one that names or
+// links no other drive is offered for removal (Remove / Keep), one that does is
+// only named. Asked once per row while the page is open, by a pick or by the
+// custom Device box (refreshSourceDependents).
+const upstreamFeederAsked = new WeakSet();
+function leftoverFeedersOf(srcList, src) {
+  const list = srcList || [];
+  if (!src || !isUpstreamDriveDevice(src.deviceType)) return [];
+  const ids = [src.sourceId].concat(src.priorSourceIds || []).filter(Boolean);
+  const tags = driveUnitTags(src).filter(t => String(t || '').trim());
+  return list.filter(f => isFeederRow(f) && (
+    (Array.isArray(f.feeds) && f.feeds.some(l => ids.includes(l.sourceId)))
+    || tags.some(t => feederNamesTag(f.location, t))));
+}
+async function offerUpstreamFeederRemoval(src) {
+  if (!src || upstreamFeederAsked.has(src)) return;
+  const left = leftoverFeedersOf(sources, src);
+  if (!left.length) return;
+  upstreamFeederAsked.add(src);
+  const drives = unitDrives(sources);   // the unit's other drives (an upstream row is none)
+  const feedsAnother = f => drives.some(x => (x.tag && feederNamesTag(f.location, x.tag)) || feederLinksDrive(sources, f, x));
+  const only = left.filter(f => !feedsAnother(f)), shared = left.filter(feedsAnother);
+  const num = f => '#' + (sources.indexOf(f) + 1);
+  const kind = upstreamDriveKind(src.deviceType);
+  if (shared.length) showToast(`Feeder row ${shared.map(num).join(', ')} also feeds another drive, so it stays.\nThis row is the drive's upstream ${kind}: it needs no feeder.`, true);
+  if (!only.length) return;
+  const v = await askChoice({ id: 'upstream-feeder', defaultValue: 'keep', title: 'Feeder: not needed',
+    html: html`This row is now the drive&rsquo;s upstream ${kind}, so it needs no feeder. Remove feeder row ${only.map(num).join(', ')}? Left in, loto-web may give it to another drive on this unit.`,
+    choices: [{ value: 'remove', label: 'Remove ' + only.map(num).join(', ') }, { value: 'keep', label: 'Keep' }] });
+  if (v !== 'remove' || !sources.includes(src)) return;
+  dropSourceRows(only.filter(f => sources.includes(f)));
+  autoSaveCurrent();
 }
 
 // Typing in a custom Energy Source / Device box (build 109): saved per
@@ -11785,16 +11852,22 @@ document.addEventListener('click', e => {
 }, true);
 
 function removeSource(index) {
-  if (confirm(`Remove Energy Source #${index + 1}?`)) {
-    const prev = sources.slice();
-    const gone = sources.splice(index, 1)[0];
-    // A damper actuator powered by the removed row is no longer answered (build 130)
-    const goneIds = gone ? [gone.sourceId].concat(gone.priorSourceIds || []).filter(Boolean) : [];
-    sources.forEach(s => { if (s && s.poweredBy && typeof s.poweredBy === 'object' && goneIds.includes(s.poweredBy.source)) delete s.poweredBy; });
-    rebindSourcePhotos(prev);   // the removed source's photo leaves the form (bytes stay on the device)
-    renderSources();
-    updateIntegrityBadge();
-  }
+  if (confirm(`Remove Energy Source #${index + 1}?`)) dropSourceRows([sources[index]]);
+}
+// Take these source rows (objects) off the form, as the card's Remove does.
+function dropSourceRows(rows) {
+  const prev = sources.slice(), goneIds = [];
+  (rows || []).forEach(r => {
+    const i = sources.indexOf(r);
+    if (i < 0) return;
+    sources.splice(i, 1);
+    goneIds.push(...[r.sourceId].concat(r.priorSourceIds || []).filter(Boolean));
+  });
+  // A damper actuator powered by a removed row is no longer answered (build 130)
+  sources.forEach(s => { if (s && s.poweredBy && typeof s.poweredBy === 'object' && goneIds.includes(s.poweredBy.source)) delete s.poweredBy; });
+  rebindSourcePhotos(prev);   // a removed source's photo leaves the form (bytes stay on the device)
+  renderSources();
+  updateIntegrityBadge();
 }
 
 // ============================================================================

@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 169,
+  "build": 170,
   "hospitals": [
     {
       "code": "Marion",
@@ -384,6 +384,8 @@
   "devices": [
     "Disconnect",
     "VFD",
+    "VFD - Upstream Breaker",
+    "VFD - Upstream Disconnect",
     "Switch",
     "Switch w/Padlock",
     "Breaker",
@@ -432,6 +434,7 @@
     "SW (VFD/Off/Bypass)",
     "SW (Other)",
     "SW (Drive/Off/Bypass) + Button (H/O/A) - VFD",
+    "SW (H/O/A) + Button (Start/Stop) - VFD",
     "Screen",
     "Button (Start/Stop)",
     "Button (Start/Stop) - VFD",

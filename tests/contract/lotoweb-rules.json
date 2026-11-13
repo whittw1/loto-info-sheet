@@ -1,4 +1,5 @@
 {
+ "_provisional": "build 170: written plainly from loto-web's LOCAL tree (drive_isolation.upstream_drive_kind / needs_feeder and label_wait.asked built 2026-11-12, NOT deployed) - regenerate from live after loto-web's deploy",
  "_about": "Written by tests/contract/make_lotoweb_rules.py from loto-web's own functions; asserted by the app's T290.",
  "lotoWeb": "/Users/whittw/Desktop/Claude Apps/loto-web",
  "feeder": [
@@ -171,6 +172,14 @@
   {
    "deviceType": "",
    "isDrive": false
+  },
+  {
+   "deviceType": "VFD - Upstream Breaker",
+   "isDrive": true
+  },
+  {
+   "deviceType": "VFD - Upstream Disconnect",
+   "isDrive": true
   }
  ],
  "dcBus": [
@@ -213,6 +222,60 @@
    "quantity": 1,
    "location": "VFD DC Bus",
    "isDcBus": false
+  }
+ ],
+ "upstreamDrive": [
+  {
+   "deviceType": "VFD - Upstream Breaker",
+   "kind": "breaker"
+  },
+  {
+   "deviceType": "VFD - Upstream Disconnect",
+   "kind": "disconnect"
+  },
+  {
+   "deviceType": "vfd - upstream breaker",
+   "kind": "breaker"
+  },
+  {
+   "deviceType": "VFD  -  Upstream   Disconnect",
+   "kind": "disconnect"
+  },
+  {
+   "deviceType": " VFD - Upstream Breaker ",
+   "kind": "breaker"
+  },
+  {
+   "deviceType": "VFD",
+   "kind": ""
+  },
+  {
+   "deviceType": "Breaker",
+   "kind": ""
+  },
+  {
+   "deviceType": "Disconnect",
+   "kind": ""
+  },
+  {
+   "deviceType": "VFD Bypass",
+   "kind": ""
+  },
+  {
+   "deviceType": "VFD - Upstream",
+   "kind": ""
+  },
+  {
+   "deviceType": "Upstream Breaker",
+   "kind": ""
+  },
+  {
+   "deviceType": "VFD - Upstream Breaker w/Padlock",
+   "kind": ""
+  },
+  {
+   "deviceType": "",
+   "kind": ""
   }
  ],
  "namesTag": [
@@ -727,6 +790,127 @@
      "unit": 0,
      "tag": "VFD-3",
      "identified": false
+    }
+   ]
+  },
+  {
+   "name": "a drive locked out upstream, alone",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD - Upstream Breaker",
+     "deviceId": "26",
+     "quantity": 1,
+     "location": ""
+    }
+   ],
+   "drives": []
+  },
+  {
+   "name": "a drive locked out upstream, Qty 2",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD - Upstream Disconnect",
+     "deviceId": "DS-1; DS-2",
+     "quantity": 2,
+     "location": ""
+    }
+   ],
+   "drives": []
+  },
+  {
+   "name": "an upstream drive beside a fed VFD",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD - Upstream Breaker",
+     "deviceId": "26",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 14 (VFD-1)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "an upstream drive beside an unfed VFD",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD - Upstream Breaker",
+     "deviceId": "26",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    }
+   ],
+   "drives": [
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "an upstream drive beside a no-ID VFD and an unnamed feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD - Upstream Disconnect",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3"
+    }
+   ],
+   "drives": [
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "",
+     "identified": true
     }
    ]
   },
@@ -2078,6 +2262,36 @@
   {
    "energySource": "Kinetic",
    "deviceType": "VFD",
+   "linked": false,
+   "asked": false
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "VFD - Upstream Breaker",
+   "linked": false,
+   "asked": true
+  },
+  {
+   "energySource": "Electrical 208V",
+   "deviceType": "VFD - Upstream Disconnect",
+   "linked": false,
+   "asked": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "vfd - upstream breaker",
+   "linked": false,
+   "asked": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "VFD - Upstream Breaker",
+   "linked": true,
+   "asked": false
+  },
+  {
+   "energySource": "Kinetic",
+   "deviceType": "VFD - Upstream Breaker",
    "linked": false,
    "asked": false
   }
