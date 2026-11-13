@@ -1,5 +1,4 @@
 {
- "_provisional": "build 170: written plainly from loto-web's LOCAL tree (drive_isolation.upstream_drive_kind / needs_feeder and label_wait.asked built 2026-11-12, NOT deployed) - regenerate from live after loto-web's deploy",
  "_about": "Written by tests/contract/make_lotoweb_rules.py from loto-web's own functions; asserted by the app's T290.",
  "lotoWeb": "/Users/whittw/Desktop/Claude Apps/loto-web",
  "feeder": [

@@ -1527,8 +1527,19 @@ H/O/A Start (build 170)", `local_1f5210f4…`).
 - A gap the spec missed: step 1's own words "Hand/Off/Auto" tripped the "Section 4 already returns to Auto" check.
   That check now ignores the switch's name.
 - Tests: its 60-check smoke passes, and 30 existing smokes are unchanged.
-- **Not deployed.** Its deploy needs the live Mapping Sheet row, a code review, and wilkins' go (its spec rev 2,
-  §G).
+- **LIVE 2026-11-13** on wilkins' "Yes, deploy" in its chat. His "Deploy loto-web, then release 170", relayed from
+  here, was not taken as the go.
+  - VFS PUT 02:28:01–02:28:09Z, every file read back byte-identical: `drive_isolation.py`, `device_label.py`,
+    `label_wait.py`, `matrix_generator.py`, `procedure_validator.py` (another chat's unpushed `find_blocks` hunk
+    left out), `procedure_generator.py`, `frontend_dist/index.html`, and the Mapping Sheet with G40/H40.
+  - Restart 02:28:20Z; 3 fresh workers 02:34:58Z, health 200, no tracebacks.
+- Its pre-push code review fixed one bug: pre-QC's label-voltage exemption missed a photo-less upstream DC-bus row,
+  so a 280/550 V label drew a false "stale voltage" FIX.
+- Also live, wilkins' later choices in that chat:
+  - ES boxes never go on the breaker / disconnect photo;
+  - Section 2's "Turn the controls to Off, then move breaker E-1 to the off position." applies to upstream-breaker
+    rows only.
+- Its smoke (65 checks) and 30 targeted smokes pass on the exact pushed files.
 
 **Release order.** loto-web goes live first, then the fixture is regenerated plainly, then build 170 (wilkins'
 call). If build 170 shipped first:
@@ -1549,14 +1560,15 @@ call). If build 170 shipped first:
   - the export: column 2 / 3 / 9 / 18 / 19 / 21 and `entries.json` for an upstream row beside a VFD that keeps its
     answer.
 - **T290** checks `upstreamDrive` (13 cases) and the new `labelAsked` and `units` cases.
-  - The fixture is still marked **`_provisional`**. It was first written by a scratch wrapper that patched the
-    spec's rules into loto-web's functions.
+  - The fixture was first marked **`_provisional`**: a scratch wrapper wrote it by patching the spec's rules into
+    loto-web's functions.
   - loto-web's chat then built its half (`local_1f5210f4…`, not deployed): `drive_isolation.upstream_drive_kind`,
     `drive_isolation.needs_feeder`, and `label_wait.asked` extended. `make_lotoweb_rules.py` now calls loto-web's
     `needs_feeder`, which closes the code review's open finding.
   - The fixture was regenerated plainly from loto-web's **local** tree and is identical to the patched one, all 348
     cases. The rest of the fixture is unchanged from rev 234's.
-  - Regenerate it from live code after loto-web's deploy.
+  - **After loto-web's deploy** (live 2026-11-13 02:34:58Z), it was regenerated plainly from the deployed code: the
+    same 348 answers, and no `_provisional` key.
 - T268 pins 170 / v7.165.
 - Suite, web and native-mock: **509 / 509** in both, after the review fixes. **Not run in the Simulator; the fuzzer
   was not run.**
