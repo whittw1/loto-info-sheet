@@ -1506,7 +1506,12 @@ None.
   plain VFDs.
 - Tests: its smoke is 23/23; 25 targeted smokes are unchanged; `check_field_app_lists` raises no warning for the
   Device.
-- loto-web goes live first, on wilkins' go typed in its chat.
+- **LIVE 2026-11-13** on wilkins' "Yes, deploy" in its chat.
+  - VFS PUT 12:11:08–12:11:15Z, each file read back byte-identical: `drive_isolation.py`, `label_wait.py`,
+    `device_label.py`, `matrix_generator.py`, `procedure_validator.py` (live + its hunks only, leaving out the other
+    chat's `find_blocks` hunk), `procedure_generator.py` and `frontend_dist/index.html`. No Mapping Sheet change.
+  - Restart 12:11:21Z; 3 fresh workers 12:15:13Z, health 200, no tracebacks.
+  - Its pre-push code review found no correctness bug. 14 smokes pass on the exact pushed files.
 
 **Tests.**
 - **T501:**
@@ -1522,7 +1527,8 @@ None.
 - **T290** adds a `driveBreaker` case list (`drive_isolation.is_drive_breaker`) and the `labelAsked`, `drive`,
   `upstreamDrive` and `units` cases. The fixture is **`_provisional`**: `is_drive_breaker` and the extended
   `label_wait.asked` were first patched into loto-web's functions. Regenerated plainly from loto-web's local build:
-  the same 367 answers. It stays marked provisional until loto-web is deployed.
+  the same 367 answers. **After the deploy**, regenerated plainly from the live code: the same 367 answers, and no
+  `_provisional` key.
 - T268 pins 171 / v7.166.
 - Suite, web and native-mock: **510 / 510** in both, on the final code. **Not run in the Simulator; the fuzzer was
   not run.**
