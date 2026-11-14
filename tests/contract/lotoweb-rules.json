@@ -331,6 +331,24 @@
    "isDriveBreaker": false
   }
  ],
+ "bioCautions": {
+  "AII_TB": [
+   "This fan exhausts airborne infection isolation (AII / TB) rooms. Shutting it down can reverse the rooms' negative pressure and push contaminated air into the corridors. Before shutdown, coordinate with Infection Control, Industrial Hygiene and Facility Safety: the served rooms must be vacated and posted, or an approved temporary HEPA negative-air unit placed in service and verified. Industrial Hygiene sets how long the fan keeps running after the rooms are vacated, before it is shut down.",
+   "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with airborne infectious agents. Anyone opening them wears a respirator selected by Industrial Hygiene in addition to the basic LOTO PPE. Decontaminate interior surfaces before contact with an EPA-registered hospital disinfectant selected by Infection Control for the agents of concern. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."
+  ],
+  "AEROSOL_GEN": [
+   "This fan exhausts rooms where aerosol-generating procedures are performed (bronchoscopy, sputum induction, autopsy). Shutting it down can reverse the rooms' negative pressure and push contaminated air into the corridors. Before shutdown, coordinate with Infection Control, Industrial Hygiene and Facility Safety: the served rooms must be vacated and posted, or an approved temporary HEPA negative-air unit placed in service and verified. Industrial Hygiene sets how long the fan keeps running after the rooms are vacated, before it is shut down.",
+   "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with infectious aerosol. Anyone opening them wears a respirator selected by Industrial Hygiene in addition to the basic LOTO PPE. Decontaminate interior surfaces with an EPA-registered hospital disinfectant, per the Infection Control protocol, before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."
+  ],
+  "LAB_BSL2": [
+   "This fan exhausts laboratory biological safety cabinets and hoods (BSL-2). Shutting it down removes their containment exhaust and can reverse the laboratory's pressure to the corridor. Before shutdown, coordinate with the Laboratory Biosafety Officer, Infection Control, Industrial Hygiene and Facility Safety: work in the served cabinets and hoods must stop and the laboratory be cleared and posted, or an approved temporary exhaust arrangement placed in service and verified. Industrial Hygiene sets how long the fan keeps running after work stops, before it is shut down.",
+   "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with BSL-2 biological agents and laboratory chemical residue. Anyone opening them wears a respirator selected by Industrial Hygiene, and gloves Industrial Hygiene selects for the laboratory chemicals in use, in addition to the basic LOTO PPE. Decontaminate interior surfaces with the disinfectant the laboratory's biosafety manual specifies before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."
+  ],
+  "CYTO": [
+   "This fan exhausts pharmacy hazardous-drug compounding (USP <800>). Shutting it down removes the negative pressure and exhaust of the compounding room and its hoods. Before shutdown, coordinate with the Pharmacy designated person, Industrial Hygiene and Facility Safety: compounding must stop and the room be cleared and posted. Industrial Hygiene sets how long the fan keeps running after compounding stops, before it is shut down.",
+   "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with hazardous (antineoplastic) drug residue, a chemical hazard with no safe skin-contact level. Anyone opening them wears the respirator, gloves and gown selected by Industrial Hygiene and the Pharmacy designated person, in addition to the basic LOTO PPE. Decontaminate interior surfaces with the pharmacy's USP <800> deactivation / decontamination agents before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as hazardous-drug waste, not regulated medical waste."
+  ]
+ },
  "namesTag": [
   {
    "tag": "VFD-1",

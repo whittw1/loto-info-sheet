@@ -11452,18 +11452,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 171 (was build 122\'s): APP_BUILD and the header label say 171, the service worker\'s cache is loto-collector-v7.166, Xcode\'s CURRENT_PROJECT_VERSION is 171 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 172 (was build 122\'s): APP_BUILD and the header label say 172, the service worker\'s cache is loto-collector-v7.167, Xcode\'s CURRENT_PROJECT_VERSION is 172 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 171 && !!label && +label[1] === 171, 'the build');
+    want(APP_BUILD === 172 && !!label && +label[1] === 172, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.166', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.167', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 171;,CURRENT_PROJECT_VERSION = 171;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 172;,CURRENT_PROJECT_VERSION = 172;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -12166,6 +12166,15 @@
     // a drive locked out upstream (build 170): loto-web's drive_isolation.upstream_drive_kind
     check('upstreamDrive', fx.upstreamDrive || [], c => ({ ok: upstreamDriveKind(c.deviceType) === c.kind, what: JSON.stringify(c.deviceType) + ' app ' + JSON.stringify(upstreamDriveKind(c.deviceType)) + ' loto-web ' + JSON.stringify(c.kind) }));
     want((fx.upstreamDrive || []).length >= 10 && ['VFD - Upstream Breaker', 'VFD - Upstream Disconnect'].every(d => (fx.upstreamDrive || []).some(c => c.deviceType === d && c.kind)), 'the fixture carries the upstream drive cases');
+    // An Exhaust Fan's biohazard cautions (build 172): the form shows loto-web's own Section 2 CAUTIONs,
+    // bio_control_library.FAN_PROCEDURE_TEXT[code].s2, word for word, for every class
+    const bio = fx.bioCautions || {};
+    Object.keys(bio).forEach(code => {
+      const mine = Object.values(BIOHAZARD_INFO).find(x => x.code === code);
+      if (!mine || JSON.stringify(mine.cautions || []) !== JSON.stringify(bio[code])) fails.push('bioCautions ' + code + ': the app\'s cautions differ from loto-web\'s');
+    });
+    got.counts.bioCautions = Object.keys(bio).length;
+    want(Object.keys(bio).length >= 4 && Object.values(BIOHAZARD_INFO).every(x => !x.cautions || bio[x.code]), 'the fixture carries every biohazard class\'s cautions');
     // a drive at a padlocked breaker on it (build 171): loto-web's drive_isolation.is_drive_breaker
     check('driveBreaker', fx.driveBreaker || [], c => ({ ok: isPadlockBreakerDrive(c.deviceType) === c.isDriveBreaker, what: JSON.stringify(c.deviceType) + ' app ' + isPadlockBreakerDrive(c.deviceType) + ' loto-web ' + c.isDriveBreaker }));
     want((fx.driveBreaker || []).some(c => c.deviceType === 'VFD - Breaker w/Padlock' && c.isDriveBreaker), 'the fixture carries the drive-breaker cases');
@@ -17153,7 +17162,8 @@
     const paras = () => [...document.querySelectorAll('#uq_biohazardWarning p')].map(x => x.textContent);
     got.aiiParas = paras().map(t => t.slice(0, 60));
     want(paras().length === 2 && paras()[0].startsWith('CAUTION: This fan exhausts airborne infection isolation (AII / TB) rooms. Shutting it down')
-      && paras()[1].startsWith('CAUTION: The fan wheel, housing interior') && /tuberculocidal disinfectant before contact/.test(paras()[1]),
+      && paras()[1].startsWith('CAUTION: The fan wheel, housing interior') && /hospital disinfectant selected by Infection Control/.test(paras()[1])
+      && !/tuberculosis|tuberculocidal/.test(paras()[1]),   // reworded 2026-11-13 (build 172)
       'AII/TB shows its two Section 2 cautions, shutdown first');
     got.aiiListed = collectIncompleteFields().includes(MISSING); want(!got.aiiListed, 'answered: not listed');
     setUnitAnswer('biohazard', 'Hazardous drug');

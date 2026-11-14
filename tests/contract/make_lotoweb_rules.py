@@ -34,6 +34,7 @@ from app.services import drain_location as dl  # noqa: E402
 from app.services import valve_state as vs  # noqa: E402
 from app.services import procedure_generator as pgm  # noqa: E402
 from app.services.procedure_generator import MappingService  # noqa: E402
+from app.services.bio_control_library import FAN_PROCEDURE_TEXT  # noqa: E402
 
 
 def row(es="Electrical 480V", dev="Breaker", did="", qty=1, loc=""):
@@ -410,6 +411,8 @@ def main():
         "dcBus": [dict(r, isDcBus=bool(PG._is_vfd_dc_bus(sd(r)))) for r in DC_BUS_ROWS],
         "upstreamDrive": [{"deviceType": d, "kind": di.upstream_drive_kind(d) or ""} for d in UPSTREAM_DEVICES],
         "driveBreaker": [{"deviceType": d, "isDriveBreaker": bool(di.is_drive_breaker(d))} for d in DRIVE_BREAKER_DEVICES],
+        # an Exhaust Fan's biohazard class -> its two Section 2 CAUTIONs, as loto-web prints them (field app build 172)
+        "bioCautions": {code: list(v["s2"]) for code, v in FAN_PROCEDURE_TEXT.items() if isinstance(v, dict) and v.get("s2")},
         "namesTag": [{"tag": t, "location": l, "names": bool(di.names_tag(t, l))} for t, l in NAMES_TAG],
         "unitIds": [{"deviceId": d, "quantity": q, "units": [u or "" for u in unit_ids(d, q)]} for d, q in UNIT_IDS],
         "role": [{"location": l, "role": ts.role_of_location(l)[0] or "", "kind": ts.role_of_location(l)[1] or ""} for l in ROLES],
