@@ -561,7 +561,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b171</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b172</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1281,7 +1281,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 171;
+const APP_BUILD = 172;
 
 // ============================================================================
 // DATA
@@ -5897,13 +5897,14 @@ function changeLaterSheetText(entryLike) {
 // the "Biohazard" value on the sheet (slot U8), `code` loto-web's class
 // (entries.json), `cautions` the procedure's two Section 2 CAUTIONs, which the
 // form shows once a hazard is picked. Labels and cautions word for word as
-// wilkins approved them through loto-web (2026-11-02), keyed by the spellings in
+// wilkins approved them through loto-web (2026-11-02; AII/TB's second CAUTION
+// reworded 2026-11-13, build 172 — T290 holds them to loto-web's live text), keyed by the spellings in
 // DATA.biohazard (app-lists.json), whose order the menu follows.
 const BIOHAZARD_INFO = {
   "None": { code: "NONE", label: "None (kitchen, toilet, general exhaust)" },
   "AII/TB": { code: "AII_TB", label: "AII / TB isolation room exhaust",
     cautions: ["This fan exhausts airborne infection isolation (AII / TB) rooms. Shutting it down can reverse the rooms' negative pressure and push contaminated air into the corridors. Before shutdown, coordinate with Infection Control, Industrial Hygiene and Facility Safety: the served rooms must be vacated and posted, or an approved temporary HEPA negative-air unit placed in service and verified. Industrial Hygiene sets how long the fan keeps running after the rooms are vacated, before it is shut down.",
-      "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with infectious aerosol (M. tuberculosis). Anyone opening them wears a respirator selected by Industrial Hygiene in addition to the basic LOTO PPE. Decontaminate interior surfaces with an EPA-registered tuberculocidal disinfectant before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."] },
+      "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with airborne infectious agents. Anyone opening them wears a respirator selected by Industrial Hygiene in addition to the basic LOTO PPE. Decontaminate interior surfaces before contact with an EPA-registered hospital disinfectant selected by Infection Control for the agents of concern. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."] },
   "Aerosol-generating": { code: "AEROSOL_GEN", label: "Aerosol-generating procedure room exhaust (bronchoscopy, autopsy)",
     cautions: ["This fan exhausts rooms where aerosol-generating procedures are performed (bronchoscopy, sputum induction, autopsy). Shutting it down can reverse the rooms' negative pressure and push contaminated air into the corridors. Before shutdown, coordinate with Infection Control, Industrial Hygiene and Facility Safety: the served rooms must be vacated and posted, or an approved temporary HEPA negative-air unit placed in service and verified. Industrial Hygiene sets how long the fan keeps running after the rooms are vacated, before it is shut down.",
       "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with infectious aerosol. Anyone opening them wears a respirator selected by Industrial Hygiene in addition to the basic LOTO PPE. Decontaminate interior surfaces with an EPA-registered hospital disinfectant, per the Infection Control protocol, before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."] },
