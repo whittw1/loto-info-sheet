@@ -18,24 +18,31 @@ A progressive web app (PWA) for field data collection of Lockout/Tagout (LOTO) i
 ## Features
 
 - **Equipment Documentation** — Log equipment type (28+ presets), name, building, room, and location
-- **Energy Source Tracking** — Up to 10 sources per equipment with 40+ energy types (Electrical 120V–4160V, Steam, Glycol, Hydraulic, etc.), device types, quantities, and verification methods
-- **Photo Capture** — Three equipment photo slots (Main, Data Plate, EE Number) plus per-source photos, with configurable resolution and compression; tap existing photo to view before retaking
+- **Energy Source Tracking** — Any number of sources per equipment (the Information Sheet block grows past 10) with 40+ energy types (Electrical 120V–4160V, Steam, Glycol, Hydraulic, etc.), device types, quantities, and verification methods
+- **Photo Capture** — Three equipment photo slots (Main, Data Plate, EE Number) plus per-source photos, with configurable resolution and compression (default 2560 × 1440; the limit turns with the photo, so a portrait shot keeps its long side); each new photo carries the time it was taken inside the JPEG (EXIF — no location); tap existing photo to view before retaking
+- **Main photo arrow** (build 156) — when the Main photo shows two or three units, **➜ Point at unit** under it lets you tap the one this record is for: a white arrow points at it (drag it to turn it or change its length, drag its red circle to move the tip, ↻ Turn). It is exported with the Main photo (entries.json `mainPhotoArrow`, the Information Sheet's name-row column 14 "Main Photo Arrow", the CSV's last column) as loto-web's equipment pointer (loto-web reads it since 2026-11-05: the arrow lands on the unit's main photo once, never over an arrow placed in loto-web)
 - **Templates** — Pre-configured templates (AHU variants, Pumps, Boilers, Chillers, Elevators, ATS models, Water Heater variants, etc.) that auto-populate energy sources; supports custom templates
+- **Exhaust fan biohazard** (build 145) — every Exhaust Fan asks **Biohazard?** (None · AII / TB isolation room · aerosol-generating procedure room · lab BSL-2 · pharmacy hazardous drug · Can't tell). A hazard shows the two Section 2 CAUTIONs loto-web prints in the procedure (wording approved by wilkins 2026-11-02; AII/TB's second CAUTION reworded 2026-11-13, build 172; the contract test holds all eight to loto-web's live text) and a ☣ BIOHAZARD badge on the saved unit; Save & New lists a fan left unanswered
 - **Conditional Dropdown Filtering** — Device types filter based on selected energy source (e.g., steam shows valves only, electrical shows breakers/disconnects). Verification methods filter based on device type with temperature variants (Hot/CHW) auto-resolved from energy source
+- **Quick picks** (build 154) — an open source card shows Energy Source, Device Type, Location and Verification as one-tap chips of your likely picks (from what this iPad used on rows like it); **More…** opens the whole list as before. Location always ends with a **Custom…** chip (build 160; **Other…** on a damper row) that opens the Custom Location box. **+ Add Energy Source** offers "+ <source>" chips: first the lines the template names but leaves to you (build 155: AHU - HHW → HHW In/Out; AHU - Steam, CHW, HHW → HHW In/Out, CHW In/Out; Water Heater - Gas → DW In, DHW Out), then the sources you add by hand on that equipment type (a steam class at the pressure your facility types); **+ Other…** opens the whole Energy Source list and adds the row you pick. One card is open at a time. Settings → "Quick picks on source cards" turns it all off. Saved values and exports are the same either way
 - **Template Filtering by Equipment Type** — Template dropdown shows only relevant templates for the selected equipment type (e.g., Air Handler shows only AHU templates, ATS shows only ATS variants)
 - **Custom Source Keyword Matching** — Custom energy sources (e.g., "HV Water") are matched by keyword to determine appropriate devices, verifications, and label prefixes
-- **Voltage Prompt System** — ATS, Generator, and Chiller equipment types prompt for voltage selection (208V/480V) to auto-populate Electrical sources
-- **Auto-Source Injection** — Equipment types auto-add standard energy sources (e.g., Elevator → Gravity/Potential; pumps → Kinetic + Electrical 208V; Condensing Unit → Electrical 208V + Disconnect)
+- **Voltage Prompt System** — ATS, Generator, and Chiller equipment types prompt for voltage selection (208V/480V) to auto-populate Electrical sources. After an ATS's voltage the app asks which panel each feed's breaker is in (emergency first, then normal) and sets Location **Panel** with that **Panel ID** (build 153); the first two Electrical rows are tagged Emergency (generator) side / Normal (utility) side, the order loto-web reads them in. Since build 151 a Chiller also starts with CHW In and CHW Out as separate sources (after its Electrical), and a Battery Charger type uses the Standard Electrical template
+- **Auto-Source Injection** — Equipment types auto-add standard energy sources (e.g., Elevator → Gravity/Potential; pumps → Electrical 208V; Condensing Unit → Electrical 208V + Disconnect)
 - **Condensate Auto-Fill** — Condensate sources on AHUs, Heat Exchangers, Water Heaters, and Unit Heaters auto-fill Gate Valve + Temp Only - Hot
 - **Duplicate Energy Source** — Clone any source card within an equipment entry
+- **Reuse a Photo / Duplicate** — Reusing a photo on a source sets its Duplicate to Yes and the card says whose photo it is; setting Duplicate = Yes by hand on a source with no photo asks which photo shows it (Skip keeps it as is)
 - **Reorder Energy Sources** — ▲/▼ arrows on each source card (both collapsed and expanded views) to nudge sources into the right order; photos move with their source
-- **Link Shared Sources** — Link a source to another equipment's source (for shared valves, breakers, etc.). Room/building/all scope filter. Linked source hides its photo slot (photo lives on the referenced source) and inherits the diagram label
-- **Preserved Edit State** — Editing a saved entry no longer removes it from the saved list. The entry shows an **EDITING** badge and the original is preserved until Save & New replaces it in place
+- **Link Shared Sources** — Link a source to another equipment's source (for shared valves, breakers, etc.). Room/building/all scope filter. Linking to an In/Out pair (e.g. CHW In/Out with 2 valves) asks which valve it shares — Both, the In valve only or the Out valve only (build 151); one valve makes the source that side ("CHW Out", Qty 1) and the sheet's Linked To says so. A link fills what the source left blank from the one it links to — its energy source, device, Device ID, location and verification, and since build 163 its existing LOTO tag (Atlanta), unit by unit; a tag the tech typed stays, with a warning when it differs. Linked source hides its photo slot (photo lives on the referenced source) and inherits the diagram label
+- **Looking vs editing** (build 139; build 140) — a saved unit opened only to look at says so ("Looking at saved unit … nothing changed") and closes without being saved again — by Save & New, the banner's Close or a relaunch — so its export stamp stays. "Nothing changed" means nothing since it was opened: what opening fills in on a unit an older build saved doesn't count. Opening another unit, Duplicate and Clear don't ask about it
+- **Preserved Edit State** — Editing a saved entry no longer removes it from the saved list. The entry shows an **EDITING** badge and the original is preserved until Save & New replaces it in place (only when something changed — see Looking vs editing above); **✕ Cancel edit** (on the banner above the form, build 140) drops the changes and leaves the saved entry exactly as it was, then starts a new unit where you were before opening it (build 151; build 150: the unit's own building and room), and **✕ Discard** (the header button) clears a new, unsaved unit but keeps its building and room (build 163; deleting the unit open on the form keeps them too)
 - **Offline Support** — Service Worker with network-first caching strategy; works without internet after first load
 - **Installable** — PWA manifest allows "Add to Home Screen" on mobile devices
 - **Import / Backup** — JSON-based backup and restore with merge-or-replace on import and duplicate detection
 - **Tied-To Equipment** — Track interdependent systems across entries
-- **Export Date Filter** — Export dialog lets you pick a specific date's entries, all dates, or undated entries. Filename includes the date suffix for specific-day exports.
+- **Survey Date** — Each unit's survey date is on the form (blank = the day it is saved) and decides which day's Information Sheet it goes on; changing it on a unit already exported asks first
+- **Export Date Filter** — Export dialog lets you pick a specific date's entries, all dates, **not yet exported** (only the units not yet exported, each on its own day's sheet — since build 141; builds 109–140 sent the whole day of each), or undated entries; a unit with no date is asked for one. Filename includes the date suffix for specific-day exports.
+- **Same name, same room** (build 158) — an export with two units under one Equipment ID/Name in the same facility, building and room (a Duplicate whose name was never changed) asks first: **Fix the name first** stops it, **Export anyway** goes on. Case and spaces/hyphens don't count; the same name in another room never asks. The saved list marks such units **⚠ SAME NAME**.
 
 ### Overhead Sketch System
 
@@ -53,7 +60,7 @@ Collapsible section that auto-expands when a template's diagram is available or 
 
 ### Per-Site Fields
 
-- **Building Picker Dropdown** — Preset list of VA campus buildings (currently Finger Lakes: 10, 14, 17, 18, 20, 24, 29A, 31, 32, 34, 35, 39, 41, 75, 92, 104) with custom option. Editable via code for other sites.
+- **Building Picker Dropdown** — Since build 142, each facility's building list is imported on the device: Settings → Buildings at this facility → Import from Excel (.xlsx or .csv; the column headed Building / Bldg, a Building Name, Name or Description column shown beside each). The menu lists them, with Enter Building for one not listed; a unit saves the building as listed. Kept on the device only — import it on each iPad. Since build 143 a list replaced by a new import or removed is kept (the last five per facility), and **Earlier lists…** puts one back. No list: Building is typed (as since build 63).
 - **Room Auto-Fill** — Room number persists alongside building after Save & New
 - **Misc Photos** — Additional photo capture slots beyond standard equipment/source photos
 - **Device ID Field** — Per-source identifier (e.g., Pump 3, V-201)
@@ -64,8 +71,8 @@ Collapsible section that auto-expands when a template's diagram is available or 
 
 | Energy Source Category | Available Devices |
 |---|---|
-| Electrical | Disconnect, VFD, Switch, Breaker, Plug, Fuse, Quick Disconnect (+ padlock variants) |
-| Steam / Water (HHW, CHW, Condensate, DW, Feedwater, Glycol, etc.) | Gate Valve, Ball Valve, Butterfly Valve, Ckt Setter, Chain (+ cable/padlock variants) |
+| Electrical | Disconnect, VFD, VFD - Breaker w/Padlock (a drive whose own isolation is a padlocked breaker on it: a VFD in all but its name, build 171), VFD - Upstream Breaker, VFD - Upstream Disconnect (a drive with no disconnect of its own, locked out upstream: no feeder, build 170), Switch, Breaker, Plug, Fuse, Quick Disconnect (+ padlock variants) |
+| Steam / Water (HHW, CHW, Condensate, DW, Feedwater, Glycol, Energy Recovery Water, etc.) | Gate Valve, Ball Valve, Butterfly Valve, Ckt Setter, Chain (+ cable/padlock variants) |
 | Pneumatic / Gas / Fuel / Refrigerant / Chemical / Thermal | Gate Valve, Ball Valve, Butterfly Valve, Chain (no Ckt Setter) |
 | Kinetic | Rotating |
 | Gravity/Potential | Potential |
@@ -78,7 +85,7 @@ Collapsible section that auto-expands when a template's diagram is available or 
 |---|---|
 | Breaker | Meter, Controls, SW (On/Off), SW (Hand/Off/Auto), Button (Start/Stop), Button (Other) |
 | Disconnect | Controls, Meter, SW (On/Off), SW (Hand/Off/Auto), SW (H/O/A), SW (Other), Button (Start/Stop), Button (Other) |
-| VFD | Controls, Meter, SW (Hand/Off/Auto), SW (H/O/A), SW (Drive/Off/Bypass), SW (VFD/Off/Bypass), SW (Other), Button (Start/Stop) - VFD, Button (Hand/Off/Auto) - VFD, Button (Other) |
+| VFD | Controls, Meter, SW (Hand/Off/Auto), SW (H/O/A), SW (Drive/Off/Bypass), SW (VFD/Off/Bypass), SW (Drive/Off/Bypass) + Button (H/O/A) - VFD (a bypass drive verified at its selector and its keypad, build 147), SW (H/O/A) + Button (Start/Stop) - VFD (a drive's selector and Start button, build 170; the two VFD - Upstream devices and, since build 171, VFD - Breaker w/Padlock take this same list), SW (Other), Button (Start/Stop) - VFD, Button (Hand/Off/Auto) - VFD, Button (Other) |
 | Switch | Controls, Meter, SW (On/Off), SW (Hand/Off/Auto), Button (Start/Stop), Button (Other) |
 | Plug | Controls |
 | All Valves + Ckt Setter + Chain | Gauge/Drain, GaugeOnly, Drain Only (with Hot/CHW variants from energy source) + Temp Only - Hot for hot sources |
@@ -88,9 +95,10 @@ Collapsible section that auto-expands when a template's diagram is available or 
 | Custom/Unknown | Full verification list |
 
 **Temperature variants** (applied to valve verifications):
-- **Hot** (Steam, HPS, LPS, MPS, HHW, DHW, DW, Feedwater, Condensate): Gauge/Drain - Hot, GaugeOnly - Hot, Drain Only - Hot, Temp Only - Hot (shown first)
-- **CHW** (CHW, CW, Condenser Water): Gauge/Drain - CHW, GaugeOnly - CHW
-- **Other** (Domestic, Pneumatic, Fuel, etc.): Gauge/Drain, GaugeOnly, Drain Only (plain)
+- **Hot** (Steam, HPS, LPS, MPS, HHW, DHW, Feedwater, Condensate, Glycol HW): Gauge/Drain - Hot, GaugeOnly - Hot, Drain Only - Hot, Temp Only - Hot (shown first)
+- **CHW** (CHW only): Gauge/Drain - CHW, GaugeOnly - CHW
+- **Other** (DW, Domestic, CW / Condenser Water — the warm tower side — Pneumatic, Fuel, etc.): Gauge/Drain, GaugeOnly, Drain Only (plain)
+- **Visual** (Condenser Water rows since build 157, Chemical In / Chemical Out rows since build 161): loto-web's "Visually confirm absence of flow through lines." — a Cooling Tower's Condenser Water In / Out default to it, and a new Chemical In / Chemical Out row starts on it (build 162). On a condenser water row still on the Drain/Gauge boxes it is a chip under them (build 162; not picked)
 
 ### Template Filtering (by Equipment Type)
 
@@ -169,20 +177,22 @@ Form Inputs ──► localStorage (auto-saved as JSON)
   Save Entry ──► Saved Equipment list (localStorage)
        │    (or replace-in-place if editingEntry is set)
        ▼
-  Export (filtered by date) ──► ZIP blob (JSZip) ──► Browser download
+  Export (filtered by date) ──► iOS app: ZIP written into the app's Cache a file at a time
+                            │     (makeCacheZipWriter, build 134) ──► share sheet
+                            ──► web / Export to SharePoint: ZIP blob (JSZip) ──► download / upload
                             ──► XLSX (ExcelJS)  ──► Embedded in ZIP
 ```
 
 ### UI Layout
 
 - **Header** — App title, version badge, navigation (List, Settings, Import, Backup, Export)
-- **Saved Equipment Panel** — Collapsible sidebar listing previously saved entries with edit/duplicate/delete. Entries currently being edited show an **EDITING** badge.
+- **Saved Equipment Panel** — Collapsible sidebar listing previously saved entries with edit/duplicate/delete. Entries currently being edited show an **EDITING** badge. Show All / Today / Yesterday, a search, and (since build 145) a **Facility** menu that shows one facility's units only — remembered on the device, it follows a unit saved under another facility and a new facility in Settings, and Bulk Delete opens on it.
 - **Equipment Form** — 2-column grid for equipment metadata fields (type, name, building, room, template, tied-to)
 - **Photo Grid** — 3-column capture grid (Main, Data Plate, EE Number) with view-before-retake
-- **Energy Sources** — Dynamic collapsible cards with add/remove/duplicate/reorder/link controls; conditional device and verification dropdowns
+- **Energy Sources** — Dynamic collapsible cards with add/remove/duplicate/reorder/link controls; conditional device and verification dropdowns. Since build 138 an open card is in sections (what it is; where it's isolated and verified; a Drive, Valve or Damper band; the photo), with Link, Copy, Duplicate, Split and Remove under **More**; a drive's card shows the feeder row that feeds it and the feeder's card its drive, each with **Go to**. Since build 148 a closed card of Quantity 2+ reads **×2**, and an AHU's count of 2 asks **Drives Together?** (one VFD line of Quantity 2, or a line each). Since build 149 a steam row's More menu has **Change steam pressure**: the whole number typed (1–300) goes into the name, "MPS 30 PSI", which is what loto-web prints
 - **Overhead Sketch** — Collapsible section with SVG diagram + canvas drawing layer + draggable energy labels
-- **Misc Photos** — Additional photos beyond the standard equipment/source slots
-- **Notes Section** — Free-text area per equipment entry
+- **Misc Photos** — Additional photos beyond the standard equipment/source slots (up to 30 a unit since build 137)
+- **Notes Section** — Free-text area per equipment entry. **+ NOTE** / **+ CAUTION** start a line that loto-web prints in the procedure's Section 2 as written; on an AHU, a **+ Common note…** menu adds a stock NOTE line (the duct smoke damper, build 136) to reword for the unit
 - **Bottom Bar** — Source counter, storage usage indicator, Save & New / Export buttons
 
 ## Getting Started

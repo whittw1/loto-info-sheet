@@ -1,0 +1,11 @@
+window.__x = 0;
+await unit('Fan <B> & C', [{ energySource: 'Electrical 480V', deviceType: 'Breaker', quantity: 1 }]);
+performSaveAndNew(); await idle();
+await unit('AHU <North> 2', [{ energySource: 'Electrical 480V', deviceType: 'Breaker', quantity: 1 }]);
+performSaveAndNew(); await idle();
+await unit('Pump <img src=x onerror="window.__x++">', [{ energySource: 'Electrical 480V', deviceType: 'Breaker', quantity: 1 }]);
+performSaveAndNew(); await idle();
+renderSavedPanel(); await sleep(500);
+const shown = [...document.querySelectorAll('.saved-item-name')].map(el => el.textContent.trim());
+const toastEl = document.getElementById('toast');
+return { saved: savedEquipment.map(e => e.equipName), shownInSavedList: shown, scriptRan: window.__x, lastToastText: toastEl.textContent };

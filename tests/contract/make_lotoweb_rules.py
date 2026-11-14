@@ -1,0 +1,445 @@
+#!/usr/bin/env python3
+"""The field app's contract with loto-web, written by loto-web's own functions.
+
+The field app decides on the iPad what loto-web will decide in the office:
+which row is a drive, a DC bus or a drive's feeder, whether a feeder names a
+drive, what each unit's Device ID is, which transformer role a Location says,
+and whether a drive's feeder is identified. Both sides implement those rules,
+in JS and in Python, and they drifted apart in every build 122 review. This
+script asks loto-web's live code for its answer on each case below and writes
+them to lotoweb-rules.json; the app's suite (T290) asserts the app agrees.
+
+Run it whenever loto-web's rules change, then the suite:
+    LOTO_WEB=../loto-web python3 tests/contract/make_lotoweb_rules.py
+(LOTO_WEB defaults to the loto-web folder beside this repo's folder.)
+It only reads loto-web; it writes nothing there.
+"""
+import json
+import os
+import re
+import sys
+from types import SimpleNamespace as NS
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(os.path.dirname(HERE))
+LOTO_WEB = os.path.abspath(os.environ.get("LOTO_WEB") or os.path.join(os.path.dirname(REPO), "loto-web"))
+sys.path.insert(0, LOTO_WEB)
+
+from app.services.procedure_generator import ProcedureGenerator as PG  # noqa: E402
+from app.services import drive_isolation as di  # noqa: E402
+from app.services import transformer_survey as ts  # noqa: E402
+from app.services.unit_ids import unit_ids  # noqa: E402
+from app.services import label_wait as lw  # noqa: E402
+from app.services import drain_location as dl  # noqa: E402
+from app.services import valve_state as vs  # noqa: E402
+from app.services import procedure_generator as pgm  # noqa: E402
+from app.services.procedure_generator import MappingService  # noqa: E402
+from app.services.bio_control_library import FAN_PROCEDURE_TEXT  # noqa: E402
+
+
+def row(es="Electrical 480V", dev="Breaker", did="", qty=1, loc=""):
+    return {"energySource": es, "deviceType": dev, "deviceId": did, "quantity": qty, "location": loc}
+
+
+def sd(r):
+    """A row as loto-web's generator sees it."""
+    return NS(source=r["energySource"], device=r["deviceType"], device_id=r["deviceId"], location=r["location"])
+
+
+FEEDER_ROWS = [
+    row(loc="Feeder: MCC-2A bkr 14 (VFD-1)"),
+    row(loc="feeder MCC-2A"),
+    row(loc="  Feeder: MCC-2A bkr 14"),
+    row(loc="Feeders panel"),
+    row(loc="MCC-2A bkr 14 (VFD-1)"),
+    row(dev="Feeder Breaker", loc="MCC-2A bkr 15 (VFD-2)"),
+    row(loc="Upstream MCC-2A bkr 15 (VFD-2)"),
+    row(dev="Disconnect", loc="upstream disconnect at roof"),
+    row(dev="Switch", loc="Upstream switch"),
+    row(loc="Panel LP-2 bkr 14 (feeder to AHU-3)"),
+    row(dev="VFD", loc="Feeder end of AHU-3"),
+    row(dev="VFD Bypass", loc="Feeder side"),
+    row(es="Stored Electrical Energy", dev="Capacitor", loc="Feeder side of the VFD-1 DC bus"),
+    row(es="Stored Electrical Energy", dev="Capacitor", loc="Feeder side cap bank"),
+    row(es="Natural Gas", dev="Ball Valve", loc="Feeder line valve"),
+    row(dev="Breaker", loc="Secondary Main: MDP-2 bkr 1"),
+]
+
+DRIVE_DEVICES = ["VFD", "vfd", "VFD Bypass", "VFD/Bypass", "Variable Frequency Drive", "Drive", "Breaker",
+                 "Disconnect", "Soft Starter", "",
+                 # a drive locked out upstream (field app build 170): still a drive
+                 "VFD - Upstream Breaker", "VFD - Upstream Disconnect",
+                 # a drive at a padlocked breaker on it (field app build 171)
+                 "VFD - Breaker w/Padlock"]
+
+# Field app build 170: the drive Devices that are their own upstream isolation (no
+# feeder, no Drive Isolates answer) — loto-web's drive_isolation.upstream_drive_kind.
+UPSTREAM_DEVICES = ["VFD - Upstream Breaker", "VFD - Upstream Disconnect", "vfd - upstream breaker",
+                    "VFD  -  Upstream   Disconnect", " VFD - Upstream Breaker ", "VFD", "Breaker", "Disconnect",
+                    "VFD Bypass", "VFD - Upstream", "Upstream Breaker", "VFD - Upstream Breaker w/Padlock", "",
+                    "VFD - Breaker w/Padlock"]   # build 171: a drive at its own breaker, not upstream
+
+# Field app build 171: the drive whose own isolation is a padlocked breaker on it —
+# loto-web's drive_isolation.is_drive_breaker (the exact name, any case, runs of spaces as one)
+DRIVE_BREAKER_DEVICES = ["VFD - Breaker w/Padlock", "vfd - breaker w/padlock", "VFD  -  Breaker   w/Padlock",
+                         " VFD - Breaker w/Padlock ", "VFD", "Breaker w/Padlock", "VFD - Upstream Breaker",
+                         "VFD - Breaker", "VFD Breaker w/Padlock", "Breaker", ""]
+
+DC_BUS_ROWS = [
+    row(es="Stored Electrical Energy", dev="Capacitor", loc="VFD DC Bus"),
+    row(es="Stored Electrical Energy", dev="Capacitor", loc="At Capacitor Bank"),
+    row(es="Stored Electrical Energy", dev="Capacitor", loc="Inverter DC Bus"),
+    row(es="Capacitor", dev="Capacitor", loc="variable frequency drive bus"),
+    row(es="Electrical 480V", dev="Breaker", loc="VFD DC Bus"),
+]
+
+NAMES_TAG = [
+    ("VFD-1", "Feeder: MCC-2A bkr 14 (VFD-1)"),
+    ("vfd-1", "Feeder: MCC-2A bkr 14 (VFD-1)"),
+    ("VFD-1", "Feeder: MCC-2A bkr 14 (VFD-10)"),
+    ("VFD-1", "Feeder: MCC-2A bkr 14 (VFD-1, VFD-2)"),
+    ("VFD-2", "Feeder: MCC-2A bkr 14 (VFD-1, VFD-2)"),
+    ("26", "Feeder: MCC-2A bkr 26 (VFD-1)"),
+    ("VFD-1", "Feeder: MCC-2A (VFD-1) bkr 14"),
+    ("VFD-1", "Feeder: MCC-2A bkr 14 VFD-1"),
+    ("VFD-1", "Feeder: MCC-2A (north) bkr 14 (VFD-1)"),
+    ("VFD-1 A supply", "Feeder: MCC-2A bkr 16 (VFD-1 A supply)"),
+    ("A", "Feeder: MCC-2A bkr 16 (VFD-1 A supply)"),
+    ("", "Feeder: MCC-2A bkr 14 (VFD-1)"),
+    # runs of spaces count as one on both sides (loto-web 2026-10-25)
+    ("AHU 9", "Feeder: MCC-4 bkr 1 (AHU  9)"),
+    ("AHU  9", "Feeder: MCC-4 bkr 1 (AHU 9)"),
+    ("AHU 9", "Feeder: MCC-4 bkr 1 (AHU 99)"),
+    ("AHU  9", "Feeder: MCC-4 bkr 1 ( AHU   9 , VFD-2)"),
+    ("\ufeffAHU 9", "Feeder: MCC-4 bkr 1 (AHU 9)"),   # U+FEFF is not whitespace to Python's split
+    ("AHU\u00a09", "Feeder: MCC-4 bkr 1 (AHU 9)"),
+]
+
+UNIT_IDS = [("VFD-1", 1), ("VFD-1", 2), ("VFD-1;", 2), ("VFD-1; ", 2), ("; VFD-2", 2), ("VFD-1; VFD-2", 2),
+            ("VFD-1; VFD-2", 3), ("", 2), ("1, 3, 5", 1), ("VFD-1;A", 1)]
+
+ROLES = ["Secondary Main: MDP-2 bkr 1", "secondary main : MDP-2", "Secondary Main MDP-2", "Alternate Source (UPS output): UPS-1",
+         "Alternate Source (ups output): UPS-1", "Alternate Source (ATS) ATS-1", "Alternate Source (PV or battery): PV-1",
+         "MDP-1 bkr 12", "Feeder: MCC-2A bkr 14 (VFD-1)"]
+
+# The label discharge wait (build 121): which rows take it (label_wait.asked,
+# the app's sourceTakesLabelWait on a unit type that asks), and columns 18 / 19
+# as the app writes them (its stored entries -> its cell text -> loto-web's parse).
+LABEL_ASKED = [("Electrical 480V", "VFD", False), ("Electrical 480V", "vfd", False), ("Electrical 480V", "VFD Bypass", False),
+               ("Electrical 480V", "Breaker", False), ("Stored Electrical Energy", "Capacitor", False),
+               ("Stored Electrical Energy", "", False), ("Electrical 480V", "VFD", True), ("Battery 24V DC", "VFD", False),
+               ("Kinetic", "VFD", False),
+               # field app build 170: a drive locked out upstream takes the wait too
+               ("Electrical 480V", "VFD - Upstream Breaker", False), ("Electrical 208V", "VFD - Upstream Disconnect", False),
+               ("Electrical 480V", "vfd - upstream breaker", False), ("Electrical 480V", "VFD - Upstream Breaker", True),
+               ("Kinetic", "VFD - Upstream Breaker", False),
+               # field app build 171: a drive at a padlocked breaker on it
+               ("Electrical 480V", "VFD - Breaker w/Padlock", False), ("Electrical 480V", "vfd  -  breaker w/padlock", False),
+               ("Electrical 480V", "VFD - Breaker w/Padlock", True), ("Electrical 480V", "Breaker w/Padlock", False)]
+WAIT_CELLS = [  # (app's stored labelWait, quantity, the text the app writes)
+    ([{"minutes": 20}, {"noLabel": True}], 2, "20; No label"),
+    ([{"minutes": 15}], 1, "15"),
+    ([None, {"minutes": 10}], 2, "; 10"),
+    ([{"noLabel": True}], 1, "No label"),
+    ([{"minutes": 1}], 1, "1"),
+    ([{"minutes": 240}], 1, "240"),
+    ([], 2, ""),
+]
+VOLT_CELLS = [  # (app's stored dcBusV, quantity, the text the app writes)
+    ([680, None], 2, "680"), ([None, 650], 2, "; 650"), ([12], 1, "12"), ([1500], 1, "1500"), ([280, 550], 2, "280; 550"), ([], 1, ""),
+]
+
+# Tier 1 (drive_isolation.feeders_cover_drives, loto-web's xhigh review 2026-10-24):
+# feeder Locations and one tag per drive unit ('' untagged).
+COVER = [
+    (["Feeder: MCC bkr 3 (VFD-1)", "Feeder: MCC bkr 4 (VFD-2)"], ["VFD-1", "VFD-2"]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)"], ["VFD-1", "VFD-2"]),
+    (["Feeder: MCC bkr 3"], ["VFD-1", "VFD-2"]),
+    (["Feeder: MCC bkr 3"], ["", ""]),
+    (["Feeder: MCC bkr 3", "Feeder: MCC bkr 4"], ["", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1)"], ["VFD-1", "VFD-1"]),
+    (["Feeder: MCC bkr 3 (VFD-1)", "Feeder: MCC bkr 4 (VFD-1)"], ["VFD-1", "VFD-1"]),
+    (["Feeder: MCC bkr 3 (VFD-1)"], ["VFD-1", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1)"], ["vfd-1"]),
+    ([], ["VFD-1"]),
+    (["Feeder: MCC bkr 3"], []),
+    (["Feeder: MCC bkr 3 (AHU  9, VFD-2)"], ["AHU 9", "VFD-2"]),
+    (["Feeder: MCC bkr 3 (AHU 9, AHU  9)"], ["AHU 9", "AHU  9"]),
+    # drives with no ID (field app build 128, loto-web 2026-10-27): a feeder naming
+    # no drive for each untagged unit, beside named ones
+    (["Feeder: MCC bkr 3 (VFD-1)", "Feeder: MCC bkr 4"], ["VFD-1", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)", "Feeder: MCC bkr 4"], ["VFD-1", "VFD-2", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)"], ["VFD-1", "VFD-2", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)", "Feeder: MCC bkr 4 (north)"], ["VFD-1", "VFD-2", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)", "Feeder: MCC bkr 4"], ["VFD-1", "VFD-1", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)", "Feeder: MCC bkr 4"], ["VFD-1", "VFD-2", "", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)", "Feeder: MCC bkr 4", "Feeder: MCC bkr 5"], ["VFD-1", "VFD-2", "", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)", "Feeder: MCC bkr 4 (VFD-1)"], ["VFD-1", "VFD-2", ""]),
+    (["Feeder: MCC bkr 3 (VFD-1, VFD-2)", "Feeder: MCC bkr 4"], [" ", "VFD-1", "VFD-2"]),
+]
+# drain_location.medium_kind: which energy sources the release question asks on.
+MEDIA = ["Fuel Oil In", "Fuel Oil Out", "Diesel Fuel", "FO Supply", "Chemical In", "Chem feed", "Geothermal Water In",
+         "Natural Gas", "Propane", "LP Gas", "Vacuum Air In", "Vacuum Air Out", "Vacuum Exhaust", "Vacuum Discharge",
+         "Vacuum Air In/Out", "Refrigerant", "HHW In", "Compressed Air In", "Electrical 480V", "",
+         # loto-web's is_vacuum_exhaust (2026-10-25): an exhaust word anywhere, never "In/Out"
+         "Vacuum Air Outlet", "Vacuum Outlet", "Vacuum Pump Exhaust", "Exhaust - Vacuum", "vacuum air out",
+         "Medical Vacuum Discharge Line", "Vacuum In / Out", "Vacuum Air Outdoor Unit", "Vacuum Air Inlet"]
+
+# valve_state.takes_valve_state (loto-web 2026-10-26): which rows may carry Normally
+# Closed / Lock Open. loto-web's 35 cases as (source, device, the ID prefix its
+# generator resolves; None where it has none), then the app's own. The app has no
+# prefix: it must agree with the call loto-web's save hook makes, code None.
+VALVE_STATE = [
+    ("Electrical 480V", "Breaker", "E"), ("Electrical 480V", "Ball Valve", "E"), ("Kinetic", "Rotating", "K"),
+    ("Gravity/Potential", "Potential", "CG"), ("Thermal", "", "T"), ("Stored Electrical Energy", "Capacitor", "ES"),
+    ("Damper Actuator", "Electric Actuator", "MS"), ("Hydraulic", "Hydraulic", "H"), ("Hydraulic", "Ball Valve", "H"),
+    ("CHW In", "Ball Valve", "W"), ("CHW In", "Pump", "W"), ("Natural Gas", "Ball Valve", "G"),
+    ("Refrigerant Gas", "Ball Valve", "RG"), ("CA In", "Quick Disconnect", "P"),
+    ("Power Feed 277V", "Breaker", "X"), ("Battery", "Bag", "X"), ("Process Air", "Ball Valve", "X"), ("Process Air", "", "X"),
+    ("Mystery Line", "Breaker", "X"), ("Mystery Line", "Chain", "X"), ("Mystery Line", "Plug Valve", "X"), ("Mystery Line", "Plug", "X"),
+    ("Electrical 480V", "Breaker", None), ("Kinetic", "Rotating", None), ("Hydraulic", "Gate Valve", None),
+    ("Hydraulic", "Hydraulic", None), ("CHW In", "Ball Valve", None), ("HPS 100 PSI", "Gate Valve", None),
+    ("CA In 100 PSI", "Ball Valve", None), ("Vacuum Air In", "Ball Valve", None), ("Condensate Out", "Gate Valve", None),
+    ("Stored Electrical Energy", "Capacitor", None), ("Gravity/Potential", "Potential", None), ("Thermal", "", None),
+    ("Natural Gas", "Plug Valve", None),
+    # the app's own: its picker's names and Devices, and the custom names its reviews met
+    ("UPS Output", "Breaker", None), ("Hydraulic", "Chain", None), ("Hydraulic", "Butterfly w/Padlock", None),
+    ("Electrical 480V", "Plug Valve", None), ("Battery 12V DC", "Bag", None), ("Damper Actuator", "Pneumatic Actuator", None),
+    ("277 volt feed", "", None), ("Refrigerant Hot Gas Bypass", "Ball Valve", None), ("Steam In", "Gate Valve w/Cable", None),
+    ("CHW Out", "Ckt Setter - Universal Valve", None), ("Fuel Oil In", "Pump", None), ("", "", None), ("", "Breaker", None),
+    # the stem words at a word start (loto-web 2026-10-26): a Geothermal water line keeps its valve state
+    ("Geothermal", "Ball Valve", None), ("Geothermal Water In", "Gate Valve", None), ("Geothermal", "", None),
+    ("Solar Thermal", "Ball Valve", None), ("Hydroelectric Feed", "Breaker", None), ("Electro-Mechanical Drive", "", None),
+    # loto-web's own word-start cases (2026-10-26)
+    ("Geothermal Water In", "Ball Valve", None), ("Geothermal Supply", "Gate Valve", None), ("Geothermal Water In", "Ball Valve", "W"),
+    ("Thermal Energy", "", None), ("DHW-Electric", "Breaker", None),
+    # steam at a typed pressure (field app build 149)
+    ("MPS 30 PSI", "Gate Valve", None), ("HPS 125 PSI", "Gate Valve w/Cable", None), ("LPS 15 PSI", "Ball Valve", "S"),
+]
+
+# Steam at a typed pressure (field app build 149): the names the app makes,
+# "LPS|MPS|HPS <1-300> PSI", as loto-web's generator resolves them against its
+# shipped Mapping Sheet (_energy_source_mapping): the ID prefix and the pressure
+# Section 1 prints. The app's T290 asserts each prints the pressure typed, with
+# an S ID. A sheet row keyed by a name wins over the name's own number, so a row
+# whose text names another pressure shows here.
+STEAM = ["LPS 10 PSI", "LPS 1 PSI", "LPS 5 PSI", "LPS 15 PSI", "LPS 20 PSI", "MPS 20 PSI", "MPS 15 PSI", "MPS 30 PSI",
+         "MPS 40 PSI", "MPS 50 PSI", "MPS 60 PSI", "HPS 100 PSI", "HPS 60 PSI", "HPS 90 PSI", "HPS 125 PSI",
+         "HPS 150 PSI", "HPS 250 PSI", "HPS 300 PSI"]
+
+
+def steam_answers():
+    ms = MappingService()
+    ms.init_from_file(os.path.join(LOTO_WEB, "data", "mapping", "Mapping_Sheet.xlsx"))
+    sheet = ms.mappings["energy_sources"]
+    out = []
+    for name in STEAM:
+        m = pgm._energy_source_mapping(sheet, name) or {}
+        printed = str(m.get("procedure_source") or "")
+        psi = re.search(r"(\d+(?:\.\d+)?)\s*PSI", printed, re.I)
+        temp = re.search(r"@\s*(\d+)\s*F", printed)
+        out.append({"energySource": name, "code": str(m.get("code") or ""), "printed": printed,
+                    "psi": float(psi.group(1)) if psi else None, "tempF": int(temp.group(1)) if temp else None})
+    return out
+
+# A pressure & temperature typed on a water or air row (field app build 166): the
+# app's box starts at what loto-web prints for the name with nothing typed, its
+# Mapping Sheet magnitude (the lines under the family name), and calls it the
+# default. T290 asserts the app's MAGNITUDE_MEDIA matches for all 15 names.
+MAGNITUDE_NAMES = [f"{m} {side}" for m in ("HHW", "CHW", "DHW", "DW", "Compressed Air") for side in ("In/Out", "In", "Out")]
+
+
+def magnitude_answers():
+    ms = MappingService()
+    ms.init_from_file(os.path.join(LOTO_WEB, "data", "mapping", "Mapping_Sheet.xlsx"))
+    sheet = ms.mappings["energy_sources"]
+    out = []
+    for name in MAGNITUDE_NAMES:
+        m = pgm._energy_source_mapping(sheet, name) or {}
+        lines = [" ".join(ln.split()) for ln in str(m.get("procedure_source") or "").split("\n")]
+        out.append({"energySource": name, "code": str(m.get("code") or ""), "family": lines[0] if lines else "",
+                    "magnitude": " ".join(ln for ln in lines[1:] if ln)})
+    return out
+
+
+# A Large Steam Boiler's roles (field app build 169, loto-web spec rev 2): loto-web's
+# own boiler_source_role on the eleven list names and the spellings around them. T290
+# asserts the app's boilerRoleOf gives the same role (or none) for each.
+BOILER_ROLE_NAMES = ["Main Steam Stop", "Non-Return", "Steam Header Drain", "Steam Warm Up", "Blanket Steam",
+                     "Boiler Vent", "Atomizing Steam", "Atomizing Air", "Surface Blowdown", "Bottom Blowdown",
+                     "Low Water Cutoff Drain", "Main Steam Stop 90 PSI", "Non-Return (closest to boiler)",
+                     "Bottom Blowdown Valve", "LWCO Drain", "Drum Vent", "Header Warm Up", "HPS Main Stop",
+                     "HPS 100 PSI", "Soot Blower", "Natural Gas", "Feedwater In", "Condensate In", "Steam",
+                     "LPS 10 PSI", "Steam Header", "Atomization Air 40 psig", "Surface Blow Down valves"]
+
+
+def boiler_role_answers():
+    return [{"energySource": n, "role": pgm.boiler_source_role(n) or ""} for n in BOILER_ROLE_NAMES]
+
+
+UNITS = {
+    "two tagged drives, one feeder each": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-2"),
+                                           row(loc="Feeder: MCC-2A bkr 14 (VFD-1)"), row(loc="Feeder: MCC-2A bkr 15 (VFD-2)")],
+    "one feeder for two drives": [row(dev="VFD", did="VFD-1; VFD-2", qty=2), row(loc="Feeder: MCC-2A bkr 14 (VFD-1, VFD-2)")],
+    "a tag typed differently, no other feeder": [row(dev="VFD", did="VFD1"), row(loc="Feeder: MCC-2A bkr 14 (VFD-1)")],
+    "a tag typed differently beside a named one": [row(dev="VFD", did="VFD-9"), row(loc="Feeder: MCC-1 bkr 1 (VFD-9)"),
+                                                   row(dev="VFD", did="VFD1"), row(loc="Feeder: MCC-2A bkr 14 (VFD-1)")],
+    "an upstream breaker row": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-2"),
+                                row(loc="Feeder: MCC-2A bkr 14 (VFD-1)"), row(loc="Upstream MCC-2A bkr 15 (VFD-2)")],
+    "a Feeder Breaker device": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-2"),
+                                row(loc="Feeder: MCC-2A bkr 14 (VFD-1)"), row(dev="Feeder Breaker", loc="MCC-2A bkr 15 (VFD-2)")],
+    "a custom drive device": [row(dev="VFD Bypass", did="VFD-3"), row(loc="Feeder: MCC-4 bkr 2 (VFD-3)")],
+    "a custom drive device, no feeder": [row(dev="VFD Bypass", did="VFD-3")],
+    # field app build 170: a drive locked out at its upstream breaker / disconnect is its own feeder
+    "a drive locked out upstream, alone": [row(dev="VFD - Upstream Breaker", did="26")],
+    "a drive locked out upstream, Qty 2": [row(dev="VFD - Upstream Disconnect", did="DS-1; DS-2", qty=2)],
+    "an upstream drive beside a fed VFD": [row(dev="VFD - Upstream Breaker", did="26"), row(dev="VFD", did="VFD-1"),
+                                           row(loc="Feeder: MCC-2A bkr 14 (VFD-1)")],
+    "an upstream drive beside an unfed VFD": [row(dev="VFD - Upstream Breaker", did="26"), row(dev="VFD", did="VFD-1")],
+    # field app build 171: a drive at a padlocked breaker on it needs its feeder, as a VFD does
+    "a padlocked-breaker drive with its feeder": [row(dev="VFD - Breaker w/Padlock", did="VFD-4"),
+                                                  row(loc="Feeder: MCC-3 bkr 9 (VFD-4)")],
+    "a padlocked-breaker drive, no feeder": [row(dev="VFD - Breaker w/Padlock", did="VFD-4")],
+    "an upstream drive beside a no-ID VFD and an unnamed feeder": [row(dev="VFD - Upstream Disconnect"), row(dev="VFD"),
+                                                                   row(loc="Feeder: MCC bkr 3")],
+    "a drive Located Feeder end": [row(dev="VFD", did="VFD-3", loc="Feeder end of AHU-3"), row(loc="Feeder: MCC-4 bkr 2 (VFD-3)")],
+    "a half-recorded Qty-2 row": [row(dev="VFD", did="VFD-9"), row(loc="Feeder: MCC-1 bkr 1 (VFD-9)"),
+                                  row(dev="VFD", did="VFD-1;", qty=2), row(loc="Feeder: MCC-2A bkr 14 (VFD-1)")],
+    "one tag on a Qty-2 row": [row(dev="VFD", did="VFD-1", qty=2), row(loc="Feeder: MCC-2A bkr 14 (VFD-1)")],
+    "untagged drives, one feeder each": [row(dev="VFD", qty=2), row(loc="Feeder: MCC-2A bkr 14 (VFD-1)"),
+                                         row(loc="Feeder: MCC-2A bkr 15 (VFD-2)")],
+    "an untagged drive beside a named feeder": [row(dev="VFD", did="VFD-1"), row(loc="Feeder: MCC-2A bkr 14 (VFD-1)"),
+                                                row(dev="VFD"), row(loc="Feeder: MCC-2A bkr 15 (VFD-5)")],
+    "a feeder naming a tag in its middle parentheses": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-2"),
+                                                        row(loc="Feeder: MCC-2A (VFD-1) bkr 14"), row(loc="Feeder: MCC-2A bkr 15 (VFD-2)")],
+    "no feeder at all": [row(dev="VFD", did="VFD-1")],
+    "one unnamed feeder for two drives": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-2"), row(loc="Feeder: MCC bkr 3")],
+    "two unnamed feeders for two drives": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-2"),
+                                           row(loc="Feeder: MCC bkr 3"), row(loc="Feeder: MCC bkr 4")],
+    "one untagged Qty-2 row, one unnamed feeder": [row(dev="VFD", qty=2), row(loc="Feeder: MCC bkr 3")],
+    "one untagged Qty-2 row, two unnamed feeders": [row(dev="VFD", qty=2), row(loc="Feeder: MCC bkr 3"), row(loc="Feeder: MCC bkr 4")],
+    "duplicate tags, one named feeder": [row(dev="VFD", did="VFD-1"), row(dev="VFD", did="VFD-1"), row(loc="Feeder: MCC bkr 3 (VFD-1)")],
+    "a tag with two spaces, named with one": [row(dev="VFD", did="AHU  9"), row(dev="VFD", did="VFD-4"),
+                                              row(loc="Feeder: MCC-4 bkr 1 (AHU 9)"), row(loc="Feeder: MCC-4 bkr 2 (VFD-4)")],
+    # Drives with no ID (field app build 128, loto-web 2026-10-27): a drive with no
+    # Device ID takes the feeders that name no drive
+    "a no-ID drive beside a named feeder, its own unnamed": [row(dev="VFD", did="VFD-1"), row(loc="Feeder: MCC-2A bkr 14 (VFD-1)"),
+                                                              row(dev="VFD"), row(loc="Feeder: MCC-2A bkr 15")],
+    "a shared feeder for two drives, a no-ID drive with its own": [row(dev="VFD", did="VFD-1; VFD-2", qty=2),
+                                                                   row(loc="Feeder: MCC bkr 3 (VFD-1, VFD-2)"),
+                                                                   row(dev="VFD"), row(loc="Feeder: MCC bkr 4")],
+    "a no-ID drive on a breaker that also feeds a named drive": [row(dev="VFD", did="VFD-1"), row(dev="VFD"),
+                                                                 row(loc="Feeder: MCC bkr 3 (VFD-1)")],
+    "a no-ID drive, a feeder naming a word": [row(dev="VFD"), row(loc="Feeder: MCC bkr 3 (north)"),
+                                              row(dev="VFD", did="VFD-1"), row(loc="Feeder: MCC bkr 4 (VFD-1)")],
+    "a no-ID drive beside a tagged drive with no feeder": [row(dev="VFD", did="VFD-1"), row(dev="VFD"), row(loc="Feeder: MCC bkr 3")],
+    "two tagged drives sharing a feeder, a no-ID drive without one": [row(dev="VFD", did="VFD-1; VFD-2", qty=2),
+                                                                      row(loc="Feeder: MCC bkr 3 (VFD-1, VFD-2)"), row(dev="VFD")],
+    "two no-ID drives beside a named one, two unnamed feeders": [row(dev="VFD", qty=2), row(dev="VFD", did="VFD-1"),
+                                                                 row(loc="Feeder: MCC bkr 3 (VFD-1)"), row(loc="Feeder: MCC bkr 4"),
+                                                                 row(loc="Feeder: MCC bkr 5")],
+    "two no-ID drives beside a named one, one unnamed feeder": [row(dev="VFD", qty=2), row(dev="VFD", did="VFD-1"),
+                                                                row(loc="Feeder: MCC bkr 3 (VFD-1)"), row(loc="Feeder: MCC bkr 4")],
+    "a half-tagged Qty-2 row, a named and an unnamed feeder": [row(dev="VFD", did="VFD-1;", qty=2),
+                                                               row(loc="Feeder: MCC bkr 3 (VFD-1)"), row(loc="Feeder: MCC bkr 4")],
+}
+
+
+def unit_answers(rows):
+    """For each drive unit, whether loto-web identifies its feeder, as its
+    generator does (_drive_feeder_ids_for): feeders_for, then a feeder naming no
+    drive kept only when the unit is Tier 1 (feeders_cover_drives)."""
+    sds = [sd(r) for r in rows]
+    feeders = [("E-%d" % (i + 1), r["location"]) for i, (r, s) in enumerate(zip(rows, sds)) if PG._is_drive_feeder(s)]
+    def needs_feeder(r, s):   # loto-web's own rule: a drive, not one locked out upstream (field app build 170)
+        return di.needs_feeder(r["deviceType"])
+    unit_tags = []
+    for r, s in zip(rows, sds):
+        if needs_feeder(r, s):
+            unit_tags += [t or "" for t in unit_ids(r["deviceId"], r["quantity"])]
+    tier1 = di.feeders_cover_drives([loc for _fid, loc in feeders], unit_tags)
+    out = []
+    for i, (r, s) in enumerate(zip(rows, sds)):
+        if not needs_feeder(r, s):
+            continue
+        for k, t in enumerate(unit_ids(r["deviceId"], r["quantity"])):
+            ids = di.feeders_for(t or "", feeders, unit_tags)
+            if ids and not any(di.names_tag(t or "", loc) for _fid, loc in feeders) and not tier1:
+                ids = []
+            out.append({"row": i, "unit": k, "tag": t or "", "identified": bool(ids)})
+    return out
+
+
+# valve_state.parse_cell (loto-web 2026-11-02): columns 11 "Valve State" and 15 "Lock Open"
+# per unit. Each case: what the app holds (the per-unit states, or None for a cell typed
+# by hand), the row's quantity, the text in the cell, then loto-web's reading of it
+# ("parsed", one entry per unit) and whether its import warns ("warns": unreadable text or
+# a per-unit list whose count isn't the quantity). The app must write exactly `text`
+# for the states it holds, and loto-web must read them back.
+VALVE_CELLS = [
+    # the app's own exports
+    (["normal", "normal"], 2, ""),
+    (["normally_closed", "normally_closed"], 2, "Normally Closed"),
+    (["normal", "normally_closed"], 2, "Normal; Normally Closed"),
+    (["normally_closed", "normal"], 2, "Normally Closed; Normal"),
+    (["normal", "normally_closed", "normal"], 3, "Normal; Normally Closed; Normal"),
+    (["normally_closed"], 1, "Normally Closed"),
+    (["normal"], 1, ""),
+    # text a person might type, read by loto-web only
+    (None, 2, "Normally Open"), (None, 2, "normally-closed"), (None, 2, "NORMALLY_CLOSED; normal"),
+    (None, 2, "; Normally Closed"), (None, 2, "Normal"), (None, 2, "NC"), (None, 2, "Normal; NC"),
+    (None, 2, "Normal; Normal; Normally Closed"), (None, 3, "Normal; Normally Closed"),
+    (None, 2, "Closed"), (None, 1, "Normally Closed; Normal"),
+]
+LOCK_CELLS = [
+    ([False, False], 2, ""),
+    ([True, True], 2, "Yes"),
+    ([False, True], 2, "No; Yes"),
+    ([True, False], 2, "Yes; No"),
+    ([False, True, False], 3, "No; Yes; No"),
+    ([True], 1, "Yes"),
+    (None, 2, "yes;"), (None, 2, "Y"), (None, 2, "No; Y"), (None, 2, "No"), (None, 3, "No; Yes"),
+]
+
+
+def main():
+    data = {
+        "_about": "Written by tests/contract/make_lotoweb_rules.py from loto-web's own functions; asserted by the app's T290.",
+        "lotoWeb": LOTO_WEB,
+        "feeder": [dict(r, isFeeder=bool(PG._is_drive_feeder(sd(r)))) for r in FEEDER_ROWS],
+        "drive": [{"deviceType": d, "isDrive": bool(PG._is_vfd_device(NS(device=d)))} for d in DRIVE_DEVICES],
+        "dcBus": [dict(r, isDcBus=bool(PG._is_vfd_dc_bus(sd(r)))) for r in DC_BUS_ROWS],
+        "upstreamDrive": [{"deviceType": d, "kind": di.upstream_drive_kind(d) or ""} for d in UPSTREAM_DEVICES],
+        "driveBreaker": [{"deviceType": d, "isDriveBreaker": bool(di.is_drive_breaker(d))} for d in DRIVE_BREAKER_DEVICES],
+        # an Exhaust Fan's biohazard class -> its two Section 2 CAUTIONs, as loto-web prints them (field app build 172)
+        "bioCautions": {code: list(v["s2"]) for code, v in FAN_PROCEDURE_TEXT.items() if isinstance(v, dict) and v.get("s2")},
+        "namesTag": [{"tag": t, "location": l, "names": bool(di.names_tag(t, l))} for t, l in NAMES_TAG],
+        "unitIds": [{"deviceId": d, "quantity": q, "units": [u or "" for u in unit_ids(d, q)]} for d, q in UNIT_IDS],
+        "role": [{"location": l, "role": ts.role_of_location(l)[0] or "", "kind": ts.role_of_location(l)[1] or ""} for l in ROLES],
+        "units": [{"name": n, "rows": rows, "drives": unit_answers(rows)} for n, rows in UNITS.items()],
+        "cover": [{"feeders": f, "driveTags": t, "covers": bool(di.feeders_cover_drives(f, t))} for f, t in COVER],
+        "mediumKind": [{"energySource": e, "kind": dl.medium_kind(e) or ""} for e in MEDIA],
+        "labelAsked": [{"energySource": e, "deviceType": d, "linked": k, "asked": bool(lw.asked(e, d, k))} for e, d, k in LABEL_ASKED],
+        "waitCells": [{"labelWait": a, "quantity": q, "text": t, "parsed": lw.parse_wait_cell(t, q)} for a, q, t in WAIT_CELLS],
+        "voltCells": [{"dcBusV": a, "quantity": q, "text": t, "parsed": lw.parse_volts_cell(t, q)} for a, q, t in VOLT_CELLS],
+        "valveState": [{"energySource": e, "deviceType": d, "code": c, "takes": bool(vs.takes_valve_state(e, d)),
+                        "takesWithCode": bool(vs.takes_valve_state(e, d, c))} for e, d, c in VALVE_STATE],
+        "valveCells": [{"unitValveStates": a, "quantity": q, "text": t,
+                        "parsed": vs.parse_cell("normally_closed", t, q),
+                        "warns": bool(vs.cell_problem("normally_closed", t, q))} for a, q, t in VALVE_CELLS],
+        "lockCells": [{"unitLockOpen": a, "quantity": q, "text": t,
+                       "parsed": vs.parse_cell("lock_open", t, q),
+                       "warns": bool(vs.cell_problem("lock_open", t, q))} for a, q, t in LOCK_CELLS],
+        "steam": steam_answers(),
+        "magnitudes": magnitude_answers(),
+        "boilerRole": boiler_role_answers(),
+    }
+    out = os.path.join(HERE, "lotoweb-rules.json")
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=1, ensure_ascii=False)
+        f.write("\n")
+    print("wrote", out, "-", sum(len(v) for k, v in data.items() if isinstance(v, list)), "cases")
+
+
+if __name__ == "__main__":
+    main()

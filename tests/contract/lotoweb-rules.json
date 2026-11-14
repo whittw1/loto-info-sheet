@@ -1,0 +1,3712 @@
+{
+ "_about": "Written by tests/contract/make_lotoweb_rules.py from loto-web's own functions; asserted by the app's T290.",
+ "lotoWeb": "/Users/whittw/Desktop/Claude Apps/loto-web",
+ "feeder": [
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "Feeder: MCC-2A bkr 14 (VFD-1)",
+   "isFeeder": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "feeder MCC-2A",
+   "isFeeder": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "  Feeder: MCC-2A bkr 14",
+   "isFeeder": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "Feeders panel",
+   "isFeeder": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "MCC-2A bkr 14 (VFD-1)",
+   "isFeeder": false
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Feeder Breaker",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "MCC-2A bkr 15 (VFD-2)",
+   "isFeeder": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "Upstream MCC-2A bkr 15 (VFD-2)",
+   "isFeeder": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Disconnect",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "upstream disconnect at roof",
+   "isFeeder": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Switch",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "Upstream switch",
+   "isFeeder": false
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "Panel LP-2 bkr 14 (feeder to AHU-3)",
+   "isFeeder": false
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "VFD",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "Feeder end of AHU-3",
+   "isFeeder": false
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "VFD Bypass",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "Feeder side",
+   "isFeeder": false
+  },
+  {
+   "energySource": "Stored Electrical Energy",
+   "deviceType": "Capacitor",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "Feeder side of the VFD-1 DC bus",
+   "isFeeder": false
+  },
+  {
+   "energySource": "Stored Electrical Energy",
+   "deviceType": "Capacitor",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "Feeder side cap bank",
+   "isFeeder": true
+  },
+  {
+   "energySource": "Natural Gas",
+   "deviceType": "Ball Valve",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "Feeder line valve",
+   "isFeeder": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "Secondary Main: MDP-2 bkr 1",
+   "isFeeder": false
+  }
+ ],
+ "drive": [
+  {
+   "deviceType": "VFD",
+   "isDrive": true
+  },
+  {
+   "deviceType": "vfd",
+   "isDrive": true
+  },
+  {
+   "deviceType": "VFD Bypass",
+   "isDrive": true
+  },
+  {
+   "deviceType": "VFD/Bypass",
+   "isDrive": true
+  },
+  {
+   "deviceType": "Variable Frequency Drive",
+   "isDrive": true
+  },
+  {
+   "deviceType": "Drive",
+   "isDrive": false
+  },
+  {
+   "deviceType": "Breaker",
+   "isDrive": false
+  },
+  {
+   "deviceType": "Disconnect",
+   "isDrive": false
+  },
+  {
+   "deviceType": "Soft Starter",
+   "isDrive": false
+  },
+  {
+   "deviceType": "",
+   "isDrive": false
+  },
+  {
+   "deviceType": "VFD - Upstream Breaker",
+   "isDrive": true
+  },
+  {
+   "deviceType": "VFD - Upstream Disconnect",
+   "isDrive": true
+  },
+  {
+   "deviceType": "VFD - Breaker w/Padlock",
+   "isDrive": true
+  }
+ ],
+ "dcBus": [
+  {
+   "energySource": "Stored Electrical Energy",
+   "deviceType": "Capacitor",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "VFD DC Bus",
+   "isDcBus": true
+  },
+  {
+   "energySource": "Stored Electrical Energy",
+   "deviceType": "Capacitor",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "At Capacitor Bank",
+   "isDcBus": false
+  },
+  {
+   "energySource": "Stored Electrical Energy",
+   "deviceType": "Capacitor",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "Inverter DC Bus",
+   "isDcBus": false
+  },
+  {
+   "energySource": "Capacitor",
+   "deviceType": "Capacitor",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "variable frequency drive bus",
+   "isDcBus": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker",
+   "deviceId": "",
+   "quantity": 1,
+   "location": "VFD DC Bus",
+   "isDcBus": false
+  }
+ ],
+ "upstreamDrive": [
+  {
+   "deviceType": "VFD - Upstream Breaker",
+   "kind": "breaker"
+  },
+  {
+   "deviceType": "VFD - Upstream Disconnect",
+   "kind": "disconnect"
+  },
+  {
+   "deviceType": "vfd - upstream breaker",
+   "kind": "breaker"
+  },
+  {
+   "deviceType": "VFD  -  Upstream   Disconnect",
+   "kind": "disconnect"
+  },
+  {
+   "deviceType": " VFD - Upstream Breaker ",
+   "kind": "breaker"
+  },
+  {
+   "deviceType": "VFD",
+   "kind": ""
+  },
+  {
+   "deviceType": "Breaker",
+   "kind": ""
+  },
+  {
+   "deviceType": "Disconnect",
+   "kind": ""
+  },
+  {
+   "deviceType": "VFD Bypass",
+   "kind": ""
+  },
+  {
+   "deviceType": "VFD - Upstream",
+   "kind": ""
+  },
+  {
+   "deviceType": "Upstream Breaker",
+   "kind": ""
+  },
+  {
+   "deviceType": "VFD - Upstream Breaker w/Padlock",
+   "kind": ""
+  },
+  {
+   "deviceType": "",
+   "kind": ""
+  },
+  {
+   "deviceType": "VFD - Breaker w/Padlock",
+   "kind": ""
+  }
+ ],
+ "driveBreaker": [
+  {
+   "deviceType": "VFD - Breaker w/Padlock",
+   "isDriveBreaker": true
+  },
+  {
+   "deviceType": "vfd - breaker w/padlock",
+   "isDriveBreaker": true
+  },
+  {
+   "deviceType": "VFD  -  Breaker   w/Padlock",
+   "isDriveBreaker": true
+  },
+  {
+   "deviceType": " VFD - Breaker w/Padlock ",
+   "isDriveBreaker": true
+  },
+  {
+   "deviceType": "VFD",
+   "isDriveBreaker": false
+  },
+  {
+   "deviceType": "Breaker w/Padlock",
+   "isDriveBreaker": false
+  },
+  {
+   "deviceType": "VFD - Upstream Breaker",
+   "isDriveBreaker": false
+  },
+  {
+   "deviceType": "VFD - Breaker",
+   "isDriveBreaker": false
+  },
+  {
+   "deviceType": "VFD Breaker w/Padlock",
+   "isDriveBreaker": false
+  },
+  {
+   "deviceType": "Breaker",
+   "isDriveBreaker": false
+  },
+  {
+   "deviceType": "",
+   "isDriveBreaker": false
+  }
+ ],
+ "bioCautions": {
+  "AII_TB": [
+   "This fan exhausts airborne infection isolation (AII / TB) rooms. Shutting it down can reverse the rooms' negative pressure and push contaminated air into the corridors. Before shutdown, coordinate with Infection Control, Industrial Hygiene and Facility Safety: the served rooms must be vacated and posted, or an approved temporary HEPA negative-air unit placed in service and verified. Industrial Hygiene sets how long the fan keeps running after the rooms are vacated, before it is shut down.",
+   "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with airborne infectious agents. Anyone opening them wears a respirator selected by Industrial Hygiene in addition to the basic LOTO PPE. Decontaminate interior surfaces before contact with an EPA-registered hospital disinfectant selected by Infection Control for the agents of concern. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."
+  ],
+  "AEROSOL_GEN": [
+   "This fan exhausts rooms where aerosol-generating procedures are performed (bronchoscopy, sputum induction, autopsy). Shutting it down can reverse the rooms' negative pressure and push contaminated air into the corridors. Before shutdown, coordinate with Infection Control, Industrial Hygiene and Facility Safety: the served rooms must be vacated and posted, or an approved temporary HEPA negative-air unit placed in service and verified. Industrial Hygiene sets how long the fan keeps running after the rooms are vacated, before it is shut down.",
+   "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with infectious aerosol. Anyone opening them wears a respirator selected by Industrial Hygiene in addition to the basic LOTO PPE. Decontaminate interior surfaces with an EPA-registered hospital disinfectant, per the Infection Control protocol, before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."
+  ],
+  "LAB_BSL2": [
+   "This fan exhausts laboratory biological safety cabinets and hoods (BSL-2). Shutting it down removes their containment exhaust and can reverse the laboratory's pressure to the corridor. Before shutdown, coordinate with the Laboratory Biosafety Officer, Infection Control, Industrial Hygiene and Facility Safety: work in the served cabinets and hoods must stop and the laboratory be cleared and posted, or an approved temporary exhaust arrangement placed in service and verified. Industrial Hygiene sets how long the fan keeps running after work stops, before it is shut down.",
+   "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with BSL-2 biological agents and laboratory chemical residue. Anyone opening them wears a respirator selected by Industrial Hygiene, and gloves Industrial Hygiene selects for the laboratory chemicals in use, in addition to the basic LOTO PPE. Decontaminate interior surfaces with the disinfectant the laboratory's biosafety manual specifies before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as regulated medical waste."
+  ],
+  "CYTO": [
+   "This fan exhausts pharmacy hazardous-drug compounding (USP <800>). Shutting it down removes the negative pressure and exhaust of the compounding room and its hoods. Before shutdown, coordinate with the Pharmacy designated person, Industrial Hygiene and Facility Safety: compounding must stop and the room be cleared and posted. Industrial Hygiene sets how long the fan keeps running after compounding stops, before it is shut down.",
+   "The fan wheel, housing interior, upstream ductwork and filter housing are presumed contaminated with hazardous (antineoplastic) drug residue, a chemical hazard with no safe skin-contact level. Anyone opening them wears the respirator, gloves and gown selected by Industrial Hygiene and the Pharmacy designated person, in addition to the basic LOTO PPE. Decontaminate interior surfaces with the pharmacy's USP <800> deactivation / decontamination agents before contact. Do not dry-sweep or blow down debris. Bag removed filters and disposable PPE where they are removed and dispose of them as hazardous-drug waste, not regulated medical waste."
+  ]
+ },
+ "namesTag": [
+  {
+   "tag": "VFD-1",
+   "location": "Feeder: MCC-2A bkr 14 (VFD-1)",
+   "names": true
+  },
+  {
+   "tag": "vfd-1",
+   "location": "Feeder: MCC-2A bkr 14 (VFD-1)",
+   "names": true
+  },
+  {
+   "tag": "VFD-1",
+   "location": "Feeder: MCC-2A bkr 14 (VFD-10)",
+   "names": false
+  },
+  {
+   "tag": "VFD-1",
+   "location": "Feeder: MCC-2A bkr 14 (VFD-1, VFD-2)",
+   "names": true
+  },
+  {
+   "tag": "VFD-2",
+   "location": "Feeder: MCC-2A bkr 14 (VFD-1, VFD-2)",
+   "names": true
+  },
+  {
+   "tag": "26",
+   "location": "Feeder: MCC-2A bkr 26 (VFD-1)",
+   "names": false
+  },
+  {
+   "tag": "VFD-1",
+   "location": "Feeder: MCC-2A (VFD-1) bkr 14",
+   "names": true
+  },
+  {
+   "tag": "VFD-1",
+   "location": "Feeder: MCC-2A bkr 14 VFD-1",
+   "names": false
+  },
+  {
+   "tag": "VFD-1",
+   "location": "Feeder: MCC-2A (north) bkr 14 (VFD-1)",
+   "names": true
+  },
+  {
+   "tag": "VFD-1 A supply",
+   "location": "Feeder: MCC-2A bkr 16 (VFD-1 A supply)",
+   "names": true
+  },
+  {
+   "tag": "A",
+   "location": "Feeder: MCC-2A bkr 16 (VFD-1 A supply)",
+   "names": true
+  },
+  {
+   "tag": "",
+   "location": "Feeder: MCC-2A bkr 14 (VFD-1)",
+   "names": false
+  },
+  {
+   "tag": "AHU 9",
+   "location": "Feeder: MCC-4 bkr 1 (AHU  9)",
+   "names": true
+  },
+  {
+   "tag": "AHU  9",
+   "location": "Feeder: MCC-4 bkr 1 (AHU 9)",
+   "names": true
+  },
+  {
+   "tag": "AHU 9",
+   "location": "Feeder: MCC-4 bkr 1 (AHU 99)",
+   "names": false
+  },
+  {
+   "tag": "AHU  9",
+   "location": "Feeder: MCC-4 bkr 1 ( AHU   9 , VFD-2)",
+   "names": true
+  },
+  {
+   "tag": "﻿AHU 9",
+   "location": "Feeder: MCC-4 bkr 1 (AHU 9)",
+   "names": false
+  },
+  {
+   "tag": "AHU 9",
+   "location": "Feeder: MCC-4 bkr 1 (AHU 9)",
+   "names": true
+  }
+ ],
+ "unitIds": [
+  {
+   "deviceId": "VFD-1",
+   "quantity": 1,
+   "units": [
+    "VFD-1"
+   ]
+  },
+  {
+   "deviceId": "VFD-1",
+   "quantity": 2,
+   "units": [
+    "VFD-1",
+    "VFD-1"
+   ]
+  },
+  {
+   "deviceId": "VFD-1;",
+   "quantity": 2,
+   "units": [
+    "VFD-1",
+    ""
+   ]
+  },
+  {
+   "deviceId": "VFD-1; ",
+   "quantity": 2,
+   "units": [
+    "VFD-1",
+    ""
+   ]
+  },
+  {
+   "deviceId": "; VFD-2",
+   "quantity": 2,
+   "units": [
+    "",
+    "VFD-2"
+   ]
+  },
+  {
+   "deviceId": "VFD-1; VFD-2",
+   "quantity": 2,
+   "units": [
+    "VFD-1",
+    "VFD-2"
+   ]
+  },
+  {
+   "deviceId": "VFD-1; VFD-2",
+   "quantity": 3,
+   "units": [
+    "VFD-1",
+    "VFD-2",
+    ""
+   ]
+  },
+  {
+   "deviceId": "",
+   "quantity": 2,
+   "units": [
+    "",
+    ""
+   ]
+  },
+  {
+   "deviceId": "1, 3, 5",
+   "quantity": 1,
+   "units": [
+    "1, 3, 5"
+   ]
+  },
+  {
+   "deviceId": "VFD-1;A",
+   "quantity": 1,
+   "units": [
+    "VFD-1;A"
+   ]
+  }
+ ],
+ "role": [
+  {
+   "location": "Secondary Main: MDP-2 bkr 1",
+   "role": "secondary_main",
+   "kind": ""
+  },
+  {
+   "location": "secondary main : MDP-2",
+   "role": "secondary_main",
+   "kind": ""
+  },
+  {
+   "location": "Secondary Main MDP-2",
+   "role": "",
+   "kind": ""
+  },
+  {
+   "location": "Alternate Source (UPS output): UPS-1",
+   "role": "alternate",
+   "kind": "UPS output"
+  },
+  {
+   "location": "Alternate Source (ups output): UPS-1",
+   "role": "alternate",
+   "kind": "UPS output"
+  },
+  {
+   "location": "Alternate Source (ATS) ATS-1",
+   "role": "",
+   "kind": ""
+  },
+  {
+   "location": "Alternate Source (PV or battery): PV-1",
+   "role": "alternate",
+   "kind": "PV or battery"
+  },
+  {
+   "location": "MDP-1 bkr 12",
+   "role": "",
+   "kind": ""
+  },
+  {
+   "location": "Feeder: MCC-2A bkr 14 (VFD-1)",
+   "role": "",
+   "kind": ""
+  }
+ ],
+ "units": [
+  {
+   "name": "two tagged drives, one feeder each",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-2",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 14 (VFD-1)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 15 (VFD-2)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-2",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "one feeder for two drives",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1; VFD-2",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 14 (VFD-1, VFD-2)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "VFD-2",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a tag typed differently, no other feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 14 (VFD-1)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD1",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a tag typed differently beside a named one",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-9",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-1 bkr 1 (VFD-9)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 14 (VFD-1)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-9",
+     "identified": true
+    },
+    {
+     "row": 2,
+     "unit": 0,
+     "tag": "VFD1",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "an upstream breaker row",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-2",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 14 (VFD-1)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Upstream MCC-2A bkr 15 (VFD-2)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-2",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a Feeder Breaker device",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-2",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 14 (VFD-1)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Feeder Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "MCC-2A bkr 15 (VFD-2)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-2",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a custom drive device",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD Bypass",
+     "deviceId": "VFD-3",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-4 bkr 2 (VFD-3)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-3",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a custom drive device, no feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD Bypass",
+     "deviceId": "VFD-3",
+     "quantity": 1,
+     "location": ""
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-3",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "a drive locked out upstream, alone",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD - Upstream Breaker",
+     "deviceId": "26",
+     "quantity": 1,
+     "location": ""
+    }
+   ],
+   "drives": []
+  },
+  {
+   "name": "a drive locked out upstream, Qty 2",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD - Upstream Disconnect",
+     "deviceId": "DS-1; DS-2",
+     "quantity": 2,
+     "location": ""
+    }
+   ],
+   "drives": []
+  },
+  {
+   "name": "an upstream drive beside a fed VFD",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD - Upstream Breaker",
+     "deviceId": "26",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 14 (VFD-1)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "an upstream drive beside an unfed VFD",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD - Upstream Breaker",
+     "deviceId": "26",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    }
+   ],
+   "drives": [
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "a padlocked-breaker drive with its feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD - Breaker w/Padlock",
+     "deviceId": "VFD-4",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-3 bkr 9 (VFD-4)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-4",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a padlocked-breaker drive, no feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD - Breaker w/Padlock",
+     "deviceId": "VFD-4",
+     "quantity": 1,
+     "location": ""
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-4",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "an upstream drive beside a no-ID VFD and an unnamed feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD - Upstream Disconnect",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3"
+    }
+   ],
+   "drives": [
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a drive Located Feeder end",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-3",
+     "quantity": 1,
+     "location": "Feeder end of AHU-3"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-4 bkr 2 (VFD-3)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-3",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a half-recorded Qty-2 row",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-9",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-1 bkr 1 (VFD-9)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1;",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 14 (VFD-1)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-9",
+     "identified": true
+    },
+    {
+     "row": 2,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 2,
+     "unit": 1,
+     "tag": "",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "one tag on a Qty-2 row",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 14 (VFD-1)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "VFD-1",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "untagged drives, one feeder each",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 14 (VFD-1)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 15 (VFD-2)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "",
+     "identified": true
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "an untagged drive beside a named feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 14 (VFD-1)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 15 (VFD-5)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 2,
+     "unit": 0,
+     "tag": "",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a feeder naming a tag in its middle parentheses",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-2",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A (VFD-1) bkr 14"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 15 (VFD-2)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-2",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "no feeder at all",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "one unnamed feeder for two drives",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-2",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": false
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-2",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "two unnamed feeders for two drives",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-2",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 4"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-2",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "one untagged Qty-2 row, one unnamed feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "",
+     "identified": false
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "one untagged Qty-2 row, two unnamed feeders",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 4"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "",
+     "identified": true
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "duplicate tags, one named feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (VFD-1)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a tag with two spaces, named with one",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "AHU  9",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-4",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-4 bkr 1 (AHU 9)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-4 bkr 2 (VFD-4)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "AHU  9",
+     "identified": true
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-4",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a no-ID drive beside a named feeder, its own unnamed",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 14 (VFD-1)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC-2A bkr 15"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 2,
+     "unit": 0,
+     "tag": "",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a shared feeder for two drives, a no-ID drive with its own",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1; VFD-2",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (VFD-1, VFD-2)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 4"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "VFD-2",
+     "identified": true
+    },
+    {
+     "row": 2,
+     "unit": 0,
+     "tag": "",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a no-ID drive on a breaker that also feeds a named drive",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (VFD-1)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "a no-ID drive, a feeder naming a word",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (north)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 4 (VFD-1)"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "",
+     "identified": true
+    },
+    {
+     "row": 2,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a no-ID drive beside a tagged drive with no feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": false
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "two tagged drives sharing a feeder, a no-ID drive without one",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1; VFD-2",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (VFD-1, VFD-2)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 1,
+     "location": ""
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "VFD-2",
+     "identified": true
+    },
+    {
+     "row": 2,
+     "unit": 0,
+     "tag": "",
+     "identified": false
+    }
+   ]
+  },
+  {
+   "name": "two no-ID drives beside a named one, two unnamed feeders",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (VFD-1)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 4"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 5"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "",
+     "identified": true
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "",
+     "identified": true
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "two no-ID drives beside a named one, one unnamed feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1",
+     "quantity": 1,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (VFD-1)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 4"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "",
+     "identified": false
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "",
+     "identified": false
+    },
+    {
+     "row": 1,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    }
+   ]
+  },
+  {
+   "name": "a half-tagged Qty-2 row, a named and an unnamed feeder",
+   "rows": [
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "VFD",
+     "deviceId": "VFD-1;",
+     "quantity": 2,
+     "location": ""
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 3 (VFD-1)"
+    },
+    {
+     "energySource": "Electrical 480V",
+     "deviceType": "Breaker",
+     "deviceId": "",
+     "quantity": 1,
+     "location": "Feeder: MCC bkr 4"
+    }
+   ],
+   "drives": [
+    {
+     "row": 0,
+     "unit": 0,
+     "tag": "VFD-1",
+     "identified": true
+    },
+    {
+     "row": 0,
+     "unit": 1,
+     "tag": "",
+     "identified": true
+    }
+   ]
+  }
+ ],
+ "cover": [
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1)",
+    "Feeder: MCC bkr 4 (VFD-2)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2"
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2"
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2"
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3"
+   ],
+   "driveTags": [
+    "",
+    ""
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3",
+    "Feeder: MCC bkr 4"
+   ],
+   "driveTags": [
+    "",
+    ""
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-1"
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1)",
+    "Feeder: MCC bkr 4 (VFD-1)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-1"
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    ""
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1)"
+   ],
+   "driveTags": [
+    "vfd-1"
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [],
+   "driveTags": [
+    "VFD-1"
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3"
+   ],
+   "driveTags": [],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (AHU  9, VFD-2)"
+   ],
+   "driveTags": [
+    "AHU 9",
+    "VFD-2"
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (AHU 9, AHU  9)"
+   ],
+   "driveTags": [
+    "AHU 9",
+    "AHU  9"
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1)",
+    "Feeder: MCC bkr 4"
+   ],
+   "driveTags": [
+    "VFD-1",
+    ""
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)",
+    "Feeder: MCC bkr 4"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2",
+    ""
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2",
+    ""
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)",
+    "Feeder: MCC bkr 4 (north)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2",
+    ""
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)",
+    "Feeder: MCC bkr 4"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-1",
+    ""
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)",
+    "Feeder: MCC bkr 4"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2",
+    "",
+    ""
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)",
+    "Feeder: MCC bkr 4",
+    "Feeder: MCC bkr 5"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2",
+    "",
+    ""
+   ],
+   "covers": true
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)",
+    "Feeder: MCC bkr 4 (VFD-1)"
+   ],
+   "driveTags": [
+    "VFD-1",
+    "VFD-2",
+    ""
+   ],
+   "covers": false
+  },
+  {
+   "feeders": [
+    "Feeder: MCC bkr 3 (VFD-1, VFD-2)",
+    "Feeder: MCC bkr 4"
+   ],
+   "driveTags": [
+    " ",
+    "VFD-1",
+    "VFD-2"
+   ],
+   "covers": true
+  }
+ ],
+ "mediumKind": [
+  {
+   "energySource": "Fuel Oil In",
+   "kind": "fuel"
+  },
+  {
+   "energySource": "Fuel Oil Out",
+   "kind": "fuel"
+  },
+  {
+   "energySource": "Diesel Fuel",
+   "kind": "fuel"
+  },
+  {
+   "energySource": "FO Supply",
+   "kind": "fuel"
+  },
+  {
+   "energySource": "Chemical In",
+   "kind": "chemical"
+  },
+  {
+   "energySource": "Chem feed",
+   "kind": "chemical"
+  },
+  {
+   "energySource": "Geothermal Water In",
+   "kind": "geothermal"
+  },
+  {
+   "energySource": "Natural Gas",
+   "kind": "gas"
+  },
+  {
+   "energySource": "Propane",
+   "kind": "gas"
+  },
+  {
+   "energySource": "LP Gas",
+   "kind": "gas"
+  },
+  {
+   "energySource": "Vacuum Air In",
+   "kind": "vacuum"
+  },
+  {
+   "energySource": "Vacuum Air Out",
+   "kind": ""
+  },
+  {
+   "energySource": "Vacuum Exhaust",
+   "kind": ""
+  },
+  {
+   "energySource": "Vacuum Discharge",
+   "kind": ""
+  },
+  {
+   "energySource": "Vacuum Air In/Out",
+   "kind": "vacuum"
+  },
+  {
+   "energySource": "Refrigerant",
+   "kind": "refrigerant"
+  },
+  {
+   "energySource": "HHW In",
+   "kind": ""
+  },
+  {
+   "energySource": "Compressed Air In",
+   "kind": ""
+  },
+  {
+   "energySource": "Electrical 480V",
+   "kind": ""
+  },
+  {
+   "energySource": "",
+   "kind": ""
+  },
+  {
+   "energySource": "Vacuum Air Outlet",
+   "kind": ""
+  },
+  {
+   "energySource": "Vacuum Outlet",
+   "kind": ""
+  },
+  {
+   "energySource": "Vacuum Pump Exhaust",
+   "kind": ""
+  },
+  {
+   "energySource": "Exhaust - Vacuum",
+   "kind": ""
+  },
+  {
+   "energySource": "vacuum air out",
+   "kind": ""
+  },
+  {
+   "energySource": "Medical Vacuum Discharge Line",
+   "kind": ""
+  },
+  {
+   "energySource": "Vacuum In / Out",
+   "kind": "vacuum"
+  },
+  {
+   "energySource": "Vacuum Air Outdoor Unit",
+   "kind": "vacuum"
+  },
+  {
+   "energySource": "Vacuum Air Inlet",
+   "kind": "vacuum"
+  }
+ ],
+ "labelAsked": [
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "VFD",
+   "linked": false,
+   "asked": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "vfd",
+   "linked": false,
+   "asked": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "VFD Bypass",
+   "linked": false,
+   "asked": false
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker",
+   "linked": false,
+   "asked": false
+  },
+  {
+   "energySource": "Stored Electrical Energy",
+   "deviceType": "Capacitor",
+   "linked": false,
+   "asked": true
+  },
+  {
+   "energySource": "Stored Electrical Energy",
+   "deviceType": "",
+   "linked": false,
+   "asked": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "VFD",
+   "linked": true,
+   "asked": false
+  },
+  {
+   "energySource": "Battery 24V DC",
+   "deviceType": "VFD",
+   "linked": false,
+   "asked": true
+  },
+  {
+   "energySource": "Kinetic",
+   "deviceType": "VFD",
+   "linked": false,
+   "asked": false
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "VFD - Upstream Breaker",
+   "linked": false,
+   "asked": true
+  },
+  {
+   "energySource": "Electrical 208V",
+   "deviceType": "VFD - Upstream Disconnect",
+   "linked": false,
+   "asked": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "vfd - upstream breaker",
+   "linked": false,
+   "asked": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "VFD - Upstream Breaker",
+   "linked": true,
+   "asked": false
+  },
+  {
+   "energySource": "Kinetic",
+   "deviceType": "VFD - Upstream Breaker",
+   "linked": false,
+   "asked": false
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "VFD - Breaker w/Padlock",
+   "linked": false,
+   "asked": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "vfd  -  breaker w/padlock",
+   "linked": false,
+   "asked": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "VFD - Breaker w/Padlock",
+   "linked": true,
+   "asked": false
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker w/Padlock",
+   "linked": false,
+   "asked": false
+  }
+ ],
+ "waitCells": [
+  {
+   "labelWait": [
+    {
+     "minutes": 20
+    },
+    {
+     "noLabel": true
+    }
+   ],
+   "quantity": 2,
+   "text": "20; No label",
+   "parsed": [
+    {
+     "minutes": 20
+    },
+    {
+     "no_label": true
+    }
+   ]
+  },
+  {
+   "labelWait": [
+    {
+     "minutes": 15
+    }
+   ],
+   "quantity": 1,
+   "text": "15",
+   "parsed": [
+    {
+     "minutes": 15
+    }
+   ]
+  },
+  {
+   "labelWait": [
+    null,
+    {
+     "minutes": 10
+    }
+   ],
+   "quantity": 2,
+   "text": "; 10",
+   "parsed": [
+    null,
+    {
+     "minutes": 10
+    }
+   ]
+  },
+  {
+   "labelWait": [
+    {
+     "noLabel": true
+    }
+   ],
+   "quantity": 1,
+   "text": "No label",
+   "parsed": [
+    {
+     "no_label": true
+    }
+   ]
+  },
+  {
+   "labelWait": [
+    {
+     "minutes": 1
+    }
+   ],
+   "quantity": 1,
+   "text": "1",
+   "parsed": [
+    {
+     "minutes": 1
+    }
+   ]
+  },
+  {
+   "labelWait": [
+    {
+     "minutes": 240
+    }
+   ],
+   "quantity": 1,
+   "text": "240",
+   "parsed": [
+    {
+     "minutes": 240
+    }
+   ]
+  },
+  {
+   "labelWait": [],
+   "quantity": 2,
+   "text": "",
+   "parsed": [
+    null,
+    null
+   ]
+  }
+ ],
+ "voltCells": [
+  {
+   "dcBusV": [
+    680,
+    null
+   ],
+   "quantity": 2,
+   "text": "680",
+   "parsed": [
+    680,
+    null
+   ]
+  },
+  {
+   "dcBusV": [
+    null,
+    650
+   ],
+   "quantity": 2,
+   "text": "; 650",
+   "parsed": [
+    null,
+    650
+   ]
+  },
+  {
+   "dcBusV": [
+    12
+   ],
+   "quantity": 1,
+   "text": "12",
+   "parsed": [
+    12
+   ]
+  },
+  {
+   "dcBusV": [
+    1500
+   ],
+   "quantity": 1,
+   "text": "1500",
+   "parsed": [
+    1500
+   ]
+  },
+  {
+   "dcBusV": [
+    280,
+    550
+   ],
+   "quantity": 2,
+   "text": "280; 550",
+   "parsed": [
+    280,
+    550
+   ]
+  },
+  {
+   "dcBusV": [],
+   "quantity": 1,
+   "text": "",
+   "parsed": [
+    null
+   ]
+  }
+ ],
+ "valveState": [
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker",
+   "code": "E",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Ball Valve",
+   "code": "E",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Kinetic",
+   "deviceType": "Rotating",
+   "code": "K",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Gravity/Potential",
+   "deviceType": "Potential",
+   "code": "CG",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Thermal",
+   "deviceType": "",
+   "code": "T",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Stored Electrical Energy",
+   "deviceType": "Capacitor",
+   "code": "ES",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Damper Actuator",
+   "deviceType": "Electric Actuator",
+   "code": "MS",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Hydraulic",
+   "deviceType": "Hydraulic",
+   "code": "H",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Hydraulic",
+   "deviceType": "Ball Valve",
+   "code": "H",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "CHW In",
+   "deviceType": "Ball Valve",
+   "code": "W",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "CHW In",
+   "deviceType": "Pump",
+   "code": "W",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Natural Gas",
+   "deviceType": "Ball Valve",
+   "code": "G",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Refrigerant Gas",
+   "deviceType": "Ball Valve",
+   "code": "RG",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "CA In",
+   "deviceType": "Quick Disconnect",
+   "code": "P",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Power Feed 277V",
+   "deviceType": "Breaker",
+   "code": "X",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Battery",
+   "deviceType": "Bag",
+   "code": "X",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Process Air",
+   "deviceType": "Ball Valve",
+   "code": "X",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Process Air",
+   "deviceType": "",
+   "code": "X",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Mystery Line",
+   "deviceType": "Breaker",
+   "code": "X",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Mystery Line",
+   "deviceType": "Chain",
+   "code": "X",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Mystery Line",
+   "deviceType": "Plug Valve",
+   "code": "X",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Mystery Line",
+   "deviceType": "Plug",
+   "code": "X",
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Breaker",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Kinetic",
+   "deviceType": "Rotating",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Hydraulic",
+   "deviceType": "Gate Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Hydraulic",
+   "deviceType": "Hydraulic",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "CHW In",
+   "deviceType": "Ball Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "HPS 100 PSI",
+   "deviceType": "Gate Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "CA In 100 PSI",
+   "deviceType": "Ball Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Vacuum Air In",
+   "deviceType": "Ball Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Condensate Out",
+   "deviceType": "Gate Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Stored Electrical Energy",
+   "deviceType": "Capacitor",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Gravity/Potential",
+   "deviceType": "Potential",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Thermal",
+   "deviceType": "",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Natural Gas",
+   "deviceType": "Plug Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "UPS Output",
+   "deviceType": "Breaker",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Hydraulic",
+   "deviceType": "Chain",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Hydraulic",
+   "deviceType": "Butterfly w/Padlock",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Electrical 480V",
+   "deviceType": "Plug Valve",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Battery 12V DC",
+   "deviceType": "Bag",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Damper Actuator",
+   "deviceType": "Pneumatic Actuator",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "277 volt feed",
+   "deviceType": "",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Refrigerant Hot Gas Bypass",
+   "deviceType": "Ball Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Steam In",
+   "deviceType": "Gate Valve w/Cable",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "CHW Out",
+   "deviceType": "Ckt Setter - Universal Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Fuel Oil In",
+   "deviceType": "Pump",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "",
+   "deviceType": "",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "",
+   "deviceType": "Breaker",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Geothermal",
+   "deviceType": "Ball Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Geothermal Water In",
+   "deviceType": "Gate Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Geothermal",
+   "deviceType": "",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Solar Thermal",
+   "deviceType": "Ball Valve",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Hydroelectric Feed",
+   "deviceType": "Breaker",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Electro-Mechanical Drive",
+   "deviceType": "",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "Geothermal Water In",
+   "deviceType": "Ball Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Geothermal Supply",
+   "deviceType": "Gate Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Geothermal Water In",
+   "deviceType": "Ball Valve",
+   "code": "W",
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "Thermal Energy",
+   "deviceType": "",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "DHW-Electric",
+   "deviceType": "Breaker",
+   "code": null,
+   "takes": false,
+   "takesWithCode": false
+  },
+  {
+   "energySource": "MPS 30 PSI",
+   "deviceType": "Gate Valve",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "HPS 125 PSI",
+   "deviceType": "Gate Valve w/Cable",
+   "code": null,
+   "takes": true,
+   "takesWithCode": true
+  },
+  {
+   "energySource": "LPS 15 PSI",
+   "deviceType": "Ball Valve",
+   "code": "S",
+   "takes": true,
+   "takesWithCode": true
+  }
+ ],
+ "valveCells": [
+  {
+   "unitValveStates": [
+    "normal",
+    "normal"
+   ],
+   "quantity": 2,
+   "text": "",
+   "parsed": [
+    "normal",
+    "normal"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": [
+    "normally_closed",
+    "normally_closed"
+   ],
+   "quantity": 2,
+   "text": "Normally Closed",
+   "parsed": [
+    "normally_closed",
+    "normally_closed"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": [
+    "normal",
+    "normally_closed"
+   ],
+   "quantity": 2,
+   "text": "Normal; Normally Closed",
+   "parsed": [
+    "normal",
+    "normally_closed"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": [
+    "normally_closed",
+    "normal"
+   ],
+   "quantity": 2,
+   "text": "Normally Closed; Normal",
+   "parsed": [
+    "normally_closed",
+    "normal"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": [
+    "normal",
+    "normally_closed",
+    "normal"
+   ],
+   "quantity": 3,
+   "text": "Normal; Normally Closed; Normal",
+   "parsed": [
+    "normal",
+    "normally_closed",
+    "normal"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": [
+    "normally_closed"
+   ],
+   "quantity": 1,
+   "text": "Normally Closed",
+   "parsed": [
+    "normally_closed"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": [
+    "normal"
+   ],
+   "quantity": 1,
+   "text": "",
+   "parsed": [
+    "normal"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "Normally Open",
+   "parsed": [
+    "normal",
+    "normal"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "normally-closed",
+   "parsed": [
+    "normally_closed",
+    "normally_closed"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "NORMALLY_CLOSED; normal",
+   "parsed": [
+    "normally_closed",
+    "normal"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "; Normally Closed",
+   "parsed": [
+    "normal",
+    "normally_closed"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "Normal",
+   "parsed": [
+    "normal",
+    "normal"
+   ],
+   "warns": false
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "NC",
+   "parsed": [
+    "unknown",
+    "unknown"
+   ],
+   "warns": true
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "Normal; NC",
+   "parsed": [
+    "normal",
+    "unknown"
+   ],
+   "warns": true
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "Normal; Normal; Normally Closed",
+   "parsed": [
+    "normal",
+    "normal"
+   ],
+   "warns": true
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 3,
+   "text": "Normal; Normally Closed",
+   "parsed": [
+    "normal",
+    "normally_closed",
+    "normal"
+   ],
+   "warns": true
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 2,
+   "text": "Closed",
+   "parsed": [
+    "unknown",
+    "unknown"
+   ],
+   "warns": true
+  },
+  {
+   "unitValveStates": null,
+   "quantity": 1,
+   "text": "Normally Closed; Normal",
+   "parsed": [
+    "normally_closed"
+   ],
+   "warns": true
+  }
+ ],
+ "lockCells": [
+  {
+   "unitLockOpen": [
+    false,
+    false
+   ],
+   "quantity": 2,
+   "text": "",
+   "parsed": [
+    "no",
+    "no"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": [
+    true,
+    true
+   ],
+   "quantity": 2,
+   "text": "Yes",
+   "parsed": [
+    "yes",
+    "yes"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": [
+    false,
+    true
+   ],
+   "quantity": 2,
+   "text": "No; Yes",
+   "parsed": [
+    "no",
+    "yes"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": [
+    true,
+    false
+   ],
+   "quantity": 2,
+   "text": "Yes; No",
+   "parsed": [
+    "yes",
+    "no"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": [
+    false,
+    true,
+    false
+   ],
+   "quantity": 3,
+   "text": "No; Yes; No",
+   "parsed": [
+    "no",
+    "yes",
+    "no"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": [
+    true
+   ],
+   "quantity": 1,
+   "text": "Yes",
+   "parsed": [
+    "yes"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": null,
+   "quantity": 2,
+   "text": "yes;",
+   "parsed": [
+    "yes",
+    "no"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": null,
+   "quantity": 2,
+   "text": "Y",
+   "parsed": [
+    "unknown",
+    "unknown"
+   ],
+   "warns": true
+  },
+  {
+   "unitLockOpen": null,
+   "quantity": 2,
+   "text": "No; Y",
+   "parsed": [
+    "no",
+    "unknown"
+   ],
+   "warns": true
+  },
+  {
+   "unitLockOpen": null,
+   "quantity": 2,
+   "text": "No",
+   "parsed": [
+    "no",
+    "no"
+   ],
+   "warns": false
+  },
+  {
+   "unitLockOpen": null,
+   "quantity": 3,
+   "text": "No; Yes",
+   "parsed": [
+    "no",
+    "yes",
+    "no"
+   ],
+   "warns": true
+  }
+ ],
+ "steam": [
+  {
+   "energySource": "LPS 10 PSI",
+   "code": "S",
+   "printed": "Steam\n10 PSI @ 240 F",
+   "psi": 10.0,
+   "tempF": 240
+  },
+  {
+   "energySource": "LPS 1 PSI",
+   "code": "S",
+   "printed": "Steam\n1 PSI @ 215 F",
+   "psi": 1.0,
+   "tempF": 215
+  },
+  {
+   "energySource": "LPS 5 PSI",
+   "code": "S",
+   "printed": "Steam\n5 PSI @ 227 F",
+   "psi": 5.0,
+   "tempF": 227
+  },
+  {
+   "energySource": "LPS 15 PSI",
+   "code": "S",
+   "printed": "Steam\n15 PSI @ 250 F",
+   "psi": 15.0,
+   "tempF": 250
+  },
+  {
+   "energySource": "LPS 20 PSI",
+   "code": "S",
+   "printed": "Steam\n20 PSI @ 259 F",
+   "psi": 20.0,
+   "tempF": 259
+  },
+  {
+   "energySource": "MPS 20 PSI",
+   "code": "S",
+   "printed": "Steam\n20 PSI @ 259 F",
+   "psi": 20.0,
+   "tempF": 259
+  },
+  {
+   "energySource": "MPS 15 PSI",
+   "code": "S",
+   "printed": "Steam\n15 PSI @ 250 F",
+   "psi": 15.0,
+   "tempF": 250
+  },
+  {
+   "energySource": "MPS 30 PSI",
+   "code": "S",
+   "printed": "Steam\n30 PSI @ 274 F",
+   "psi": 30.0,
+   "tempF": 274
+  },
+  {
+   "energySource": "MPS 40 PSI",
+   "code": "S",
+   "printed": "Steam\n40 PSI @ 287 F",
+   "psi": 40.0,
+   "tempF": 287
+  },
+  {
+   "energySource": "MPS 50 PSI",
+   "code": "S",
+   "printed": "Steam\n30 PSI @ 274 F",
+   "psi": 30.0,
+   "tempF": 274
+  },
+  {
+   "energySource": "MPS 60 PSI",
+   "code": "S",
+   "printed": "Steam\n60 PSI @ 307 F",
+   "psi": 60.0,
+   "tempF": 307
+  },
+  {
+   "energySource": "HPS 100 PSI",
+   "code": "S",
+   "printed": "Steam\n100 PSI @ 338 F",
+   "psi": 100.0,
+   "tempF": 338
+  },
+  {
+   "energySource": "HPS 60 PSI",
+   "code": "S",
+   "printed": "Steam\n60 PSI @ 307 F",
+   "psi": 60.0,
+   "tempF": 307
+  },
+  {
+   "energySource": "HPS 90 PSI",
+   "code": "S",
+   "printed": "Steam\n90 PSI @ 331 F",
+   "psi": 90.0,
+   "tempF": 331
+  },
+  {
+   "energySource": "HPS 125 PSI",
+   "code": "S",
+   "printed": "Steam\n125 PSI @ 353 F",
+   "psi": 125.0,
+   "tempF": 353
+  },
+  {
+   "energySource": "HPS 150 PSI",
+   "code": "S",
+   "printed": "Steam\n150 PSI @ 366 F",
+   "psi": 150.0,
+   "tempF": 366
+  },
+  {
+   "energySource": "HPS 250 PSI",
+   "code": "S",
+   "printed": "Steam\n250 PSI @ 406 F",
+   "psi": 250.0,
+   "tempF": 406
+  },
+  {
+   "energySource": "HPS 300 PSI",
+   "code": "S",
+   "printed": "Steam\n300 PSI @ 422 F",
+   "psi": 300.0,
+   "tempF": 422
+  }
+ ],
+ "magnitudes": [
+  {
+   "energySource": "HHW In/Out",
+   "code": "W",
+   "family": "Hot Water",
+   "magnitude": "50 PSI @ 180 F"
+  },
+  {
+   "energySource": "HHW In",
+   "code": "W",
+   "family": "Hot Water",
+   "magnitude": "50 PSI @ 180 F"
+  },
+  {
+   "energySource": "HHW Out",
+   "code": "W",
+   "family": "Hot Water",
+   "magnitude": "50 PSI @ 180 F"
+  },
+  {
+   "energySource": "CHW In/Out",
+   "code": "W",
+   "family": "Chilled Water",
+   "magnitude": "65 PSI @ 50 F"
+  },
+  {
+   "energySource": "CHW In",
+   "code": "W",
+   "family": "Chilled Water",
+   "magnitude": "65 PSI @ 50 F"
+  },
+  {
+   "energySource": "CHW Out",
+   "code": "W",
+   "family": "Chilled Water",
+   "magnitude": "65 PSI @ 50 F"
+  },
+  {
+   "energySource": "DHW In/Out",
+   "code": "W",
+   "family": "Domestic Water",
+   "magnitude": "60 PSI @ 140 F"
+  },
+  {
+   "energySource": "DHW In",
+   "code": "W",
+   "family": "Domestic Water",
+   "magnitude": "60 PSI @ 140 F"
+  },
+  {
+   "energySource": "DHW Out",
+   "code": "W",
+   "family": "Domestic Water",
+   "magnitude": "60 PSI @ 140 F"
+  },
+  {
+   "energySource": "DW In/Out",
+   "code": "W",
+   "family": "Domestic Water",
+   "magnitude": "40 PSI @ 70 F"
+  },
+  {
+   "energySource": "DW In",
+   "code": "W",
+   "family": "Domestic Water",
+   "magnitude": "40 PSI @ 70 F"
+  },
+  {
+   "energySource": "DW Out",
+   "code": "W",
+   "family": "Domestic Water",
+   "magnitude": "40 PSI @ 70 F"
+  },
+  {
+   "energySource": "Compressed Air In/Out",
+   "code": "P",
+   "family": "Compressed Air",
+   "magnitude": "100 PSI"
+  },
+  {
+   "energySource": "Compressed Air In",
+   "code": "P",
+   "family": "Compressed Air",
+   "magnitude": "100 PSI"
+  },
+  {
+   "energySource": "Compressed Air Out",
+   "code": "P",
+   "family": "Compressed Air",
+   "magnitude": "100 PSI"
+  }
+ ],
+ "boilerRole": [
+  {
+   "energySource": "Main Steam Stop",
+   "role": "main_stop"
+  },
+  {
+   "energySource": "Non-Return",
+   "role": "non_return"
+  },
+  {
+   "energySource": "Steam Header Drain",
+   "role": "header_drain"
+  },
+  {
+   "energySource": "Steam Warm Up",
+   "role": "warm_up"
+  },
+  {
+   "energySource": "Blanket Steam",
+   "role": "blanket"
+  },
+  {
+   "energySource": "Boiler Vent",
+   "role": "vent"
+  },
+  {
+   "energySource": "Atomizing Steam",
+   "role": "atom_steam"
+  },
+  {
+   "energySource": "Atomizing Air",
+   "role": "atom_air"
+  },
+  {
+   "energySource": "Surface Blowdown",
+   "role": "surface_bd"
+  },
+  {
+   "energySource": "Bottom Blowdown",
+   "role": "bottom_bd"
+  },
+  {
+   "energySource": "Low Water Cutoff Drain",
+   "role": "lwco"
+  },
+  {
+   "energySource": "Main Steam Stop 90 PSI",
+   "role": "main_stop"
+  },
+  {
+   "energySource": "Non-Return (closest to boiler)",
+   "role": ""
+  },
+  {
+   "energySource": "Bottom Blowdown Valve",
+   "role": "bottom_bd"
+  },
+  {
+   "energySource": "LWCO Drain",
+   "role": "lwco"
+  },
+  {
+   "energySource": "Drum Vent",
+   "role": "vent"
+  },
+  {
+   "energySource": "Header Warm Up",
+   "role": "warm_up"
+  },
+  {
+   "energySource": "HPS Main Stop",
+   "role": "main_stop"
+  },
+  {
+   "energySource": "HPS 100 PSI",
+   "role": ""
+  },
+  {
+   "energySource": "Soot Blower",
+   "role": ""
+  },
+  {
+   "energySource": "Natural Gas",
+   "role": ""
+  },
+  {
+   "energySource": "Feedwater In",
+   "role": ""
+  },
+  {
+   "energySource": "Condensate In",
+   "role": ""
+  },
+  {
+   "energySource": "Steam",
+   "role": ""
+  },
+  {
+   "energySource": "LPS 10 PSI",
+   "role": ""
+  },
+  {
+   "energySource": "Steam Header",
+   "role": ""
+  },
+  {
+   "energySource": "Atomization Air 40 psig",
+   "role": "atom_air"
+  },
+  {
+   "energySource": "Surface Blow Down valves",
+   "role": "surface_bd"
+  }
+ ]
+}
