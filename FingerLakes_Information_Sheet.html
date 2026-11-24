@@ -423,6 +423,44 @@ if ('serviceWorker' in navigator) {
   .src-banner-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--text); padding: 2px 0; }
   .src-banner-row.warn { color: #b5451b; }
   .source-card.src-under { margin-left: 28px; margin-top: -8px; }
+  /* Build 176 (wilkins' Option B, 2026-11-24): the card in two columns — what it
+     is, where, and the valve on the left; the photo, its Detail and "Same photo"
+     on the right; a drive's or damper's questions full width under them. One
+     column on a narrow card (a phone, a narrow window). */
+  .source-card-body { container: srccard / inline-size; }
+  .src-cols { display: grid; grid-template-columns: minmax(0, 1fr) 236px; column-gap: 20px; align-items: start; }
+  .src-col-main { min-width: 0; }
+  .src-col-main .form-grid.three-col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .src-col-main .src-sec.src-kind { background: none; margin: 0; padding: 14px 0; }
+  .src-col-main .src-sec.src-kind .form-grid { grid-template-columns: minmax(0, 1fr); }
+  /* a typed source, device or location takes the column's width ("Feeder: MCC-2A bkr 14 (VFD-1)") */
+  .src-col-main .form-group[id^="customEnergyGroup_"], .src-col-main .form-group[id^="customDeviceGroup_"],
+  .src-col-main .form-group[id^="customLocGroup_"] { grid-column: 1 / -1; }
+  .src-cols > .src-col-photo { border-top: none; border-left: 1px solid var(--border); padding: 0 0 0 20px; align-self: stretch; min-width: 0; }
+  .src-col-photo .photo-section { display: block; margin-top: 0; }
+  .source-card .src-col-photo .photo-section .photo-capture { width: 100%; min-width: 0; }
+  .src-photo-btns { display: flex; gap: 6px; margin-top: 6px; }
+  .src-photo-btns .btn { flex: 1; padding: 6px 4px; font-size: 12px; background: var(--card); border: 1px solid var(--border); color: var(--text-dim); border-radius: 6px; }
+  .src-col-photo > .form-group { margin-top: 12px; }
+  .src-detail input { text-transform: uppercase; font-family: monospace; text-align: center; min-width: 0; }
+  .form-grid.src-id-grid { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  .qty-step button { min-width: 44px; min-height: 44px; font-size: 20px; padding: 0 12px; }
+  .qty-step button:disabled { opacity: 0.4; cursor: default; }
+  .qty-step .qty-val { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; font-size: 17px; font-weight: 600; border-right: 1px solid var(--border); }
+  .seg.src-vs { flex-wrap: wrap; }
+  .seg.src-vs button { min-height: 44px; }
+  .form-group label.src-check-line { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; font-weight: 500; color: var(--text); text-transform: none; letter-spacing: 0; cursor: pointer; }
+  .lbl-sub { font-weight: 400; color: var(--text-dim); text-transform: none; letter-spacing: 0; }
+  /* an answered list folds to its pick + Change (build 176) */
+  .qp-row.qp-folded > .qp-more { display: none; }
+  .qp-change { min-height: 44px; padding: 0 10px; border: none; background: none; color: var(--accent); font-size: 14px; font-weight: 500; text-decoration: underline; cursor: pointer; }
+  /* a water row's check: Gauge and Drain on/off, or None (build 176) */
+  .sv-or { font-size: 13px; color: var(--text-dim); padding: 0 2px; }
+  .sv-saves { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+  @container srccard (max-width: 640px) {
+    .src-cols { grid-template-columns: minmax(0, 1fr); }
+    .src-cols > .src-col-photo { border-left: none; border-top: 1px solid var(--border); padding: 14px 0 0; }
+  }
 
   .source-summary {
     padding: 14px 20px; display: flex; align-items: center; gap: 14px; cursor: pointer;
@@ -546,6 +584,10 @@ if ('serviceWorker' in navigator) {
     .header-actions .btn-sm { padding: 6px 10px; font-size: 12px; }
     .form-grid { grid-template-columns: minmax(0, 1fr); }
     .form-grid.three-col { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .form-grid.src-id-grid { grid-template-columns: minmax(0, 1fr) auto; }
+    /* a browser without container queries: one column on a phone (build 176) */
+    .src-cols { grid-template-columns: minmax(0, 1fr); }
+    .src-cols > .src-col-photo { border-left: none; border-top: 1px solid var(--border); padding: 14px 0 0; }
     .source-card.src-under { margin-left: 14px; }
     .photo-row { flex-wrap: wrap; }
     .photo-slot { min-width: 45%; }
@@ -561,7 +603,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b175</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b176</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -957,7 +999,7 @@ if ('serviceWorker' in navigator) {
     <div style="margin-bottom:16px;">
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
         <input type="checkbox" id="settingsSimpleVerif" style="width:18px;height:18px;" onchange="setSimpleVerif(this.checked)">
-        Simplified verification (checkboxes + smart defaults)
+        Simplified verification (Gauge / Drain / None + smart defaults)
       </label>
       <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;">Water valves get Drain / Gauge checkboxes; electrical defaults to Controls. Same saved values either way &mdash; turn off to restore the classic pickers.</div>
       <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer;">
@@ -1296,7 +1338,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 175;
+const APP_BUILD = 176;
 
 // ============================================================================
 // DATA
@@ -1996,6 +2038,34 @@ function updateSimpleVerif(index, which, checked) {
   renderSources();
   autoSaveCurrent();
 }
+// The card's water check as chips (build 176, wilkins' Option B): Gauge and Drain
+// switch on and off; None is neither (the Temp Only code, which the boxes of build 79
+// saved with both unticked), and a tap on Gauge or Drain clears it. A tap on Gauge or
+// Drain over a check outside these codes (Zero Flow, Visual) starts from neither.
+// The codes, and so the sheet and loto-web, are the boxes' own.
+function tapSimpleVerif(index, which) {
+  const src = sources[index];
+  if (!src) return;
+  const p = parseWaterVerification(src.verification), known = p.recognized && !p.blank;
+  if (which === 'none') {
+    if (known && !p.drain && !p.gauge) return;   // None already
+    markSourceEdited(index);
+    delete src._drainDefault;
+    src.verification = synthesizeWaterVerification(false, false, simpleVerifSuffix(src));
+    renderSources();
+    autoSaveCurrent();
+    return;
+  }
+  updateSimpleVerif(index, which, !(known && p[which]));
+}
+// More… on that line: the whole list, as on the other rows; the chips follow the pick
+function pickVerifFromList(index, value) {
+  if (!sources[index]) return;
+  updateSource(index, 'verification', value);
+  renderSources();
+}
+// No longer offered on the card (build 176: More… is the whole list) — a row a tech
+// sent to the classic list before keeps its _classicVerif, which nothing reads now
 function showClassicVerif(index) {
   sources[index]._classicVerif = true;
   renderSources();
@@ -10259,12 +10329,14 @@ function buildSourceCard(src, i) {
       const magItem = magnitudeMenuLabel(src);   // "Change pressure & temperature" (build 166)
       const roomItem = deviceRoomMenuLabel(src);   // "In another room…" (build 167)
       const role = sourceRoleOf(src);
-      // The tech's Duplicate answer, as tap buttons under the photo (build 138: a
-      // dropdown beside Quantity, far from the photo it is about).
-      const dupBlock = html`<div class="form-group" id="dupGroup_${i}" style="margin-top:12px;">
-            <label>Duplicate <span style="font-weight:400;color:var(--text-dim);text-transform:none;letter-spacing:0;">&mdash; same photo as another source</span></label>
-            <div class="seg" id="src_dup_${i}">${DATA.duplicateOptions.map(d => html`<button type="button" class="${(src.duplicate === 'Yes' ? 'Yes' : 'No') === d ? 'on' : ''}" onclick="updateSource(${i},'duplicate','${d}')">${d}</button>`)}</div>
+      // The tech's Duplicate answer under the photo it is about: one box, "Same
+      // photo as another source" (build 176, wilkins' Option B; No / Yes buttons
+      // since build 138, a dropdown beside Quantity before that). Ticked = Yes.
+      const dupBlock = html`<div class="form-group src-dup" id="dupGroup_${i}">
+            <label class="src-check-line"><input type="checkbox" class="painted-check" id="src_dup_${i}" ${src.duplicate === 'Yes' ? 'checked' : ''}
+              onchange="updateSource(${i},'duplicate',this.checked ? 'Yes' : 'No')">Same photo as another source</label>
           </div>`;
+      const qtyNow = Number(src.quantity) > 0 ? Number(src.quantity) : 1;
       card.innerHTML = html`
         <div class="source-card-header">
           <h3 class="src-head"><span class="source-number ${getSourceColorClass(src.energySource)}">${i + 1}</span>
@@ -10292,9 +10364,10 @@ function buildSourceCard(src, i) {
         <div class="source-card-body">
           ${linkedBanner}
           ${feederForBanner(src, i)}
+          <div class="src-cols">
+          <div class="src-col-main">
           <div class="src-sec src-sec-top">
-            <div class="src-sec-title">What it is</div>
-            <div class="form-grid three-col">
+            <div class="form-grid">
               <div class="form-group">
                 <label>Energy Source</label>
                 <select onchange="handleEnergySourceChange(${i},this.value)" id="src_energy_${i}">
@@ -10325,15 +10398,8 @@ function buildSourceCard(src, i) {
                 <input type="text" id="src_device_custom_${i}" value="${src.deviceType||''}" placeholder="Enter custom device type"
                   oninput="updateSourceCustomField(${i},'deviceType',this.value)" onchange="refreshSourceDependents(${i});offerUpstreamFeederRemoval(sources[${i}])">
               </div>` : html`<div id="customDeviceGroup_${i}" style="display:none;"></div>`}
-              <div class="form-group">
-                <label>Quantity</label>
-                <select onchange="updateSource(${i},'quantity',parseInt(this.value))">
-                  ${DATA.quantities.map(q => html`<option value="${q}" ${Number(src.quantity)===q?'selected':''}>${q}</option>`)}
-                  ${src.quantity != null && src.quantity !== '' && !DATA.quantities.includes(Number(src.quantity)) ? html`<option value="${src.quantity}" selected>${src.quantity}</option>` : ''}
-                </select>
               </div>
-              </div>
-            <div class="form-grid">
+            <div class="form-grid src-id-grid">
               ${(() => {
                 // Per-unit Device IDs (build 106): with Quantity 2+ each unit gets its
                 // own tag box. They save as ONE string, "3-SF-50; 3-RF-50", so every
@@ -10366,14 +10432,21 @@ function buildSourceCard(src, i) {
                 ${extra.length ? html`<div style="font-size:11px;color:#b5451b;">More tags than Quantity, not printed: ${extra.join('; ')}</div>` : ''}
               </div>`;
               })()}
-              ${existingTagBlock(src, i)}
+              <div class="form-group src-qty" id="qtyGroup_${i}">
+                <label>Qty</label>
+                <div class="seg qty-step" id="src_qty_${i}">
+                  <button type="button" aria-label="One fewer" onclick="stepQuantity(${i},-1)" ${qtyNow <= 1 ? 'disabled' : ''}>&minus;</button>
+                  <span class="qty-val" aria-live="polite">${qtyNow}</span>
+                  <button type="button" aria-label="One more" onclick="stepQuantity(${i},1)" ${qtyNow >= qtyMax() ? 'disabled' : ''}>+</button>
+                </div>
+              </div>
             </div>
+            ${existingTagBlock(src, i)}
           </div>
           <div class="src-sec">
-            <div class="src-sec-title">Where it&rsquo;s isolated and verified</div>
             <div class="form-grid${src._customLoc || locationIdInfo(src.location) ? ' three-col' : ''}">
               <div class="form-group">
-                <label>Location</label>
+                <label>Location${isDamperRow(src) ? '' : html`<span class="lbl-sub"> &mdash; of the equipment</span>`}</label>
                 <select onchange="handleLocationChange(${i},this.value)" id="src_loc_${i}">
                   <option value="">-- Select --</option>
                   ${sourceLocationChoices(src).map(s => {
@@ -10401,34 +10474,38 @@ function buildSourceCard(src, i) {
               </div>` : html`<div id="customLocGroup_${i}" style="display:none;"></div>`}
               ${(() => {
                 const ov = templateSourceOverride(TEMPLATE_SOURCE_VERIFICATION_OVERRIDES, src.energySource);
-                const useSimple = simpleVerifEnabled() && !src._classicVerif && !boilerRoleOf(src.energySource)
+                // Build 176: a check outside the drain / gauge codes (Zero Flow, Visual, a
+                // custom one) stays on this line too — lit on More… or its own chip — where
+                // it used to bring back the classic list ("More options…" is gone: More…
+                // is the whole list, as on the other rows).
+                const useSimple = simpleVerifEnabled() && !boilerRoleOf(src.energySource)
                   && (ov ? overrideAllowsSimple(ov)
                          : isWaterFamilySource(src.energySource)
-                           && (!src.deviceType || isValveVerifDevice(src.deviceType)))
-                  && parseWaterVerification(src.verification).recognized;
+                           && (!src.deviceType || isValveVerifDevice(src.deviceType)));
                 if (useSimple) {
-                  const p = parseWaterVerification(src.verification);
-                  const derived = src.verification || synthesizeWaterVerification(false, false, simpleVerifSuffix(src));
-                  const boxStyle = 'display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:14px;cursor:pointer;';
-                  return html`<div class="form-group">
-                    <label>Verification</label>
-                    <label style="${boxStyle}">
-                      <input type="checkbox" class="simple-verif-check" ${p.drain ? 'checked' : ''} onchange="updateSimpleVerif(${i},'drain',this.checked)">
-                      Drain present
-                    </label>
-                    <label style="${boxStyle}">
-                      <input type="checkbox" class="simple-verif-check" ${p.gauge ? 'checked' : ''} onchange="updateSimpleVerif(${i},'gauge',this.checked)">
-                      Gauge present
-                    </label>
-                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-                      <span style="font-size:11px;color:var(--text-dim);">Saves as: ${derived}</span>
-                      <div class="simple-verif-more" style="display:flex;align-items:center;gap:8px;margin-left:auto;">
-                        ${(() => { const extras = simpleVerifExtras(src); return extras.length ? html`<div class="qp-row simple-verif-extras">
-                          ${extras.map((v, k) => html`<button type="button" class="qp-chip" onclick="pickSimpleVerifExtra(${i},${k})">${v}</button>`)}
-                        </div>` : ''; })()}
-                        <button type="button" onclick="showClassicVerif(${i})" style="background:none;border:none;color:var(--text-dim);font-size:11px;text-decoration:underline;padding:4px;">More options&hellip;</button>
-                      </div>
+                  // Gauge and Drain on / off, or None (build 176, wilkins' Option B: "for
+                  // anything that has a gauge or drain … a 'None' option prior to 'More'"):
+                  // the same codes as the build 79 boxes — None is the Temp Only code, which
+                  // a blank row gets anyway (applySimpleVerifDefaults)
+                  const p = parseWaterVerification(src.verification), cur = src.verification || '';
+                  const known = p.recognized && !p.blank;
+                  const extras = simpleVerifExtras(src);
+                  const listed = getFilteredVerifications(src.deviceType, src.energySource);
+                  const noneOn = known && !p.drain && !p.gauge;
+                  const moreOn = !!cur && !known && !extras.includes(cur);
+                  const chip = (which, on, text) => html`<button type="button" class="qp-chip sv-chip${on ? ' on' : ''}" data-sv="${which}" aria-pressed="${on ? 'true' : 'false'}" onclick="tapSimpleVerif(${i},'${which}')">${on ? '✓ ' : ''}${text}</button>`;
+                  return html`<div class="form-group qp-group" id="verGroup_${i}">
+                    <label>Verification<span class="lbl-sub"> &mdash; tap what&rsquo;s there</span></label>
+                    <div class="qp-row sv-row" id="sv_${i}">
+                      ${chip('gauge', known && p.gauge, 'Gauge')}${chip('drain', known && p.drain, 'Drain')}<span class="sv-or">or</span>${chip('none', noneOn, 'None')}
+                      ${extras.map((v, k) => html`<button type="button" class="qp-chip sv-extra${cur === v ? ' on' : ''}" aria-pressed="${cur === v ? 'true' : 'false'}" onclick="pickSimpleVerifExtra(${i},${k})">${cur === v ? '✓ ' : ''}${v}</button>`)}
+                      <span class="qp-chip qp-more${moreOn ? ' on' : ''}"><span class="qp-more-label">${moreOn ? cur + ' ▾' : 'More…'}</span><select class="qp-select" id="src_svmore_${i}" aria-label="All Verification choices" onchange="pickVerifFromList(${i},this.value)">
+                        <option value="">-- Select --</option>
+                        ${listed.map(s => html`<option value="${s}" ${cur === s ? 'selected' : ''}>${s}</option>`)}
+                        ${cur && !listed.includes(cur) ? html`<option value="${cur}" selected>${cur}</option>` : ''}
+                      </select></span>
                     </div>
+                    <div class="sv-saves">${cur ? 'Saves as ' + cur : 'Not answered yet'}</div>
                   </div>`;
                 }
                 return html`<div class="form-group">
@@ -10443,32 +10520,22 @@ function buildSourceCard(src, i) {
               </div>
             ${sourceRoleBlock(src, i)}
           </div>
-          <div class="src-sec src-kind" data-kind="damper">
-            <div class="src-sec-title">Damper</div>
-            <div class="form-grid">
-              ${springReturnBlock(src, i)}
-              ${poweredByBlock(src, i)}
-            </div>
-          </div>
-          <div class="src-sec src-kind" data-kind="drive">
-            <div class="src-sec-title">${isDriveDevice(src.deviceType) ? 'Drive' : 'Stored energy'}</div>
-            <div class="form-grid">
-              ${labelWaitBlock(src, i)}
-              ${feederGroupBlock(src, i)}
-              ${driveIsolatesBlock(src, i)}
-            </div>
-          </div>
           <div class="src-sec src-kind" data-kind="valve">
             <div class="src-sec-title">Valve</div>
             <div class="form-grid">
               ${sourceTakesValveState(src) ? html`<div class="form-group" id="valveStateGroup_${i}">
                 <label>Valve State</label>
                 ${valveAnswerNote(src, 'state') ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${valveAnswerNote(src, 'state')}</div>` : ''}
-                <select onchange="updateValveState(${i},this.value)" id="src_valvestate_${i}">
-                  ${DATA.valveStateOptions.map(o => html`<option value="${o.value}" ${(src.valveState||'normal')===o.value?'selected':''}>${o.label}</option>`)}
-                  ${(sourceQty(src) >= 2 || src.valveState === 'mixed') ? html`<option value="mixed" ${src.valveState === 'mixed' ? 'selected' : ''}>Mixed (set each valve)</option>` : ''}
-                  ${src.valveState && src.valveState !== 'mixed' && !DATA.valveStateOptions.some(o => o.value === src.valveState) ? html`<option value="${src.valveState}" selected>${src.valveState}</option>` : ''}
-                </select>
+                ${(() => {
+                  // tap buttons (build 176, wilkins' Option B; a list before): Normal /
+                  // Normally Closed, and Mixed with two valves or more (each valve's own
+                  // state on the line under it). A value no button names shows lit, as is.
+                  const cur = src.valveState || 'normal';
+                  const opts = DATA.valveStateOptions.map(o => ({ v: o.value, label: o.label }));
+                  if (sourceQty(src) >= 2 || cur === 'mixed') opts.push({ v: 'mixed', label: 'Mixed' });
+                  const odd = !opts.some(o => o.v === cur);
+                  return html`<div class="seg src-vs" id="src_valvestate_${i}" role="group" aria-label="Valve state" data-value="${cur}">${opts.map(o => html`<button type="button" data-v="${o.v}" class="${cur === o.v ? 'on' : ''}" aria-pressed="${cur === o.v ? 'true' : 'false'}" onclick="updateValveState(${i},${jsArg(o.v)})">${cur === o.v ? '✓ ' : ''}${o.label}</button>`)}${odd ? html`<button type="button" class="on" aria-pressed="true" disabled>${cur}</button>` : ''}</div>`;
+                })()}
                 ${src.valveState === 'mixed' ? valveUnitToggles(src, i, 'state') : ''}
               </div>` : html`<div id="valveStateGroup_${i}" style="display:none;"></div>`}
               ${(sourceOffersLockOpen(src) || lockOpenTicked(src)) ? html`<div class="form-group" id="lockOpenGroup_${i}">
@@ -10476,7 +10543,7 @@ function buildSourceCard(src, i) {
                 ${valveAnswerNote(src, 'lock') ? html`<div style="font-size:11px;color:var(--text-dim);margin:0 0 6px;line-height:1.4;">${valveAnswerNote(src, 'lock')}</div>` : ''}
                 <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;font-size:14px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500;">
                   <input type="checkbox" class="painted-check" id="src_lockopen_${i}" ${lockOpenTicked(src) ? 'checked' : ''} onchange="updateLockOpen(${i},this.checked)">
-                  Opened and locked open during lockout (rare)
+                  Locked open during lockout (rare)
                 </label>
                 ${Array.isArray(src.unitLockOpen) ? valveUnitToggles(src, i, 'lock')
                   : (src.lockOpen && sourceQty(src) >= 2) ? html`<button type="button" class="btn btn-sm btn-outline" id="src_lockperunit_${i}" style="margin-top:6px;align-self:flex-start;" onclick="setLockOpenPerValve(${i})">Only some valves?</button>` : ''}
@@ -10507,40 +10574,53 @@ function buildSourceCard(src, i) {
               </div>`; })() : html`<div id="drainLocGroup_${i}" style="display:none;"></div>`}
               </div>
           </div>
-          <div class="src-sec">
+          </div>
+          <div class="src-sec src-col-photo">
             <div class="src-sec-title">Photo</div>
             ${isNoPhoto ? html`<div style="padding:8px 0;color:var(--text-dim);font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span>${noPhotoMessage}</span>${photoToggleBtn}${sharedPhotoBtn}</div>` : html`
-            <div class="photo-section" style="display:flex;gap:16px;align-items:flex-start;">
-              <div>
-                <label style="font-size:11px;font-weight:600;color:var(--text-label);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;">Source Photo</label>
-                <div class="photo-capture ${photos['source_'+i] && photos['source_'+i].dbKey ?'has-photo':''}" onclick="takePhoto('source_${i}')" id="photo_source_${i}" style="position:relative;">
-                  ${raw(photoSlotInnerHtml(photos['source_'+i], src))}
-                </div>
-                <input type="file" accept="image/*" capture="environment" id="file_source_${i}" onchange="handlePhoto(this, 'source_${i}')">
-                <div style="display:flex;gap:6px;margin-top:6px;">
-                  <button type="button" class="btn btn-sm" onclick="browsePhoto('source_${i}')" title="Pick from the photo library" style="flex:1;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#128194; Browse</button>
-                  <button type="button" class="btn btn-sm" onclick="showReusePhotoPicker('source_${i}')" title="Reuse a photo already taken today (shared)" style="flex:1;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#8635; Reuse</button>
-                  <button type="button" id="markbtn_source_${i}" class="btn btn-sm" onclick="openValveMarkDialog('source_${i}')" title="Tap where the valve / device is in this photo" style="flex:1;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;${photos['source_'+i] && photos['source_'+i].dbKey ? '' : 'display:none;'}">&#128205; Mark</button>
-                </div>
-                ${photos['source_'+i] && photos['source_'+i].timestamp ?
-                  html`<div style="font-size:11px;color:var(--text-dim);margin-top:4px;text-align:center;">
-                    &#128247; ${new Date(photos['source_'+i].timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}
-                  </div>` : ''}
-                ${photos['source_'+i] && photos['source_'+i].dbKey && photos['source_'+i].dupOf ?
-                  html`<div style="font-size:11px;color:var(--accent);margin-top:2px;text-align:center;max-width:160px;word-break:break-word;">&#8635; Photo from ${dupOwnerLabel(photos['source_'+i])}</div>` : ''}
-                ${photoToggleBtn ? html`<div style="margin-top:8px;text-align:center;">${photoToggleBtn}</div>` : ''}
+            <div class="photo-section">
+              <div class="photo-capture ${photos['source_'+i] && photos['source_'+i].dbKey ?'has-photo':''}" onclick="takePhoto('source_${i}')" id="photo_source_${i}" style="position:relative;">
+                ${raw(photoSlotInnerHtml(photos['source_'+i], src))}
               </div>
-              <div style="flex:0 0 auto;">
-                <label style="font-size:11px;font-weight:600;color:var(--text-label);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:6px;">Detail</label>
-                <div class="scan-input-row" style="width:160px;">
-                  <input type="text" id="src_detail_${i}" value="${src.detail||''}" placeholder="LR, TL…"
-                    oninput="updateSource(${i},'detail',this.value)"
-                    style="text-transform:uppercase;font-family:monospace;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-main);font-size:14px;text-align:center;">
-                  <button type="button" class="scan-btn" onclick="scanTextToField('src_detail_${i}')" title="Scan label" style="width:38px;height:38px;font-size:16px;">&#128247;</button>
-                </div>
+              <input type="file" accept="image/*" capture="environment" id="file_source_${i}" onchange="handlePhoto(this, 'source_${i}')">
+              <div class="src-photo-btns">
+                <button type="button" class="btn btn-sm" onclick="browsePhoto('source_${i}')" title="Pick from the photo library">&#128194; Browse</button>
+                <button type="button" class="btn btn-sm" onclick="showReusePhotoPicker('source_${i}')" title="Reuse a photo already taken today (shared)">&#8635; Reuse</button>
+                <button type="button" id="markbtn_source_${i}" class="btn btn-sm" onclick="openValveMarkDialog('source_${i}')" title="Tap where the valve / device is in this photo" style="${photos['source_'+i] && photos['source_'+i].dbKey ? '' : 'display:none;'}">&#128205; Mark</button>
               </div>
+              ${photos['source_'+i] && photos['source_'+i].timestamp ?
+                html`<div style="font-size:11px;color:var(--text-dim);margin-top:4px;text-align:center;">
+                  &#128247; ${new Date(photos['source_'+i].timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}
+                </div>` : ''}
+              ${photos['source_'+i] && photos['source_'+i].dbKey && photos['source_'+i].dupOf ?
+                html`<div style="font-size:11px;color:var(--accent);margin-top:2px;text-align:center;word-break:break-word;">&#8635; Photo from ${dupOwnerLabel(photos['source_'+i])}</div>` : ''}
+              ${photoToggleBtn ? html`<div style="margin-top:8px;text-align:center;">${photoToggleBtn}</div>` : ''}
             </div>`}
             ${dupBlock}
+            ${isNoPhoto ? '' : html`<div class="form-group src-detail">
+              <label for="src_detail_${i}">Detail</label>
+              <div class="scan-input-row">
+                <input type="text" id="src_detail_${i}" value="${src.detail||''}" placeholder="LR, TL…"
+                  oninput="updateSource(${i},'detail',this.value)">
+                <button type="button" class="scan-btn" onclick="scanTextToField('src_detail_${i}')" title="Scan label">&#128247;</button>
+              </div>
+            </div>`}
+          </div>
+          </div>
+          <div class="src-sec src-kind" data-kind="damper">
+            <div class="src-sec-title">Damper</div>
+            <div class="form-grid">
+              ${springReturnBlock(src, i)}
+              ${poweredByBlock(src, i)}
+            </div>
+          </div>
+          <div class="src-sec src-kind" data-kind="drive">
+            <div class="src-sec-title">${isDriveDevice(src.deviceType) ? 'Drive' : 'Stored energy'}</div>
+            <div class="form-grid">
+              ${labelWaitBlock(src, i)}
+              ${feederGroupBlock(src, i)}
+              ${driveIsolatesBlock(src, i)}
+            </div>
           </div>
         </div>
       `;
@@ -10694,7 +10774,7 @@ function attachQuickPicks(card, src, index) {
       const group = row.closest('.form-group');
       if (group) group.classList.add('qp-group');
       // the list keeps its field's name for VoiceOver (the review: four "All choices")
-      const name = group && group.querySelector('label') ? group.querySelector('label').textContent.trim() : '';
+      const name = qpFieldName(group);
       sel.setAttribute('aria-label', name ? 'All ' + name + ' choices' : 'All choices');
       // The chips follow every change of the list — a chip or a More… pick —
       // whatever the list's own change does after it (build 156, wilkins on
@@ -10702,7 +10782,9 @@ function attachQuickPicks(card, src, index) {
       // doesn't let me select it … but if I hit Done for that source and come
       // back to it, it has changed": a Verification pick only saved the row, so
       // the old chip kept its check). Runs after the list's own onchange.
-      sel.addEventListener('change', () => repaintQuickPicksOf(sel.id));
+      // A pick folds the list again (build 176) — after the list's own change,
+      // which may have drawn the card anew with the list still open.
+      sel.addEventListener('change', () => { qpOpenFields(src).delete(field); repaintQuickPicksOf(sel.id); });
     }
     // an already wrapped list (a card refreshed in place) is only drawn again
     paintQuickPickRow(row, field, src, history || (history = qpHistory(src)));
@@ -10717,6 +10799,71 @@ function repaintQuickPicksOf(selId) {
   const i = m ? parseInt(m[1], 10) : -1;
   if (card && sources[i]) attachQuickPicks(card, sources[i], i);
 }
+// Shorter chip words (build 176, wilkins 2026-11-24: "gauge only - hot … isn't the
+// 'hot' redundant on any hot water or steam source?"): a water check without its
+// "- Hot" / "- CHW" (the source already says it), and a Location without "of
+// Equipment" (its label says it). Only the chip's words: the list under More…, the
+// saved unit, the sheet and loto-web keep the full name. Two chips that would read
+// the same (a water heater's cold inlet offers GaugeOnly and GaugeOnly - Hot) keep
+// their full names.
+const QP_WATER_WORDS = { 'Temp Only': 'Temp only', 'GaugeOnly': 'Gauge only', 'Drain Only': 'Drain only',
+  'Gauge/Drain': 'Gauge + drain', 'G/Tmp/Drain': 'Gauge + temp + drain' };
+function qpShortLabel(field, value, text) {
+  if (field === 'verification') {
+    const p = parseWaterVerification(value);
+    if (!p.recognized || p.blank) return text;
+    return QP_WATER_WORDS[String(value).replace(/\s*-\s*(Hot|CHW)$/i, '')] || text;
+  }
+  if (field === 'location') {
+    // …never down to a bare "On" (On Equipment) or "In": those keep the whole name
+    const short = String(text).replace(/\s+(of\s+)?Equipment$/i, '');
+    return short && !QP_BARE_WORDS.has(short.toLowerCase()) ? short : text;
+  }
+  return text;
+}
+const QP_BARE_WORDS = new Set(['on', 'in', 'at', 'by', 'near', 'to', 'inside', 'under', 'over', 'top of']);
+function qpChipLabels(field, values, textOf) {
+  const full = v => textOf.get(v) || v;
+  const short = new Map(values.map(v => [v, qpShortLabel(field, v, full(v))]));
+  const seen = new Map();
+  short.forEach(s => seen.set(s.toLowerCase(), (seen.get(s.toLowerCase()) || 0) + 1));
+  values.forEach(v => { if (seen.get(short.get(v).toLowerCase()) > 1) short.set(v, full(v)); });
+  return short;
+}
+// A field's name from its label, without the label's grey note ("— of the equipment")
+function qpFieldName(group) {
+  const lab = group && group.querySelector('label');
+  if (!lab) return '';
+  const first = lab.firstChild;
+  return String(first && first.nodeType === 3 ? first.textContent : lab.textContent).trim();
+}
+// An answered list folds to its pick and "Change" (build 176, wilkins' Option B: "A row
+// you've already answered … folds down to its pick plus a Change link"). Change, or the
+// folded pick, opens the chips again until the next pick in that list (the change
+// listener in attachQuickPicks). Kept per row, for this run of the app only.
+const _qpOpen = new WeakMap();
+function qpOpenFields(src) {
+  let set = _qpOpen.get(src);
+  if (!set) { set = new Set(); _qpOpen.set(src, set); }
+  return set;
+}
+function openQuickPickRow(index, field) {
+  const src = sources[index];
+  if (!src) return;
+  qpOpenFields(src).add(field);
+  const card = srcCardOf(src);
+  if (card) attachQuickPicks(card, src, index);
+  // the first chip takes the focus where the folded pick had it (VoiceOver, a keyboard)
+  const first = document.querySelector('#qp_' + field + '_' + index + ' .qp-pick, #qp_' + field + '_' + index + ' .qp-custom');
+  if (first) first.focus();
+}
+function closeQuickPickRow(index, field) {
+  const src = sources[index];
+  if (!src) return;
+  qpOpenFields(src).delete(field);
+  const card = srcCardOf(src);
+  if (card) attachQuickPicks(card, src, index);
+}
 // One list's chips, from its <select>'s entries and value.
 function paintQuickPickRow(row, field, src, history) {
   const sel = row.querySelector('select'), more = row.querySelector('.qp-more');
@@ -10724,17 +10871,49 @@ function paintQuickPickRow(row, field, src, history) {
   const textOf = new Map();
   Array.from(sel.options).forEach(o => { if (o.value && !/^\*\* /.test(o.value) && !textOf.has(o.value)) textOf.set(o.value, o.textContent); });
   const cur = sel.value;
+  row.querySelectorAll('.qp-pick, .qp-custom, .qp-fold, .qp-change').forEach(b => b.remove());
+  const index = parseInt((/_(\d+)$/.exec(sel.id) || [])[1], 10);
+  // (window.__qpKeepOpen: the test suite's chip tests of builds 154–175, which tap chips on answered rows)
+  const folded = !!cur && !qpOpenFields(src).has(field) && Number.isInteger(index) && !window.__qpKeepOpen;
+  row.classList.toggle('qp-folded', folded);
+  if (folded) {
+    const name = qpFieldName(row.closest('.form-group'));
+    const opt = sel.options[sel.selectedIndex] || {};
+    const fullText = String(opt.textContent || cur).replace(/(\.\.\.|…)$/, '');
+    const shown = /^\*\* /.test(cur) ? fullText : qpChipLabels(field, [cur], textOf).get(cur);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'qp-chip qp-fold on';
+    b.dataset.v = cur;
+    b.textContent = '✓ ' + shown;
+    b.setAttribute('aria-label', (name ? name + ': ' : '') + fullText + '. Tap to change');
+    b.addEventListener('click', () => openQuickPickRow(index, field));
+    const c = document.createElement('button');
+    c.type = 'button';
+    c.className = 'qp-change';
+    c.textContent = 'Change';
+    c.setAttribute('aria-label', 'Change ' + (name || 'this answer'));
+    c.addEventListener('click', () => openQuickPickRow(index, field));
+    row.insertBefore(b, more);
+    row.insertBefore(c, more);
+    more.classList.remove('on');
+    const lab = more.querySelector('.qp-more-label');
+    if (lab) lab.textContent = 'More…';
+    return;
+  }
   const picks = quickPickRank(field, src, [...textOf.keys()], history).slice(0, QP_COUNT).map(r => r.v);
   if (cur && textOf.has(cur) && !picks.includes(cur)) { if (picks.length >= QP_COUNT) picks.pop(); picks.push(cur); }
-  row.querySelectorAll('.qp-pick, .qp-custom').forEach(b => b.remove());
+  const words = qpChipLabels(field, picks, textOf);
   picks.forEach(v => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'qp-chip qp-pick' + (v === cur ? ' on' : '');
     b.setAttribute('aria-pressed', v === cur ? 'true' : 'false');
     b.dataset.v = v;
-    b.textContent = (v === cur ? '✓ ' : '') + textOf.get(v);
-    b.addEventListener('click', () => quickPick(sel, v));
+    b.textContent = (v === cur ? '✓ ' : '') + words.get(v);
+    if (words.get(v) !== textOf.get(v)) b.setAttribute('aria-label', textOf.get(v));   // VoiceOver reads the full name
+    // the lit chip again folds the list back (build 176)
+    b.addEventListener('click', () => (v === sel.value && Number.isInteger(index)) ? closeQuickPickRow(index, field) : quickPick(sel, v));
     row.insertBefore(b, more);
   });
   // Location's Custom… (a damper row's Other…) is always a chip, next to More…
@@ -10919,7 +11098,7 @@ function refreshSourceDependents(index) {
   if (ma && mb && ma.innerHTML !== mb.innerHTML) ma.innerHTML = mb.innerHTML;
   // Verification: the same <select> → its options; a different control (the
   // drain / gauge boxes ⇄ the list) → the whole field, which is not being typed in
-  const groupOf = (root) => { const el = root.querySelector('#src_ver_' + index) || root.querySelector('.simple-verif-check'); return el ? el.closest('.form-group') : null; };
+  const groupOf = (root) => { const el = root.querySelector('#src_ver_' + index) || root.querySelector('.sv-row'); return el ? el.closest('.form-group') : null; };
   const va = groupOf(live), vb = groupOf(fresh);
   if (va && vb && live.querySelector('#src_ver_' + index) && fresh.querySelector('#src_ver_' + index)) swapInner('src_ver_' + index);
   else swapNode(va, vb);
@@ -10954,7 +11133,7 @@ function refreshSourceDependents(index) {
   const fa = live.querySelector('#feederFor_' + index), fb = fresh.querySelector('#feederFor_' + index);
   if (fa && fb) swapNode(fa, fb);
   else if (fa) fa.remove();
-  else if (fb) { const body = live.querySelector('.source-card-body'); if (body) body.insertBefore(fb, body.querySelector(':scope > .src-sec')); }
+  else if (fb) { const body = live.querySelector('.source-card-body'); if (body) body.insertBefore(fb, body.querySelector(':scope > .src-cols') || body.querySelector(':scope > .src-sec')); }
   syncKindSections(live);
   attachQuickPicks(live, src, index);   // the chips follow the lists just refreshed (build 154)
 }
@@ -10975,6 +11154,18 @@ function kineticDefaultLocation() {
   return SOURCE_DEFAULTS['Kinetic'].location;
 }
 
+// Quantity's − / + (build 176, wilkins' Option B; a 1–8 list before): one step at a
+// time between 1 and the list's top (8). A count already above it (an import) can
+// only come down.
+function qtyMax() { return Math.max(...DATA.quantities); }
+function stepQuantity(index, step) {
+  const src = sources[index];
+  if (!src) return;
+  const q = Number(src.quantity) > 0 ? Number(src.quantity) : 1;
+  const next = Math.min(Math.max(q + step, 1), Math.max(qtyMax(), q));
+  if (next === q && Number(src.quantity) === q) return;
+  updateSource(index, 'quantity', next);
+}
 function updateSource(index, field, value) {
   markSourceEdited(index);
   sources[index][field] = value;
