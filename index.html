@@ -561,7 +561,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b173</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b174</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -665,7 +665,11 @@ if ('serviceWorker' in navigator) {
       </div>
       <div class="form-group" id="tiedToNameGroup" style="display:none;">
         <label>Equipment Name to Shut Down</label>
-        <input type="text" id="equipTiedToName" placeholder="e.g. Boiler 1, AHU-3000" oninput="autoSaveCurrent()">
+        <input type="text" id="equipTiedToName" list="tiedToSuggestions" placeholder="e.g. AHU-3000" onfocus="refreshTiedToSuggestions()" oninput="autoSaveCurrent()">
+        <!-- build 174: one box per piece of equipment (+ Add another); saved as one "a; b" string -->
+        <div id="tiedToMoreNames" style="display:flex;flex-direction:column;gap:5px;"></div>
+        <button type="button" id="tiedToAddBtn" class="btn btn-sm" onclick="addTiedToName('', true)" style="align-self:flex-start;text-transform:none;letter-spacing:0;padding:6px 12px;font-size:13px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">+ Add another</button>
+        <datalist id="tiedToSuggestions"></datalist>
       </div>
       <div class="form-group">
         <label>Survey Date <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-dim);">&mdash; blank = the day you save</span></label>
@@ -1292,7 +1296,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 173;
+const APP_BUILD = 174;
 
 // ============================================================================
 // DATA
@@ -9419,9 +9423,78 @@ function handleTiedToChange() {
     document.getElementById('equipTiedToName').focus();
   } else {
     nameGroup.style.display = 'none';
-    document.getElementById('equipTiedToName').value = '';
+    setTiedToNames('');
   }
   autoSaveCurrent();
+}
+
+// ---- Tied To: several pieces of equipment (build 174, wilkins 2026-11-23) ----
+// The name box takes one piece of equipment; "+ Add another" adds a box for
+// each one more. The unit still keeps ONE string, tiedToName, with "; "
+// between the names (the list form Device ID uses), so every export writes the
+// cell and keys it always did: "Shut Down & LOTO — AHU-1; AHU-2" in the sheet's
+// Tied to cell, "AHU-1; AHU-2" in the CSV and entries.json. loto-web splits the
+// names there (services/tied_to.split_names, 2026-11-23) and prints "AHU-1 and
+// AHU-2". A ";" typed in a box splits it the same way. One name saves exactly
+// as before. One action (Shut Down / Shut Down & LOTO) covers every name.
+const TIED_NAME_SEP = '; ';
+function splitTiedNames(text) {
+  return String(text == null ? '' : text).split(';').map(s => s.trim()).filter(Boolean);
+}
+function tiedNameBoxes() {
+  return [document.getElementById('equipTiedToName'),
+          ...document.querySelectorAll('#tiedToMoreNames .tied-extra-name')].filter(Boolean);
+}
+// The form's names as the unit saves them: "AHU-1; AHU-2", or "" for none.
+function tiedToNameValue() {
+  return tiedNameBoxes().flatMap(b => splitTiedNames(b.value)).join(TIED_NAME_SEP);
+}
+// Fill the boxes from a saved tiedToName: the first name in the name box, one
+// more box for each name after it.
+function setTiedToNames(text) {
+  const more = document.getElementById('tiedToMoreNames');
+  if (more) more.innerHTML = '';
+  const names = splitTiedNames(text);
+  const first = document.getElementById('equipTiedToName');
+  if (first) first.value = names.length ? names[0] : '';
+  names.slice(1).forEach(n => addTiedToName(n, false));
+}
+function addTiedToName(value, focus) {
+  const more = document.getElementById('tiedToMoreNames');
+  if (!more) return null;
+  const row = document.createElement('div');
+  row.className = 'tied-extra-row';
+  row.style.cssText = 'display:flex;gap:6px;align-items:stretch;';
+  row.innerHTML = '<input type="text" class="tied-extra-name" list="tiedToSuggestions" placeholder="Another piece of equipment" aria-label="Another piece of equipment to shut down" onfocus="refreshTiedToSuggestions()" oninput="autoSaveCurrent()" style="flex:1;min-width:0;">'
+    + '<button type="button" class="btn btn-sm tied-extra-remove" onclick="removeTiedToName(this)" aria-label="Remove this name" title="Remove this name" style="padding:6px 12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">&#10005;</button>';
+  const box = row.querySelector('input');
+  box.value = value || '';
+  more.appendChild(row);
+  if (focus) { refreshTiedToSuggestions(); box.focus(); }
+  return box;
+}
+function removeTiedToName(btn) {
+  const row = btn && btn.closest('.tied-extra-row');
+  if (row) row.remove();
+  autoSaveCurrent();
+}
+// Suggestions for the boxes: the saved units of this facility, in the form's
+// building when it has one — the names loto-web knows them by. Never the unit
+// open on the form. Typing anything else is fine.
+function refreshTiedToSuggestions() {
+  const list = document.getElementById('tiedToSuggestions');
+  if (!list) return;
+  const hosp = getHospitalCode(), bldg = String(getBuilding() || '').trim().toLowerCase();
+  const own = currentEntryId ? normEntryId(currentEntryId) : null;
+  const names = [...new Set((savedEquipment || [])
+    .filter(e => e && (own === null || normEntryId(e.id) !== own)
+      && (!hosp || !e.hospitalCode || e.hospitalCode === hosp)
+      && (!bldg || String(e.equipBuilding || '').trim().toLowerCase() === bldg))
+    .map(e => String(e.equipName || '').trim())
+    .filter(n => n && n !== 'Unnamed'))]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  list.innerHTML = '';
+  names.forEach(n => { const o = document.createElement('option'); o.value = n; list.appendChild(o); });
 }
 
 function handleEquipTypeChange() {
@@ -15902,7 +15975,7 @@ function collectIncompleteFields(opts) {
   if (!val('equipRoom').trim()) missing.push('Main info — Room');
   if (!getTemplate())           missing.push('Main info — Template');
   // Only relevant once a "Tied To" option is chosen (the field is hidden otherwise)
-  if (val('equipTiedTo') && !val('equipTiedToName').trim()) {
+  if (val('equipTiedTo') && !tiedToNameValue()) {
     missing.push('Main info — Equipment Name to Shut Down');
   }
   // build 104: the Main Photo — empty, or one whose save failed (the slot shows "NOT SAVED")
@@ -16203,7 +16276,7 @@ function performSaveAndNew() {
     equipBuilding: getBuilding(),
     template: getTemplate(),
     tiedTo: document.getElementById('equipTiedTo').value,
-    tiedToName: document.getElementById('equipTiedToName').value.trim(),
+    tiedToName: tiedToNameValue(),
     notes: document.getElementById('equipNotes').value.trim(),
     unitAnswers: savedUnitAnswers(),   // the answers for loto-web (build 118)
     sources: JSON.parse(JSON.stringify(sources)),
@@ -16395,7 +16468,7 @@ function formAsUnit() {
   return {
     equipType: getEquipType(), equipName: val('equipName'), lotoId: val('equipLotoId'),
     equipRoom: val('equipRoom'), equipBuilding: getBuilding(), template: getTemplate(),
-    tiedTo: val('equipTiedTo'), tiedToName: val('equipTiedToName'), notes: val('equipNotes'),
+    tiedTo: val('equipTiedTo'), tiedToName: tiedToNameValue(), notes: val('equipNotes'),
     unitAnswers, sources, photos, miscPhotos, sketch: getSketchData(), surveyDate: surveyDateFieldValue()
   };
 }
@@ -16516,7 +16589,7 @@ function clearForm(confirm_first = true) {
   document.getElementById('equipTemplateCustom').value = '';
   document.getElementById('customTemplateGroup').style.display = 'none';
   selectKeepingValue(document.getElementById('equipTiedTo'), '');
-  document.getElementById('equipTiedToName').value = '';
+  setTiedToNames('');
   document.getElementById('tiedToNameGroup').style.display = 'none';
   document.getElementById('equipNotes').value = '';
   setSurveyDateField('');
@@ -17108,10 +17181,10 @@ function editSaved(index) {
   // Restore tied-to equipment name
   if (entry.tiedTo) {
     document.getElementById('tiedToNameGroup').style.display = 'flex';
-    document.getElementById('equipTiedToName').value = entry.tiedToName || '';
+    setTiedToNames(entry.tiedToName || '');
   } else {
     document.getElementById('tiedToNameGroup').style.display = 'none';
-    document.getElementById('equipTiedToName').value = '';
+    setTiedToNames('');
   }
 
   // Restore notes
@@ -17243,10 +17316,10 @@ async function executeDuplicate(index, withPhotos) {
   // Restore tied-to equipment name
   if (entry.tiedTo) {
     document.getElementById('tiedToNameGroup').style.display = 'flex';
-    document.getElementById('equipTiedToName').value = entry.tiedToName || '';
+    setTiedToNames(entry.tiedToName || '');
   } else {
     document.getElementById('tiedToNameGroup').style.display = 'none';
-    document.getElementById('equipTiedToName').value = '';
+    setTiedToNames('');
   }
 
   // Copy notes from the original entry — duplicates inherit the note text
@@ -17815,7 +17888,7 @@ function snapshotFormEntry() {
     equipBuilding: getBuilding(),
     template:      getTemplate(),
     tiedTo:        document.getElementById('equipTiedTo').value,
-    tiedToName:    document.getElementById('equipTiedToName').value.trim(),
+    tiedToName:    tiedToNameValue(),
     notes:         document.getElementById('equipNotes').value.trim(),
     unitAnswers:   savedUnitAnswers(),
     savedAt:       (editingEntry && editingEntry.savedAt) || undefined,
@@ -19584,7 +19657,7 @@ function buildWipState() {
     equipBuilding: getBuilding(),
     template: getTemplate(),
     tiedTo: document.getElementById('equipTiedTo').value,
-    tiedToName: document.getElementById('equipTiedToName').value.trim(),
+    tiedToName: tiedToNameValue(),
     notes: document.getElementById('equipNotes').value.trim(),
     surveyDate: surveyDateFieldValue(),
     unitAnswers: unitAnswers,
@@ -20617,7 +20690,7 @@ async function loadAll() {
     // Restore tied-to equipment name
     if (state.tiedTo) {
       document.getElementById('tiedToNameGroup').style.display = 'flex';
-      document.getElementById('equipTiedToName').value = state.tiedToName || '';
+      setTiedToNames(state.tiedToName || '');
     }
 
     // Restore notes

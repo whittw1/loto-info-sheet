@@ -200,6 +200,8 @@
 //             wait, VFD's list) but its name; the question and card say "own breaker"; columns 2 / 18 / 21 and entries.json
 //   T502      build 173: the drain question on steam / water / air valves follows the facility (off at Marion and Kansas City,
 //             loto-web's Simplified drain language sites); held answers stay; Settings per facility
+//   T503      build 174 (wilkins 2026-11-23): Tied To names several pieces of equipment — "+ Add another" boxes, one
+//             "a; b" tiedToName (the sheet's Tied to cell, the CSV, entries.json), one box per name on open, a legacy name as it was
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -11516,18 +11518,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 173 (was build 122\'s): APP_BUILD and the header label say 173, the service worker\'s cache is loto-collector-v7.168, Xcode\'s CURRENT_PROJECT_VERSION is 173 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 174 (was build 122\'s): APP_BUILD and the header label say 174, the service worker\'s cache is loto-collector-v7.169, Xcode\'s CURRENT_PROJECT_VERSION is 174 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 173 && !!label && +label[1] === 173, 'the build');
+    want(APP_BUILD === 174 && !!label && +label[1] === 174, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.168', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.169', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 173;,CURRENT_PROJECT_VERSION = 173;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 174;,CURRENT_PROJECT_VERSION = 174;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -18832,6 +18834,101 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // T503 — build 174: one unit tied to several pieces of equipment
+  async function t503_tiedToSeveralPiecesOfEquipment() {
+    const N = 'T503 build 174 (wilkins 2026-11-23: a unit "Tied to" more than one piece of equipment): Tied To\'s name box takes one name and "+ Add another" adds a box for each one more, shown only once a Tied To choice is made; the unit keeps ONE tiedToName, "AHU-1; AHU-2; HWP-3; HWP-4" (a ";" typed in a box splits it, a blank box drops); it opens back as one box per name, a removed box goes, clearing Tied To empties every box, a fresh form has none; Save & New asks the name only when every box is empty; a legacy single name ("Boiler 1, AHU-3000") opens as one box and saves exactly as it was; the suggestions are the saved units in the form\'s building, never the open unit; the sheet\'s Tied to cell ("Shut Down & LOTO — AHU-1; AHU-2; HWP-3"), the CSV and entries.json carry the list';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const firstBox = () => document.getElementById('equipTiedToName');
+    const extras = () => [...document.querySelectorAll('#tiedToMoreNames .tied-extra-name')];
+    const boxes = () => [firstBox().value, ...extras().map(b => b.value)];
+    const shown = () => document.getElementById('tiedToNameGroup').style.display;
+    const pick = v => { document.getElementById('equipTiedTo').value = v; handleTiedToChange(); };
+    const suggestions = () => { refreshTiedToSuggestions(); return [...document.querySelectorAll('#tiedToSuggestions option')].map(o => o.value).join('|'); };
+    const nameGap = () => collectIncompleteFields().some(m => /Equipment Name to Shut Down/.test(m));
+    got.split = [splitTiedNames(' a ; ;b;'), splitTiedNames('Boiler 1, AHU-3000'), splitTiedNames(null)].map(x => x.join('|')).join('/');
+    want(got.split === 'a|b/Boiler 1, AHU-3000/', 'split ' + got.split);
+    // two saved units: one in the form's building (Main), one elsewhere
+    const near = mkEntry('AHU-1', { building: 'Main' }), far = mkEntry('AHU-9', { building: 'Annex' });
+    savedEquipment = [near, far]; saveAll();
+    fillFormNoSources('EF-503');
+    sources = [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'Disconnect', location: 'On Wall' })];
+    renderSources();
+    got.before = shown();
+    want(got.before === 'none', 'hidden before a Tied To choice ' + got.before);
+    pick('Shut Down & LOTO');
+    got.after = shown();
+    want(got.after === 'flex' && extras().length === 0, 'one box after the choice ' + got.after + '/' + extras().length);
+    firstBox().value = 'AHU-1';
+    addTiedToName('', true).value = 'AHU-2';
+    addTiedToName('', true).value = 'HWP-3 ;HWP-4';
+    addTiedToName('', true);   // left blank
+    got.suggest = suggestions();
+    want(got.suggest === 'AHU-1', 'suggestions ' + got.suggest);
+    got.value = tiedToNameValue();
+    want(got.value === 'AHU-1; AHU-2; HWP-3; HWP-4', 'the value ' + got.value);
+    // Save & New asks the name only when every box is empty
+    firstBox().value = '';
+    got.gapFirstEmpty = nameGap();
+    const keep = boxes();
+    tiedNameBoxes().forEach(b => { b.value = ''; });
+    got.gapAllEmpty = nameGap();
+    want(got.gapFirstEmpty === false && got.gapAllEmpty === true, 'the name check ' + got.gapFirstEmpty + '/' + got.gapAllEmpty);
+    firstBox().value = 'AHU-1'; extras().forEach((b, i) => { b.value = keep[i + 1]; });
+    const A = saveEntry();
+    want(A && A.tiedTo === 'Shut Down & LOTO' && A.tiedToName === 'AHU-1; AHU-2; HWP-3; HWP-4', 'saved ' + JSON.stringify(A && [A.tiedTo, A.tiedToName]));
+    got.fresh = [shown(), extras().length, firstBox().value].join('/');
+    want(got.fresh === 'none/0/', 'a fresh form ' + got.fresh);
+    // opens back as one box per name; the open unit is never a suggestion
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.findIndex(e => e.id === A.id)); });
+    got.reopened = [shown(), boxes().join('|')].join('/');
+    want(got.reopened === 'flex/AHU-1|AHU-2|HWP-3|HWP-4', 'reopened ' + got.reopened);
+    got.suggestOpen = suggestions();
+    want(got.suggestOpen === 'AHU-1', 'suggestions with the unit open ' + got.suggestOpen);
+    removeTiedToName(document.querySelector('#tiedToMoreNames .tied-extra-remove'));
+    got.removed = tiedToNameValue();
+    want(got.removed === 'AHU-1; HWP-3; HWP-4', 'a removed box ' + got.removed);
+    pick('');
+    got.cleared = [shown(), extras().length, firstBox().value].join('/');
+    want(got.cleared === 'none/0/', 'Tied To cleared ' + got.cleared);
+    pick('Shut Down & LOTO');
+    firstBox().value = 'AHU-1'; addTiedToName('AHU-2', false); addTiedToName('HWP-3', false);
+    const B = saveEntry();
+    want(B && B.id === A.id && B.tiedToName === 'AHU-1; AHU-2; HWP-3', 'saved again ' + JSON.stringify(B && B.tiedToName));
+    // a legacy single name opens as one box and saves as it was
+    const L = mkEntry('P-503', { building: 'Main' });
+    L.tiedTo = 'Shut Down'; L.tiedToName = 'Boiler 1, AHU-3000';
+    savedEquipment.push(L); saveAll();
+    await withDialogs({ confirm: true }, async () => { editSaved(savedEquipment.findIndex(e => e.id === L.id)); });
+    got.legacy = [boxes().join('|'), extras().length].join('/');
+    want(got.legacy === 'Boiler 1, AHU-3000/0', 'legacy opened ' + got.legacy);
+    performSaveAndNew();
+    const L2 = savedEquipment.find(e => e.id === L.id) || {};
+    want(L2.tiedTo === 'Shut Down' && L2.tiedToName === 'Boiler 1, AHU-3000', 'legacy saved ' + JSON.stringify([L2.tiedTo, L2.tiedToName]));
+    // the exports
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); return record(N, false, 'FAILED: ' + fails.join('; ')); }
+    const u = await unzipExport(zip.blob);
+    const je = jsonEntryFor(u.entriesJson, B), jl = jsonEntryFor(u.entriesJson, L);
+    got.json = [je && je.tiedTo, je && je.tiedToName, jl && jl.tiedToName].join('|');
+    want(got.json === 'Shut Down & LOTO|AHU-1; AHU-2; HWP-3|Boiler 1, AHU-3000', 'entries.json ' + got.json);
+    const cells = [];
+    for (const xpath of Object.keys(u.files).filter(p => /Information_Sheet_.*\.xlsx$/.test(p))) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      wb.worksheets.forEach(ws => ws.eachRow(r => {
+        if (String(r.getCell(1).value || '') === 'Tied to Equipment') cells.push(String(ws.getRow(r.number + 1).getCell(1).value || ''));
+      }));
+    }
+    got.sheet = cells.filter(Boolean).sort().join(' / ');
+    want(got.sheet === 'Shut Down & LOTO — AHU-1; AHU-2; HWP-3 / Shut Down — Boiler 1, AHU-3000', 'sheet ' + got.sheet);
+    const csvName = Object.keys(u.files).find(f => /\.csv$/.test(f));
+    const crow = parseCsvRows(csvName ? new TextDecoder().decode(u.files[csvName]) : '');
+    const hd = crow[0] || [], nc = hd.indexOf('Equipment Name'), tc = hd.indexOf('Tied To'), tn = hd.indexOf('Tied To Equipment Name');
+    got.csv = [...new Set(crow.slice(1).filter(r => r[nc] === 'EF-503' || r[nc] === 'P-503').map(r => r[nc] + '=' + r[tc] + '|' + r[tn]))].sort().join(' / ');
+    want(got.csv === 'EF-503=Shut Down & LOTO|AHU-1; AHU-2; HWP-3 / P-503=Shut Down|Boiler 1, AHU-3000', 'CSV ' + got.csv);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
     t9_removeMiscThenDiscard, t10_reattachOrphans, t11_duplicateSourceThenRetakeCopy,
@@ -19032,7 +19129,7 @@
     t491_vacuumPumpInletVent, t492_vacuumPumpInletVentReview,
     t493_visualChipOnTheMoreOptionsLine, t494_typedPressureAndTemperature, t495_deviceInAnotherRoom, t496_fuelOilPumpTypeAndTemplate,
     t497_upsTypeAndTemplate, t498_steamSterilizerTypeAndTemplate, t499_largeSteamBoiler,
-    t500_aDriveLockedOutUpstream, t501_aDriveAtAPadlockedBreaker, t502_theDrainQuestionFollowsTheFacility];
+    t500_aDriveLockedOutUpstream, t501_aDriveAtAPadlockedBreaker, t502_theDrainQuestionFollowsTheFacility, t503_tiedToSeveralPiecesOfEquipment];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
