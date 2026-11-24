@@ -202,6 +202,8 @@
 //             loto-web's Simplified drain language sites); held answers stay; Settings per facility
 //   T503      build 174 (wilkins 2026-11-23): Tied To names several pieces of equipment — "+ Add another" boxes, one
 //             "a; b" tiedToName (the sheet's Tied to cell, the CSV, entries.json), one box per name on open, a legacy name as it was
+//   T504      build 175 (wilkins 2026-11-23, loto-web's merge): "AHU - Steam, CHW, HHW" no longer offered (AHU - Steam covers it);
+//             an old unit on it opens, saves, duplicates, reloads and exports with it, never as a custom template
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -8629,6 +8631,7 @@
         fillFormNoSources('U-472');
         document.getElementById('equipType').value = type;
         filterTemplateDropdown(type);
+        keepTemplateOption(tmpl);   // build 175: "AHU - Steam, CHW, HHW" is an old unit's template, no longer offered
         document.getElementById('equipTemplate').value = tmpl;
         renderSources();
       };
@@ -11518,18 +11521,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 174 (was build 122\'s): APP_BUILD and the header label say 174, the service worker\'s cache is loto-collector-v7.169, Xcode\'s CURRENT_PROJECT_VERSION is 174 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 175 (was build 122\'s): APP_BUILD and the header label say 175, the service worker\'s cache is loto-collector-v7.170, Xcode\'s CURRENT_PROJECT_VERSION is 175 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 174 && !!label && +label[1] === 174, 'the build');
+    want(APP_BUILD === 175 && !!label && +label[1] === 175, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.169', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.170', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 174;,CURRENT_PROJECT_VERSION = 174;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 175;,CURRENT_PROJECT_VERSION = 175;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -18929,6 +18932,84 @@
     want(got.csv === 'EF-503=Shut Down & LOTO|AHU-1; AHU-2; HWP-3 / P-503=Shut Down|Boiler 1, AHU-3000', 'CSV ' + got.csv);
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // T504 — build 175: "AHU - Steam, CHW, HHW" retired; AHU - Steam covers every steam AHU
+  async function t504_ahuSteamChwHhwRetired() {
+    const OLD = 'AHU - Steam, CHW, HHW';
+    const N = 'T504 build 175 (wilkins 2026-11-23, with loto-web\'s template merge: "AHU - Steam" covers every steam AHU, with or without HHW / CHW): an Air Handler offers exactly AHU - Steam / AHU - HHW / AHU - Geothermal (+ New Template), and so does the Air Handler template prompt, whose AHU - Steam button says it covers any steam coil with or without HHW / CHW (wilkins 2026-11-24: "Add the hint first"); "' + OLD + '" is in neither DATA.templates nor app-lists.json; an old unit on it opens with it selected (not the custom box), keeps its Add-row lines, saves back unchanged, survives a reload mid-edit and Duplicate, and exports it in the sheet\'s Template cell and entries.json';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const sel = () => document.getElementById('equipTemplate');
+    const offered = () => [...sel().options].map(o => o.value).filter(Boolean).join('|');
+    // what a new Air Handler is offered
+    fillFormNoSources('AHU-504');
+    document.getElementById('equipType').value = 'Air Handler';
+    filterTemplateDropdown('Air Handler');
+    got.offered = offered();
+    want(got.offered === 'AHU - Steam|AHU - HHW|AHU - Geothermal|** New Template **', 'offered ' + got.offered);
+    const al = appListsSnapshot(APP_BUILD);
+    got.lists = [DATA.templates.includes(OLD), al.templates.includes(OLD), JSON.stringify(al.typeToTemplates['Air Handler'])].join(' / ');
+    want(got.lists === 'false / false / ["AHU - Steam","AHU - HHW","AHU - Geothermal"]', 'lists ' + got.lists);
+    want(isKnownTemplate(OLD) && isKnownTemplate('AHU - Steam') && !isKnownTemplate('My Own Template'), 'isKnownTemplate');
+    // the template prompt a new Air Handler gets
+    closeAllPrompts();
+    showTemplatePrompt('Air Handler', EQUIPMENT_TEMPLATE_MAP['Air Handler']);
+    const ov = document.getElementById('templatePromptOverlay') || document.querySelector('.dialog-overlay');
+    got.prompt = ov ? [...ov.querySelectorAll('button')].map(b => b.textContent.trim()).filter(t => /AHU/.test(t)).join('|') : 'no prompt';
+    want(got.prompt === 'AHU - Steam (any steam coil, with or without HHW / CHW)|AHU - HHW|AHU - Geothermal', 'prompt ' + got.prompt);
+    // the hinted button still picks AHU - Steam itself
+    await withDialogs({ confirm: true }, async () => {
+      const b = ov && [...ov.querySelectorAll('button.btn-primary')].find(x => /^AHU - Steam \(/.test(x.textContent.trim()));
+      if (b) b.click();
+    });
+    got.picked = getTemplate();
+    want(got.picked === 'AHU - Steam', 'the hinted button picked ' + got.picked);
+    closeAllPrompts(); if (typeof closeTemplatePrompt === 'function') closeTemplatePrompt();
+    // an old unit on the retired template
+    const A = mkEntry('AHU-504-OLD', { sources: [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: 'VFD', location: 'Mech Rm' })] });
+    A.equipType = 'Air Handler'; A.template = OLD;
+    savedEquipment = [A]; saveAll();
+    await withDialogs({ confirm: true }, async () => { editSaved(0); });
+    got.open = [sel().value, getTemplate(), document.getElementById('customTemplateGroup').style.display, offered()].join(' / ');
+    want(got.open === OLD + ' / ' + OLD + ' / none / AHU - Steam|AHU - HHW|AHU - Geothermal|' + OLD + '|** New Template **', 'opened ' + got.open);
+    got.adds = TEMPLATE_QUICK_ADD[getTemplate()] ? TEMPLATE_QUICK_ADD[getTemplate()].join('|') : '';
+    want(got.adds === 'HHW In/Out|CHW In/Out', 'its Add-row lines ' + got.adds);
+    // a reload mid-edit, then save
+    document.getElementById('equipNotes').value = 'typing';
+    autoSaveCurrent();
+    await sleep(400);
+    editingEntry = null; savedEquipment = []; sources = []; photos = {}; miscPhotos = [];
+    await loadAll();
+    got.reload = [sel().value, document.getElementById('customTemplateGroup').style.display].join(' / ');
+    want(got.reload === OLD + ' / none', 'after a reload ' + got.reload);
+    document.getElementById('equipNotes').value = 'edited';
+    performSaveAndNew();
+    const saved = savedEquipment.find(e => e.id === A.id) || {};
+    want(saved.template === OLD && saved.notes === 'edited', 'saved ' + JSON.stringify([saved.template, saved.notes]));
+    // Duplicate keeps it
+    await withDialogs({ confirm: true }, async () => { await executeDuplicate(savedEquipment.indexOf(saved), false); });
+    got.dup = [sel().value, document.getElementById('customTemplateGroup').style.display].join(' / ');
+    want(got.dup === OLD + ' / none', 'Duplicate ' + got.dup);
+    await withDialogs({ confirm: true }, async () => { discardForm(); });
+    // the exports
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (!zip) { fails.push('no zip: ' + confirms.join(' | ')); return record(N, false, 'FAILED: ' + fails.join('; ')); }
+    const u = await unzipExport(zip.blob);
+    const je = jsonEntryFor(u.entriesJson, saved);
+    got.json = je ? je.template : null;
+    want(got.json === OLD, 'entries.json ' + got.json);
+    const cells = [];
+    for (const xpath of Object.keys(u.files).filter(p => /Information_Sheet_.*\.xlsx$/.test(p))) {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+      wb.worksheets.forEach(ws => ws.eachRow(r => {
+        if (String(r.getCell(1).value || '') === 'Tied to Equipment' && String(r.getCell(8).value || '') === 'Template')
+          cells.push(String(ws.getRow(r.number + 1).getCell(8).value || ''));
+      }));
+    }
+    got.sheet = cells.join(' / ');
+    want(cells.length >= 1 && cells.every(c => c === OLD), 'sheet Template cell ' + got.sheet);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
     t9_removeMiscThenDiscard, t10_reattachOrphans, t11_duplicateSourceThenRetakeCopy,
@@ -19129,7 +19210,7 @@
     t491_vacuumPumpInletVent, t492_vacuumPumpInletVentReview,
     t493_visualChipOnTheMoreOptionsLine, t494_typedPressureAndTemperature, t495_deviceInAnotherRoom, t496_fuelOilPumpTypeAndTemplate,
     t497_upsTypeAndTemplate, t498_steamSterilizerTypeAndTemplate, t499_largeSteamBoiler,
-    t500_aDriveLockedOutUpstream, t501_aDriveAtAPadlockedBreaker, t502_theDrainQuestionFollowsTheFacility, t503_tiedToSeveralPiecesOfEquipment];
+    t500_aDriveLockedOutUpstream, t501_aDriveAtAPadlockedBreaker, t502_theDrainQuestionFollowsTheFacility, t503_tiedToSeveralPiecesOfEquipment, t504_ahuSteamChwHhwRetired];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
