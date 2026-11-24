@@ -204,6 +204,9 @@
 //             "a; b" tiedToName (the sheet's Tied to cell, the CSV, entries.json), one box per name on open, a legacy name as it was
 //   T504      build 175 (wilkins 2026-11-23, loto-web's merge): "AHU - Steam, CHW, HHW" no longer offered (AHU - Steam covers it);
 //             an old unit on it opens, saves, duplicates, reloads and exports with it, never as a custom template
+//   T505      build 176 (wilkins' Option B): an answered list folds to its pick + Change; chip words without "- Hot" / "of Equipment"
+//   T506      build 176: the simplified water check as Gauge / Drain / or None chips (None = Temp Only, the boxes' own codes)
+//   T507      build 176: Qty − / +, Valve State buttons, "Same photo as another source" box, the card's two columns
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -6125,7 +6128,8 @@
     const val = id => (document.getElementById(id) || {}).value;
     const shown = { energy0: val('src_energy_0'), loc1: val('src_loc_1'), loc2: val('src_loc_2'), tied: val('equipTiedTo') };
     const card2 = document.querySelectorAll('#sourcesContainer > .source-card')[2];
-    const qty = card2 ? [...card2.querySelectorAll('select')].map(x => x.value).find(v => v === '12') || '' : '';
+    // build 176: Quantity is the − / + stepper, its count in .qty-val (a list of 1–8 before)
+    const qty = card2 ? ((card2.querySelector('#src_qty_2 .qty-val') || {}).textContent || '').trim() : '';
     performSaveAndNew();
     const s = savedEquipment.find(e => e.id === A.id) || {};
     const kept = (s.sources || []).map(x => x.energySource + '|' + x.location + '|' + x.quantity).join(' / ');
@@ -6712,7 +6716,8 @@
       renderSources();
       handleEnergySourceChange(0, '** Custom Energy **');
       const leave = (v) => { const box = document.getElementById('src_energy_custom_0'); box.value = v; box.dispatchEvent(new Event('input', { bubbles: true })); box.dispatchEvent(new Event('change', { bubbles: true })); };
-      const shown = () => { const m = /Saves as:\s*([^\n]+?)\s*More options/.exec(((document.querySelectorAll('#sourcesContainer > .source-card')[0] || {}).textContent || '').replace(/\s+/g, ' ')); return m ? m[1].trim() : null; };
+      // build 176: the line under the Gauge / Drain / None chips ("Saves as …"; "Saves as: … More options…" before)
+      const shown = () => { const el = (document.querySelectorAll('#sourcesContainer > .source-card')[0] || document).querySelector('.sv-saves'); const m = el && /^Saves as\s+(.+)$/.exec(el.textContent.trim()); return m ? m[1].trim() : null; };
       leave('Chilled glycol loop');
       const cold = { stored: sources[0].verification, shown: shown() };
       leave('Hot glycol loop');
@@ -8195,7 +8200,9 @@
   }
 
   // T478 — a chip's check follows every pick (build 156)
-  async function t478_chipCheckFollowsEveryPick() {
+  // build 176: with every list open, as in builds 154–175 (withRowsOpen; folding is T505)
+  async function t478_chipCheckFollowsEveryPick() { return withRowsOpen(t478_chipCheckFollowsEveryPickBody); }
+  async function t478_chipCheckFollowsEveryPickBody() {
     const N = 'T478 build 156 (wilkins on b155: "when I try to select a location or verification button, it doesn\'t let me select it when I click on it, but if I hit Done for that source and come back to it, it has changed"): on an open card, a chip tapped in each of the four lists — Energy Source, Device, Location, Verification — is the one checked at once, and its row holds it; a More… pick no chip showed is checked too; a Location chip tapped while the Panel ID box still has the focus (the iPad keeps it) is checked';
     await resetAppState();
     const fails = [], got = {};
@@ -8345,9 +8352,11 @@
       const typeRows = EQUIPMENT_AUTO_SOURCES['Cooling Tower'].map(x => x.energySource + '/' + x.deviceType + '/' + x.verification).join('|');
       const tmplRows = TEMPLATE_AUTO_SOURCES['Cooling Tower'].map(x => x.energySource + '/' + x.deviceType + '/' + x.verification).join('|');
       want(typeRows === tmplRows, 'the type and the template agree');
-      const sel = i => document.getElementById('src_ver_' + i);
-      got.cards = [2, 3].map(i => { expandSource(i); return sel(i) ? sel(i).value + ':' + [...sel(i).options].map(o => o.value).includes('Visual') : 'no select'; });
-      want(got.cards.join() === 'Visual:true,Visual:true', 'the card shows Visual selected');
+      // the classic list, or (build 176) the Gauge / Drain / None line's own list under More… with Visual's chip lit
+      const sel = i => document.getElementById('src_ver_' + i) || document.getElementById('src_svmore_' + i);
+      const litVisual = i => { const b = document.querySelector('#sv_' + i + ' .sv-extra.on'); return b ? b.textContent.trim() : ''; };
+      got.cards = [2, 3].map(i => { expandSource(i); return sel(i) ? sel(i).value + ':' + [...sel(i).options].map(o => o.value).includes('Visual') + ':' + litVisual(i) : 'no select'; });
+      want(got.cards.join() === 'Visual:true:✓ Visual,Visual:true:✓ Visual', 'the card shows Visual selected');
       got.offered = {
         cwGate: getFilteredVerifications('Gate Valve', 'Condenser Water In').includes('Visual'),
         cwButterfly: getFilteredVerifications('Butterfly Valve', 'Condenser Water Out').includes('Visual'),
@@ -8689,7 +8698,9 @@
   }
 
   // T484 — Location's Custom… is always a chip (build 160)
-  async function t484_customLocationIsAlwaysAChip() {
+  // build 176: with every list open, as in builds 154–175 (withRowsOpen; folding is T505)
+  async function t484_customLocationIsAlwaysAChip() { return withRowsOpen(t484_customLocationIsAlwaysAChipBody); }
+  async function t484_customLocationIsAlwaysAChipBody() {
     const N = 'T484 build 160 (wilkins: "always show \'Custom\' instead of having to click More and scroll all the way down"): an open card\'s Location chips end with Custom… beside More… (the five likely picks unchanged); a tap opens and focuses the Custom Location box and lights "✓ Custom" (More… stays More…); what is typed saves as the row\'s location and keeps the chip lit; a tap while lit puts the box back in focus and changes nothing; a plain chip leaves Custom; a damper row\'s chip is Other… (its list\'s own word); Energy Source, Device and Verification get no such chip; Quick picks off shows none';
     await resetAppState();
     await withQuickPicksSetting(async () => {
@@ -8764,7 +8775,9 @@
   // T485 — Chemical In / Chemical Out offer "Visual" (build 161)
   // wilkins, 2026-11-06: "I need for the verification list for chemical in or
   // chemical out to also be Visual or flow, whatever is appropriate for LOTO web"
-  async function t485_chemicalLinesOfferVisual() {
+  // build 176: with every list open, as in builds 154–175 (withRowsOpen; folding is T505)
+  async function t485_chemicalLinesOfferVisual() { return withRowsOpen(t485_chemicalLinesOfferVisualBody); }
+  async function t485_chemicalLinesOfferVisualBody() {
     const N = 'T485 build 161: Chemical In and Chemical Out offer "Visual" (loto-web\'s "Visually confirm absence of flow through lines.", the check its boiler drafts use on Chemical In) on every chemical device (Ball, Gate, Butterfly, Quick Disconnect) beside the device\'s own Gauge/Drain, GaugeOnly and Drain Only; not "Zero Flow" (loto-web\'s "Flow", a whole-unit Section 3 step); no other new row gets Visual (HHW, CHW, steam, Natural Gas, Electrical); an open Chemical In card shows a Visual chip and the list entry, a tap checks it; the export carries "Visual" in entries.json and on the sheet';
     await resetAppState();
     await withQuickPicksSetting(async () => {
@@ -8832,7 +8845,9 @@
   // T486 — a new Chemical In / Out row starts on "Visual" (build 162)
   // wilkins, 2026-11-06, after build 161 offered it: "Still didnt see the 'Flow'
   // verification on a chemical out auto population"
-  async function t486_chemicalRowStartsOnVisual() {
+  // build 176: with every list open, as in builds 154–175 (withRowsOpen; folding is T505)
+  async function t486_chemicalRowStartsOnVisual() { return withRowsOpen(t486_chemicalRowStartsOnVisualBody); }
+  async function t486_chemicalRowStartsOnVisualBody() {
     const N = 'T486 build 162: picking Chemical Out (and Chemical In) on a new row fills its verification "Visual" and leaves Device and Location empty strings (never undefined); a Device picked after keeps Visual (Ball Valve, Quick Disconnect); the "+ Chemical Out" add row fills it too; a check the tech already picked stays; an HHW In row re-picked as Chemical Out takes Visual, and a Chemical Out row re-picked as HHW In drops it; the Visual chip is lit on the card; a steam row (LPS 10 PSI) still gets Gate Valve and its location stays an empty string (its check is the simplified checks\' own, unchanged)';
     await resetAppState();
     await withQuickPicksSetting(async () => {
@@ -8888,7 +8903,7 @@
   // wilkins, 2026-11-06: "you're talking about the chips that show up? make it
   // include visual, not start on it"
   async function t487_condenserWaterVisualChipBesideTheBoxes() {
-    const N = 'T487 build 162: with the simplified checks on, a hand-added Condenser Water In / Gate Valve row shows the Drain present / Gauge present boxes and ONE chip "Visual" (under them in builds 162–164, on the "More options…" line since build 165 — T493), not picked (the row keeps its own Temp Only); a tap picks Visual (the card then shows the list\'s chips with "✓ Visual"); Condenser Water Out and In/Out get the chip too; HHW In, CHW Out, DW In and Energy Recovery Water In rows get none; with the simplified checks off there is no such chip (the list has Visual)';
+    const N = 'T487 build 162: with the simplified checks on, a hand-added Condenser Water In / Gate Valve row shows the Gauge / Drain / None chips (build 176; the Drain present / Gauge present boxes before) and ONE more chip "Visual" on that line, not picked (the row keeps its own Temp Only, None lit); a tap picks Visual (lit "✓ Visual" on the same line, which stays); Condenser Water Out and In/Out get the chip too; HHW In, CHW Out, DW In and Energy Recovery Water In rows get none; with the simplified checks off there is no such chip (the list has Visual)';
     await resetAppState();
     await withQuickPicksSetting(async () => {
       const fails = [], got = {};
@@ -8899,19 +8914,19 @@
         fillFormNoSources('CDW-487');
         document.getElementById('equipType').value = 'Standard Pump';
         const add = (es, dev) => { sources.forEach(x => { x.collapsed = true; }); addSource(); const i = sources.length - 1; handleEnergySourceChange(i, es); if (dev) handleDeviceTypeChange(i, dev); return i; };
-        const extrasOf = () => { const ex = document.querySelector('.simple-verif-extras'); return ex ? [...ex.querySelectorAll('button')].map(b => b.textContent.trim()).join(',') : ''; };
+        const extrasOf = () => [...document.querySelectorAll('.sv-row .sv-extra')].map(b => b.textContent.trim()).join(',');
         // 1. the chip, not picked
         let i = add('Condenser Water In', 'Gate Valve');
         await sleep(0);
-        got.first = [extrasOf(), document.querySelectorAll('.simple-verif-check').length, sources[i].verification].join('|');
-        want(got.first === 'Visual|2|Temp Only', 'the chip beside the boxes, not picked: ' + got.first);
+        got.first = [extrasOf(), document.querySelectorAll('.sv-row .sv-chip').length, sources[i].verification, (document.querySelector('.sv-row .sv-chip.on') || {}).textContent].join('|');
+        want(got.first === 'Visual|3|Temp Only|✓ None', 'the chip beside Gauge / Drain / None, not picked: ' + got.first);
         // 2. a tap picks it
-        const chip = document.querySelector('.simple-verif-extras button');
+        const chip = document.querySelector('.sv-row .sv-extra');
         if (chip) chip.click();
         await sleep(0);
-        const lit = document.querySelector('#qp_verification_' + i + ' .qp-pick.on');
-        got.tap = [sources[i].verification, lit ? lit.textContent : 'no lit chip', document.querySelectorAll('.simple-verif-check').length].join('|');
-        want(got.tap === 'Visual|✓ Visual|0', 'a tap picks Visual: ' + got.tap);
+        const lit = document.querySelector('.sv-row .sv-extra.on');
+        got.tap = [sources[i].verification, lit ? lit.textContent : 'no lit chip', document.querySelectorAll('.sv-row .sv-chip').length, document.querySelectorAll('.sv-row .sv-chip.on').length].join('|');
+        want(got.tap === 'Visual|✓ Visual|3|0', 'a tap picks Visual: ' + got.tap);
         // 3. the other condenser water rows, and none on the other water rows
         got.rows = {};
         for (const [es, dev] of [['Condenser Water Out', 'Butterfly Valve'], ['Condenser Water In/Out', 'Gate Valve'], ['HHW In', 'Ball Valve'], ['CHW Out', 'Butterfly Valve'], ['DW In', 'Ball Valve'], ['Energy Recovery Water In', 'Ball Valve']]) {
@@ -8928,7 +8943,7 @@
         i = add('Condenser Water In', 'Gate Valve');
         await sleep(0);
         const sel = document.getElementById('src_ver_' + i);
-        got.off = [document.querySelectorAll('.simple-verif-extras').length, !!sel && [...sel.options].some(o => o.value === 'Visual')].join('|');
+        got.off = [document.querySelectorAll('.sv-row').length, !!sel && [...sel.options].some(o => o.value === 'Visual')].join('|');
         want(got.off === '0|true', 'simplified off: ' + got.off);
       } finally {
         try { if (simpleWas === null) localStorage.removeItem('loto_simple_verification'); else localStorage.setItem('loto_simple_verification', simpleWas); } catch (e) {}
@@ -9214,7 +9229,7 @@
 
   // T493 — condenser water's Visual chip on the "More options…" line (build 165)
   async function t493_visualChipOnTheMoreOptionsLine() {
-    const N = 'T493 build 165 (wilkins 2026-11-11: "Have Visual sit on the line with \'More Options\'"): on a Condenser Water In / Gate Valve row with the simplified checks, the Visual chip sits beside "More options…" on the "Saves as" line (same row, vertically overlapping, below the Gauge present box, inside the card), still not picked, and at a phone\'s width (335 px) it and the link stay together inside the card; an HHW In row\'s line has no chip';
+    const N = 'T493 build 165 (wilkins 2026-11-11: "Have Visual sit on the line with \'More Options\'"; build 176: that line is Gauge / Drain / or None / Visual / More…, "More options…" gone): on a Condenser Water In / Gate Valve row with the simplified checks, the Visual chip sits on the verification line after None and before More…, still not picked, inside the card, and at a phone\'s width (335 px) still inside the card; an HHW In row\'s line has no such chip';
     await resetAppState();
     await withQuickPicksSetting(async () => {
       const fails = [], got = {};
@@ -9228,21 +9243,21 @@
         const i = add('Condenser Water In', 'Gate Valve');
         await sleep(0);
         const card = document.querySelectorAll('#sourcesContainer > .source-card')[i];
-        const line = card && card.querySelector('.simple-verif-more');
-        const chip = line && line.querySelector('.simple-verif-extras .qp-chip');
-        const more = line && [...line.querySelectorAll('button')].find(b => /More options/.test(b.textContent));
-        const gauge = card && [...card.querySelectorAll('label')].find(l => /Gauge present/.test(l.textContent));
+        // build 176: Visual sits on the Gauge / Drain / None line, after None and before More… ("More options…" is gone)
+        const line = card && card.querySelector('.sv-row');
+        const chip = line && line.querySelector('.sv-extra');
+        const more = line && line.querySelector('.qp-more');
         got.parts = [!!line, chip ? chip.textContent.trim() : 'no chip', !!more, sources[i].verification].join('|');
-        want(got.parts === 'true|Visual|true|Temp Only', 'the chip and the link on one line, not picked: ' + got.parts);
-        if (chip && more && gauge && card) {
-          const c = chip.getBoundingClientRect(), m = more.getBoundingClientRect(), g = gauge.getBoundingClientRect(), k = card.getBoundingClientRect();
-          got.rects = { chip: [Math.round(c.left), Math.round(c.top), Math.round(c.right), Math.round(c.bottom)], more: [Math.round(m.left), Math.round(m.top), Math.round(m.bottom)], gaugeBottom: Math.round(g.bottom), cardRight: Math.round(k.right) };
-          want(c.top < m.bottom && c.bottom > m.top, 'same line as More options');
-          want(c.right <= m.left + 1, 'the chip is just before the link');
-          want(c.top >= g.bottom - 1, 'below the Gauge present box');
+        want(got.parts === 'true|Visual|true|Temp Only', 'the chip on the line, not picked: ' + got.parts);
+        got.order = line ? [...line.children].map(el => el.dataset.sv || (el.classList.contains('sv-extra') ? 'extra' : el.classList.contains('qp-more') ? 'more' : el.classList.contains('sv-or') ? 'or' : '?')).join(',') : '';
+        want(got.order === 'gauge,drain,or,none,extra,more', 'the line\'s order: ' + got.order);
+        want(!/More options/.test(card ? card.textContent : ''), 'no "More options…" link');
+        if (chip && more && card) {
+          const c = chip.getBoundingClientRect(), m = more.getBoundingClientRect(), k = card.getBoundingClientRect();
+          got.rects = { chip: [Math.round(c.left), Math.round(c.right)], more: [Math.round(m.left), Math.round(m.right)], cardRight: Math.round(k.right) };
           want(c.right <= k.right && m.right <= k.right, 'inside the card');
         } else want(false, 'missing parts');
-        // a phone's width: the line wraps inside the card if it must, the link stays beside the chip
+        // a phone's width: the line wraps inside the card
         const box = document.getElementById('sourcesContainer'), wasWidth = box.style.width;
         if (chip && more && card) try {
           box.style.width = '335px';
@@ -9250,13 +9265,12 @@
           const c2 = chip.getBoundingClientRect(), m2 = more.getBoundingClientRect(), k2 = card.getBoundingClientRect();
           got.narrow = { chipRight: Math.round(c2.right), moreRight: Math.round(m2.right), cardRight: Math.round(k2.right), cardWidth: Math.round(k2.width) };
           want(c2.right <= k2.right && m2.right <= k2.right && c2.left >= k2.left, 'inside the card at 335 px: ' + JSON.stringify(got.narrow));
-          want(c2.top < m2.bottom && c2.bottom > m2.top, 'the link stays beside the chip at 335 px');
         } finally { box.style.width = wasWidth; }
         sources.length = 0; renderSources();
         add('HHW In', 'Ball Valve');
         await sleep(0);
-        const hhw = document.querySelector('#sourcesContainer .simple-verif-more');
-        got.hhw = hhw ? hhw.querySelectorAll('.qp-chip').length : 'no line';
+        const hhw = document.querySelector('#sourcesContainer .sv-row');
+        got.hhw = hhw ? hhw.querySelectorAll('.sv-extra').length : 'no line';
         want(got.hhw === 0, 'HHW In has no chip: ' + got.hhw);
       } finally {
         try { if (simpleWas === null) localStorage.removeItem('loto_simple_verification'); else localStorage.setItem('loto_simple_verification', simpleWas); } catch (e) {}
@@ -9321,8 +9335,18 @@
     try { return await fn(); }
     finally { try { if (was === null) localStorage.removeItem('loto_quick_picks'); else localStorage.setItem('loto_quick_picks', was); } catch (e) {} }
   }
+  // Build 176 folds an answered list to its pick + Change (T505); the chip tests of
+  // builds 154–175 tap chips on answered rows, so they run with every list open
+  async function withRowsOpen(fn) {
+    const was = window.__qpKeepOpen;
+    window.__qpKeepOpen = true;
+    try { return await fn(); }
+    finally { window.__qpKeepOpen = was; }
+  }
   // T470 — quick picks on the source card (build 154)
-  async function t470_quickPicksOnTheCard() {
+  // build 176: with every list open, as in builds 154–175 (withRowsOpen; folding is T505)
+  async function t470_quickPicksOnTheCard() { return withRowsOpen(t470_quickPicksOnTheCardBody); }
+  async function t470_quickPicksOnTheCardBody() {
     const N = 'T470 build 154 (wilkins picked Option A of the efficiency mockups, "Build A"): an open card shows Energy Source, Device, Location and Verification as one-tap chips of the likely picks (what this device used on rows like this one, then the source\'s default, then the list) with More… — the list itself — beside them; a chip runs the list\'s own change (a steam chip fills its Gate Valve default; MCC opens its ID box); the row\'s own pick always shows lit; Custom… lights its own chip and More… stays More… (build 160; it had lit More… with its name); a typed steam pressure is its own chip; a list refreshed in place keeps its chips in step with it; Quick picks off in Settings brings back the plain lists';
     await resetAppState();
     await withQuickPicksSetting(async () => {
@@ -11521,18 +11545,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 175 (was build 122\'s): APP_BUILD and the header label say 175, the service worker\'s cache is loto-collector-v7.170, Xcode\'s CURRENT_PROJECT_VERSION is 175 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 176 (was build 122\'s): APP_BUILD and the header label say 176, the service worker\'s cache is loto-collector-v7.171, Xcode\'s CURRENT_PROJECT_VERSION is 176 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 175 && !!label && +label[1] === 175, 'the build');
+    want(APP_BUILD === 176 && !!label && +label[1] === 176, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.170', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.171', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 175;,CURRENT_PROJECT_VERSION = 175;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 176;,CURRENT_PROJECT_VERSION = 176;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -15645,7 +15669,7 @@
 
   // T411 — the source card's two columns stay on the card
   async function t411_theSourceCardsColumnsStayOnTheCard() {
-    const N = 'T411 build 135: on a narrow card (an iPad) with the scan buttons shown, a quantity-2 source\'s two columns are equal and nothing runs past the card — build 134\'s columns grew to their widest content (the per-unit tag rows with "No tag", long dropdowns) and the right one was clipped';
+    const N = 'T411 build 135 (build 176: the card in two columns): on a narrow card (an iPad) with the scan buttons shown, a quantity-2 source\'s two-column grids are equal (Device ID + Qty: the box and the stepper) and nothing runs past the card — build 134\'s columns grew to their widest content (the per-unit tag rows with "No tag", long dropdowns) and the right one was clipped';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -15667,9 +15691,14 @@
             const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').map(parseFloat);
             const right = grid.getBoundingClientRect().right;
             const past = Array.from(grid.querySelectorAll('*')).filter(el => el.offsetParent && el.getBoundingClientRect().right > right + 0.5).map(el => el.tagName + (el.id ? '#' + el.id : ''));
-            return { cols, scroll: grid.scrollWidth, client: grid.clientWidth, past: past.slice(0, 4) };
+            return { cols, scroll: grid.scrollWidth, client: grid.clientWidth, past: past.slice(0, 4), id: grid.classList.contains('src-id-grid') };
           });
-          want(got['w' + width].some(g => g.cols.length === 2) && got['w' + width].every(g => g.cols.length >= 2 && g.cols.every(c => Math.abs(c - g.cols[0]) < 0.5) && g.scroll <= g.client && !g.past.length), 'at ' + width + ' px');
+          // build 176 (two columns): Device ID + Qty is the box and the stepper's own width, and a
+          // band in the left column is one column; every other grid's columns are equal
+          const list = got['w' + width], cardPast = card.scrollWidth > card.clientWidth + 0.5;
+          got['card' + width] = [card.scrollWidth, card.clientWidth];
+          want(!cardPast && list.some(g => g.cols.length === 2 && !g.id) && list.every(g => g.scroll <= g.client && !g.past.length
+            && (g.id || g.cols.length < 2 || g.cols.every(c => Math.abs(c - g.cols[0]) < 0.5))), 'at ' + width + ' px');
         }
         card.style.width = '';
       } finally {
@@ -15907,7 +15936,7 @@
   // ==========================================================================
   // T417 — the card in sections
   async function t417_theCardIsInSections() {
-    const N = 'T417 build 138: an open source card is in sections — "What it is" (Energy Source, Device Type, Quantity, Device ID), "Where it\'s isolated and verified" (Location, Verification), the kind\'s own band (Drive on a VFD row: the discharge wait, Fed by, the drive\'s disconnect; Valve on a gate valve; Damper on a damper actuator; none on a plain breaker), then "Photo" (the slot, Detail, Duplicate as No / Yes buttons); the header says what the row is ("Electrical 480V · VFD", "Energy Source #1" under it) with ▲ ▼, More and Done — Link, Copy, Duplicate and Remove are in More, never beside Done; a Device typed by hand that makes a valve brings the Valve band without a re-render';
+    const N = 'T417 build 138 (build 176: two columns, wilkins\' Option B): an open source card is in sections — what it is (Energy Source, Device Type, Device ID with Qty beside it) and where (Location, Verification) with no titles, the Valve band on a gate valve, all in the left column; "Photo" (the slot, "Same photo as another source" as one box, Detail) in the right column; then full width the kind\'s own band (Drive on a VFD row: the discharge wait, Fed by, the drive\'s disconnect; Damper on a damper actuator; none on a plain breaker); the header says what the row is ("Electrical 480V · VFD", "Energy Source #1" under it) with ▲ ▼, More and Done — Link, Copy, Duplicate and Remove are in More, never beside Done; a Device typed by hand that makes a valve brings the Valve band without a re-render';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -15923,15 +15952,20 @@
       const shown = c => [...c.querySelectorAll('.src-sec')].filter(s => s.style.display !== 'none');
       const titles = c => shown(c).map(s => (s.querySelector('.src-sec-title') || {}).textContent).join(' / ');
       got.secs = cards().map(titles);
-      want(/^What it is \/ Where it.s isolated and verified \/ Drive \/ Photo$/.test(got.secs[0]), 'the drive card');
-      want(/verified \/ Valve \/ Photo$/.test(got.secs[1]) && /verified \/ Damper \/ Photo$/.test(got.secs[2]) && /verified \/ Photo$/.test(got.secs[3]) && /verified \/ Photo$/.test(got.secs[4]),
+      want(got.secs[0] === ' /  / Photo / Drive', 'the drive card');
+      want(got.secs[1] === ' /  / Valve / Photo' && got.secs[2] === ' /  / Photo / Damper' && got.secs[3] === ' /  / Photo' && got.secs[4] === ' /  / Photo',
         'one band per kind: ' + JSON.stringify(got.secs));
+      // the columns: what / where (and a Valve band) on the left, the photo on the right, a drive's band under both
+      const c1 = cards()[1];
+      got.cols = [!!c1.querySelector('.src-col-main #src_energy_1'), !!c1.querySelector('.src-col-main #src_loc_1'), !!c1.querySelector('.src-col-main #valveStateGroup_1'),
+        !!c1.querySelector('.src-col-photo #photo_source_1'), !!cards()[0].querySelector('.source-card-body > .src-kind[data-kind="drive"] #feederGroup_0')].join();
+      want(got.cols === 'true,true,true,true,true', 'the columns: ' + got.cols);
       const c0 = cards()[0], s0 = shown(c0);
       const has = (k, sel) => !!(s0[k] && s0[k].querySelector(sel));
       got.where = [has(0, '#src_energy_0'), has(0, '#src_device_0'), has(0, '#src_deviceId_0'),
-        [...s0[0].querySelectorAll('label')].some(l => /^Quantity$/i.test(l.textContent.trim())),
-        has(1, '#src_loc_0'), has(1, '#src_ver_0'), has(2, '#lwGroup_0'), has(2, '#feederGroup_0'), has(2, '#driveIsoGroup_0'),
-        has(3, '#photo_source_0'), has(3, '#src_detail_0'), has(3, '#src_dup_0')].join();
+        has(0, '#src_qty_0'),
+        has(1, '#src_loc_0'), has(1, '#src_ver_0'), has(3, '#lwGroup_0'), has(3, '#feederGroup_0'), has(3, '#driveIsoGroup_0'),
+        has(2, '#photo_source_0'), has(2, '#src_detail_0'), has(2, '#src_dup_0')].join();
       want(!got.where.includes('false'), 'each field in its section: ' + got.where);
       const head = c0.querySelector('.source-card-header');
       got.title = head.querySelector('.src-head-title').textContent;
@@ -15942,14 +15976,15 @@
       // build 167 added "In another room…" (an Electrical row's device can sit in another room)
       want(JSON.stringify(got.buttons) === JSON.stringify(['▲', '▼', 'Done']) && got.menu.length === 5 && /Link/.test(got.menu[0])
         && /Copy/.test(got.menu[1]) && /Duplicate/.test(got.menu[2]) && got.menu[3] === 'In another room…' && /Remove/.test(got.menu[4]), 'the header and More');
-      got.dup = [...document.querySelectorAll('#src_dup_3 button')].map(b => b.textContent + ':' + b.classList.contains('on') + ':' + /updateSource\(3,'duplicate','(No|Yes)'\)/.test(b.getAttribute('onclick'))).join(' ');
-      want(got.dup === 'No:true:true Yes:false:true', 'Duplicate buttons: ' + got.dup);
+      const dupBox = document.getElementById('src_dup_3');
+      got.dup = dupBox ? [dupBox.type, dupBox.checked, dupBox.closest('label').textContent.trim(), /updateSource\(3,'duplicate',this\.checked \? 'Yes' : 'No'\)/.test(dupBox.getAttribute('onchange'))].join(':') : 'none';
+      want(got.dup === 'checkbox:false:Same photo as another source:true', 'the Duplicate box: ' + got.dup);
       // a Device typed by hand: the band follows when the box is left (refreshSourceDependents), the card is not rebuilt
       const live = cards()[4];
       sources[4].deviceType = 'Trap valve';
       refreshSourceDependents(4);
       got.typed = [cards()[4] === live, titles(live)].join(' | ');
-      want(cards()[4] === live && /verified \/ Valve \/ Photo$/.test(titles(live)) && !!live.querySelector('#valveStateGroup_4.form-group'), 'a typed valve: ' + got.typed);
+      want(cards()[4] === live && titles(live) === ' /  / Valve / Photo' && !!live.querySelector('#valveStateGroup_4.form-group'), 'a typed valve: ' + got.typed);
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
@@ -16057,7 +16092,7 @@
       sources = [DRIVE({ deviceId: 'VFD-4; VFD-5', quantity: 2, duplicate: '' })]; sources.forEach(ensureSourceId); renderSources();
       const btn = document.getElementById('src_lwphoto_0');
       got.photoLine = !!btn && !btn.closest('.scan-input-row');
-      got.dup = [...document.querySelectorAll('#src_dup_0 button.on')].map(b => b.textContent).join();
+      got.dup = document.getElementById('src_dup_0') ? (document.getElementById('src_dup_0').checked ? 'Yes' : 'No') : 'none';   // build 176: one box
       want(got.photoLine && got.dup === 'No', 'label photo line / Duplicate: ' + got.photoLine + ' ' + got.dup);
     } finally { setHospitalCode(prevCode); }
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
@@ -17460,20 +17495,21 @@
 
   // T450 — the card: Mixed at 2+ valves, one toggle per valve, nothing new on other rows
   async function t450_aMixedRowSetsEachValveOnTheCard() {
-    const N = 'T450 build 146: a Qty 2 CHW Ball Valve row offers Valve State "Mixed (set each valve)", a Qty 1 row does not; picking Mixed makes valve 2 Normally Closed with one toggle per valve ("1 Normal", "2 NC") in the Valve State box and the card badge "NC 1/2"; a toggle flips its valve (both NC: the badge says NC); Normal again drops the list; a Qty 2 Normal row shows no toggle line and no "Only some valves?"';
+    const N = 'T450 build 146: a Qty 2 CHW Ball Valve row offers Valve State "Mixed" (build 176: a button; "Mixed (set each valve)" in the list before), a Qty 1 row does not; picking Mixed makes valve 2 Normally Closed with one toggle per valve ("1 Normal", "2 NC") in the Valve State box and the card badge "NC 1/2"; a toggle flips its valve (both NC: the badge says NC); Normal again drops the list; a Qty 2 Normal row shows no toggle line and no "Only some valves?"';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     formOfType('AHU-450', 'Air Handler', 'AHU - Steam');
     sources = [vsRow('CHW In', 'Ball Valve', { quantity: 2 }), vsRow('HHW In', 'Ball Valve', { quantity: 1 })];
     renderSources();
-    const opts = i => Array.from((document.getElementById('src_valvestate_' + i) || { options: [] }).options).map(o => o.value).join('/');
+    // build 176: the Valve State is tap buttons (data-v), not a list
+    const opts = i => Array.from((document.getElementById('src_valvestate_' + i) || { querySelectorAll: () => [] }).querySelectorAll('button[data-v]')).map(b => b.dataset.v).join('/');
     got.opts = opts(0) + ' | ' + opts(1);
     want(got.opts === 'normal/normally_closed/mixed | normal/normally_closed', 'options ' + got.opts);
     got.clean = [!!document.getElementById('src_vsunits_0'), !!document.getElementById('src_lockperunit_0'), !!document.getElementById('src_lockunits_0')].join();
     want(got.clean === 'false,false,false', 'a Normal Qty 2 row shows ' + got.clean);
     updateValveState(0, 'mixed');
-    got.mixed = [JSON.stringify(sources[0].unitValveStates), document.getElementById('src_valvestate_0').value, toggleTexts('src_vsunits_0'), valveStateBadgeText(sources[0])].join(' ');
+    got.mixed = [JSON.stringify(sources[0].unitValveStates), document.getElementById('src_valvestate_0').dataset.value, toggleTexts('src_vsunits_0'), valveStateBadgeText(sources[0])].join(' ');
     want(got.mixed === '["normal","normally_closed"] mixed 1 Normal/2 NC NC 1/2', 'mixed ' + got.mixed);
     sources[0].collapsed = true; renderSources();   // the badge is on the collapsed card, in the list
     got.header = />NC 1\/2</.test(document.body.innerHTML);
@@ -18544,7 +18580,7 @@
       const mi = sources.findIndex(x => x.energySource === 'Main Steam Stop');
       sources[mi].deviceType = 'Gate Valve'; expandSource(mi);
       const card = document.querySelectorAll('#sourcesContainer > .source-card')[mi];
-      got.simple = [!!card.querySelector('.simple-verif-check'), !!document.getElementById('src_ver_' + mi)].join();
+      got.simple = [!!card.querySelector('.sv-row'), !!document.getElementById('src_ver_' + mi)].join();   // build 176: the Gauge / Drain / None line
       want(got.simple === 'false,true', 'classic select on a role row ' + got.simple);
     } finally { try { if (simpleWas === null) localStorage.removeItem('loto_simple_verification'); else localStorage.setItem('loto_simple_verification', simpleWas); } catch (e) {} }
     // col 24 on its lines, only on this template
@@ -19010,6 +19046,217 @@
     want(cells.length >= 1 && cells.every(c => c === OLD), 'sheet Template cell ' + got.sheet);
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
+  // ==========================================================================
+  // BUILD 176 — the source card in two columns (wilkins picked Option B of the
+  // 2026-11-24 mockups, with a None chip: "Yes, build 176"). Each fails on 175.
+  // ==========================================================================
+  // T505 — an answered list folds to its pick + Change; the chips' shorter words
+  async function t505_answeredListsFoldAndShortWords() {
+    const N = 'T505 build 176 (wilkins\' Option B): on an open card a list already answered folds to one lit chip and "Change" (its list stays in the card, hidden); Change — or the folded chip — opens the chips again, a tap on the lit chip folds it back and a pick folds it; a blank list stays open; a custom Location folds to "✓ Custom" with its box still there; Quick picks off shows the plain lists, never folded; the chips\' words: a Location without "of Equipment" ("Front", "Above") but "On Equipment" whole, and a water check without "- Hot" / "- CHW" ("Gauge only", "Gauge + drain") with the simplified checks off; two chips that would read the same (a water heater\'s cold inlet: GaugeOnly and GaugeOnly - Hot) keep their full names; the list, the saved row and the sheet keep the full names';
+    await resetAppState();
+    await withQuickPicksSetting(async () => {
+      const fails = [], got = {};
+      const want = (ok, what) => { if (!ok) fails.push(what); };
+      let simpleWas = null;
+      try { simpleWas = localStorage.getItem('loto_simple_verification'); } catch (e) {}
+      try {
+        formOfType('AHU-505', 'Air Handler', 'AHU - Steam');
+        sources = [Object.assign(mkSrc('Electrical 480V'), { sourceId: genUuid(), deviceType: '', location: '', verification: '', collapsed: false })];
+        renderSources();
+        const row = f => document.getElementById('qp_' + f + '_0');
+        const shape = f => { const r = row(f); if (!r) return 'no row'; return r.classList.contains('qp-folded') ? 'folded:' + [...r.querySelectorAll('.qp-fold, .qp-change')].map(b => b.textContent.trim()).join('+') : 'open:' + r.querySelectorAll('.qp-pick').length; };
+        got.start = ['energy', 'device', 'location'].map(shape).join(' / ');
+        want(/^folded:✓ Electrical 480V\+Change \/ open:[1-9] \/ open:[1-9]$/.test(got.start), 'the answered list folds, the blank ones are open: ' + got.start);
+        want(!!document.querySelector('#qp_energy_0.qp-folded .qp-more select#src_energy_0'), 'the folded list keeps its list');
+        row('energy').querySelector('.qp-change').click();
+        got.change = shape('energy');
+        want(/^open:[1-9]$/.test(got.change) && !!row('energy').querySelector('.qp-pick.on'), 'Change opens the chips, its pick lit: ' + got.change);
+        row('energy').querySelector('.qp-pick.on').click();
+        got.litTap = shape('energy');
+        want(got.litTap === 'folded:✓ Electrical 480V+Change' && sources[0].energySource === 'Electrical 480V', 'the lit chip folds it back: ' + got.litTap);
+        row('energy').querySelector('.qp-fold').click();
+        want(/^open:/.test(shape('energy')), 'the folded chip opens it too');
+        await withDialogs({ confirm: false, choice: () => 'cancel' }, async () => {
+          const b = [...row('device').querySelectorAll('.qp-pick')].find(x => x.dataset.v === 'Disconnect') || row('device').querySelector('.qp-pick');
+          if (b) b.click();
+          await sleep(0);
+        });
+        closeAllPrompts();
+        got.pick = [sources[0].deviceType, shape('device')].join(' | ');
+        want(!!sources[0].deviceType && got.pick === sources[0].deviceType + ' | folded:✓ ' + sources[0].deviceType + '+Change', 'a pick folds its list: ' + got.pick);
+        // the Location: folded to its short word, the list keeps the full name
+        sources[0].location = 'Front of Equipment'; renderSources();
+        got.front = shape('location');
+        const opt = [...document.getElementById('src_loc_0').options].find(o => o.value === 'Front of Equipment');
+        want(got.front === 'folded:✓ Front+Change' && !!opt && opt.textContent === 'Front of Equipment' && sources[0].location === 'Front of Equipment', 'Front of Equipment folds as Front: ' + got.front);
+        handleLocationChange(0, '** Custom Location **');
+        got.custom = [shape('location'), !!document.getElementById('src_loc_custom_0')].join(' | ');
+        want(got.custom === 'folded:✓ Custom+Change | true', 'a custom Location: ' + got.custom);
+        // the words, as the chips get them
+        const words = (f, vals) => { const m = qpChipLabels(f, vals, new Map(vals.map(v => [v, v]))); return vals.map(v => m.get(v)).join('|'); };
+        got.words = {
+          loc: words('location', ['Above Equipment', 'Left of Equipment', 'On Equipment', 'Front Left Corner of Equipment', 'In Ceiling', 'At Supply Fan']),
+          hot: words('verification', ['GaugeOnly - Hot', 'Drain Only - Hot', 'Gauge/Drain - Hot', 'Temp Only - Hot', 'G/Tmp/Drain - Hot', 'Controls']),
+          chw: words('verification', ['GaugeOnly - CHW', 'Zero Flow', 'Visual']),
+          twins: words('verification', ['GaugeOnly', 'GaugeOnly - Hot', 'Drain Only']),
+          above: words('location', ['Above', 'Above Equipment'])
+        };
+        want(got.words.loc === 'Above|Left|On Equipment|Front Left Corner|In Ceiling|At Supply Fan', 'location words ' + got.words.loc);
+        want(got.words.hot === 'Gauge only|Drain only|Gauge + drain|Temp only|Gauge + temp + drain|Controls', 'hot words ' + got.words.hot);
+        want(got.words.chw === 'Gauge only|Zero Flow|Visual', 'CHW words ' + got.words.chw);
+        want(got.words.twins === 'GaugeOnly|GaugeOnly - Hot|Drain only' && got.words.above === 'Above|Above Equipment', 'twins keep their names: ' + got.words.twins + ' / ' + got.words.above);
+        // the water chips on a card, the simplified checks off
+        try { localStorage.setItem('loto_simple_verification', '0'); } catch (e) {}
+        formOfType('P-505', 'Standard Pump');
+        sources = [Object.assign(mkSrc('DHW In'), { sourceId: genUuid(), deviceType: 'Ball Valve', location: 'Above Equipment', verification: '', collapsed: false })];
+        renderSources();
+        const verChips = () => [...row('verification').querySelectorAll('.qp-pick')];
+        got.verChips = verChips().map(b => b.textContent.trim()).join('|');
+        want(verChips().length >= 4 && !/ - Hot/.test(got.verChips) && /Gauge only/.test(got.verChips) && /Gauge \+ drain/.test(got.verChips), 'the water chips\' words: ' + got.verChips);
+        const g = verChips().find(b => b.dataset.v === 'GaugeOnly - Hot');
+        want(!!g && g.getAttribute('aria-label') === 'GaugeOnly - Hot', 'VoiceOver reads the full name');
+        if (g) g.click();
+        got.verPick = [sources[0].verification, shape('verification')].join(' | ');
+        want(got.verPick === 'GaugeOnly - Hot | folded:✓ Gauge only+Change', 'the pick saves the full code: ' + got.verPick);
+        // a water heater's cold inlet offers GaugeOnly and GaugeOnly - Hot: every chip reads differently
+        formOfType('WH-505', 'Domestic Water Heater');
+        sources = [Object.assign(mkSrc('DW In'), { sourceId: genUuid(), deviceType: 'Ball Valve', location: 'Above Equipment', verification: '', collapsed: false })];
+        renderSources();
+        const texts = verChips().map(b => b.textContent.trim());
+        got.heater = texts.join('|');
+        want(texts.length >= 2 && new Set(texts).size === texts.length, 'no two chips read the same: ' + got.heater);
+        // Quick picks off: the plain lists, never folded
+        try { localStorage.setItem('loto_quick_picks', '0'); } catch (e) {}
+        sources[0].verification = 'GaugeOnly'; renderSources();
+        got.off = [document.querySelectorAll('.qp-row').length, !!document.getElementById('src_energy_0') && !document.getElementById('src_energy_0').closest('.qp-more')].join('|');
+        want(got.off === '0|true', 'Quick picks off: ' + got.off);
+      } finally {
+        try { if (simpleWas === null) localStorage.removeItem('loto_simple_verification'); else localStorage.setItem('loto_simple_verification', simpleWas); } catch (e) {}
+      }
+      record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+    });
+  }
+  // T506 — Gauge / Drain / or None (the simplified water check as chips)
+  async function t506_gaugeDrainOrNone() {
+    const N = 'T506 build 176 (wilkins: "for anything that has a gauge or drain … a None option prior to More"): with the simplified checks on, a water row\'s Verification is Gauge · Drain · or None · More… — no checkboxes, no "More options…"; a new DHW In / Ball Valve row comes with None lit (Temp Only - Hot, the code a blank row gets, as the build 79 boxes saved it) and "Saves as Temp Only - Hot" under it; Gauge → GaugeOnly - Hot (None unlit), + Drain → Gauge/Drain - Hot, Gauge off → Drain Only - Hot, None → Temp Only - Hot with both unlit, None again changes nothing; More… is the whole list (a pick there lights its chips); a check outside the four (Zero Flow) lights More… with its name and no chip, and Gauge from it starts afresh; a CHW row saves "- CHW", a cold DW In row the plain codes; an Air Handler\'s HHW row still comes with Drain lit (its drain default)';
+    await resetAppState();
+    await withQuickPicksSetting(async () => {
+      const fails = [], got = {};
+      const want = (ok, what) => { if (!ok) fails.push(what); };
+      let simpleWas = null;
+      try { simpleWas = localStorage.getItem('loto_simple_verification'); localStorage.setItem('loto_simple_verification', '1'); } catch (e) {}
+      try {
+        const row = (es, extra) => Object.assign(mkSrc(es), { sourceId: genUuid(), deviceType: 'Ball Valve', location: 'Above Equipment', verification: '', collapsed: false }, extra || {});
+        const lit = () => [...document.querySelectorAll('#sv_0 .sv-chip.on')].map(b => b.dataset.sv).join(',') || '-';
+        const tap = w => { const b = document.querySelector('#sv_0 [data-sv="' + w + '"]'); if (b) b.click(); return !!b; };
+        const state = () => [sources[0].verification, lit(), ((document.querySelector('#verGroup_0 .sv-saves') || {}).textContent || '').trim()].join(' | ');
+        formOfType('P-506', 'Standard Pump');
+        sources = [row('DHW In')]; renderSources();
+        const card = document.querySelector('#sourcesContainer > .source-card');
+        got.parts = [...document.querySelectorAll('#sv_0 > *')].map(el => el.dataset.sv || (el.classList.contains('qp-more') ? 'more' : el.textContent.trim())).join(',');
+        want(got.parts === 'gauge,drain,or,none,more', 'the line: ' + got.parts);
+        want(!card.querySelector('#verGroup_0 input[type="checkbox"]') && !/More options/.test(card.textContent), 'no boxes, no "More options…"');
+        got.seq = [state()];
+        for (const w of ['gauge', 'drain', 'gauge', 'none']) { tap(w); got.seq.push(state()); }
+        want(JSON.stringify(got.seq) === JSON.stringify(['Temp Only - Hot | none | Saves as Temp Only - Hot', 'GaugeOnly - Hot | gauge | Saves as GaugeOnly - Hot',
+          'Gauge/Drain - Hot | gauge,drain | Saves as Gauge/Drain - Hot', 'Drain Only - Hot | drain | Saves as Drain Only - Hot', 'Temp Only - Hot | none | Saves as Temp Only - Hot']), 'the taps: ' + JSON.stringify(got.seq));
+        tap('none');
+        want(state() === 'Temp Only - Hot | none | Saves as Temp Only - Hot', 'None again changes nothing: ' + state());
+        const ms = document.getElementById('src_svmore_0');
+        got.listHas = ms ? [...ms.options].map(o => o.value).filter(Boolean).join('|') : 'no list';
+        want(got.listHas === 'Temp Only - Hot|Gauge/Drain - Hot|GaugeOnly - Hot|Drain Only - Hot', 'More… is the whole list: ' + got.listHas);
+        if (ms) { ms.value = 'Gauge/Drain - Hot'; ms.dispatchEvent(new Event('change', { bubbles: true })); }
+        got.listPick = state();
+        want(got.listPick === 'Gauge/Drain - Hot | gauge,drain | Saves as Gauge/Drain - Hot', 'a pick under More… lights its chips: ' + got.listPick);
+        // a check outside the four (an import's Zero Flow): More… lit with its name, no chip; Gauge starts afresh
+        sources[0].verification = 'Zero Flow'; renderSources();
+        const more = document.querySelector('#sv_0 .qp-more');
+        got.zero = [sources[0].verification, lit(), more ? more.classList.contains('on') + ':' + more.querySelector('.qp-more-label').textContent : 'no more'].join(' | ');
+        want(got.zero === 'Zero Flow | - | true:Zero Flow ▾', 'Zero Flow: ' + got.zero);
+        tap('gauge');
+        want(sources[0].verification === 'GaugeOnly - Hot' && lit() === 'gauge', 'Gauge from Zero Flow starts afresh: ' + state());
+        // the suffix follows the source
+        sources = [row('CHW In')]; renderSources();
+        got.chw = [state()]; tap('gauge'); got.chw.push(sources[0].verification);
+        want(got.chw.join(' / ') === 'Temp Only - CHW | none | Saves as Temp Only - CHW / GaugeOnly - CHW', 'CHW: ' + got.chw.join(' / '));
+        sources = [row('DW In')]; renderSources();
+        got.dw = [state()]; tap('drain'); got.dw.push(sources[0].verification);
+        want(got.dw.join(' / ') === 'Temp Only | none | Saves as Temp Only / Drain Only', 'cold DW In: ' + got.dw.join(' / '));
+        // an Air Handler's HHW row keeps its drain default
+        formOfType('AHU-506', 'Air Handler', 'AHU - HHW');
+        sources = [row('HHW In')]; renderSources();
+        got.hhw = state();
+        want(got.hhw === 'Drain Only - Hot | drain | Saves as Drain Only - Hot', 'the AHU HHW drain default: ' + got.hhw);
+      } finally {
+        try { if (simpleWas === null) localStorage.removeItem('loto_simple_verification'); else localStorage.setItem('loto_simple_verification', simpleWas); } catch (e) {}
+      }
+      record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+    });
+  }
+  // T507 — the Qty stepper, the Valve State buttons, the "Same photo" box, the two columns
+  async function t507_stepperButtonsBoxAndColumns() {
+    const N = 'T507 build 176 (wilkins\' Option B): Quantity is − / + beside the Device ID (− off at 1, + off at 8; a count of 12 from an import shows 12 and only comes down); Qty 2 brings the per-unit Device ID boxes and the Valve State\'s Mixed button; Valve State is tap buttons (Normal / Normally Closed) saving normal / normally_closed; "Same photo as another source" is one box under the photo (ticked = Duplicate Yes, unticked = No); on an iPad-wide card (710 px) the Device ID sits right under the Device Type with the photo column to its right, and a drive\'s band runs under both columns; on a 500 px card the photo drops under the rest';
+    await resetAppState();
+    await withQuickPicksSetting(async () => {
+      const fails = [], got = {};
+      const want = (ok, what) => { if (!ok) fails.push(what); };
+      formOfType('P-507', 'Standard Pump');
+      sources = [Object.assign(mkSrc('CHW In'), { sourceId: genUuid(), deviceType: 'Ball Valve', location: 'Above Equipment', verification: 'Temp Only - CHW', quantity: 1, collapsed: false })];
+      renderSources();
+      const qty = () => { const st = document.getElementById('src_qty_0'); if (!st) return 'none'; const b = st.querySelectorAll('button'); return [st.querySelector('.qty-val').textContent.trim(), b[0].disabled, b[1].disabled].join(':'); };
+      const plus = () => document.querySelector('#src_qty_0 button[aria-label="One more"]').click();
+      const minus = () => document.querySelector('#src_qty_0 button[aria-label="One fewer"]').click();
+      got.q = [qty()];
+      minus(); got.q.push(String(sources[0].quantity));
+      plus(); got.q.push(qty());
+      got.two = [!!document.getElementById('src_deviceId_0_1'), !!document.querySelector('#src_valvestate_0 button[data-v="mixed"]')].join();
+      for (let k = 0; k < 7; k++) plus();
+      got.q.push(qty(), String(sources[0].quantity));
+      want(JSON.stringify(got.q) === JSON.stringify(['1:true:false', '1', '2:false:false', '8:false:true', '8']), 'the stepper: ' + JSON.stringify(got.q));
+      want(got.two === 'true,true', 'Qty 2: per-unit boxes and Mixed: ' + got.two);
+      sources[0].quantity = 12; renderSources();
+      got.q12 = qty(); minus();
+      want(got.q12 === '12:false:true' && sources[0].quantity === 11, 'an imported 12: ' + got.q12 + ' then ' + sources[0].quantity);
+      // the Valve State buttons
+      sources[0].quantity = 1; renderSources();
+      const vs = () => [...document.querySelectorAll('#src_valvestate_0 button')].map(b => (b.classList.contains('on') ? '*' : '') + b.textContent.trim()).join('|');
+      got.vs = [vs()];
+      document.querySelector('#src_valvestate_0 button[data-v="normally_closed"]').click();
+      got.vs.push(sources[0].valveState + ' ' + vs());
+      document.querySelector('#src_valvestate_0 button[data-v="normal"]').click();
+      got.vs.push(sources[0].valveState + ' ' + vs());
+      want(JSON.stringify(got.vs) === JSON.stringify(['*✓ Normal|Normally Closed', 'normally_closed Normal|*✓ Normally Closed', 'normal *✓ Normal|Normally Closed']), 'the Valve State buttons: ' + JSON.stringify(got.vs));
+      // "Same photo as another source"
+      const box = () => document.getElementById('src_dup_0');
+      got.dup = [box() && box().type, box() && !!box().closest('.src-col-photo')];
+      box().click(); closeAllPrompts();
+      got.dup.push(sources[0].duplicate, box().checked);
+      box().click(); closeAllPrompts();
+      got.dup.push(sources[0].duplicate, box().checked);
+      want(JSON.stringify(got.dup) === JSON.stringify(['checkbox', true, 'Yes', true, 'No', false]), 'the Same photo box: ' + JSON.stringify(got.dup));
+      // the two columns at an iPad's card width, one column on a narrow card
+      sources = [Object.assign(DRIVE({ deviceId: 'VFD-1' }), { sourceId: genUuid() })]; renderSources();
+      const card = document.querySelector('#sourcesContainer > .source-card');
+      const rect = el => el ? el.getBoundingClientRect() : { left: 0, right: 0, top: 0, bottom: 0, width: 0 };
+      try {
+        card.style.width = '710px';
+        await sleep(0);
+        const dev = rect(card.querySelector('#src_device_0').closest('.form-group')), id = rect(card.querySelector('#src_deviceId_0')),
+          photo = rect(card.querySelector('.src-col-photo')), main = rect(card.querySelector('.src-col-main')),
+          drive = rect(card.querySelector('.source-card-body > .src-kind[data-kind="drive"]')), body = rect(card.querySelector('.source-card-body'));
+        got.wide = { devBottom: Math.round(dev.bottom), idTop: Math.round(id.top), idRight: Math.round(id.right), photoLeft: Math.round(photo.left), driveTop: Math.round(drive.top), colsBottom: Math.round(Math.max(main.bottom, photo.bottom)), driveW: Math.round(drive.width), bodyW: Math.round(body.width) };
+        want(id.top >= dev.bottom - 1 && id.top - dev.bottom < 40, 'the Device ID right under the Device Type');
+        want(photo.left >= id.right && photo.top < id.bottom, 'the photo column beside the Device ID');
+        want(drive.top >= Math.max(main.bottom, photo.bottom) - 1 && drive.width > body.width * 0.85, 'the drive band under both columns');
+        card.style.width = '500px';
+        await sleep(0);
+        const photo2 = rect(card.querySelector('.src-col-photo')), main2 = rect(card.querySelector('.src-col-main'));
+        got.narrow = { mainBottom: Math.round(main2.bottom), photoTop: Math.round(photo2.top) };
+        want(photo2.top >= main2.bottom - 1, 'a narrow card: the photo under the rest');
+      } finally { card.style.width = ''; }
+      record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+    });
+  }
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
     t9_removeMiscThenDiscard, t10_reattachOrphans, t11_duplicateSourceThenRetakeCopy,
@@ -19210,7 +19457,8 @@
     t491_vacuumPumpInletVent, t492_vacuumPumpInletVentReview,
     t493_visualChipOnTheMoreOptionsLine, t494_typedPressureAndTemperature, t495_deviceInAnotherRoom, t496_fuelOilPumpTypeAndTemplate,
     t497_upsTypeAndTemplate, t498_steamSterilizerTypeAndTemplate, t499_largeSteamBoiler,
-    t500_aDriveLockedOutUpstream, t501_aDriveAtAPadlockedBreaker, t502_theDrainQuestionFollowsTheFacility, t503_tiedToSeveralPiecesOfEquipment, t504_ahuSteamChwHhwRetired];
+    t500_aDriveLockedOutUpstream, t501_aDriveAtAPadlockedBreaker, t502_theDrainQuestionFollowsTheFacility, t503_tiedToSeveralPiecesOfEquipment, t504_ahuSteamChwHhwRetired,
+    t505_answeredListsFoldAndShortWords, t506_gaugeDrainOrNone, t507_stepperButtonsBoxAndColumns];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
