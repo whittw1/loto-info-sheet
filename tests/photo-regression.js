@@ -198,6 +198,8 @@
 //             named; SW (H/O/A) + Button (Start/Stop) - VFD on the three drive devices only; columns 2 / 9 / 18 / 19 and entries.json
 //   T501      build 171 (wilkins 2026-11-13): VFD - Breaker w/Padlock — a VFD in everything (feeder, own-isolation answer, label
 //             wait, VFD's list) but its name; the question and card say "own breaker"; columns 2 / 18 / 21 and entries.json
+//   T502      build 173: the drain question on steam / water / air valves follows the facility (off at Marion and Kansas City,
+//             loto-web's Simplified drain language sites); held answers stay; Settings per facility
 //           (stale unit-in-progress copy, merge-before-save, the tab claim,
 //           paused-tab launch, backup Replace, twin delete, marks messages and
 //           In/Out shape, undated edit, emergency-copy banner, bottom-bar
@@ -10108,6 +10110,66 @@
   }
 
   // T245 — drain location and lock-open on a source.
+  // T502 — the drain question follows the facility's Simplified drain language (build 173)
+  async function t502_theDrainQuestionFollowsTheFacility() {
+    const N = 'T502 build 173 (wilkins: "is the Drain for this isolation point dropdown necessary for all hospitals?" → "Hide it there"): a steam / water / air valve row asks "Drain for this isolation point" by default everywhere but Marion and Kansas City (loto-web\'s Simplified drain language sites); the other media keep their own release setting (Atlanta); a row that already holds an answer still shows it and puts it on the sheet and in entries.json; Settings → "Ask where steam, water and air valves drain" turns it on or off per facility (only a change is stored)';
+    await resetAppState();
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    let hadPrefs = null, hadCode = getHospitalCode();
+    try { hadPrefs = localStorage.getItem('loto_drain_prefs'); localStorage.removeItem('loto_drain_prefs'); } catch (e) {}
+    try {
+      const asks = () => sources.map((s, i) => document.getElementById('src_drainwhere_' + i) ? 'Y' : '-').join('');
+      const unit = (code) => {
+        setHospitalCode(code);
+        fillFormNoSources('AHU-502');
+        sources = [
+          Object.assign(mkSrc('HHW In'), { deviceType: 'Gate Valve', verification: 'Temp Only - Hot', collapsed: false }),
+          Object.assign(mkSrc('MPS 20 PSI'), { deviceType: 'Gate Valve', verification: 'GaugeOnly - Hot', collapsed: false }),
+          Object.assign(mkSrc('Compressed Air In'), { deviceType: 'Ball Valve', verification: 'GaugeOnly', collapsed: false }),
+          Object.assign(mkSrc('Fuel Oil In'), { deviceType: 'Ball Valve', verification: '', collapsed: false })
+        ];
+        renderSources();
+        return asks();
+      };
+      got.defaults = ['', 'Bath', 'Palo Alto', 'Atlanta', 'Marion', 'Kansas City'].map(c => (c || 'none') + ':' + unit(c)).join(' ');
+      want(got.defaults === 'none:YYY- Bath:YYY- Palo Alto:YYY- Atlanta:YYYY Marion:---- Kansas City:----',
+        'asked by default except at Marion and Kansas City; fuel oil only at Atlanta: ' + got.defaults);
+      want(drainPromptOn('Marion') === false && drainPromptOn('Kansas City') === false && drainPromptOn('Bath') === true && drainPromptOn('') === true, 'drainPromptOn defaults');
+      // a held answer at Marion still shows and goes out
+      unit('Marion');
+      sources[0].drainLocation = { where: 'Between this valve and the equipment', text: 'coil return' };
+      renderSources();
+      got.held = [asks(), drainLocationSheetText(sources[0], 'Marion'), drainLocationSheetText(sources[1], 'Marion') || '(none)'].join(' | ');
+      want(got.held === 'Y--- | Between this valve and the equipment: coil return | (none)', 'a held answer stays: ' + got.held);
+      const ent = { hospitalCode: 'Marion', sources: sources };
+      want(sourceTakesDrainLocation(sources[0], entryHospitalCode(ent)) && !sourceTakesDrainLocation(sources[1], entryHospitalCode(ent)), 'entries.json keeps the held answer only');
+      // Settings: per facility, only a change stored
+      showSettings();
+      const box = document.getElementById('settingsDrain');
+      got.box = String(!!box && box.checked);
+      want(got.box === 'false', 'the box reads Marion\'s default (off)');
+      box.checked = true; savePhotoSettings();
+      got.stored = localStorage.getItem('loto_drain_prefs');
+      want(JSON.parse(got.stored || '{}').Marion === 'on' && drainPromptOn('Marion') === true, 'Marion turned on: ' + got.stored);
+      got.marionOn = unit('Marion');
+      want(got.marionOn === 'YYY-', 'asked at Marion once on: ' + got.marionOn);
+      setHospitalCode('Bath');
+      showSettings();
+      want(document.getElementById('settingsDrain').checked === true, 'Bath reads on');
+      savePhotoSettings();
+      want(!('Bath' in JSON.parse(localStorage.getItem('loto_drain_prefs') || '{}')), 'an unchanged facility stores nothing');
+      setDrainPrefForFacility('Atlanta', false);
+      got.atlantaOff = unit('Atlanta');
+      want(got.atlantaOff === '---Y', 'Atlanta off: water rows hide, fuel oil keeps its own release setting: ' + got.atlantaOff);
+    } finally {
+      try { if (hadPrefs === null) localStorage.removeItem('loto_drain_prefs'); else localStorage.setItem('loto_drain_prefs', hadPrefs); } catch (e) {}
+      setHospitalCode(hadCode);
+      const ov = document.getElementById('settingsOverlay'); if (ov) ov.style.display = 'none';
+    }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   async function t245_drainLocationAndLockOpen() {
     const N = 'T245 a valve row of a water, steam, condensate, glycol or compressed-air line asks "Drain for this isolation point" (a found drain gives its code a drain: Temp Only - Hot → Drain Only - Hot, GaugeOnly → Gauge/Drain; None found leaves a code the tech set, takes back a Drain box the app pre-ticked, and writes the change-later note) and offers "Locked open" (which takes the drain question away); an electrical row gets neither; the typed detail rides along';
     await resetAppState();
@@ -11379,7 +11441,9 @@
       const a6 = drainsToSheetText(sources[0]);
       got.to = [a1, a2, a3, a4, a5, a6];
       want(JSON.stringify(got.to) === JSON.stringify(['Containment', 'Other: sump pit|Other: sump pit|true', 'Other: sump pit', 'Other: sump pit|', 'Other: sump pit', '']), 'Drains to rides through the answer: ' + JSON.stringify(got.to));
-      setHospitalCode('Marion');
+      // a facility with the release setting off (build 173: Palo Alto, not Marion — Marion's
+      // water rows no longer ask by default; T502)
+      setHospitalCode('Palo Alto');
       sources = rows(); sources[9].drainLocation = { where: 'On this valve', text: '' };
       renderSources();
       got.marion = asks();
@@ -11452,18 +11516,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 172 (was build 122\'s): APP_BUILD and the header label say 172, the service worker\'s cache is loto-collector-v7.167, Xcode\'s CURRENT_PROJECT_VERSION is 172 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 173 (was build 122\'s): APP_BUILD and the header label say 173, the service worker\'s cache is loto-collector-v7.168, Xcode\'s CURRENT_PROJECT_VERSION is 173 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 172 && !!label && +label[1] === 172, 'the build');
+    want(APP_BUILD === 173 && !!label && +label[1] === 173, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.167', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.168', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 172;,CURRENT_PROJECT_VERSION = 172;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 173;,CURRENT_PROJECT_VERSION = 173;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -18968,7 +19032,7 @@
     t491_vacuumPumpInletVent, t492_vacuumPumpInletVentReview,
     t493_visualChipOnTheMoreOptionsLine, t494_typedPressureAndTemperature, t495_deviceInAnotherRoom, t496_fuelOilPumpTypeAndTemplate,
     t497_upsTypeAndTemplate, t498_steamSterilizerTypeAndTemplate, t499_largeSteamBoiler,
-    t500_aDriveLockedOutUpstream, t501_aDriveAtAPadlockedBreaker];
+    t500_aDriveLockedOutUpstream, t501_aDriveAtAPadlockedBreaker, t502_theDrainQuestionFollowsTheFacility];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
