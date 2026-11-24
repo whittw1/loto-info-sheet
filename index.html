@@ -561,7 +561,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b174</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b175</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1296,7 +1296,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 174;
+const APP_BUILD = 175;
 
 // ============================================================================
 // DATA
@@ -1417,7 +1417,7 @@ const DATA = {
   ],
   templates: [
     "** New Template **",
-    "AHU - Steam","AHU - HHW","AHU - Geothermal","AHU - Steam, CHW, HHW",
+    "AHU - Steam","AHU - HHW","AHU - Geothermal",
     "Chilled Water Pump","Condenser Water Pump","Heating Hot Water Pump","Standard Pump","Fire Pump","Feedwater Pump","Fuel Oil Pump","Glycol Pump","Chemical Pump",
     "Day Tank",
     "Condensate Return Unit","Condensate Return Unit - Steam",
@@ -3334,6 +3334,12 @@ const EQUIPMENT_TEMPLATE_LABELS = {
   'Transformer': {
     'Standard Electrical':           'Standard Electrical',
     'Electrical with Stored Energy': 'With a capacitor bank (Electrical with Stored Energy)',
+  },
+  // build 175 (wilkins 2026-11-24: "Add the hint first"): "AHU - Steam, CHW,
+  // HHW" is retired into AHU - Steam (loto-web's template merge), so the
+  // prompt says AHU - Steam covers every steam AHU.
+  'Air Handler': {
+    'AHU - Steam': 'AHU - Steam (any steam coil, with or without HHW / CHW)',
   },
 };
 
@@ -6708,7 +6714,7 @@ const EQUIPMENT_TEMPLATE_SOURCE_EXCLUDE = {
 
 // Map equipment types to available templates (filters dropdown + auto-selects if only one)
 const EQUIPMENT_TEMPLATE_MAP = {
-  'Air Handler': ['AHU - Steam','AHU - HHW','AHU - Geothermal','AHU - Steam, CHW, HHW'],
+  'Air Handler': ['AHU - Steam','AHU - HHW','AHU - Geothermal'],
   'Exhaust Fan': ['Exhaust Fan'],
   'Mini Split': ['Mini Split'],
   'Condensing Unit': ['Condensing Unit'],
@@ -6858,13 +6864,26 @@ function filterTemplateDropdown(equipType) {
   if (currentVal && templates.includes(currentVal)) sel.value = currentVal;
 }
 
+// Templates no longer offered for a new unit, which a saved unit may still
+// carry (build 175, wilkins 2026-11-23): "AHU - Steam, CHW, HHW" printed the
+// same procedure and matrix as "AHU - Steam" in loto-web, so "AHU - Steam"
+// covers every steam AHU, with or without HHW / CHW coils. loto-web reads the
+// old name as AHU - Steam, so a saved unit keeps it: it opens, saves and
+// exports as it was (not as a custom template). Its defaults, shop, voltage,
+// count, diagram and Add-row lines stay keyed under the old name for it.
+const RETIRED_TEMPLATES = ['AHU - Steam, CHW, HHW'];
+// A template the app knows: offered (DATA.templates) or retired.
+function isKnownTemplate(template) {
+  return !!template && (DATA.templates.includes(template) || RETIRED_TEMPLATES.includes(template));
+}
+
 // A saved unit keeps its template when its type's list no longer offers it
 // (build 108: a Fire Pump saved on the Standard Pump template before Fire Pump
 // had its own). Without the option the select took the value as "nothing",
 // and the next save cleared the unit's template.
 function keepTemplateOption(template) {
   const sel = document.getElementById('equipTemplate');
-  if (!template || !DATA.templates.includes(template) || [...sel.options].some(o => o.value === template)) return;
+  if (!template || !isKnownTemplate(template) || [...sel.options].some(o => o.value === template)) return;
   const o = document.createElement('option');
   o.value = template; o.textContent = template;
   sel.insertBefore(o, [...sel.options].find(x => x.value === '** New Template **') || null);
@@ -8512,7 +8531,7 @@ function cancelTemplateChange() {
 function restoreTemplateSelect(before) {
   const sel = document.getElementById('equipTemplate');
   before = before
-    || { value: (editingEntry && editingEntry.template && DATA.templates.includes(editingEntry.template)) ? editingEntry.template : '', custom: '' };
+    || { value: (editingEntry && editingEntry.template && isKnownTemplate(editingEntry.template)) ? editingEntry.template : '', custom: '' };
   if (before.value && before.value !== '** New Template **') keepTemplateOption(before.value);
   sel.value = before.value || '';
   const custom = before.value === '** New Template **';
@@ -17195,7 +17214,7 @@ function editSaved(index) {
 
   // Restore template "" check if it's a custom value
   const templateSel = document.getElementById('equipTemplate');
-  if (entry.template && !DATA.templates.includes(entry.template)) {
+  if (entry.template && !isKnownTemplate(entry.template)) {
     templateSel.value = '** New Template **';
     document.getElementById('equipTemplateCustom').value = entry.template;
     document.getElementById('customTemplateGroup').style.display = 'flex';
@@ -17335,7 +17354,7 @@ async function executeDuplicate(index, withPhotos) {
 
   // Restore template — check if it's a custom value
   const templateSel = document.getElementById('equipTemplate');
-  if (entry.template && !DATA.templates.includes(entry.template)) {
+  if (entry.template && !isKnownTemplate(entry.template)) {
     templateSel.value = '** New Template **';
     document.getElementById('equipTemplateCustom').value = entry.template;
     document.getElementById('customTemplateGroup').style.display = 'flex';
@@ -20701,7 +20720,7 @@ async function loadAll() {
     // Restore template
     if (state.template) {
       const templateSel = document.getElementById('equipTemplate');
-      if (!DATA.templates.includes(state.template)) {
+      if (!isKnownTemplate(state.template)) {
         templateSel.value = '** New Template **';
         document.getElementById('equipTemplateCustom').value = state.template;
         document.getElementById('customTemplateGroup').style.display = 'flex';
