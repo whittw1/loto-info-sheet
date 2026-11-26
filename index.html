@@ -554,6 +554,7 @@ if ('serviceWorker' in navigator) {
   .ats-side { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px; margin-left: 6px; white-space: nowrap; }
   .ats-side-emergency { background: #b5451b; color: #fff; }
   .ats-side-normal { background: #2e7d4f; color: #fff; }
+  .sys-row-tag { background: var(--input-bg); color: var(--text-dim); border: 1px solid var(--border); font-weight: 600; text-transform: none; }
   .auto-badge {
     background: #4a90d9; color: white; font-size: 10px;
     padding: 2px 6px; border-radius: 3px; margin-left: 6px; font-weight: 700;
@@ -603,7 +604,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b176</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b178</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1338,7 +1339,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 176;
+const APP_BUILD = 178;
 
 // ============================================================================
 // DATA
@@ -1469,7 +1470,7 @@ const DATA = {
     "Emergency Generator","Cooling Tower","Chiller","Refrigerator",
     "Elevator - Traction","Elevator - Hydraulic","Overhead Door","Dock Leveler",
     "ATS - Generic","Humidifier",
-    "Standard Electrical","Electrical with Stored Energy","Switchgear","UPS","Heat Exchanger - Steam","DA Tank","Heat Exchanger - CHW/Glycol",
+    "Standard Electrical","Electrical with Stored Energy","Switchgear","UPS","Heat Exchanger - Steam","DA Tank","Heat Exchanger - CHW/Glycol","HHW System - Steam",
     "Steam PRV Station","Boiler - Natural Gas - HHW","Boiler - Natural Gas - STM","Large Steam Boiler"
   ],
   tiedToOptions: ["Shut Down","Shut Down & LOTO"],
@@ -3389,6 +3390,23 @@ const EQUIPMENT_PROMPT_FOR_TEMPLATE = new Set([
 // show the user — e.g. a Dishwasher prompt should say "Electric" / "Steam"
 // even though the underlying templates are "Water Heater - Electric" /
 // "Water Heater - Steam".
+// ---- HHW System - Steam (build 178, loto-web's template spec rev 2) ----------
+// One procedure for a steam heat exchanger and the 2 to 4 hot water pumps that
+// can't be locked out one at a time (shared valves): one unit, typed Heat
+// Exchanger, template "HHW System - Steam" (ASCII hyphen, D1). Each pump is ONE
+// Electrical row whose Device ID is the pump's tag (D4; never one Qty-n line), no
+// Kinetic rows (D4), then the steam, the condensate, the HHW boundary (In = the
+// return at the pump suction, Out = the supply) and the make-up water (D7). The
+// tech deletes the rows the system lacks.
+const HHW_SYSTEM = 'HHW System - Steam';
+const HHW_SYSTEM_ROWS = [
+  { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+  { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+  { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: 'Below Equipment', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+  { energySource: 'HHW In', deviceType: 'Butterfly Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+  { energySource: 'HHW Out', deviceType: 'Butterfly Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+  { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true }
+];
 const EQUIPMENT_TEMPLATE_LABELS = {
   'Dishwasher': {
     'Water Heater - Electric': 'Electric',
@@ -3410,6 +3428,10 @@ const EQUIPMENT_TEMPLATE_LABELS = {
   // prompt says AHU - Steam covers every steam AHU.
   'Air Handler': {
     'AHU - Steam': 'AHU - Steam (any steam coil, with or without HHW / CHW)',
+  },
+  // build 178 (loto-web's HHW System - Steam, rev 2 F1)
+  'Heat Exchanger': {
+    'HHW System - Steam': 'Steam + its pumps (one system)',
   },
 };
 
@@ -3590,7 +3612,7 @@ const TEMPLATE_DEFAULT_SHOP = (() => {
   const by = {
     'HVAC Shop': ['AHU - Steam', 'AHU - HHW', 'AHU - Geothermal', 'AHU - Steam, CHW, HHW', 'Air Dryer',
       'Chilled Water Pump', 'Condenser Water Pump', 'Heating Hot Water Pump', 'Chiller', 'Condensing Unit', 'Mini Split',
-      'Cooling Tower', 'Exhaust Fan', 'Emergency Generator', 'Heat Exchanger - Steam', 'Heat Exchanger - CHW/Glycol',
+      'Cooling Tower', 'Exhaust Fan', 'Emergency Generator', 'Heat Exchanger - Steam', 'Heat Exchanger - CHW/Glycol', 'HHW System - Steam',
       'Unit Heater - Steam', 'Unit Heater - HHW', 'Unit Heater - Natural Gas', 'Refrigerator', 'Humidifier',
       'Steam PRV Station'],
     // loto-web prints Plumbing for every domestic water heater, whatever its template says
@@ -3634,6 +3656,11 @@ function unitKinds(type, template, srcs) {
     ahu: !xfmr && (type === 'Air Handler' || /^AHU\b/.test(t)),
     ats: !xfmr && (type === 'ATS' || t === 'ATS - Generic'),
     chiller: !xfmr && (type === 'Chiller' || t === 'Chiller'),
+    // build 178: a heating hot water pump by its TYPE (Condensate Pump shares its
+    // template and is never asked), a steam heat exchanger by its template, a system
+    hhwPump: !xfmr && type === 'Heating HW Pump' && t !== HHW_SYSTEM,
+    hxSteam: !xfmr && t === 'Heat Exchanger - Steam',
+    hhwSystem: !xfmr && t === HHW_SYSTEM,
     vacPump: !xfmr && t === 'Medical Vacuum Pump',
     plantBoiler: !xfmr && t === LARGE_STEAM_BOILER,   // build 169: Purge Seconds
     exhaustFan: !xfmr && t === 'Exhaust Fan',   // build 145: the biohazard question
@@ -3645,7 +3672,8 @@ function unitKinds(type, template, srcs) {
 // The form as an entry (the unit's own facility since build 122: the release
 // question follows it).
 function formEntryLike() {
-  return { equipType: getEquipType(), template: getTemplate(), sources: sources, unitAnswers: unitAnswers, hospitalCode: formFacilityCode() };
+  return { equipType: getEquipType(), template: getTemplate(), sources: sources, unitAnswers: unitAnswers, hospitalCode: formFacilityCode(),
+    equipName: String((document.getElementById('equipName') || {}).value || '').trim() };   // build 178: a note names the unit
 }
 
 function shopSheetValue(a) { return a.shop === 'Other' ? String(a.shopOther || '').trim() : String(a.shop || ''); }
@@ -5952,6 +5980,10 @@ function changeLaterAutoNotes(entryLike) {
   const inletVented = () => (entryLike.sources || []).some(s => vacPumpInletRow(entryLike.template, s)
     && DRAIN_FOUND.includes((s.drainLocation || {}).where) && sourceTakesDrainLocation(s, fac));
   if (k.vacPump && a.reliefJoint === 'No' && !inletVented()) notes.push(RELIEF_JOINT_NOTE);
+  // Build 177: whether the procedure needs the drive's DC-bus steps is the office's to find out
+  if (k.chiller && a.chillerDrive === 'Can\'t tell') notes.push(CHILLER_DRIVE_NOTE);
+  // Build 178: whether a pump can be locked out on its own decides its procedure
+  if (k.hhwPump && a.hhwIsolation === 'Can\'t tell') notes.push(hhwIsolationNote(entryLike));
   // The point is named for the medium since build 122 ("No purge point found…").
   // Every "None found" that goes on the sheet: loto-web prints its stop line
   // whatever the Device, so one held on a pump row writes it too (build 123
@@ -6149,6 +6181,13 @@ function buildUnitQuestionsHtml(k, template, auto) {
     </select>`;
   const text = (key, placeholder, extra) => html`<input type="text" id="uq_${key}" value="${a[key] || ''}"
       placeholder="${placeholder}" ${raw(extra || '')} oninput="setUnitText(${jsArg(key)},this.value)" style="margin-top:6px;">`;
+  // A name box of the equipment sheets (builds 177, 178): typed = stored, done = Tied To follows
+  const nameBox = (key, placeholder, suggest) => text(key, placeholder, 'autocomplete="off" onchange="setUnitNames(\'' + key + '\',this.value)"'
+    + (suggest ? ' list="tiedToSuggestions" onfocus="refreshTiedToSuggestions()"' : ''));
+  // "One system…" where the pumps share their valves (build 178)
+  const oneSystem = (from, who) => html`<div class="form-group" style="grid-column:1 / -1;"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--input-bg);">
+      <span style="flex:1 1 240px;font-size:13px;">These pumps and ${who} are locked out together: one procedure for all of them.</span>
+      <button type="button" id="uq_oneSystem" class="btn btn-sm btn-primary" onclick="openSystemSheet(${jsArg(from)})" style="min-height:40px;">One system&hellip;</button></div></div>`;
   const parts = [];
   const def = defaultShopFor(template, sources);
   parts.push(group('Shop', html`<select id="uq_shop" onchange="setUnitAnswer('shop',this.value)">
@@ -6169,7 +6208,32 @@ function buildUnitQuestionsHtml(k, template, auto) {
         <input type="checkbox" class="uq-backfeed painted-check" id="uq_backfeed_${n}" ${got.includes(c) ? 'checked' : ''}
           onchange="toggleUnitBackfeed(${jsArg(c)},this.checked)"> ${c}</label>`)}`, 'tick all that apply'));
   }
-  if (k.chiller) parts.push(group('Capacitor bank?', pick('capacitors', DATA.yesNoCantTell)));
+  if (k.chiller) {   // build 177: the sheet's answers, changeable here
+    parts.push(group('Capacitor bank?', pick('capacitors', DATA.yesNoCantTell), 'power factor or harmonic filter, not the drive’s own'));
+    parts.push(group('Drive on this chiller?', pick('chillerDrive', DATA.yesNoCantTell, '', CHILLER_DRIVE_WORDS), 'Yes makes its Electrical row a VFD'));
+    parts.push(group('Water-cooled or air-cooled?', pick('chillerCooling', CHILLER_COOLING), 'water-cooled adds Condenser Water In and Out'));
+    parts.push(group('Its own pumps?', pick('chillerPumps', CHILLER_PUMPS), 'they run only with this chiller'));
+    if (a.chillerPumps === 'Its own') {
+      const pumpBox = (key, placeholder) => nameBox(key, placeholder);
+      parts.push(group('Chilled water pump', pumpBox('chillerChwPump', 'e.g. CHWP-1'), 'goes into Tied To'));
+      if (a.chillerCooling !== 'Air-cooled') parts.push(group('Condenser water pump', pumpBox('chillerCwPump', 'e.g. CWP-1'), 'goes into Tied To'));
+    }
+  }
+  if (k.hhwPump) {   // build 178: About this pump, changeable here
+    const hx = hhwHxName(a) || 'the heat exchanger';
+    parts.push(group('Feeds a heat exchanger?', pick('hhwFeedsHx', DATA.yesNoCantTell)));
+    if (a.hhwFeedsHx === 'Yes') parts.push(group('Heat exchanger', nameBox('hhwHx', 'e.g. HX-1', true)));
+    parts.push(group('Locked out on its own?', pick('hhwIsolation', HHW_ISOLATION), 'its own suction and discharge valves'));
+    if (hhwAsksOnly(a)) parts.push(group('Only pump on ' + hx + '?', pick('hhwOnlyPump', DATA.yesNoCantTell, '', HHW_ONLY_WORDS), 'the only pump: Tied To Shut Down ' + hx));
+    if (a.hhwIsolation === 'Shared valves') parts.push(group('Other pumps on these valves', nameBox('hhwOtherPumps', 'e.g. HWP-2; HWP-3'), 'go into Tied To'));
+    if (a.hhwFeedsHx === 'Yes' && a.hhwIsolation === 'Shared valves') parts.push(oneSystem('pump', hx));
+  }
+  if (k.hxSteam) {   // build 178: About this heat exchanger, changeable here
+    parts.push(group('Pumps that move water through it?', pick('hxPumps', HX_PUMPS)));
+    if (a.hxPumps === 'Yes') parts.push(group('Its pumps', nameBox('hxPumpNames', 'e.g. HWP-1; HWP-2'), 'go into Tied To; ; between the names'));
+    parts.push(group('Each pump locked out on its own?', pick('hxIsolation', HHW_ISOLATION)));
+    if (a.hxPumps === 'Yes' && a.hxIsolation === 'Shared valves') parts.push(oneSystem('hx', 'this heat exchanger'));
+  }
   if (k.plantBoiler) {   // build 169 (wilkins: "Ask in the field"): the light-off SOP's purge
     const typed = String(a.purgeSeconds == null ? '' : a.purgeSeconds).trim();
     parts.push(group('Burner purge (seconds)', html`<input type="text" id="uq_purgeSeconds" inputmode="numeric" maxlength="4"
@@ -6290,6 +6354,14 @@ function setUnitAnswer(key, value) {
         verification: '', quantity: 1, duplicate: 'No', detail: '', collapsed: true, auto: true, noPhoto: true });
       renderSources();
     }
+  }
+  // The equipment sheets' answers (builds 177, 178): a chiller's drive and
+  // condenser water rows, and Tied To, follow the box as they follow the sheet
+  if (UNIT_TIE_KEYS.has(key)) {
+    const k = unitKinds(getEquipType(), getTemplate(), sources);
+    if (k.chiller && key === 'chillerDrive' && applyChillerDrive(value)) renderSources();
+    if (k.chiller && key === 'chillerCooling' && applyChillerCooling(value)) renderSources();
+    if (key !== 'chillerDrive') syncAppTiedTo();
   }
   // Redrawn only when the pick changes the section (an Other box, the biohazard
   // warning, a change-later note); otherwise the select just used stays as it
@@ -6582,7 +6654,9 @@ function atsFeedSide(i, list) {
 }
 function atsSideTag(i) {
   const side = atsFeedSide(i);
-  return side ? html` <span class="ats-side ats-side-${side}" id="atsSide_${i}">${ATS_SIDE_TEXT[side]}</span>` : '';
+  if (side) return html` <span class="ats-side ats-side-${side}" id="atsSide_${i}">${ATS_SIDE_TEXT[side]}</span>`;
+  const sys = systemRowTag(i);   // build 178: what a system's row is
+  return sys ? html` <span class="ats-side sys-row-tag" id="sysRow_${i}">${sys}</span>` : '';
 }
 // A row that belongs beside the unit's Electrical feed (the chiller's capacitor
 // bank, build 151 review: since the chiller's CHW rows it landed after them),
@@ -6595,31 +6669,751 @@ function addAfterElectrical(row) {
   sources.splice(at + 1, 0, row);
   rebindSourcePhotos(prev);
 }
-// Chiller: loto-web adds its own capacitor row unless the unit says it has no
-// capacitor bank, so the answer travels on the sheet; the app's row follows it.
-// No answer (the box closed) keeps the row, as before build 118.
-function askChillerCapacitors() {
-  return askChoice({
-    id: 'chiller-capacitors', defaultValue: 'Yes',
-    title: 'Capacitor bank?',
-    html: html`Does this chiller have a capacitor bank? loto-web prints its discharge steps only on a chiller that has one.`,
-    choices: [{ value: 'Yes', label: 'Yes', primary: true }, { value: 'No', label: 'No' }, { value: 'Can\'t tell', label: 'Can\u2019t tell' }]
-  }).then(v => {
-    if (DATA.yesNoCantTell.includes(v)) unitAnswers.capacitors = v;
-    const hasRow = sources.some(s => s && s.energySource === 'Stored Electrical Energy');
-    if (v !== 'No' && !hasRow) {
+// ---- Equipment sheets (build 177: the chiller; build 178: the heating hot water
+// pump, the steam heat exchanger and the one system) ---------------------------
+// wilkins 2026-11-26: prompts "for fieldgoing personnel who may not be as
+// familiar with all of these equipment types". A sheet is one pop-up of chip
+// rows, each with what to look for, asked once the unit's rows are in: a chiller
+// after its voltage (afterTypeVoltage), a Heating HW Pump after its template's
+// voltage and a Heat Exchanger - Steam after its template (afterTemplateVoltage).
+// Done applies the answers, Skip (or a tap outside) none; a chip tapped again
+// comes off; a sheet opens on the unit's answers. The answers are the device's —
+// no sheet column; they ride inside entries.json's unitAnswers copy — and what
+// they write is the sheet's: rows, a Device, Tied To, a change-later note, or the
+// unit itself (One system). The box under Notes changes them later
+// (buildUnitQuestionsHtml) with the same effects (setUnitAnswer, setUnitNames).
+// The suite answers a sheet through window.__askChoiceAuto with its id: an
+// object of answers (a list key as an array or a "; " string; `_act` names a
+// button: 'system', 'make'), or 'cancel'.
+//
+// About this chiller (build 177, wilkins' Option B): a drive on the chiller, a
+// separate capacitor bank (build 118's question, which a tech could take for the
+// drive's own capacitors), water- or air-cooled, and pumps of its own:
+//  - a drive makes the chiller's Electrical row a VFD (an existing Device):
+//    loto-web adds the drive's DC-bus row and keeps the Chiller template's
+//    capacitor steps while that row prints (it drops a drive's capacitors at a
+//    site whose "VFD stored energy" is off, by design);
+//  - water-cooled adds Condenser Water In and Out (the template adds CHW only);
+//  - its own pumps go into Tied To, "Shut Down" (wilkins: the chiller's LOTO
+//    shuts its own pumps down first, and each pump's shuts the chiller down
+//    first); the pumps then come up after Save & New and on the Saved list.
+// "Can't tell" on the drive writes a change-later note for the office.
+// Capacitor bank travels as before (U3). No answer to it (Skip, or the box
+// closed) keeps the capacitor row, as before build 118.
+const CHILLER_DRIVE_WORDS = { 'Yes': 'Yes, a drive', 'No': 'No, a starter' };
+const CHILLER_COOLING = ['Water-cooled', 'Air-cooled', 'Can\'t tell'];
+const CHILLER_PUMPS = ['Its own', 'Shared header', 'Can\'t tell'];
+const CHILLER_DRIVE_NOTE = 'Can\'t tell whether this chiller has a drive';
+const CHILLER_CHW_PUMP_TYPE = 'CHW Pump', CHILLER_CW_PUMP_TYPE = 'Condenser Water Pump';
+const isCondenserWaterRow = s => !!s && /^Condenser Water\b/.test(s.energySource || '');
+// A name as two names are compared: trimmed, one space, any case
+function normPumpName(n) { return String(n == null ? '' : n).trim().replace(/\s+/g, ' ').toLowerCase(); }
+function samePumpName(x, y) { return normPumpName(x) !== '' && normPumpName(x) === normPumpName(y); }
+// Names once each (any case), in their order
+function uniqueNames(list) {
+  const out = [];
+  (list || []).forEach(n => { if (String(n || '').trim() && !out.some(o => samePumpName(o, n))) out.push(String(n).trim()); });
+  return out;
+}
+// The pumps a chiller's answers name: [{ name, type }] — the condenser water
+// ones only while it isn't air-cooled, none unless they are its own
+function chillerPumpList(a) {
+  a = a || {};
+  if (a.chillerPumps !== 'Its own') return [];
+  const out = [];
+  const add = (text, type) => splitTiedNames(text).forEach(name => { if (!out.some(p => samePumpName(p.name, name))) out.push({ name, type }); });
+  add(a.chillerChwPump, CHILLER_CHW_PUMP_TYPE);
+  if (a.chillerCooling !== 'Air-cooled') add(a.chillerCwPump, CHILLER_CW_PUMP_TYPE);
+  return out;
+}
+// The chiller's own Electrical row: the one its voltage added, else the template's
+function chillerElectricalRow() {
+  return sources.find(s => s && s._voltagePick && /^Electrical\b/.test(s.energySource || ''))
+    || sources.find(isAutoElectricalRow) || null;
+}
+// Yes: that row becomes a VFD, unless it is a drive already (a tech's own pick,
+// "VFD - Upstream Breaker" and the like, stays). Any other answer puts back an
+// app-made VFD nobody has touched since; one with a tag typed stays, and Save
+// & New notes the mismatch.
+function applyChillerDrive(value) {
+  const row = chillerElectricalRow();
+  if (!row) return false;
+  if (value === 'Yes') {
+    if (isDriveDevice(row.deviceType)) return false;
+    row._chillerDriveWas = row.deviceType || '';
+    row.deviceType = 'VFD';
+    row._chillerDrive = true;
+    return true;
+  }
+  if (row._chillerDrive && row.deviceType === 'VFD' && !row.userEdited) {
+    row.deviceType = row._chillerDriveWas || 'Disconnect';
+    delete row._chillerDrive;
+    delete row._chillerDriveWas;
+    return true;
+  }
+  return false;
+}
+// Water-cooled: Condenser Water In and Out after the CHW rows (butterfly valves,
+// as the template's CHW ones), unless the unit has a condenser water row
+// already. Any other answer takes away the app's two while untouched.
+function applyChillerCooling(value) {
+  if (value === 'Water-cooled') {
+    if (sources.some(isCondenserWaterRow)) return false;
+    const row = name => noteDefaultDrain({ energySource: name, deviceType: 'Butterfly Valve', quantity: 1, location: '', verification: 'Gauge/Drain',
+      duplicate: 'No', detail: '', collapsed: true, auto: true, _chillerCw: true });
+    const rows = [row('Condenser Water In'), row('Condenser Water Out')];
+    let at = -1;
+    sources.forEach((s, i) => { if (s && /^CHW\b/.test(s.energySource || '')) at = i; });
+    if (at < 0 || at === sources.length - 1) { sources.push(...rows); return true; }
+    const prev = sources.slice();
+    sources.splice(at + 1, 0, ...rows);
+    rebindSourcePhotos(prev);
+    return true;
+  }
+  let gone = false;
+  while (removeUntouchedAutoRow(s => !!s._chillerCw)) gone = true;
+  return gone;
+}
+
+// About this pump (build 178, wilkins: "Looks right"): on the Heating HW Pump
+// TYPE only — the Condensate Pump type shares its template and is never asked.
+// Does it feed a heat exchanger (which one), can it be locked out on its own,
+// and — with its own valves — is it the only pump on that heat exchanger?
+//  - the only pump: Tied To "Shut Down" the heat exchanger (its procedure takes
+//    the steam off before the pump stops);
+//  - shared valves: the pumps and the heat exchanger are locked out together.
+//    "One system…" makes the unit the HHW System - Steam; kept as a pump, Tied
+//    To "Shut Down & LOTO" the heat exchanger and the other pumps on those valves;
+//  - a standby, or no heat exchanger: no tie, as today;
+//  - Can't tell whether it can be locked out alone: a change-later note.
+const HHW_PUMP_TYPE = 'Heating HW Pump';
+const HHW_ISOLATION = ['Its own valves', 'Shared valves', 'Can\'t tell'];
+const HHW_ONLY_WORDS = { 'Yes': 'Yes, the only pump', 'No': 'No, there’s a standby' };
+const HHW_PUMP_KEYS = ['hhwFeedsHx', 'hhwHx', 'hhwIsolation', 'hhwOnlyPump', 'hhwOtherPumps'];
+function hhwHxName(a) { return (a && a.hhwFeedsHx === 'Yes' && splitTiedNames(a.hhwHx)[0]) || ''; }
+function hhwAsksOnly(a) { return !!a && a.hhwFeedsHx === 'Yes' && a.hhwIsolation === 'Its own valves'; }
+function hhwPumpAnswered(a) {
+  a = a || {};
+  return !!a.hhwFeedsHx && (a.hhwFeedsHx !== 'Yes' || !!hhwHxName(a)) && !!a.hhwIsolation && (!hhwAsksOnly(a) || !!a.hhwOnlyPump);
+}
+function hhwIsolationNote(entryLike) {
+  return 'Can\'t tell whether ' + (String(entryLike.equipName || '').trim() || 'this pump') + ' can be locked out on its own';
+}
+
+// About this heat exchanger (build 178): on template Heat Exchanger - Steam only
+// (not CHW/Glycol, not DA Tank). Pumps that move water through it (their tags),
+// and can each be locked out on its own?
+//  - its own valves: Tied To "Shut Down" the pumps — loto-web already places
+//    tied pumps around the steam (_place_hx_tied_bookends, 2026-10-08);
+//  - shared valves: "One system…"; kept as a heat exchanger, Tied To "Shut Down &
+//    LOTO" the pumps.
+// Its pumps come up after Save & New and on the Saved list, as a chiller's do.
+const HX_PUMPS = ['Yes', 'No pumps', 'Can\'t tell'];
+const HX_KEYS = ['hxPumps', 'hxPumpNames', 'hxIsolation'];
+function hxPumpList(a) {
+  return (a && a.hxPumps === 'Yes') ? uniqueNames(splitTiedNames(a.hxPumpNames)).map(name => ({ name, type: HHW_PUMP_TYPE })) : [];
+}
+function hxAnswered(a) {
+  a = a || {};
+  return !!a.hxPumps && (a.hxPumps !== 'Yes' || (hxPumpList(a).length > 0 && !!a.hxIsolation));
+}
+
+// ---- Tied To from the answers (build 177, every sheet since 178) ------------
+// What a unit's answers want in Tied To: { names, action }. A chiller: its own
+// pumps, Shut Down. A pump: the heat exchanger (Shut Down) when it is the only
+// pump on it with its own valves; the heat exchanger and the other pumps on
+// shared valves (Shut Down & LOTO). A heat exchanger: its pumps (Shut Down with
+// their own valves, Shut Down & LOTO on shared valves). Never the unit itself.
+const NO_TIE = { names: [], action: '' };
+function unitTieWant(entryLike) {
+  const el = entryLike || formEntryLike(), a = el.unitAnswers || {};
+  const k = unitKinds(el.equipType, el.template, el.sources);
+  let want = NO_TIE;
+  if (k.chiller) want = { names: chillerPumpList(a).map(p => p.name), action: 'Shut Down' };
+  else if (k.hhwPump) {
+    const hx = hhwHxName(a);
+    if (hx && a.hhwIsolation === 'Its own valves' && a.hhwOnlyPump === 'Yes') want = { names: [hx], action: 'Shut Down' };
+    else if (hx && a.hhwIsolation === 'Shared valves') want = { names: [hx].concat(splitTiedNames(a.hhwOtherPumps)), action: 'Shut Down & LOTO' };
+  } else if (k.hxSteam) {
+    const pumps = hxPumpList(a).map(p => p.name);
+    if (a.hxIsolation === 'Its own valves') want = { names: pumps, action: 'Shut Down' };
+    else if (a.hxIsolation === 'Shared valves') want = { names: pumps, action: 'Shut Down & LOTO' };
+  }
+  const names = uniqueNames(want.names).filter(n => !samePumpName(n, el.equipName));
+  return names.length ? { names, action: want.action } : NO_TIE;
+}
+// Tied To follows: the names the app put there last (tiedAppNames) that the
+// answers no longer want come out, new ones go in (no twice, any case). A name
+// the tech typed is never taken out. A blank action becomes the answers' action
+// (tiedAppAction), follows them while nobody changed it, and goes blank again
+// when no name is left.
+function syncAppTiedTo() {
+  const a = unitAnswers, want = unitTieWant();
+  const had = splitTiedNames(a.tiedAppNames);
+  const before = tiedToNameValue();
+  let names = splitTiedNames(before).filter(n => !had.some(h => samePumpName(h, n)) || want.names.some(w => samePumpName(w, n)));
+  const added = [];
+  want.names.forEach(w => { if (!names.some(n => samePumpName(n, w))) { names.push(w); added.push(w); } });
+  const mine = had.filter(h => want.names.some(w => samePumpName(w, h)) && names.some(n => samePumpName(n, h))).concat(added);
+  if (mine.length) a.tiedAppNames = mine.join(TIED_NAME_SEP); else delete a.tiedAppNames;
+  const after = names.join(TIED_NAME_SEP);
+  if (after !== before) setTiedToNames(after);
+  const sel = document.getElementById('equipTiedTo'), group = document.getElementById('tiedToNameGroup');
+  if (!sel) return;
+  if (names.length) {
+    if (!sel.value && want.action) { sel.value = want.action; a.tiedAppAction = want.action; }
+    else if (a.tiedAppAction && sel.value === a.tiedAppAction && want.action && want.action !== sel.value) { sel.value = want.action; a.tiedAppAction = want.action; }
+  } else if (a.tiedAppAction) {
+    if (sel.value === a.tiedAppAction) sel.value = '';
+    delete a.tiedAppAction;
+  }
+  if (group) group.style.display = sel.value ? 'flex' : 'none';
+}
+// A name box under a question (typed: setUnitText; done: Tied To and the box follow)
+function setUnitNames(key, value) {
+  const t = splitTiedNames(value).join(TIED_NAME_SEP);
+  if (t) unitAnswers[key] = t; else delete unitAnswers[key];
+  syncAppTiedTo();
+  renderUnitQuestions(true);
+  autoSaveCurrent();
+}
+// The answers that move Tied To (and a chiller's drive and condenser rows)
+const UNIT_TIE_KEYS = new Set(['chillerDrive', 'chillerCooling', 'chillerPumps', 'hhwFeedsHx', 'hhwIsolation', 'hhwOnlyPump', 'hxPumps', 'hxIsolation']);
+
+// ---- The sheet ---------------------------------------------------------------
+// spec: { id, overlayId, prefix, title, intro, keys (unitAnswers it opens on),
+// lists ({ key: { min, max } }: name boxes), start(a, spec), body(a, ui, spec),
+// buttons(a, spec), onType(a, spec), apply(answers | null, act, spec) }.
+const UNIT_SHEET_OVERLAYS = ['chillerSheetOverlay', 'pumpSheetOverlay', 'hxSheetOverlay', 'systemSheetOverlay'];
+const SHEET_SKIP_DONE = [{ id: 'Skip', label: 'Skip for now', act: 'skip' }, { id: 'Done', label: 'Done', act: 'done', primary: true }];
+let _unitSheet = null;   // { spec, answers, resolve } while one is open
+// A list key's boxes: its names, then blanks up to min
+function sheetList(v, min) {
+  const out = Array.isArray(v) ? v.map(x => String(x == null ? '' : x)) : splitTiedNames(v);
+  while (out.length < (min || 0)) out.push('');
+  return out;
+}
+function sheetStart(spec) {
+  const a = {};
+  (spec.keys || []).forEach(k => { a[k] = unitAnswers[k] || ''; });
+  if (spec.start) spec.start(a, spec);
+  Object.keys(spec.lists || {}).forEach(k => { a[k] = sheetList(a[k], spec.lists[k].min); });
+  return a;
+}
+function openUnitSheet(spec) {
+  const start = sheetStart(spec);
+  if (typeof window.__askChoiceAuto === 'function') {
+    let v;
+    try { v = window.__askChoiceAuto({ id: spec.id, title: spec.title, answers: JSON.parse(JSON.stringify(start)) }); } catch (e) { v = 'cancel'; }
+    return Promise.resolve(v).then(x => {
+      if (!x || typeof x !== 'object') return spec.apply(null, 'skip', spec);
+      const ans = Object.assign(start, x);
+      Object.keys(spec.lists || {}).forEach(k => { ans[k] = sheetList(ans[k], 0); });
+      return spec.apply(ans, x._act || 'done', spec);
+    });
+  }
+  return new Promise(resolve => {
+    closeUnitSheet();
+    _unitSheet = { spec, answers: start, resolve };
+    const overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+    overlay.id = spec.overlayId;
+    overlay.style.display = 'flex';
+    overlay.onclick = (e) => { if (e.target === overlay) finishUnitSheet('skip'); };   // tap outside = Skip
+    document.body.appendChild(overlay);
+    paintUnitSheet();
+  });
+}
+function closeUnitSheet() {
+  UNIT_SHEET_OVERLAYS.forEach(id => { const o = document.getElementById(id); if (o) o.remove(); });
+  _unitSheet = null;
+}
+const closeChillerSheet = closeUnitSheet;   // build 177's name
+function paintUnitSheet(focusId) {
+  const s = _unitSheet;
+  const ov = s && document.getElementById(s.spec.overlayId);
+  if (!ov) return;
+  const a = s.answers, spec = s.spec, p = spec.prefix;
+  const dim = 'font-size:12px;color:var(--text-dim);line-height:1.4;';
+  const inputStyle = 'width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:16px;';
+  const label = (forId, text) => html`<label for="${forId}" style="display:block;font-size:12px;font-weight:600;color:var(--text-dim);margin:0 0 4px;text-transform:none;letter-spacing:0;">${text}</label>`;
+  const ui = {
+    // A question's chips; `after` sits under them, in the same row
+    row: (key, q, hint, list, words, last, after) => html`<div style="padding:12px 0;${last ? '' : 'border-bottom:1px solid var(--border);'}">
+      <div style="font-size:15px;font-weight:700;margin-bottom:3px;">${q}</div>
+      ${hint ? html`<div style="${dim}margin-bottom:8px;">${hint}</div>` : ''}
+      <div class="qp-row" role="group" aria-label="${q}">${list.map((v, n) => html`<button type="button" id="${p}_${key}_${n}"
+        class="qp-chip${a[key] === v ? ' on' : ''}" aria-pressed="${a[key] === v ? 'true' : 'false'}"
+        onclick="pickUnitSheet(${jsArg(key)},${jsArg(v)})">${a[key] === v ? '✓ ' : ''}${(words && words[v]) || v.replace('\'', '’')}</button>`)}</div>
+      ${after || ''}
+    </div>`,
+    // One box (a name, or several with ";")
+    box: (key, text, placeholder, suggest) => html`<div style="flex:1 1 180px;min-width:0;">${label(p + '_' + key, text)}
+      <input type="text" id="${p}_${key}" value="${a[key] || ''}" placeholder="${placeholder}" autocomplete="off" autocapitalize="characters"
+        ${suggest ? raw('list="tiedToSuggestions" onfocus="refreshTiedToSuggestions()"') : ''}
+        oninput="typeUnitSheet(${jsArg(key)},null,this.value)" style="${inputStyle}"></div>`,
+    // A box per name, "+ Add another" up to the list's max
+    names: (key, text, placeholder) => {
+      const lim = (spec.lists || {})[key] || {};
+      const list = Array.isArray(a[key]) ? a[key] : sheetList(a[key], lim.min);
+      return html`<div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:12px;">${list.map((v, n) => html`<div style="min-width:0;">${label(p + '_' + key + '_box' + n, text + (list.length > 1 ? ' ' + (n + 1) : ''))}
+        <input type="text" id="${p}_${key}_box${n}" value="${v}" placeholder="${placeholder}" autocomplete="off" autocapitalize="characters"
+          oninput="typeUnitSheet(${jsArg(key)},${n},this.value)" style="${inputStyle}"></div>`)}</div>
+        ${list.length < (lim.max || 6) ? html`<button type="button" id="${p}_${key}_add" class="btn btn-sm btn-outline" onclick="addUnitSheetBox(${jsArg(key)})" style="align-self:flex-start;min-height:40px;margin-top:2px;">+ Add another</button>` : ''}`;
+    },
+    inset: (inner, id) => html`<div ${id ? raw('id="' + id + '"') : ''} style="margin-top:12px;padding:12px;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;display:flex;flex-direction:column;gap:10px;">${inner}</div>`,
+    note: (text, id) => html`<div ${id ? raw('id="' + id + '"') : ''} style="${dim}">${text}</div>`,
+    act: (id, text, act) => html`<button type="button" id="${p}${id}" class="btn btn-primary" onclick="finishUnitSheet(${jsArg(act)})" style="align-self:flex-start;padding:10px 16px;font-size:14px;">${text}</button>`
+  };
+  const buttons = spec.buttons ? spec.buttons(a, spec) : SHEET_SKIP_DONE;
+  ov.innerHTML = html`<div class="dialog" role="dialog" aria-labelledby="${p}Title" style="max-width:560px;width:100%;max-height:90vh;overflow-y:auto;">
+      <h3 id="${p}Title" style="margin:0 0 4px 0;color:var(--accent);">${spec.title}</h3>
+      <div style="${dim}font-size:13px;">${spec.intro}</div>
+      ${spec.body(a, ui, spec)}
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:12px;flex-wrap:wrap;">
+        ${buttons.map(b => html`<button type="button" id="${p}${b.id}" class="btn ${b.primary ? 'btn-primary' : 'btn-outline'}" ${b.disabled ? raw('disabled') : ''}
+          onclick="finishUnitSheet(${jsArg(b.act)})" style="padding:11px ${b.primary ? 22 : 16}px;font-size:14px;">${b.label}</button>`)}
+      </div>
+    </div>`;
+  if (focusId) { const f = document.getElementById(focusId); if (f) f.focus(); }
+}
+// A chip: tapped again, it comes off
+function pickUnitSheet(key, value) {
+  if (!_unitSheet) return;
+  const a = _unitSheet.answers;
+  a[key] = a[key] === value ? '' : value;
+  paintUnitSheet();
+}
+function typeUnitSheet(key, idx, value) {
+  const s = _unitSheet;
+  if (!s) return;
+  if (idx === null || idx === undefined) s.answers[key] = value;
+  else { if (!Array.isArray(s.answers[key])) s.answers[key] = sheetList(s.answers[key], 0); s.answers[key][idx] = value; }
+  if (s.spec.onType) s.spec.onType(s.answers, s.spec);
+}
+function addUnitSheetBox(key) {
+  const s = _unitSheet;
+  if (!s) return;
+  const list = s.answers[key] = sheetList(s.answers[key], 0);
+  list.push('');
+  paintUnitSheet(s.spec.prefix + '_' + key + '_box' + (list.length - 1));
+}
+function finishUnitSheet(act) {
+  const s = _unitSheet;
+  closeUnitSheet();
+  if (s) s.resolve(s.spec.apply(act === 'skip' ? null : s.answers, act, s.spec));
+}
+// Shared by the sheets' apply
+function putSheetAnswer(ans, k, list) { const v = String(ans[k] || ''); if (list.includes(v)) unitAnswers[k] = v; else delete unitAnswers[k]; }
+function putSheetNames(ans, k) {
+  const v = ans[k];
+  const t = uniqueNames(Array.isArray(v) ? v.flatMap(x => splitTiedNames(x)) : splitTiedNames(v)).join(TIED_NAME_SEP);
+  if (t) unitAnswers[k] = t; else delete unitAnswers[k];
+}
+function settleAfterSheet() {
+  syncAppTiedTo();
+  renderSources();
+  renderUnitQuestions(true);
+  autoSaveCurrent();
+}
+
+// The chiller's sheet
+const CHILLER_SHEET = {
+  id: 'chiller-sheet', overlayId: 'chillerSheetOverlay', prefix: 'cs', title: 'About this chiller',
+  intro: 'Tap what you see. You can change any answer later on the unit.',
+  keys: ['capacitors', 'chillerDrive', 'chillerCooling', 'chillerPumps', 'chillerChwPump', 'chillerCwPump'],
+  body: (a, ui) => html`
+    ${ui.row('chillerDrive', 'Drive on this chiller?', 'Marked VSD, AFD or VFD on the starter’s label, or a drive cabinet on or beside the chiller. No drive = a starter (solid-state or wye-delta).', DATA.yesNoCantTell, CHILLER_DRIVE_WORDS)}
+    ${ui.row('capacitors', 'Separate capacitor bank?', 'Power factor or harmonic filter capacitors, in their own section or cabinet. Not the drive’s own.', DATA.yesNoCantTell)}
+    ${ui.row('chillerCooling', 'Water-cooled or air-cooled?', 'Water-cooled: condenser water pipes run to a cooling tower. Adds Condenser Water In and Out.', CHILLER_COOLING)}
+    ${ui.row('chillerPumps', 'Its own pumps?', 'Its own = they run only with this chiller. Shared = they feed a header serving several chillers.', CHILLER_PUMPS, null, true,
+      a.chillerPumps === 'Its own' ? ui.inset(html`<div style="display:flex;flex-wrap:wrap;gap:12px;">
+          ${ui.box('chillerChwPump', 'Chilled water pump', 'e.g. CHWP-1')}
+          ${a.chillerCooling === 'Air-cooled' ? '' : ui.box('chillerCwPump', 'Condenser water pump', 'e.g. CWP-1')}
+        </div>${ui.note('This chiller’s procedure shuts them down first, and each pump’s shuts the chiller down first. Two pumps in one box? Put ; between the names.')}`, 'csPumpNames') : '')}`,
+  apply: (ans) => {
+    const cap = ans ? ans.capacitors : '';
+    if (DATA.yesNoCantTell.includes(cap)) unitAnswers.capacitors = cap;
+    if (cap !== 'No' && !sources.some(s => s && s.energySource === 'Stored Electrical Energy')) {
       addAfterElectrical({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank',
         verification: '', quantity: 1, duplicate: 'No', detail: '', collapsed: true, auto: true, noPhoto: true, _voltagePick: true });
     }
-    renderSources();
-    renderUnitQuestions(true);
-    autoSaveCurrent();
+    if (ans) {
+      putSheetAnswer(ans, 'chillerDrive', DATA.yesNoCantTell);
+      putSheetAnswer(ans, 'chillerCooling', CHILLER_COOLING);
+      putSheetAnswer(ans, 'chillerPumps', CHILLER_PUMPS);
+      putSheetNames(ans, 'chillerChwPump');
+      putSheetNames(ans, 'chillerCwPump');
+      applyChillerDrive(unitAnswers.chillerDrive);
+      applyChillerCooling(unitAnswers.chillerCooling);
+    }
+    settleAfterSheet();
+    return ans ? 'done' : 'cancel';
+  }
+};
+function askChillerSheet() { return openUnitSheet(CHILLER_SHEET); }
+
+// The pump's sheet
+const HHW_PUMP_SHEET = {
+  id: 'hhw-pump-sheet', overlayId: 'pumpSheetOverlay', prefix: 'ps', title: 'About this pump',
+  intro: 'Tap what you see. You can change any answer later on the unit.',
+  keys: HHW_PUMP_KEYS,
+  body: (a, ui) => {
+    const hx = splitTiedNames(a.hhwHx)[0] || 'the heat exchanger';
+    const feeds = a.hhwFeedsHx === 'Yes';
+    return html`
+    ${ui.row('hhwFeedsHx', 'Does it feed a heat exchanger?', 'Follow its discharge: does it push water through a steam converter or a plate heat exchanger?', DATA.yesNoCantTell, null, false,
+      feeds ? ui.inset(html`<div style="max-width:320px;">${ui.box('hhwHx', 'Heat exchanger', 'e.g. HX-1', true)}</div>${ui.note('Pick it from the saved units or type its tag.')}`) : '')}
+    ${ui.row('hhwIsolation', 'Can it be locked out on its own?', 'Its own suction and discharge valves, so it can be closed off while the other pumps keep running.', HHW_ISOLATION, null, !hhwAsksOnly(a),
+      a.hhwIsolation === 'Shared valves' ? ui.inset(html`<div style="max-width:420px;">${ui.box('hhwOtherPumps', 'Other pumps on these valves', 'e.g. HWP-2; HWP-3')}</div>
+        ${feeds ? html`${ui.note('These pumps and ' + hx + ' are locked out together: one procedure for all of them.')}${ui.act('System', 'One system…', 'system')}
+          ${ui.note('Kept as a pump: Tied To Shut Down & LOTO — ' + hx + ' and the other pumps.')}` : ''}`) : '')}
+    ${hhwAsksOnly(a) ? ui.row('hhwOnlyPump', 'Is it the only pump on ' + hx + '?', 'No = a standby or parallel pump keeps water moving through ' + hx + ' while this one is off.', DATA.yesNoCantTell, HHW_ONLY_WORDS, true,
+      a.hhwOnlyPump === 'Yes' ? ui.inset(ui.note('This pump’s procedure shuts ' + hx + ' down first, so the steam is off before the pump stops. Saved as Tied To: Shut Down — ' + hx + '.')) : '') : ''}`;
+  },
+  apply: (ans, act) => {
+    if (!ans) return 'cancel';
+    putSheetAnswer(ans, 'hhwFeedsHx', DATA.yesNoCantTell);
+    putSheetNames(ans, 'hhwHx');
+    putSheetAnswer(ans, 'hhwIsolation', HHW_ISOLATION);
+    putSheetAnswer(ans, 'hhwOnlyPump', DATA.yesNoCantTell);
+    putSheetNames(ans, 'hhwOtherPumps');
+    settleAfterSheet();
+    return act === 'system' ? openSystemSheet('pump') : 'done';
+  }
+};
+function askHhwPumpSheet() { return openUnitSheet(HHW_PUMP_SHEET); }
+
+// The heat exchanger's sheet
+const HX_SHEET = {
+  id: 'hx-sheet', overlayId: 'hxSheetOverlay', prefix: 'xs', title: 'About this heat exchanger',
+  intro: 'Tap what you see. You can change any answer later on the unit.',
+  keys: HX_KEYS,
+  lists: { hxPumpNames: { min: 2, max: 6 } },
+  body: (a, ui) => {
+    const me = String((document.getElementById('equipName') || {}).value || '').trim() || 'This heat exchanger';
+    const pumps = uniqueNames(sheetList(a.hxPumpNames, 0));
+    const them = pumps.length ? pumps.join(' and ') : 'its pumps';
+    return html`
+    ${ui.row('hxPumps', 'Pumps that move water through it?', 'The hot water pumps on its water side.', HX_PUMPS, null, false,
+      a.hxPumps === 'Yes' ? ui.inset(ui.names('hxPumpNames', 'Pump', 'e.g. HWP-1')) : '')}
+    ${ui.row('hxIsolation', 'Can each pump be locked out on its own?', 'Each pump has its own suction and discharge valves.', HHW_ISOLATION, null, true,
+      a.hxPumps === 'Yes' && a.hxIsolation === 'Its own valves' ? ui.inset(ui.note(me + '’s procedure shuts ' + them + ' down, and loto-web places them around the steam, as it does today. Saved as Tied To: Shut Down.'))
+      : a.hxPumps === 'Yes' && a.hxIsolation === 'Shared valves' ? ui.inset(html`${ui.note('These pumps and ' + me + ' are locked out together: one procedure for all of them.')}${ui.act('System', 'One system…', 'system')}
+          ${ui.note('Kept as a heat exchanger: Tied To Shut Down & LOTO — its pumps.')}`) : '')}`;
+  },
+  apply: (ans, act) => {
+    if (!ans) return 'cancel';
+    putSheetAnswer(ans, 'hxPumps', HX_PUMPS);
+    putSheetNames(ans, 'hxPumpNames');
+    putSheetAnswer(ans, 'hxIsolation', HHW_ISOLATION);
+    settleAfterSheet();
+    return act === 'system' ? openSystemSheet('hx') : 'done';
+  }
+};
+function askHxSheet() { return openUnitSheet(HX_SHEET); }
+
+// ---- One system (build 178, loto-web's HHW System - Steam rev 2) -------------
+// The heat exchanger's tag, its 2 to 4 pumps' tags and their voltage, then "Make
+// it the system": the open unit becomes the system (convertToHhwSystem). Opened
+// from a pump or a heat exchanger whose pumps share their valves, or from the
+// unit's box.
+const SYSTEM_PUMPS_MIN = 2, SYSTEM_PUMPS_MAX = 4;
+function systemName(hx, tags) { return 'HHW System ' + hx + ' (' + tags.join(', ') + ')'; }
+function systemSheetReady(a) {
+  return !!String(a.sysHx || '').trim() && uniqueNames(sheetList(a.sysPumps, 0)).length >= SYSTEM_PUMPS_MIN && !!a.sysVoltage;
+}
+const SYSTEM_SHEET = {
+  id: 'hhw-system-sheet', overlayId: 'systemSheetOverlay', prefix: 'ss', title: 'One system',
+  intro: 'One procedure for the heat exchanger and every pump on it. The pumps get no procedures of their own.',
+  lists: { sysPumps: { min: SYSTEM_PUMPS_MIN, max: SYSTEM_PUMPS_MAX } },
+  start: (a, spec) => {
+    const me = String((document.getElementById('equipName') || {}).value || '').trim();
+    const ua = unitAnswers;
+    if (spec.from === 'pump') {
+      a.sysHx = splitTiedNames(ua.hhwHx)[0] || '';
+      a.sysPumps = uniqueNames([me].concat(splitTiedNames(ua.hhwOtherPumps)));
+    } else {
+      a.sysHx = me;
+      a.sysPumps = hxPumpList(ua).map(p => p.name);
+    }
+    const feed = sources.find(isElectricalSource);
+    const v = feed ? String(feed.energySource || '').replace(/^Electrical\s*/, '') : '';
+    a.sysVoltage = getElectricalVoltageOptions(HHW_SYSTEM).includes(v) ? v : '';
+  },
+  body: (a, ui) => {
+    const tags = uniqueNames(sheetList(a.sysPumps, 0));
+    return html`
+    <div style="padding:12px 0;border-bottom:1px solid var(--border);"><div style="max-width:260px;">${ui.box('sysHx', 'Heat exchanger', 'e.g. HX-1', true)}</div></div>
+    <div style="padding:12px 0;border-bottom:1px solid var(--border);">
+      <div style="font-size:15px;font-weight:700;margin-bottom:3px;">Its pumps</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">2 to 4, as tagged.</div>
+      ${ui.inset(ui.names('sysPumps', 'Pump', 'e.g. HWP-1'))}
+    </div>
+    ${ui.row('sysVoltage', 'The pumps’ voltage', '', getElectricalVoltageOptions(HHW_SYSTEM), null, true,
+      ui.inset(html`<div id="ssNamePreview" style="font-size:12px;color:var(--text-dim);line-height:1.4;">${systemPreview(a.sysHx, tags)}</div>`))}`;
+  },
+  buttons: (a, spec) => [
+    { id: 'Keep', label: spec.from === 'pump' ? 'Keep as a pump' : 'Keep as a heat exchanger', act: 'skip' },
+    { id: 'Make', label: 'Make it the system', act: 'make', primary: true, disabled: !systemSheetReady(a) }
+  ],
+  onType: (a) => {
+    const b = document.getElementById('ssMake');
+    if (b) b.disabled = !systemSheetReady(a);
+    const pv = document.getElementById('ssNamePreview');
+    if (pv) pv.innerHTML = String(systemPreview(a.sysHx, uniqueNames(sheetList(a.sysPumps, 0))));
+  },
+  apply: (ans, act) => {
+    if (!ans || act !== 'make' || !systemSheetReady(ans)) return 'kept';
+    convertToHhwSystem({ hx: String(ans.sysHx).trim(), pumps: uniqueNames(sheetList(ans.sysPumps, 0)).slice(0, SYSTEM_PUMPS_MAX), voltage: ans.sysVoltage });
+    return 'system';
+  }
+};
+function systemPreview(hx, tags) {
+  const odd = tags.filter(tagReadsAsSourceId);
+  return String(hx || '').trim() && tags.length
+    ? html`Saved as <strong style="color:var(--text);">${systemName(String(hx).trim(), tags)}</strong>; you can change the name. Each pump’s Electrical source gets its tag as Device ID.${odd.length
+      ? html`<div id="ssTagWarning" style="margin-top:6px;color:#b5451b;font-weight:600;">${odd.join(', ')}: ${SOURCE_ID_TAG_ADVICE}</div>` : ''}`
+    : html`Type the heat exchanger’s tag and at least two pumps’ tags.`;
+}
+function openSystemSheet(from) { return openUnitSheet(Object.assign({}, SYSTEM_SHEET, { from: from === 'pump' ? 'pump' : 'hx' })); }
+
+// The open unit becomes the system: type Heat Exchanger, template HHW System -
+// Steam, the composed name (D10, editable), one Electrical row per pump with the
+// pump's tag as its Device ID (the Electrical row already on the form is pump 1's
+// and keeps its photo), the default rows (a row of the same kind the tech
+// photographed or filled in is kept for it), no Kinetic. Any other row the tech photographed or
+// filled in stays after them; the app's untouched ones go. The pump's / heat
+// exchanger's answers no longer apply, nor the tie they made.
+// A pump tag shaped like a loto-web source ID ("P-1", "B-2", "Pump E-3") reads as a
+// LOTO ID in the procedure: loto-web's pre-QC (check_matrix_prose_ids, step_ids)
+// takes any whole token of its prefixes (_KNOWN_PREFIXES ∪ _MATRIX_ID_PREFIXES,
+// case-sensitive) + "-" + digits for one (loto-web 2026-11-26). "HWP-1", "P-1A",
+// "P1" are fine. Written without a lookbehind for older WebKit.
+const LOTO_SOURCE_ID_RE = /(^|[^A-Za-z0-9])(AF|BH|CG|CH|CL|ES|MS|OL|PR|RG|B|D|E|F|G|H|K|P|S|T|V|W|X)-\d+(?![A-Za-z0-9])/;
+function tagReadsAsSourceId(tag) { return LOTO_SOURCE_ID_RE.test(String(tag == null ? '' : tag)); }
+const SOURCE_ID_TAG_ADVICE = 'Pump tags like P-1 read as a LOTO ID in the procedure; use the pump\u2019s own tag, e.g. HWP-1.';
+// A drive's feeder (Location "Feeder: …", loto-web's Tier 1 row) is not a pump
+// (loto-web 2026-11-26, its A1 run on the build 178 sample)
+function isSystemPumpRow(s, template) {
+  return (template === undefined ? getTemplate() : template) === HHW_SYSTEM && isElectricalSource(s) && !isFeederRow(s);
+}
+function convertToHhwSystem(sys) {
+  const prev = sources.slice();
+  const photographed = sourcesWithPhotos();
+  const used = new Set();
+  const take = test => { const s = sources.find(x => x && !used.has(x) && test(x)); if (s) used.add(s); return s || null; };
+  const retagged = [];
+  const pumpRows = sys.pumps.map(tag => {
+    const s = take(x => isElectricalSource(x) && !isFeederRow(x)) || { energySource: '', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true, collapsed: true };
+    const was = String(s.deviceId || '').trim();
+    if (was && !samePumpName(was, tag)) retagged.push(was + ' → ' + tag);
+    s.energySource = 'Electrical ' + sys.voltage;
+    s.deviceId = tag;
+    s.quantity = 1;
+    return s;
+  });
+  const rows = HHW_SYSTEM_ROWS.filter(r => !isElectricalSource(r)).map(def => {
+    // a row of that kind the tech photographed or filled in stands for it; an
+    // untouched app row (a pump template's HHW In ball valve) gives way to the default
+    const like = /^LPS\b/.test(def.energySource) ? (x => /^(LPS|MPS|HPS)\b/.test(x.energySource || '')) : (x => (x.energySource || '') === def.energySource);
+    return take(x => like(x) && (photographed.has(x) || sourceHasUserData(x))) || noteDefaultDrain(Object.assign({}, def, { collapsed: true }));
+  });
+  const kept = sources.filter(s => s && !used.has(s) && (photographed.has(s) || sourceHasUserData(s)));
+  kept.forEach(s => { s.auto = false; });
+  sources = pumpRows.concat(rows, kept);
+  rebindSourcePhotos(prev);
+  const typeSel = document.getElementById('equipType');
+  typeSel.value = 'Heat Exchanger';
+  filterTemplateDropdown('Heat Exchanger');
+  keepTemplateOption(HHW_SYSTEM);
+  document.getElementById('equipTemplate').value = HHW_SYSTEM;
+  rememberTemplateBefore();
+  loadSketchDiagram(HHW_SYSTEM);
+  const name = systemName(sys.hx, sys.pumps);
+  const nameBox = document.getElementById('equipName');
+  nameBox.value = name;
+  nameBox.dispatchEvent(new Event('input', { bubbles: true }));
+  HHW_PUMP_KEYS.concat(HX_KEYS).forEach(k => { delete unitAnswers[k]; });
+  unitAnswers.sysHx = sys.hx;
+  unitAnswers.sysAutoName = name;
+  syncAppTiedTo();   // the tie the pump's / heat exchanger's answers made comes off
+  renderSources();
+  renderUnitQuestions(true);
+  renderQuickAdd();
+  autoSaveCurrent();
+  showToast('Now ' + name + ': one procedure for ' + sys.hx + ' and its pumps. Delete the rows it doesn’t have.'
+    + (retagged.length ? ' Pump tags set: ' + retagged.join(', ') + '.' : ''), !!retagged.length);
+  return true;
+}
+// The system picked as a template: the name box's tag is the heat exchanger's
+// (sysHx), and the name follows the pump tags as they are typed while nobody
+// changed it (F4)
+function noteSystemHx() {
+  const a = unitAnswers;
+  if (a.sysHx) return;
+  const me = String((document.getElementById('equipName') || {}).value || '').trim();
+  const typeOptions = Array.from(document.getElementById('equipType').options).map(o => o.value);
+  if (me && !typeOptions.includes(me) && me !== HHW_SYSTEM && !/^HHW System\b/i.test(me)) { a.sysHx = me; autoSaveCurrent(); }
+}
+function systemPumpTags() {
+  return uniqueNames(sources.filter(s => isSystemPumpRow(s)).map(s => String(s.deviceId || '').trim()));
+}
+function refreshSystemName() {
+  const a = unitAnswers, box = document.getElementById('equipName');
+  if (getTemplate() !== HHW_SYSTEM || !box || !a.sysHx) return;
+  const cur = box.value.trim();
+  if (cur && !samePumpName(cur, a.sysAutoName) && !samePumpName(cur, a.sysHx)) return;   // the tech's own name
+  const tags = systemPumpTags();
+  if (!tags.length) return;
+  const name = systemName(a.sysHx, tags);
+  if (name === cur) return;
+  box.value = name;
+  a.sysAutoName = name;
+  autoSaveCurrent();
+}
+// A system's row on the card says what it is (F3)
+function systemRowTag(i) {
+  if (getTemplate() !== HHW_SYSTEM) return '';
+  const s = sources[i];
+  if (!s) return '';
+  if (isSystemPumpRow(s)) return 'Pump ' + (sources.filter(x => isSystemPumpRow(x)).indexOf(s) + 1);
+  const e = String(s.energySource || '');
+  if (/^(LPS|MPS|HPS)\b/.test(e)) return 'steam supply';
+  if (e === 'Condensate Out') return 'condensate return';
+  if (e === 'HHW In') return 'return / pump suction boundary';
+  if (e === 'HHW Out') return 'supply boundary';
+  if (e === 'DW In') return 'make-up water';
+  return '';
+}
+
+// What a template asks once its rows are in (afterTemplateVoltage): a Heating
+// HW Pump's sheet, a steam heat exchanger's, a system's heat exchanger tag. A
+// sheet whose answers are all in (a pump started from its heat exchanger) is
+// not asked again.
+function maybeAskUnitSheet() {
+  const k = unitKinds(getEquipType(), getTemplate(), sources);
+  if (k.hhwSystem) { noteSystemHx(); return null; }
+  if (k.hhwPump && !hhwPumpAnswered(unitAnswers)) return askHhwPumpSheet();
+  if (k.hxSteam && !hxAnswered(unitAnswers)) return askHxSheet();
+  return null;
+}
+
+// ---- Its pumps next (build 177 for a chiller; build 178 also a heat exchanger) -
+// After Save & New on a unit whose answers name pumps of its own, the pumps not
+// yet saved are offered: Start opens one with its type, the unit's building and
+// room, and its tie — a chiller's pump Tied To "Shut Down" the chiller; a heat
+// exchanger's pump with its own sheet answered from the heat exchanger's (feeds
+// it; its own valves = the heat exchanger's answer; the only pump when it is the
+// only one named, else a standby). Later leaves them on the Saved list's "Still
+// to capture", until a unit by that name is saved at the facility or the tech
+// dismisses it. A dismissal is kept on this device only (loto_pumps_dismissed),
+// never on the saved unit: saving it again would drop its exported stamps. A
+// system's pumps have no procedures of their own and are never offered.
+const PUMPS_DISMISSED_KEY = 'loto_pumps_dismissed';
+function ownPumpsOf(entry) {
+  if (!entry) return [];
+  const k = unitKinds(entry.equipType, entry.template, entry.sources), a = entry.unitAnswers || {};
+  const list = k.chiller ? chillerPumpList(a) : k.hxSteam ? hxPumpList(a) : [];
+  return list.filter(p => !samePumpName(p.name, entry.equipName));
+}
+function dismissedPumpKeys() {
+  try { const v = JSON.parse(localStorage.getItem(PUMPS_DISMISSED_KEY) || '[]'); return new Set(Array.isArray(v) ? v : []); }
+  catch (e) { return new Set(); }
+}
+function pumpKey(ownerId, name) { return String(normEntryId(ownerId)) + '|' + normPumpName(name); }
+function pumpsStillToCapture(owner) {
+  const pumps = ownPumpsOf(owner);
+  if (!pumps.length) return [];
+  const code = entryHospitalCode(owner);
+  const saved = new Set(savedEquipment.filter(e => e && entryHospitalCode(e) === code).map(e => normPumpName(e.equipName)));
+  const gone = dismissedPumpKeys();
+  return pumps.filter(p => !saved.has(normPumpName(p.name)) && !gone.has(pumpKey(owner.id, p.name)));
+}
+function dismissOwnPump(ownerId, name) {
+  const keys = dismissedPumpKeys();
+  keys.add(pumpKey(ownerId, name));
+  try { localStorage.setItem(PUMPS_DISMISSED_KEY, JSON.stringify([...keys])); } catch (e) {}
+  renderSavedPanel();
+}
+// Asked once the unit is saved (performSaveAndNew), on the blank next unit
+function offerOwnPumps(entry) {
+  const left = pumpsStillToCapture(entry);
+  if (!left.length) return Promise.resolve(null);
+  const me = entry.equipName || 'the unit';
+  const hx = unitKinds(entry.equipType, entry.template, entry.sources).hxSteam;
+  return askChoice({
+    id: 'pumps-next', defaultValue: 'later',
+    title: html`Capture ${me}’s pumps next?`,
+    html: hx ? html`${me} has pumps of its own. Start one now: it opens with its type, template, building, room and its pump answers filled in. Later keeps them under Still to capture on the Saved list.`
+      : html`${me} has its own pumps. Start one now: it opens with its type, building, room and Tied To filled in. Later keeps them under Still to capture on the Saved list.`,
+    choices: left.map((p, n) => ({ value: 'pump' + n, label: p.name + ' · ' + p.type, primary: true }))
+      .concat([{ value: 'later', label: 'Later' }])
+  }).then(v => {
+    const m = /^pump(\d+)$/.exec(String(v));
+    if (m && left[+m[1]]) startOwnPump(entry.id, left[+m[1]].name);
     return v;
   });
 }
+// A new unit for one of a saved unit's pumps. Never over a unit in progress.
+function startOwnPump(ownerId, name) {
+  const owner = savedEquipment.find(e => e && sameEntryId(e.id, ownerId));
+  const pump = owner ? ownPumpsOf(owner).find(p => samePumpName(p.name, name)) : null;
+  if (!pump) { showToast('That pump is no longer on the unit', true); return false; }
+  if (formHasData()) { showToast('Save or discard the unit on the form first, then tap Start again.', true); return false; }
+  if (owner.hospitalCode && owner.hospitalCode !== getHospitalCode()) {
+    showToast((owner.equipName || 'The unit') + ' is at ' + facilityLabel(owner.hospitalCode) + ' — switch the facility first.', true);
+    return false;
+  }
+  const typeSel = document.getElementById('equipType');
+  if (!typeSel || ![...typeSel.options].some(o => o.value === pump.type)) { showToast('The type list has no ' + pump.type, true); return false; }
+  if (!tabMayWrite()) return false;
+  startNextUnit({ building: owner.equipBuilding || '', room: owner.equipRoom || '' });
+  const nameBox = document.getElementById('equipName');
+  nameBox.value = pump.name;
+  nameBox.dispatchEvent(new Event('input', { bubbles: true }));
+  typeSel.value = pump.type;
+  handleEquipTypeChange();   // its template and voltage questions, as when the tech picks the type
+  const me = owner.equipName || '';
+  if (unitKinds(owner.equipType, owner.template, owner.sources).hxSteam) {
+    // its sheet answered from the heat exchanger's; Tied To follows (syncAppTiedTo)
+    const oa = owner.unitAnswers || {}, all = hxPumpList(oa).map(p => p.name);
+    unitAnswers.hhwFeedsHx = 'Yes';
+    unitAnswers.hhwHx = me;
+    if (oa.hxIsolation === 'Its own valves' || oa.hxIsolation === 'Shared valves') unitAnswers.hhwIsolation = oa.hxIsolation;
+    if (oa.hxIsolation === 'Its own valves') unitAnswers.hhwOnlyPump = all.length === 1 ? 'Yes' : 'No';
+    const others = all.filter(n => !samePumpName(n, pump.name));
+    if (oa.hxIsolation === 'Shared valves' && others.length) unitAnswers.hhwOtherPumps = others.join(TIED_NAME_SEP);
+    syncAppTiedTo();
+    renderUnitQuestions(true);
+  } else {
+    document.getElementById('equipTiedTo').value = 'Shut Down';
+    document.getElementById('tiedToNameGroup').style.display = 'flex';
+    setTiedToNames(me);
+  }
+  autoSaveCurrent();
+  const tie = document.getElementById('equipTiedTo').value;
+  showToast('Started ' + pump.name + (tie ? ' — Tied To: ' + tie + ' ' + tiedToNameValue() : ' — from ' + me));
+  return true;
+}
+// The Saved list's box: each unit's pumps not yet saved, for the facility in view
+function stillToCaptureHtml(inView) {
+  const rows = [];
+  savedEquipment.forEach((e, i) => { if (inView(i)) pumpsStillToCapture(e).forEach(p => rows.push({ ch: e, p })); });
+  if (!rows.length) return '';
+  return html`<div id="stillToCapture" style="padding:12px 14px;margin:0 0 10px;border:1.5px solid var(--accent);border-radius:10px;background:var(--input-bg);">
+    <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:6px;">Still to capture</div>
+    ${rows.map(({ ch, p }) => html`<div class="capture-row" style="display:flex;align-items:center;gap:10px;padding:6px 0;flex-wrap:wrap;">
+      <div style="flex:1 1 220px;min-width:0;"><div class="capture-name" style="font-weight:600;">${p.name} · ${p.type}</div>
+        <div style="font-size:12px;color:var(--text-dim);">${ch.equipName || 'A unit'}’s ${unitKinds(ch.equipType, ch.template, ch.sources).chiller ? 'own ' : ''}pump · clears once a unit named ${p.name} is saved</div></div>
+      <button type="button" class="btn btn-sm btn-outline" onclick="dismissOwnPump(${jsArg(ch.id)},${jsArg(p.name)})" style="min-height:40px;">Dismiss</button>
+      <button type="button" class="btn btn-sm btn-primary" onclick="startOwnPump(${jsArg(ch.id)},${jsArg(p.name)})" style="min-height:40px;">Start</button>
+    </div>`)}
+  </div>`;
+}
 function afterTypeVoltage(equipType, added) {
   if (equipType === 'ATS') return askAtsFeeds(added.filter(s => s && s.deviceType === 'Breaker'));
-  if (equipType === 'Chiller') return askChillerCapacitors();
+  if (equipType === 'Chiller') return askChillerSheet();
   return Promise.resolve(null);
 }
 // "Other voltage\u2026" (build 118): loto-web needs a voltage (the Section 1
@@ -6892,7 +7686,7 @@ const EQUIPMENT_TEMPLATE_MAP = {
   // prints loto-web's generic template). A custom name with "dock leveler" too.
   'Dock Leveler': ['Dock Leveler'],
   'ATS': ['ATS - Generic'],
-  'Heat Exchanger': ['Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol'],
+  'Heat Exchanger': ['Heat Exchanger - Steam','Heat Exchanger - CHW/Glycol','HHW System - Steam'],   // build 178: the one-system template (loto-web rev 2 D1)
   // Build 169: a plant steam boiler (loto-web's Large Steam Boiler, wilkins 2026-11-11);
   // the smaller steam boilers stay on STM, which loto-web prints as Gas Boiler
   'Boiler': ['Boiler - Natural Gas - HHW','Boiler - Natural Gas - STM','Large Steam Boiler'],
@@ -6987,7 +7781,7 @@ const TEMPLATE_DIAGRAM_MAP = {
   'Emergency Generator': 'generator',
   'Chiller': 'chiller', 'Refrigerator': 'general',
   'Heat Exchanger': 'heat_exchanger',
-  'Heat Exchanger - Steam': 'heat_exchanger', 'DA Tank': 'heat_exchanger',
+  'Heat Exchanger - Steam': 'heat_exchanger', 'DA Tank': 'heat_exchanger', 'HHW System - Steam': 'heat_exchanger',
   'Heat Exchanger - CHW/Glycol': 'heat_exchanger',
   'Exhaust Fan': 'exhaust_fan',
   'Condensing Unit': 'ac_unit', 'Mini Split': 'ac_unit', 'Air Compressor': 'air_compressor', 'Medical Air': 'air_compressor', 'Dental Air Compressor': 'air_compressor',
@@ -8749,6 +9543,7 @@ const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water H
 const TEMPLATE_ASK_ELECTRICAL_COUNT = {
   'AHU - Steam': 2, 'AHU - HHW': 2, 'AHU - Geothermal': 2, 'AHU - Steam, CHW, HHW': 2,
   'Medical Air': 4, 'Medical Vacuum': 4, 'Lab Vacuum': 4, 'Dental Vacuum': 4,
+  'HHW System - Steam': 4,   // build 178 (F2): 2 to 4 pumps, one Electrical row each
 };
 
 // Per-template voltage option overrides. Falls back to all available
@@ -8763,6 +9558,7 @@ const TEMPLATE_VOLTAGE_OVERRIDES = {
   'UPS':                     ['120V', '208V', '240V', '480V'],   // build 168 (KC: 480V and one 208V)
   'Steam Sterilizer':        ['208V', '480V'],                   // build 168 (its vacuum pump's feed)
   'Heating Hot Water Pump':  ['120V', '208V', '240V', '480V'],
+  'HHW System - Steam':      ['120V', '208V', '240V', '480V'],   // build 178 (F1): the pumps'
   'Standard Pump':           ['120V', '208V', '240V', '480V'],
   'Fire Pump':               ['120V', '208V', '240V', '480V'],
   'Chemical Pump':           ['120V', '208V', '240V', '480V'],
@@ -8876,6 +9672,7 @@ function afterTemplateVoltage() {
   maybePromptElectricalCount();
   maybeAskVacuumExhaust();
   maybeAskTransformer();
+  maybeAskUnitSheet();   // build 178: a Heating HW Pump's, a steam heat exchanger's sheet
 }
 
 function closeTemplateVoltagePrompt() {
@@ -8895,6 +9692,9 @@ const TEMPLATE_ELECTRICAL_COUNT_PROMPT = {
   // Build 150: the dental pumps on one line (TEMPLATE_COUNT_ON_ONE_LINE)
   'Dental Vacuum': { title: 'Pumps on this tank',
                      ask: 'How many pumps are on this vacuum tank? Their disconnects go on one Electrical line, Quantity = the number of pumps. If one disconnect shuts off every pump, tap 1.' },
+  // Build 178: a system is 2 to 4 pumps, each its own Electrical row (never one Qty-n line)
+  'HHW System - Steam': { title: 'Pumps in this system', min: 2,
+                          ask: 'How many pumps circulate through this heat exchanger? Each gets its own Electrical source; type the pump\u2019s tag in its Pump tag box.' },
 };
 // Templates whose count goes on ONE line of that Quantity, without asking
 // (build 150, wilkins 2026-11-03): a dental vacuum's pumps are tied together on
@@ -8912,10 +9712,12 @@ function promptForElectricalCount(template, max) {
   overlay.className = 'dialog-overlay';
   overlay.id = 'electricalCountOverlay';
   overlay.onclick = (e) => { if (e.target === overlay) closeElectricalCountPrompt(); };  // dismiss = keep 1
-  const buttons = [];
-  for (let i = 1; i <= max; i++) buttons.push(html`<button class="btn btn-primary" onclick="pickElectricalCount(${i})" style="flex:1;padding:16px;font-size:20px;">${i}</button>`);
-  const hint = max > 2 ? 'e.g. duplex / triplex / quadruplex units' : 'e.g. dual supply / return fans';
   const own = TEMPLATE_ELECTRICAL_COUNT_PROMPT[template];
+  const min = (own && own.min) || 1;   // build 178: a system is 2 to 4 pumps
+  if (min > 1) overlay.onclick = (e) => { if (e.target === overlay) applyElectricalCountChoice(min); };   // dismiss = the fewest it can be
+  const buttons = [];
+  for (let i = min; i <= max; i++) buttons.push(html`<button class="btn btn-primary" onclick="pickElectricalCount(${i})" style="flex:1;padding:16px;font-size:20px;">${i}</button>`);
+  const hint = max > 2 ? 'e.g. duplex / triplex / quadruplex units' : 'e.g. dual supply / return fans';
   overlay.innerHTML = html`
     <div class="dialog" style="max-width:${max > 2 ? 420 : 340}px;">
       <h3 style="margin:0 0 6px 0;color:var(--accent);">${own ? own.title : 'Electrical Sources'}</h3>
@@ -9097,6 +9899,10 @@ const TEMPLATE_AUTO_SOURCES = {
   ],
   // Heat Exchanger - CHW/Glycol: no auto-sources
   'Heat Exchanger - CHW/Glycol': [],
+  // HHW System - Steam (build 178, loto-web rev 2 F2/F3): a pump's Electrical row
+  // (the count prompt makes one per pump, the pump's tag its Device ID), then the
+  // steam, the condensate, the HHW boundary and the make-up water. No Kinetic (D4).
+  'HHW System - Steam': HHW_SYSTEM_ROWS.map(r => Object.assign({}, r)),
   // Water Heater - Steam: 120V Breaker + LPS Gate Valve + Condensate Out
   'Water Heater - Steam': [
     { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
@@ -10407,10 +11213,11 @@ function buildSourceCard(src, i) {
                 // unit 1 (lowest ID, photo mark #n.1, the IN valve of an In/Out pair)
                 // with the first entry. One tag with no ';' still covers every unit.
                 const n = valveMarkSlots(src);
+                const pumpTag = isSystemPumpRow(src);   // build 178: a system's pump row carries the pump's tag
                 if (n < 2) return html`<div class="form-group">
-                <label>Device ID</label>
+                <label>${pumpTag ? html`Pump tag <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-dim);">&mdash; required</span>` : 'Device ID'}</label>
                 <div class="scan-input-row">
-                  <input type="text" id="src_deviceId_${i}" value="${src.deviceId||''}" placeholder="e.g. Pump 3, V-201"
+                  <input type="text" id="src_deviceId_${i}" value="${src.deviceId||''}" placeholder="${pumpTag ? 'e.g. HWP-1' : 'e.g. Pump 3, V-201'}"
                     oninput="updateSource(${i},'deviceId',this.value)">
                   <button type="button" class="scan-btn" onclick="scanTextToField('src_deviceId_${i}')" title="Scan label">&#128247;</button>
                 </div>
@@ -11171,6 +11978,7 @@ function updateSource(index, field, value) {
   sources[index][field] = value;
   if (field === 'energySource' || field === 'quantity') settleLinkedValve(sources[index]);   // build 151 review
   if (field === 'deviceId') refreshAfterRetag(syncFeederTags(sources), index);   // a retagged drive renames itself in its feeder (build 122)
+  if (field === 'deviceId') refreshSystemName();   // build 178: a system's name follows its pump tags (F4)
   if (field === 'verification') delete sources[index]._drainDefault;   // the tech picked the code
   if (field === 'energySource' && value && sourceDefaultsOf(value)) {
     const defaults = sourceDefaultsOf(value);
@@ -16246,6 +17054,7 @@ function collectIncompleteFields(opts) {
     if (!s.energySource) gaps.push('Energy Source');
     if (!s.deviceType && !ackOnly)   gaps.push('Device Type');
     if (!s.location)     gaps.push('Location');
+    if (isSystemPumpRow(s) && !String(s.deviceId || '').trim()) gaps.push('Pump tag (its Device ID)');   // build 178 (loto-web V1)
     // A damper actuator's verification is loto-web's own (D5); its spring
     // return is what the row needs (build 120).
     if (!s.verification && !ackOnly && !isDamperRow(s)) gaps.push('Verification');
@@ -16304,6 +17113,17 @@ function collectSaveNotices() {
     if (k.vacPump && a.vacuumExhaust === 'Own valve' && !hasOut) notices.push('The exhaust has its own valve, but there’s no exhaust row (Vacuum Air Out) for it.');
     if (k.vacPump && a.vacuumExhaust && a.vacuumExhaust !== 'Own valve' && hasOut) notices.push('The exhaust is “' + a.vacuumExhaust + '”, but the unit has an exhaust row (Vacuum Air Out).');
     if (k.chiller && a.capacitors === 'No' && hasCap) notices.push('Capacitor bank is No, but the unit has a Stored Electrical Energy row.');
+    // build 177: the chiller's drive and condenser answers against its rows
+    if (k.chiller) {
+      const drive = sources.some(s => s && /^Electrical\b/.test(s.energySource || '') && isDriveDevice(s.deviceType));
+      if (a.chillerDrive === 'Yes' && !drive) notices.push('Drive on this chiller is Yes, but no Electrical row is a drive (VFD).');
+      if (a.chillerDrive === 'No' && drive) notices.push('Drive on this chiller is No, but its Electrical row is a drive (VFD).');
+      if (a.chillerCooling === 'Water-cooled' && !sources.some(isCondenserWaterRow)) notices.push('The chiller is water-cooled, but the unit has no Condenser Water rows.');
+    }
+    // build 178: a system's pump tag that loto-web would read as a source ID
+    sources.forEach((s, i) => {
+      if (isSystemPumpRow(s) && tagReadsAsSourceId(s.deviceId)) notices.push('Source #' + (i + 1) + ' (pump tag ' + String(s.deviceId).trim() + '): ' + SOURCE_ID_TAG_ADVICE);
+    });
   }
   // A photo of the valve a row no longer has (build 125): flagged when the app
   // swapped its Device, until a retake replaces it
@@ -16531,6 +17351,7 @@ function performSaveAndNew() {
   saveAll();
   startNextUnit();   // the blank form (with the carried-over building/room) is what survives a reload
   showToast(`\u2714 Saved "${equipName}" \u2014 ${savedEquipment.length} total`);   // plain text: the toast shows text, not HTML (build 94)
+  offerOwnPumps(entry);   // a chiller's or a heat exchanger's own pumps, next (builds 177, 178)
 }
 
 // "Cancel edit" / "Discard" (build 109). There was no way out of an Edit but
@@ -16982,7 +17803,8 @@ function renderSavedPanel() {
   savedEquipment.forEach(e => { if (e && e.id) idCounts[e.id] = (idCounts[e.id] || 0) + 1; });
   // Build 158: a name another saved unit in the same room has (sameNamePlaceClashes)
   const clashKeys = sameNamePlaceClashes(unitsOnDevice(null));
-  body.innerHTML = visible.map(({ entry, i }) => {
+  // Build 177: a chiller's own pumps not saved yet, above the list
+  body.innerHTML = htmlValue(stillToCaptureHtml(here)) + visible.map(({ entry, i }) => {
     const photoCount = entry.photos ? Object.keys(entry.photos).filter(k => entry.photos[k] && entry.photos[k].timestamp).length : 0;
     const isEditing = editingEntry === entry;
     const savedTwice = entry.id && idCounts[entry.id] > 1;
