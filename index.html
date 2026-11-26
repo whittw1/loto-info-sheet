@@ -604,7 +604,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b178</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b179</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -756,7 +756,7 @@ if ('serviceWorker' in navigator) {
         <input type="file" accept="image/*" capture="environment" id="file_equip_ee" onchange="handlePhoto(this, 'equip_ee')">
         <button type="button" class="btn btn-sm" onclick="browsePhoto('equip_ee')" title="Pick an existing photo from the library" style="width:100%;margin-top:6px;padding:6px 4px;font-size:12px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;">&#128194; Browse</button>
       </div>
-      <!-- Build 122 (D2): ATS, Generator and Transformer units only — syncArcFlashSlot -->
+      <!-- Build 122 (D2): ATS, Generator and Transformer units (build 179: Switchgear and UPS too) — syncArcFlashSlot -->
       <div class="photo-slot" id="arcFlashSlot" style="display:none;">
         <label>Arc Flash Label</label>
         <div class="photo-capture" onclick="takePhoto('equip_arcflash')" id="photo_equip_arcflash">
@@ -1339,7 +1339,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 178;
+const APP_BUILD = 179;
 
 // ============================================================================
 // DATA
@@ -1729,7 +1729,10 @@ const DEVICE_VERIFICATION_MAP = {
   'Capacitor':            ['Block'],
   'Hydraulic':            ['_temponly','_gauge','_gaugeonly','_drain'],
   'Chain':                ['_temponly','_gauge','_gaugeonly','_drain'],
-  'Cable':                ['Controls'],
+  // A cable lock on a valve (build 179, gap C4): the valve's checks, as Chain and
+  // Gate Valve w/Cable. It is on the valve lists only, and Controls alone left a
+  // water row without its Gauge / Drain chips (simplified mode filled in Controls).
+  'Cable':                ['_temponly','_gauge','_gaugeonly','_drain'],
   // Bag (bagged control/switch) — control-verification options only.
   'Bag':                  ['Controls','Meter','SW (On/Off)','SW (Hand/Off/Auto)',
                            'Button (Start/Stop) - VFD','Button (Start/Stop) - Retractable','Button (Other)'],
@@ -1901,6 +1904,7 @@ function getFilteredVerifications(deviceType, energySource) {
       if (alwaysHot) add('GaugeOnly - Hot');
     } else if (v === '_drain') {
       if (tempSuffix === 'hot') add('Drain Only - Hot');
+      else if (tempSuffix === 'chw') add('Drain Only - CHW');   // build 179 review: the code the Drain chip saves (gap C1)
       else add('Drain Only');
       if (alwaysHot) add('Drain Only - Hot');
     } else if (v === '_temponly') {
@@ -2087,6 +2091,25 @@ function simpleVerifExtras(src) {
   }
   return out;
 }
+// ---- A chemical line's checks as chips (build 179, wilkins 2026-11-26: "For
+// Chemical In/Out, also let me pick if a gauge is present as well") ----------
+// Gauge (GaugeOnly), Visual and Controls, one pick per row, then More… (the whole
+// list). One code per row, as loto-web reads it; Visual stays the new row's default
+// (SOURCE_DEFAULTS). A chemical line isn't the water family, so it has no Drain or
+// None chip: its drain is the release question's Drains To.
+const CHEMICAL_VERIF_CHIPS = [['GaugeOnly', 'Gauge'], ['Visual', 'Visual'], ['Controls', 'Controls']];
+function isChemicalSource(energySource) { return /^Chemical\b/i.test(String(energySource || '').trim()); }
+function chemicalVerifChips(src) {
+  if (!src || !isChemicalSource(src.energySource)) return [];
+  const offered = getFilteredVerifications(src.deviceType, src.energySource);
+  return CHEMICAL_VERIF_CHIPS.filter(([v]) => offered.includes(v));
+}
+function pickChemicalVerif(index, value) {
+  const src = sources[index];
+  if (!src || !chemicalVerifChips(src).some(([v]) => v === value)) return;
+  updateSource(index, 'verification', value);
+  renderSources();
+}
 // A tap on one: the list's own pick, as if made under More options…
 function pickSimpleVerifExtra(index, k) {
   const src = sources[index];
@@ -2137,7 +2160,9 @@ function applySimpleVerifDefaults() {
         const resynth = synthesizeWaterVerification(p.drain, p.gauge, simpleVerifSuffix(src));
         if (resynth !== src.verification) { src.verification = resynth; changed = true; }
       }
-    } else if (!src.verification) {
+    } else if (!src.verification && !isChemicalSource(src.energySource)) {
+      // a chemical line is the tech's pick on its chips (build 179: Controls is on
+      // its list now, and a blank one never became Controls before)
       const resolved = getFilteredVerifications(src.deviceType, src.energySource);
       if (resolved.includes('Controls')) { src.verification = 'Controls'; changed = true; }
     }
@@ -2161,7 +2186,9 @@ const SOURCE_EXTRA_VERIFICATIONS = {
   // — the check its own boiler drafts use on Chemical In. Not "Zero Flow": that is
   // loto-web's "Flow", "Verify zero flow through equipment.", a Section 3 step
   // about the whole unit, not a feed line. Any chemical device (Quick Disconnect too).
-  'Chemical':    ['Visual'],
+  // Build 179 (wilkins 2026-11-26): Controls too (the feed pump's controls), and the
+  // card shows a chemical row's checks as chips: Gauge / Visual / Controls (chemicalVerifChips).
+  'Chemical':    ['Visual', 'Controls'],
   'Fuel Oil':    ['Controls'],
   'Natural Gas': ['Controls'],
   'Propane':     ['Controls'],
@@ -2563,7 +2590,7 @@ const EQUIPMENT_AUTO_SOURCES = {
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     // build 157: its condenser water valves, as on the template
     { energySource: 'Condenser Water In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Visual', duplicate: 'No', detail: '', auto: true },
-    { energySource: 'Condenser Water Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Visual', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condenser Water Out', deviceType: 'Gate Valve', quantity: 1, location: 'Below Equipment', verification: 'Visual', duplicate: 'No', detail: '', auto: true },   // build 179: Below Equipment (wilkins 2026-11-26)
   ],
   'Chemical Pump': [
     { energySource: 'Electrical 120V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
@@ -5515,11 +5542,15 @@ function driveIsolatesBlock(src, i) {
 
 // ---- The arc flash label (build 122, D2) --------------------------------------
 // Its own photo slot (equip_arcflash, key token 'arcflash'), after EE Number, on
-// ATS, Generator and Transformer units — and on any unit whose slot holds a
+// ATS, Generator, Transformer, Switchgear and UPS units — and on any unit whose slot holds a
 // photo (a photo is never hidden). Or "No arc flash label on this equipment"
 // (unitAnswers.arcFlashNone), which a photo clears. Save & New asks when neither
 // is there. The sheet: the name row's column 13 (Information Sheet §1.1).
-const ARC_FLASH_TYPES = ['ATS', 'Generator', 'Transformer'];
+// Build 179 (gap B2): Switchgear and UPS units too — and by their templates, as the
+// generator's (a template picked under another type, gap A6). Transformer stays by
+// its type only: its templates are shared with Battery Charger and VFD units.
+const ARC_FLASH_TYPES = ['ATS', 'Generator', 'Transformer', 'Switchgear', 'UPS'];
+const ARC_FLASH_TEMPLATES = ['Emergency Generator', 'Switchgear', 'UPS'];
 // …and on any unit the app counts as an ATS, by its type or its "ATS - Generic"
 // template, as unitKinds does (build 123: a unit picked by template alone got the
 // ATS questions but no arc flash label). loto-web reads column 13 by its header
@@ -5527,7 +5558,9 @@ const ARC_FLASH_TYPES = ['ATS', 'Generator', 'Transformer'];
 // The unit holds an arc flash label photo (its bytes may still be saving) — the
 // slot, the Duplicate dialog and its message ask the same way (build 123 review).
 function holdsArcFlashPhoto(photoMap) { return !!(photoMap && photoMap.equip_arcflash && photoMap.equip_arcflash.dbKey); }
-function arcFlashAskedFor(type, template) { return ARC_FLASH_TYPES.includes(String(type || '')) || unitKinds(type, template).ats; }
+function arcFlashAskedFor(type, template) {
+  return ARC_FLASH_TYPES.includes(String(type || '')) || ARC_FLASH_TEMPLATES.includes(String(template || '')) || unitKinds(type, template).ats;
+}
 // A ref whose bytes never saved (unsaved: a failed write or copy) holds the slot
 // open but is no photo: "No label" can still be said (build 122 review).
 function syncArcFlashSlot() {
@@ -7215,7 +7248,8 @@ function convertToHhwSystem(sys) {
   });
   const rows = HHW_SYSTEM_ROWS.filter(r => !isElectricalSource(r)).map(def => {
     // a row of that kind the tech photographed or filled in stands for it; an
-    // untouched app row (a pump template's HHW In ball valve) gives way to the default
+    // untouched app row (a pump template's HHW In / Out valves, a steam heat exchanger's
+    // HHW rows since build 179) gives way to the default
     const like = /^LPS\b/.test(def.energySource) ? (x => /^(LPS|MPS|HPS)\b/.test(x.energySource || '')) : (x => (x.energySource || '') === def.energySource);
     return take(x => like(x) && (photographed.has(x) || sourceHasUserData(x))) || noteDefaultDrain(Object.assign({}, def, { collapsed: true }));
   });
@@ -7481,11 +7515,20 @@ const VOLTAGE_PROMPT_CONFIG = {
 };
 
 let pendingVoltageEquipType = null;
+let pendingVoltageFromTemplate = false;   // build 179: asked from its template (gap A6), which is on already
 
-function showVoltageDialog(equipType) {
+// opts.fromTemplate (build 179): the type's template was picked under another type,
+// so the voltage adds its rows without putting the template on again.
+// "Keep Default" (build 179, gap A6), as on the template's own voltage question:
+// 208V, the default every template starts its Electrical rows on. Cancel takes the
+// pick back (cancelVoltageDialog): it used to leave the unit with the type but no
+// template and no Electrical row.
+function showVoltageDialog(equipType, opts) {
   const config = VOLTAGE_PROMPT_CONFIG[equipType];
   if (!config) return;
+  closeVoltageDialog();   // never two (a template picked again while it is open)
   pendingVoltageEquipType = equipType;
+  pendingVoltageFromTemplate = !!(opts && opts.fromTemplate);
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.id = 'voltageOverlay';
@@ -7497,15 +7540,17 @@ function showVoltageDialog(equipType) {
         <button class="btn btn-primary" onclick="applyVoltageChoice('208V')" style="padding:12px;font-size:16px;">208V</button>
         <button class="btn btn-primary" onclick="applyVoltageChoice('480V')" style="padding:12px;font-size:16px;">480V</button>
         <button class="btn" onclick="chooseOtherVoltage()" style="padding:10px;font-size:14px;background:var(--card);border:1px solid var(--border);color:var(--text-dim);">Other voltage&hellip;</button>
-        <button class="btn" onclick="closeVoltageDialog()" style="padding:10px;font-size:13px;background:transparent;color:var(--text-dim);">Cancel</button>
+        <button class="btn" onclick="applyVoltageChoice('208V')" style="padding:10px;font-size:13px;background:transparent;color:var(--text-dim);">Keep Default (208V)</button>
+        <button class="btn" onclick="cancelVoltageDialog()" style="padding:8px;font-size:13px;background:transparent;color:var(--text-dim);">Cancel</button>
       </div>
     </div>
   `;
   document.body.appendChild(overlay);
   overlay.style.display = 'flex';
 
-  // Also add standard auto-sources for this equipment type (Kinetic, etc.)
-  if (EQUIPMENT_AUTO_SOURCES[equipType]) {
+  // Also add standard auto-sources for this equipment type (Kinetic, etc.) — not
+  // from a template, whose own rows are on (build 179)
+  if (!pendingVoltageFromTemplate && EQUIPMENT_AUTO_SOURCES[equipType]) {
     for (const autoSrc of EQUIPMENT_AUTO_SOURCES[equipType]) {
       const alreadyExists = sources.some(s => s.energySource === autoSrc.energySource && s.auto === true);
       if (!alreadyExists) {
@@ -7517,13 +7562,14 @@ function showVoltageDialog(equipType) {
 
 function applyVoltageChoice(voltage) {
   const equipType = pendingVoltageEquipType;
+  const fromTemplate = pendingVoltageFromTemplate;
   closeVoltageDialog();
 
   // Apply the auto-template FIRST (it would otherwise wipe any source we push).
   // Single-template equipment types like Chiller / Generator have a template
   // that includes Kinetic etc. — we want those, then we add the voltage-specific
   // Electrical source on top so it survives applyTemplate's sources = [].
-  if (equipType && EQUIPMENT_TEMPLATE_MAP[equipType]) {
+  if (!fromTemplate && equipType && EQUIPMENT_TEMPLATE_MAP[equipType]) {
     const templates = EQUIPMENT_TEMPLATE_MAP[equipType];
     if (templates.length === 1) {
       pickTemplate(templates[0]);
@@ -7561,10 +7607,26 @@ function applyVoltageChoice(voltage) {
   autoSaveCurrent();
 }
 
+// Cancel (build 179 review): the pick that asked is taken back — the type (its rows
+// go, as on any type change), or the template picked under another type
+function cancelVoltageDialog() {
+  const fromTemplate = pendingVoltageFromTemplate;
+  closeVoltageDialog();
+  if (fromTemplate) {
+    document.getElementById('equipTemplate').value = '';
+    applyTemplate('');
+    rememberTemplateBefore();
+  } else {
+    document.getElementById('equipType').value = '';
+    handleEquipTypeChange();
+  }
+  autoSaveCurrent();
+}
 function closeVoltageDialog() {
   const overlay = document.getElementById('voltageOverlay');
   if (overlay) overlay.remove();
   pendingVoltageEquipType = null;
+  pendingVoltageFromTemplate = false;
   renderSources();   // Cancel: the cards must match the (re-shaped) sources
 }
 
@@ -7572,8 +7634,14 @@ function closeVoltageDialog() {
 // (build 93): Condensate Pump uses the Heating Hot Water Pump template (loto-web
 // classifies it by that name), which gained an HHW In supply valve in build
 // 22 — a condensate pump has none.
+// Build 179: the template's HHW Out too (its discharge valve since build 179).
+// A Condensate Surge Tank (gap A4) shares the electric Condensate Return Unit
+// template, which loto-web prints it on, but is a plain vessel with no feed (and
+// no Electrical expected, expectsElectricalSource): no Electrical row and so no
+// voltage prompt.
 const EQUIPMENT_TEMPLATE_SOURCE_EXCLUDE = {
-  'Condensate Pump': ['HHW In'],
+  'Condensate Pump': ['HHW In', 'HHW Out'],
+  'Condensate Surge Tank': ['Electrical 208V'],
 };
 
 // Map equipment types to available templates (filters dropdown + auto-selects if only one)
@@ -7615,7 +7683,8 @@ const EQUIPMENT_TEMPLATE_MAP = {
   // Electrical expected). A unit saved on Heat Exchanger - Steam keeps it
   // (keepTemplateOption); loto-web routes such a unit named "DA Tank" anyway.
   'DA Tank': ['DA Tank'],
-  // Condensate Surge Tank — holds condensate; standard (non-steam) CRU template.
+  // Condensate Surge Tank — holds condensate; standard (non-steam) CRU template,
+  // without its Electrical row (build 179, EQUIPMENT_TEMPLATE_SOURCE_EXCLUDE).
   'Condensate Surge Tank': ['Condensate Return Unit'],
   // Dishwasher — Electric or Steam variant. Reuses the Water Heater templates.
   'Dishwasher': ['Water Heater - Electric', 'Water Heater - Steam'],
@@ -9416,19 +9485,30 @@ function applyTemplate(val) {
   // INDEX while the sources under them were swapped, so an LPS valve photo
   // silently became the "DW In" photo.
   const prevSources = sources.slice();
-  if (val && TEMPLATE_AUTO_SOURCES[val]) {
+  // A template the app knows that has no rows of its own (the plain Vacuum Pump,
+  // ATS - Generic) still replaces the last template's (build 179, gap A3: Medical
+  // Vacuum → Vacuum Pump kept the Medical Vacuum rows); the type's own standard
+  // rows come back in their place (typeRowsFor).
+  const ownRows = val ? TEMPLATE_AUTO_SOURCES[val] : null;
+  if (val && (ownRows || isKnownTemplate(val))) {
     const photographed = sourcesWithPhotos();
     // Kept: exactly what the confirm promised — photographed, or holding the
     // user's data (build 93: the filter used to test only userEdited, so a
     // source saved before build 91 was dropped after the dialog said KEPT).
     // Voltage sources the type's own voltage prompt added stay too.
-    const kept = sources.filter(s => photographed.has(s) || sourceHasUserData(s) || (s && s._voltagePick));
-    kept.forEach(s => { if (!s._voltagePick) s.auto = false; });   // a type's voltage source stays the type's
+    // Only a type that asks its own voltage owns those rows (build 179 review): the
+    // rows a template's voltage question added under another type (gap A6) go with
+    // that template, or the next template would keep them and skip its own question.
+    const typeOwnsVoltage = EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT.has(getEquipType());
+    const kept = sources.filter(s => photographed.has(s) || sourceHasUserData(s) || (s && s._voltagePick && typeOwnsVoltage));
+    kept.forEach(s => { if (!(s._voltagePick && typeOwnsVoltage)) { s.auto = false; delete s._voltagePick; } });   // a type's voltage source stays the type's
     sources = kept.slice();
-    const autoSources = TEMPLATE_AUTO_SOURCES[val];
+    const equipType = getEquipType();
+    const autoSources = ownRows || typeRowsFor(equipType, kept);
     const atsOverride = isATSEquipment();
-    const voltOverride = EQUIPMENT_VOLTAGE_OVERRIDE[getEquipType()];
-    const skipEnergy = EQUIPMENT_TEMPLATE_SOURCE_EXCLUDE[getEquipType()] || [];
+    const voltOverride = EQUIPMENT_VOLTAGE_OVERRIDE[equipType];
+    const skipEnergy = EQUIPMENT_TEMPLATE_SOURCE_EXCLUDE[equipType] || [];
+    const elecDevice = EQUIPMENT_ELECTRICAL_DEVICE[equipType];
     for (const autoSrc of autoSources) {
       if (skipEnergy.includes(autoSrc.energySource)) continue;
       const src = { ...autoSrc, collapsed: true };
@@ -9436,6 +9516,8 @@ function applyTemplate(val) {
       // Equipment-specific electrical voltage override: lets an equipment type reuse a
       // shared template (e.g. Standard Pump) but at a different default voltage.
       if (voltOverride && /^Electrical/.test(src.energySource)) src.energySource = voltOverride;
+      // …and its device (build 179, gap A5: a VFD unit's row is the drive itself)
+      if (elecDevice && /^Electrical(?:\s|$)/.test(src.energySource) && !src.deviceType) src.deviceType = elecDevice;
       sources.push(noteDefaultDrain(src));
     }
 
@@ -9443,7 +9525,6 @@ function applyTemplate(val) {
     // Lets multiple equipment types share a single generic template (e.g.
     // Domestic HW Pump / Domestic Water Pump both use "Standard Pump") while
     // still adding equipment-specific sources like DHW In or DW In.
-    const equipType = getEquipType();
     const extras = EQUIPMENT_EXTRA_SOURCES[equipType];
     if (extras) {
       for (const extra of extras) {
@@ -9453,10 +9534,12 @@ function applyTemplate(val) {
 
     rebindSourcePhotos(prevSources);
     renderSources();
-    if (kept.length) {
-      showToast(`Set ${sources.length - kept.length} source${sources.length - kept.length === 1 ? '' : 's'} for ${val} — kept ${kept.length} source${kept.length > 1 ? 's' : ''} you filled in or photographed (remove any that don't apply)`, true);
-    } else {
-      showToast(`Set ${sources.length} source${sources.length > 1 ? 's' : ''} for ${val}`);
+    // the type's voltage rows (an ATS's feeds) are the type's, not kept by the user
+    const keptOwn = kept.filter(s => !s._voltagePick).length, set = sources.length - kept.length;
+    if (keptOwn) {
+      showToast(`Set ${set} source${set === 1 ? '' : 's'} for ${val} — kept ${keptOwn} source${keptOwn > 1 ? 's' : ''} you filled in or photographed (remove any that don't apply)`, true);
+    } else if (set) {
+      showToast(`Set ${set} source${set > 1 ? 's' : ''} for ${val}`);
     }
 
     // If the template pushed at least one auto Electrical source, prompt the
@@ -9464,8 +9547,16 @@ function applyTemplate(val) {
     //  - Equipment types that already ran their own voltage prompt at
     //    equipment-type selection (ATS / Generator / Chiller)
     //  - Templates whose voltage is fixed by design (Air Dryer = 120V plug)
+    //  - A template with no rows of its own (build 179): the type's rows, as the type left them
+    // The ATS, chiller and generator templates picked under another type (a typed
+    // one, or from the whole list) ask their type's own voltage question and its
+    // follow-ups (build 179, gap A6): before, such a unit got no Electrical row.
     let voltageAsked = false;
-    if (!EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT.has(equipType) && !TEMPLATE_SKIPS_VOLTAGE_PROMPT.has(val)) {
+    const typePrompt = TEMPLATE_TYPE_VOLTAGE_PROMPT[val];
+    if (typePrompt && !EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT.has(equipType) && !sources.some(s => s && s._voltagePick)) {
+      showVoltageDialog(typePrompt, { fromTemplate: true });
+      voltageAsked = true;   // its follow-ups come from its voltage (afterTypeVoltage)
+    } else if (ownRows && !EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT.has(equipType) && !TEMPLATE_SKIPS_VOLTAGE_PROMPT.has(val)) {
       const hasAutoElectrical = sources.some(isAutoElectricalRow);
       if (hasAutoElectrical && getElectricalVoltageOptions(val).length) {
         promptForTemplateVoltage(val);
@@ -9503,6 +9594,22 @@ function applyTemplate(val) {
 // selection and would otherwise double-prompt.
 // ============================================================================
 const EQUIPMENT_HAS_OWN_VOLTAGE_PROMPT = new Set(['ATS', 'Generator', 'Chiller']);
+// The template each of those types puts on, whose type's question it asks when it
+// is picked under another type (build 179, gap A6)
+const TEMPLATE_TYPE_VOLTAGE_PROMPT = { 'ATS - Generic': 'ATS', 'Chiller': 'Chiller', 'Emergency Generator': 'Generator' };
+// The Device an equipment type's template Electrical row starts on (build 179, gap
+// A5): a VFD unit is the drive, so its feeder and disconnect are asked as on any
+// drive (offerTemplateDrives, then Save & New). Its template is shared with the
+// Transformer type, whose row stays blank.
+const EQUIPMENT_ELECTRICAL_DEVICE = { 'VFD': 'VFD' };
+// A template with no rows of its own (build 179, gap A3): the type's standard rows
+// (EQUIPMENT_AUTO_SOURCES) in its place, but none the user's kept rows already
+// cover (the same source, or any Electrical one for an Electrical row).
+function typeRowsFor(equipType, kept) {
+  const elec = e => /^Electrical(?:\s|$)/.test(String(e || ''));
+  return (EQUIPMENT_AUTO_SOURCES[equipType] || []).filter(r =>
+    !(kept || []).some(k => k && (k.energySource === r.energySource || (elec(k.energySource) && elec(r.energySource)))));
+}
 
 // Templates whose Electrical voltage is fixed (no point in prompting). Example:
 // Air Dryer is always 120V via a wall plug — the prompt would just be noise.
@@ -9536,7 +9643,8 @@ const EQUIPMENT_EXTRA_SOURCES = {
 // Templates whose electrical voltage is fixed by design — no voltage prompt.
 // Water Heater - Steam has a 120V control circuit only (no choice between
 // 208/240/etc.); same for Air Dryer (always a 120V plug) and Day Tank.
-const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas', 'Unit Heater - Natural Gas', 'Boiler - Natural Gas - HHW', 'Mini Split', 'Elevator - Traction', 'Elevator - Hydraulic', 'Overhead Door']);
+const TEMPLATE_SKIPS_VOLTAGE_PROMPT = new Set(['Air Dryer', 'Day Tank', 'Water Heater - Steam', 'Water Heater - Gas', 'Unit Heater - Natural Gas', 'Boiler - Natural Gas - HHW', 'Mini Split', 'Elevator - Traction', 'Elevator - Hydraulic', 'Overhead Door',
+  'Refrigerator']);   // build 179: a 120V plug, as the Air Dryer
 // After the voltage prompt, these templates ask "how many electrical sources?"
 // Value = the max offered (AHUs = 2 for dual fans; medical air/vacuum skids run
 // up to 4 units). See promptForElectricalCount.
@@ -9669,10 +9777,37 @@ function keepDefaultVoltage() {
 // secondary main and other sources. applyTemplate calls it directly when it
 // shows no voltage prompt.
 function afterTemplateVoltage() {
-  maybePromptElectricalCount();
+  const counting = maybePromptElectricalCount();
   maybeAskVacuumExhaust();
   maybeAskTransformer();
   maybeAskUnitSheet();   // build 178: a Heating HW Pump's, a steam heat exchanger's sheet
+  if (!counting) offerTemplateDrives();   // build 179: after the count, where one is asked
+}
+
+// ---- A template's drive rows (build 179, gap A5) ----------------------------
+// A template's own VFD row (an AHU's, a VFD unit's) asks for its feeder and its
+// own disconnect's answer as the template goes on — as picking Device = VFD does
+// (promptDriveFeeder) — where before only Save & New asked. One question for all
+// of them; Later leaves them to Save & New, as before. Never over another open
+// question (Save & New asks then).
+function dialogShowing() {
+  return [...document.querySelectorAll('.dialog-overlay')].some(o => o.isConnected && getComputedStyle(o).display !== 'none');
+}
+async function offerTemplateDrives() {
+  const due = unitDrives(sources).filter(d => d.src && d.src.auto && !(d.fed || d.held));
+  if (!due.length || dialogShowing()) return null;
+  const session = formSession, one = due.length === 1;
+  const v = await askChoice({ id: 'template-drives', defaultValue: 'later', drive: one ? due[0].tag : '',
+    title: one ? html`${driveRef(due[0], true)} has no feeder recorded` : html`${due.length} drives have no feeder recorded`,
+    html: html`Record the breaker that feeds ${one ? 'it' : 'each one'} now, then whether ${one ? 'its' : 'each drive’s'} own ${new Set(due.map(d => driveOwnIsolationNoun(d.src.deviceType))).size > 1 ? 'disconnect or breaker' : driveOwnIsolationNoun(due[0].src.deviceType)} isolates all incoming power. Later asks again at Save & New.`,
+    choices: [{ value: 'record', label: 'Record it now', primary: true }, { value: 'later', label: 'Later' }] });
+  if (v !== 'record' || session !== formSession) return v;
+  for (const t of due.map(d => ({ src: d.src, k: d.k }))) {
+    const d = unitDrives(sources).find(x => x.src === t.src && x.k === t.k);
+    if (!d || ((d.fed || d.held) && d.answer)) continue;
+    if (!(await recordDrive(d)) || session !== formSession) break;   // Cancel stops, as on Device = VFD
+  }
+  return v;
 }
 
 function closeTemplateVoltagePrompt() {
@@ -9705,13 +9840,14 @@ const TEMPLATE_COUNT_ON_ONE_LINE = new Set(['Dental Vacuum']);
 function maybePromptElectricalCount() {
   const max = TEMPLATE_ASK_ELECTRICAL_COUNT[getTemplate()];
   if (max) promptForElectricalCount(getTemplate(), max);
+  return !!max;
 }
 function promptForElectricalCount(template, max) {
   closeElectricalCountPrompt();
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.id = 'electricalCountOverlay';
-  overlay.onclick = (e) => { if (e.target === overlay) closeElectricalCountPrompt(); };  // dismiss = keep 1
+  overlay.onclick = (e) => { if (e.target === overlay) { closeElectricalCountPrompt(); offerTemplateDrives(); } };  // dismiss = keep 1
   const own = TEMPLATE_ELECTRICAL_COUNT_PROMPT[template];
   const min = (own && own.min) || 1;   // build 178: a system is 2 to 4 pumps
   if (min > 1) overlay.onclick = (e) => { if (e.target === overlay) applyElectricalCountChoice(min); };   // dismiss = the fewest it can be
@@ -9829,6 +9965,7 @@ function applyElectricalCountChoice(n, opts) {
     const what = together ? (pumps ? `${n} pumps: 1 Electrical line (Qty ${n})` : `1 VFD line (Qty ${n})`) : `${n} electrical` + (fanRows ? '' : ` source${n > 1 ? 's' : ''}`);
     showToast(fanRows + what + (fanRows ? ` and ${n} Kinetic source${n > 1 ? 's' : ''}` : '') + (marksNote ? '\n' + MARKS_CLEARED_NOTE : ''), !!marksNote);
   }
+  offerTemplateDrives();   // build 179: the drives the count settled
 }
 // The count prompt's copy of a row: another disconnect / fan, so its own row and
 // id, and nothing the user typed on the first — no tag, no edit mark (build 113:
@@ -9886,19 +10023,31 @@ function matchAutoKineticRows(n, photographed) {
 
 // Template-triggered auto-sources (mirrors EQUIPMENT_AUTO_SOURCES)
 const TEMPLATE_AUTO_SOURCES = {
-  // Heat Exchanger - Steam: LPS source + Condensate Out
+  // Heat Exchanger - Steam: LPS source + Condensate Out, and (build 179, wilkins
+  // 2026-11-26) its hot water side, HHW In and HHW Out each its own row: Ball Valve,
+  // Drain Only - Hot (an app default drain, noteDefaultDrain)
   'Heat Exchanger - Steam': [
     { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: 'Below Equipment', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'HHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Drain Only - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'HHW Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Drain Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
-  // DA Tank (build 116): the same rows as Heat Exchanger - Steam, which the DA
-  // Tank type used before it had a template of its own.
+  // DA Tank (build 116): the steam rows of Heat Exchanger - Steam, which the DA
+  // Tank type used before it had a template of its own (a deaerator has no HHW side:
+  // build 179's HHW rows stay on the heat exchanger).
   'DA Tank': [
     { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: 'Below Equipment', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
-  // Heat Exchanger - CHW/Glycol: no auto-sources
-  'Heat Exchanger - CHW/Glycol': [],
+  // Heat Exchanger - CHW/Glycol (build 179, gap A2): its chilled water side, CHW In
+  // and CHW Out each its own row, as the steam heat exchanger's HHW side: Ball Valve,
+  // Drain Only - CHW (what the Drain chip saves on a CHW row). It had no rows, so
+  // picking it only took the last template's away. The glycol side is on the Add
+  // row (TEMPLATE_QUICK_ADD): which glycol it is differs by unit.
+  'Heat Exchanger - CHW/Glycol': [
+    { energySource: 'CHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Drain Only - CHW', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'CHW Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Drain Only - CHW', duplicate: 'No', detail: '', auto: true },
+  ],
   // HHW System - Steam (build 178, loto-web rev 2 F2/F3): a pump's Electrical row
   // (the count prompt makes one per pump, the pump's tag its Device ID), then the
   // steam, the condensate, the HHW boundary and the make-up water. No Kinetic (D4).
@@ -9909,10 +10058,14 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'LPS 10 PSI', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Condensate Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Temp Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
-  // Water Heater - Gas: 120V control circuit + Natural Gas Ball Valve / Controls
+  // Water Heater - Gas: 120V control circuit + Natural Gas Ball Valve / Controls, and
+  // (build 179, wilkins 2026-11-26) its water: DW In Ball Valve Drain Only, DHW Out
+  // Ball Valve Drain Only - Hot (on the Add row before, TEMPLATE_QUICK_ADD)
   'Water Heater - Gas': [
     { energySource: 'Electrical 120V', deviceType: 'Breaker', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Natural Gas', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'DW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Drain Only', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'DHW Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'Drain Only - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   // Water Heater - Electric: 240V Disconnect + DW In Ball Valve + DHW Out Ball Valve
   'Water Heater - Electric': [
@@ -9936,6 +10089,14 @@ const TEMPLATE_AUTO_SOURCES = {
   'Air Dryer': [
     { energySource: 'Electrical 120V', deviceType: 'Plug', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Compressed Air In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
+  ],
+  // Refrigerator (build 179, gap A1): its 120V plug, as the Air Dryer's (no voltage
+  // prompt: TEMPLATE_SKIPS_VOLTAGE_PROMPT; a hard-wired one is changed on the card).
+  // It had no rows, so Save & New warned "no Electrical source" on every one. No
+  // Kinetic (a sealed compressor; loto-web's fan block is about fan assemblies) and
+  // no Refrigerant row: loto-web adds its own (REFRIGERANT_TEMPLATES).
+  'Refrigerator': [
+    { energySource: 'Electrical 120V', deviceType: 'Plug', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
   // Kinetic for anything with a motor/fan/compressor
   // noPhoto deliberately omitted on AHU Kinetic across all three AHU templates —
@@ -10057,23 +10218,33 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
   ],
+  // Chilled Water Pump (build 179, wilkins 2026-11-26): the Electrical (voltage
+  // asked, nothing else filled in), then the suction and the discharge valve, each
+  // its own row: Butterfly Valve, Above Equipment, GaugeOnly - CHW
   'Chilled Water Pump': [
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
-    { energySource: 'CHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly - CHW', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'CHW In', deviceType: 'Butterfly Valve', quantity: 1, location: 'Above Equipment', verification: 'GaugeOnly - CHW', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'CHW Out', deviceType: 'Butterfly Valve', quantity: 1, location: 'Above Equipment', verification: 'GaugeOnly - CHW', duplicate: 'No', detail: '', auto: true },
   ],
   // Condenser Water Pump (build 157): wilkins' rows, through loto-web's chat
   // (2026-11-05: "E + In + Out") — Electrical (the voltage is asked) and both the
   // suction and the discharge valve, each its own row. Condenser water is on the
   // warm tower side, so the plain verifications (no "- CHW"). No Kinetic, as
-  // every pump template since build 107.
+  // every pump template since build 107. Gate Valves since build 179 (wilkins
+  // 2026-11-26; Ball Valve before).
   'Condenser Water Pump': [
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
-    { energySource: 'Condenser Water In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly', duplicate: 'No', detail: '', auto: true },
-    { energySource: 'Condenser Water Out', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condenser Water In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'GaugeOnly', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condenser Water Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'GaugeOnly', duplicate: 'No', detail: '', auto: true },
   ],
+  // Heating Hot Water Pump (build 179, wilkins 2026-11-26): the Electrical (voltage
+  // asked, nothing else filled in), then the suction and the discharge valve, each
+  // its own row: Butterfly Valve, Above Equipment, GaugeOnly - Hot. A Condensate
+  // Pump shares the template and takes neither (EQUIPMENT_TEMPLATE_SOURCE_EXCLUDE).
   'Heating Hot Water Pump': [
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
-    { energySource: 'HHW In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'HHW In', deviceType: 'Butterfly Valve', quantity: 1, location: 'Above Equipment', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'HHW Out', deviceType: 'Butterfly Valve', quantity: 1, location: 'Above Equipment', verification: 'GaugeOnly - Hot', duplicate: 'No', detail: '', auto: true },
   ],
   'Standard Pump': [
     { energySource: 'Electrical 208V', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true },
@@ -10167,7 +10338,7 @@ const TEMPLATE_AUTO_SOURCES = {
     { energySource: 'Kinetic', deviceType: 'Rotating', location: 'At Fan Assembly', verification: 'Rotating', duplicate: 'No', quantity: 1, auto: true },
     { energySource: 'Electrical 208V', deviceType: 'Disconnect', quantity: 1, location: '', verification: 'Controls', duplicate: 'No', detail: '', auto: true },
     { energySource: 'Condenser Water In', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Visual', duplicate: 'No', detail: '', auto: true },
-    { energySource: 'Condenser Water Out', deviceType: 'Gate Valve', quantity: 1, location: '', verification: 'Visual', duplicate: 'No', detail: '', auto: true },
+    { energySource: 'Condenser Water Out', deviceType: 'Gate Valve', quantity: 1, location: 'Below Equipment', verification: 'Visual', duplicate: 'No', detail: '', auto: true },   // build 179: Below Equipment (wilkins 2026-11-26)
   ],
   // Chiller: no Kinetic (removed at the user's request). Its chilled-water
   // valves as two sources of their own, In and Out (build 151, wilkins
@@ -11315,6 +11486,25 @@ function buildSourceCard(src, i) {
                     <div class="sv-saves">${cur ? 'Saves as ' + cur : 'Not answered yet'}</div>
                   </div>`;
                 }
+                // A chemical line (build 179): Gauge / Visual / Controls, one pick, then More…
+                const chem = simpleVerifEnabled() && !ov ? chemicalVerifChips(src) : [];
+                if (chem.length) {
+                  const cur = src.verification || '';
+                  const listed = getFilteredVerifications(src.deviceType, src.energySource);
+                  const moreOn = !!cur && !chem.some(([v]) => v === cur);
+                  return html`<div class="form-group qp-group" id="verGroup_${i}">
+                    <label>Verification<span class="lbl-sub"> &mdash; tap what&rsquo;s there</span></label>
+                    <div class="qp-row sv-row sv-chem" id="sv_${i}">
+                      ${chem.map(([v, text]) => html`<button type="button" class="qp-chip sv-extra${cur === v ? ' on' : ''}" data-v="${v}" aria-pressed="${cur === v ? 'true' : 'false'}" onclick="pickChemicalVerif(${i},${jsArg(v)})">${cur === v ? '✓ ' : ''}${text}</button>`)}
+                      <span class="qp-chip qp-more${moreOn ? ' on' : ''}"><span class="qp-more-label">${moreOn ? cur + ' ▾' : 'More…'}</span><select class="qp-select" id="src_svmore_${i}" aria-label="All Verification choices" onchange="pickVerifFromList(${i},this.value)">
+                        <option value="">-- Select --</option>
+                        ${listed.map(s => html`<option value="${s}" ${cur === s ? 'selected' : ''}>${s}</option>`)}
+                        ${cur && !listed.includes(cur) ? html`<option value="${cur}" selected>${cur}</option>` : ''}
+                      </select></span>
+                    </div>
+                    <div class="sv-saves">${cur ? 'Saves as ' + cur : 'Not answered yet'}</div>
+                  </div>`;
+                }
                 return html`<div class="form-group">
                 <label>Verification</label>
                 <select onchange="updateSource(${i},'verification',this.value)" id="src_ver_${i}">
@@ -11767,13 +11957,14 @@ function qpHandAdded(type, skip) {
 // tech (build 155, wilkins 2026-11-05: "If I select an AHU - Steam, CHW, HHW or
 // AHU - HHW template, can the 'Add energy source' also include HHW In/out?").
 // Offered on the Add row from the first unit, ahead of what was added by hand.
-// Water Heater - Gas adds only its 120V and gas rows where Water Heater -
-// Electric adds DW In and DHW Out, so its water valves are offered here too. A
-// steam line is left to the history: its class and pressure differ by site.
+// Water Heater - Gas's DW In and DHW Out were offered here until build 179 made
+// them its own rows. A steam line is left to the history: its class and pressure
+// differ by site. Build 179 (gap A2): a CHW / glycol heat exchanger's glycol side
+// (its CHW In / Out are its rows; which glycol loop it is differs by unit).
 const TEMPLATE_QUICK_ADD = {
   'AHU - HHW': ['HHW In/Out'],
   'AHU - Steam, CHW, HHW': ['HHW In/Out', 'CHW In/Out'],
-  'Water Heater - Gas': ['DW In', 'DHW Out'],
+  'Heat Exchanger - CHW/Glycol': ['Glycol CHW In/Out', 'Glycol HW In/Out'],
 };
 // "+ <source>" chips for Add Energy Source: the template's own lines first
 // (TEMPLATE_QUICK_ADD), then the sources added by hand on units of this type
@@ -19886,7 +20077,7 @@ async function buildAndSendExport(opts, run) {
         // the surveyed equipment type, so it says so (build 109; it read
         // "Details", and loto-web stored the type as the main photo's position).
         // loto-web reads every cell by position: only the label changed.
-        // Column 13 (build 122): "Arc Flash Label" on ATS, Generator and Transformer
+        // Column 13 (build 122): "Arc Flash Label" on ATS, Generator, Transformer (build 179: Switchgear, UPS)
         // blocks — the photo's file name, "No label", or blank (not checked) — and
         // on any block whose unit holds an arc flash photo (build 122 review).
         const arcHere = arcFlashAskedFor(entry.equipType, entry.template) || !!map.afH;

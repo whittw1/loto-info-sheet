@@ -7010,7 +7010,8 @@
     want(r.blower.template === 'Blower' && r.blower.rows.join('|') === 'Electrical 480V/Disconnect/Controls' && expectsElectricalSource('Blower', 'Blower'), 'Blower');
     want(r.swgr.template === 'Switchgear' && r.swgr.rows.join('|') === 'Electrical 4160V//Meter' && (r.swgr.volts || []).includes('4160V')
       && expectsElectricalSource('Switchgear', 'Switchgear'), 'Switchgear');
-    want(r.vfd.template === 'Electrical with Stored Energy' && r.vfd.rows.join('|') === 'Electrical 480V//Meter'
+    // build 179 (gap A5): a VFD unit's row is the drive itself, Device VFD
+    want(r.vfd.template === 'Electrical with Stored Energy' && r.vfd.rows.join('|') === 'Electrical 480V/VFD/Meter'
       && !r.vfd.rows.some(x => /^Stored/.test(x)) && expectsElectricalSource('VFD', 'Electrical with Stored Energy'), 'VFD');
     want(r.xfmr.template === 'Electrical with Stored Energy' && (r.xfmr.choices || []).length === 2
       && (r.xfmr.choices || []).some(t => /capacitor bank/i.test(t)) && r.xfmr.rows.join('|') === 'Electrical 480V//Meter', 'Transformer');
@@ -8298,11 +8299,11 @@
     got.rows = sources.map(x => [x.energySource, x.deviceType, x.location, x.verification, x.noPhoto ? 'noPhoto' : ''].join('/'));
     want(got.template === 'Condenser Water Pump' && got.offered.join() === 'Condenser Water Pump', 'type picks the template');
     want((got.voltages || []).join() === '120V,208V,240V,480V', 'the voltage asked');
-    want(got.rows.join('|') === 'Electrical 208V////|Condenser Water In/Ball Valve//GaugeOnly/|Condenser Water Out/Ball Valve//GaugeOnly/', 'rows');
+    want(got.rows.join('|') === 'Electrical 208V////|Condenser Water In/Gate Valve//GaugeOnly/|Condenser Water Out/Gate Valve//GaugeOnly/', 'rows');   // build 179: Gate Valves
     if (ov) applyTemplateVoltageChoice('480V');
     closeAllPrompts();
     got.picked = sources.map(x => x.energySource + '/' + x.deviceType).join('|');
-    want(got.picked === 'Electrical 480V/|Condenser Water In/Ball Valve|Condenser Water Out/Ball Valve', 'the pick sets the voltage');
+    want(got.picked === 'Electrical 480V/|Condenser Water In/Gate Valve|Condenser Water Out/Gate Valve', 'the pick sets the voltage');
     got.water = ['Condenser Water In', 'Condenser Water Out'].map(e => [isWaterFamilySource(e), getTempSuffixFor(e)]);
     want(got.water.every(w => w[0] === true && !w[1]), 'plain water checks (no - CHW / - Hot)');
     want(expectsElectricalSource('Condenser Water Pump', 'Condenser Water Pump') && defaultShopFor('Condenser Water Pump', sources) === 'HVAC Shop', 'Electrical expected, HVAC Shop');
@@ -8351,7 +8352,7 @@
       got.rows = sources.map(x => [x.energySource, x.deviceType, x.location, x.verification, x.quantity].join('/'));
       want(got.template === 'Cooling Tower', 'the template');
       want(got.voltageAsked, 'the voltage asked');
-      want(got.rows.join('|') === 'Kinetic/Rotating/At Fan Assembly/Rotating/1|Electrical 480V/Disconnect//Controls/1|Condenser Water In/Gate Valve//Visual/1|Condenser Water Out/Gate Valve//Visual/1', 'rows');
+      want(got.rows.join('|') === 'Kinetic/Rotating/At Fan Assembly/Rotating/1|Electrical 480V/Disconnect//Controls/1|Condenser Water In/Gate Valve//Visual/1|Condenser Water Out/Gate Valve/Below Equipment/Visual/1', 'rows');   // build 179: Out Below Equipment
       const typeRows = EQUIPMENT_AUTO_SOURCES['Cooling Tower'].map(x => x.energySource + '/' + x.deviceType + '/' + x.verification).join('|');
       const tmplRows = TEMPLATE_AUTO_SOURCES['Cooling Tower'].map(x => x.energySource + '/' + x.deviceType + '/' + x.verification).join('|');
       want(typeRows === tmplRows, 'the type and the template agree');
@@ -8656,7 +8657,7 @@
       want(got.three === '+ HHW In/Out | + CHW In/Out', 'AHU - Steam, CHW, HHW: ' + got.three);
       unit('Domestic Water Heater', 'Water Heater - Gas');
       got.gas = adds().join(' | ');
-      want(got.gas === '+ DW In | + DHW Out', 'Water Heater - Gas: ' + got.gas);
+      want(got.gas === '', 'Water Heater - Gas: ' + got.gas);   // build 179: its own rows now, no longer on the Add row
       unit('Air Handler', 'AHU - Steam');
       got.steam = adds().join(' | ') + '|' + box.style.display;
       want(got.steam === '|none' && btn.style.display !== 'none', 'AHU - Steam with no history: the plain button ' + got.steam);
@@ -8810,16 +8811,17 @@
       document.getElementById('equipType').value = 'Chemical Feed Pump';
       sources.push(Object.assign(mkSrc('Chemical In'), { deviceType: 'Ball Valve', location: 'Front of Equipment', verification: '', collapsed: false }));
       renderSources();
-      const sel = document.getElementById('src_ver_0');
+      // build 179: a chemical line's checks are its own chips (Gauge / Visual / Controls) and More…
+      const sel = document.getElementById('src_svmore_0');
       got.listHas = !!sel && [...sel.options].some(o => o.value === 'Visual');
       want(got.listHas, 'the card\'s list has Visual');
-      let chip = [...document.querySelectorAll('#qp_verification_0 .qp-pick')].find(b => b.dataset.v === 'Visual');
-      got.chip = chip ? chip.textContent : 'no chip';
+      let chip = [...document.querySelectorAll('#sv_0 .sv-extra')].find(b => b.dataset.v === 'Visual');
+      got.chip = chip ? chip.textContent.trim() : 'no chip';
       want(got.chip === 'Visual', 'a Visual chip: ' + got.chip);
       if (chip) chip.click();
       await sleep(0);
-      chip = [...document.querySelectorAll('#qp_verification_0 .qp-pick')].find(b => b.dataset.v === 'Visual');
-      got.tapped = [sources[0].verification, chip ? chip.textContent : 'no chip', (document.getElementById('src_ver_0') || {}).value].join('|');
+      chip = [...document.querySelectorAll('#sv_0 .sv-extra')].find(b => b.dataset.v === 'Visual');
+      got.tapped = [sources[0].verification, chip ? chip.textContent.trim() : 'no chip', (document.getElementById('src_svmore_0') || {}).value].join('|');
       want(got.tapped === 'Visual|✓ Visual|Visual', 'the tap checks Visual: ' + got.tapped);
       // 3. the export
       await resetAppState();
@@ -8868,8 +8870,8 @@
       handleDeviceTypeChange(i, 'Quick Disconnect');
       got.afterQD = sources[i].verification;
       want(got.afterBall === 'Visual' && got.afterQD === 'Visual', 'a device keeps it: ' + got.afterBall + '/' + got.afterQD);
-      const chip = document.querySelector('#qp_verification_' + i + ' .qp-pick.on');
-      got.chip = chip ? chip.textContent : 'no lit chip';
+      const chip = document.querySelector('#sv_' + i + ' .sv-extra.on');   // build 179: the chemical line's own chips
+      got.chip = chip ? chip.textContent.trim() : 'no lit chip';
       want(got.chip === '✓ Visual', 'the lit chip: ' + got.chip);
       const j = fresh('Chemical In');
       got.in = sources[j].verification;
@@ -9767,7 +9769,8 @@
     await withDialogs({ confirm: true }, async () => { pickTemplate('Heat Exchanger - Steam'); });
     closeAllPrompts();
     got.hxRows = rowsOf(sources);
-    want(got.rows === got.hxRows && /^LPS 10 PSI\/Gate Valve\/\/.*\|Condensate Out\/Gate Valve\/Below Equipment\/Temp Only - Hot$/.test(got.rows), 'the same rows');
+    // build 179: the heat exchanger has its HHW In / Out after the same two steam rows; a deaerator has none
+    want(got.hxRows.startsWith(got.rows + '|HHW In/') && /^LPS 10 PSI\/Gate Valve\/\/.*\|Condensate Out\/Gate Valve\/Below Equipment\/Temp Only - Hot$/.test(got.rows), 'the same rows');
     want(TEMPLATE_DIAGRAM_MAP['DA Tank'] === TEMPLATE_DIAGRAM_MAP['Heat Exchanger - Steam'], 'the same sketch');
     want(!expectsElectricalSource('DA Tank', 'DA Tank') && !expectsElectricalSource('Deaerator 2', 'DA Tank'), 'no Electrical expected');
     want((EQUIPMENT_TEMPLATE_MAP['Heat Exchanger'] || []).slice(0, 2).join() === 'Heat Exchanger - Steam,Heat Exchanger - CHW/Glycol', 'Heat Exchanger type unchanged');   // build 178 adds HHW System - Steam third
@@ -11103,7 +11106,7 @@
     const shown = () => !!slot() && slot().style.display !== 'none';
     got.types = {};
     for (const t of ['ATS', 'Generator', 'Transformer', 'Air Handler', 'Switchgear', 'VFD']) { formOfType('AF-262', t); autoSaveCurrent(); got.types[t] = shown(); }
-    want(JSON.stringify(got.types) === '{"ATS":true,"Generator":true,"Transformer":true,"Air Handler":false,"Switchgear":false,"VFD":false}', 'which types');
+    want(JSON.stringify(got.types) === '{"ATS":true,"Generator":true,"Transformer":true,"Air Handler":false,"Switchgear":true,"VFD":false}', 'which types');   // build 179 (B2): Switchgear too
     got.order = [...document.querySelectorAll('.photo-row .photo-capture')].map(e => e.id).join();
     want(got.order === 'photo_equip_main,photo_equip_dataplate,photo_equip_ee,photo_equip_arcflash', 'after EE Number');
     formOfType('GEN-262', 'Generator', 'Emergency Generator'); autoSaveCurrent();
@@ -11548,18 +11551,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 178 (was build 122\'s): APP_BUILD and the header label say 178, the service worker\'s cache is loto-collector-v7.173, Xcode\'s CURRENT_PROJECT_VERSION is 178 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 179 (was build 122\'s): APP_BUILD and the header label say 179, the service worker\'s cache is loto-collector-v7.174, Xcode\'s CURRENT_PROJECT_VERSION is 179 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 178 && !!label && +label[1] === 178, 'the build');
+    want(APP_BUILD === 179 && !!label && +label[1] === 179, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.173', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.174', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 178;,CURRENT_PROJECT_VERSION = 178;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 179;,CURRENT_PROJECT_VERSION = 179;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -19543,7 +19546,7 @@
     let r = await hhwUnit('HWP-513', 'Heating HW Pump', ans({ hhwFeedsHx: 'Yes', hhwHx: ' HX-1 ', hhwIsolation: 'Its own valves', hhwOnlyPump: 'Yes' }));
     want(/\[CHOICE hhw-pump-sheet\] About this pump/.test(r.log), 'asked');
     got.only = tieText() + ' / ' + (unitAnswers.tiedAppAction || '') + ' / ' + rowsText();
-    want(got.only === 'Shut Down — HX-1 / Shut Down / Electrical 480V// | HHW In/Ball Valve/', 'the only pump');
+    want(got.only === 'Shut Down — HX-1 / Shut Down / Electrical 480V// | HHW In/Butterfly Valve/ | HHW Out/Butterfly Valve/', 'the only pump');   // build 179: In and Out
     // the box
     setUnitAnswer('hhwOnlyPump', 'No');
     got.standbyBox = tieText();
@@ -19603,7 +19606,7 @@
     let r = await HX('HX-514', { hxPumps: 'Yes', hxPumpNames: ['HWP-1', ' HWP-2 ', 'hwp-1'], hxIsolation: 'Its own valves' });
     want(/\[CHOICE hx-sheet\] About this heat exchanger/.test(r.log), 'asked');
     got.own = tieText() + ' / ' + unitAnswers.hxPumpNames + ' / ' + rowsText();
-    want(got.own === 'Shut Down — HWP-1; HWP-2 / HWP-1; HWP-2 / LPS 10 PSI/Gate Valve/ | Condensate Out/Gate Valve/', 'its own valves');
+    want(got.own === 'Shut Down — HWP-1; HWP-2 / HWP-1; HWP-2 / LPS 10 PSI/Gate Valve/ | Condensate Out/Gate Valve/ | HHW In/Ball Valve/ | HHW Out/Ball Valve/', 'its own valves');   // build 179: its HHW side
     // pumps next: two pumps = a standby
     document.getElementById('equipRoom').value = 'Mech 15';
     let asked = null;
@@ -19802,6 +19805,255 @@
       want(got.json === 'Heat Exchanger / HHW System - Steam / HHW System HX-1 (HWP-1, HWP-2) / Electrical 480V/HWP-1/1 | Electrical 480V/HWP-2/1 | LPS 10 PSI//1 | Condensate Out//1 | HHW In//1 | HHW Out//1 | DW In//1', 'entries.json');
       want(!(je.sources || []).some(s => /Kinetic/i.test(s.energySource)), 'no Kinetic');
     } else fails.push('no zip: ' + confirms.join(' | '));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // ---- Build 179: the mapping reference's gaps A1–A6, B2, C4 and wilkins' defaults ----
+  const rowsFull = () => sources.map(s => [s.energySource, s.deviceType || '', s.location || '', s.verification || '', s.quantity].join('/')).join(' | ');
+  // a unit of `type` from a blank form with `template` put on (the template list's pick, its confirm and voltage answered)
+  async function tplUnit(name, type, template, choice, voltage) {
+    await resetAppState();
+    fillFormNoSources(name);
+    document.getElementById('equipTemplate').value = '';
+    const sel = document.getElementById('equipType');
+    let voltPrompt = false;
+    const r = await withDialogs({ confirm: true, choice: choice || {} }, async () => {
+      if (type && type.startsWith('custom:')) {
+        sel.value = '** New Equipment Type **'; handleEquipTypeChange();
+        document.getElementById('equipTypeCustom').value = type.slice(7);
+        filterTemplateDropdown('');
+      } else { sel.value = type; handleEquipTypeChange(); }
+      await sleep(0);
+      closeAllPrompts();
+      if (template) {
+        pickTemplate(template); await sleep(0);
+        if (document.getElementById('templateConfirmOverlay')) { confirmTemplateChange(template); await sleep(0); }
+        voltPrompt = !!document.getElementById('templateVoltageOverlay');
+        if (voltPrompt) { applyTemplateVoltageChoice(voltage || '208V'); await sleep(0); }
+      }
+      await sleep(0); await sleep(0);
+    });
+    return { log: r.log.join(' / '), voltPrompt };
+  }
+
+  // T518 — wilkins' template defaults (2026-11-26) and gaps A1, A2, A4
+  async function t518_templateDefaults179() {
+    const N = 'T518 build 179 (wilkins 2026-11-26 + the mapping reference\'s A1 / A2 / A4): Chilled Water Pump = Electrical (nothing else filled) + CHW In and CHW Out Butterfly Valve, Above Equipment, GaugeOnly - CHW; Heating Hot Water Pump the same with HHW In / Out and GaugeOnly - Hot (a Condensate Pump on it takes neither); Condenser Water Pump\'s valves Gate Valves; Water Heater - Gas adds DW In Ball Valve Drain Only and DHW Out Ball Valve Drain Only - Hot (no longer on its Add row); Cooling Tower\'s Condenser Water Out Below Equipment (type and template); Heat Exchanger - Steam adds HHW In and HHW Out Ball Valve Drain Only - Hot (DA Tank unchanged); Heat Exchanger - CHW/Glycol has CHW In / Out Ball Valve Drain Only - CHW and its glycol lines on the Add row; Refrigerator starts on Electrical 120V Plug Controls with no voltage prompt; a Condensate Surge Tank has no Electrical row and no voltage prompt';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await hhwUnit('CHWP-518', 'CHW Pump', {}, { voltage: '208V' });
+    got.chw = rowsFull();
+    want(got.chw === 'Electrical 208V////1 | CHW In/Butterfly Valve/Above Equipment/GaugeOnly - CHW/1 | CHW Out/Butterfly Valve/Above Equipment/GaugeOnly - CHW/1', 'Chilled Water Pump');
+    await hhwUnit('HWP-518', 'Heating HW Pump', { 'hhw-pump-sheet': 'cancel' }, { voltage: '208V' });
+    got.hhw = rowsFull();
+    want(got.hhw === 'Electrical 208V////1 | HHW In/Butterfly Valve/Above Equipment/GaugeOnly - Hot/1 | HHW Out/Butterfly Valve/Above Equipment/GaugeOnly - Hot/1', 'Heating Hot Water Pump');
+    await hhwUnit('CP-518', 'Condensate Pump', {}, { voltage: '208V' });
+    got.condensatePump = rowsFull();
+    want(got.condensatePump === 'Electrical 208V////1', 'Condensate Pump');
+    await hhwUnit('CWP-518', 'Condenser Water Pump', {}, { voltage: '208V' });
+    got.cwp = sources.map(s => s.energySource + '/' + (s.deviceType || '')).join(' | ');
+    want(got.cwp === 'Electrical 208V/ | Condenser Water In/Gate Valve | Condenser Water Out/Gate Valve', 'Condenser Water Pump');
+    await tplUnit('WH-518', 'Domestic Water Heater', 'Water Heater - Gas');
+    got.whGas = rowsFull() + ' / add row: ' + quickAddChoices().join(',');
+    want(got.whGas === 'Electrical 120V/Breaker//Controls/1 | Natural Gas/Ball Valve//Controls/1 | DW In/Ball Valve//Drain Only/1 | DHW Out/Ball Valve//Drain Only - Hot/1 / add row: ', 'Water Heater - Gas');
+    await hhwUnit('CT-518', 'Cooling Tower', {}, { voltage: '208V' });
+    got.tower = sources.map(s => s.energySource + '@' + (s.location || '')).join(' | ');
+    got.towerType = EQUIPMENT_AUTO_SOURCES['Cooling Tower'].map(s => s.energySource + '@' + (s.location || '')).join(' | ');
+    want(/Condenser Water In@ \| Condenser Water Out@Below Equipment$/.test(got.tower) && /Condenser Water Out@Below Equipment$/.test(got.towerType), 'Cooling Tower');
+    await tplUnit('HX-518', 'Heat Exchanger', 'Heat Exchanger - Steam', { 'hx-sheet': 'cancel' });
+    got.hxSteam = rowsFull();
+    want(got.hxSteam === 'LPS 10 PSI/Gate Valve//Temp Only - Hot/1 | Condensate Out/Gate Valve/Below Equipment/Temp Only - Hot/1 | HHW In/Ball Valve//Drain Only - Hot/1 | HHW Out/Ball Valve//Drain Only - Hot/1', 'Heat Exchanger - Steam');
+    got.hxDrainDefault = sources.filter(s => /^HHW/.test(s.energySource)).every(s => s._drainDefault);
+    want(got.hxDrainDefault, 'HHW drains are app defaults (a "None found" answer takes them back)');
+    await hhwUnit('DA-518', 'DA Tank', {});
+    got.da = sources.map(s => s.energySource).join(' | ');
+    want(got.da === 'LPS 10 PSI | Condensate Out', 'DA Tank unchanged');
+    await tplUnit('HX-518b', 'Heat Exchanger', 'Heat Exchanger - CHW/Glycol');
+    got.hxChw = rowsFull() + ' / add row: ' + quickAddChoices().join(',');
+    want(got.hxChw === 'CHW In/Ball Valve//Drain Only - CHW/1 | CHW Out/Ball Valve//Drain Only - CHW/1 / add row: Glycol CHW In/Out,Glycol HW In/Out', 'Heat Exchanger - CHW/Glycol');
+    let r = await hhwUnit('FR-518', 'Refrigerator', {});
+    got.fridge = rowsFull() + ' / ' + getTemplate();
+    want(got.fridge === 'Electrical 120V/Plug//Controls/1 / Refrigerator', 'Refrigerator');
+    r = await tplUnit('FR-518b', 'Refrigerator', 'Refrigerator');
+    want(!r.voltPrompt, 'Refrigerator: no voltage prompt');
+    r = await tplUnit('CST-518', 'Condensate Surge Tank', 'Condensate Return Unit');
+    got.surge = sources.map(s => s.energySource).join(' | ') + ' / prompt ' + r.voltPrompt + ' / expects ' + expectsElectricalSource(getEquipType(), getTemplate());
+    want(got.surge === 'Condensate In | Condensate Out / prompt false / expects false', 'Condensate Surge Tank');
+    r = await tplUnit('CRU-518', 'Condensate Return Unit', 'Condensate Return Unit');
+    got.cru = sources.map(s => s.energySource).join(' | ') + ' / prompt ' + r.voltPrompt;
+    want(got.cru === 'Electrical 208V | Condensate In | Condensate Out / prompt true', 'an electric Condensate Return Unit keeps its Electrical');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T519 — A template with no rows of its own replaces the last template's (A3)
+  async function t519_templateWithoutRowsReplacesTheLast() {
+    const N = 'T519 build 179 (gap A3): a template with no rows of its own — the plain Vacuum Pump, ATS - Generic — still takes the last template\'s untouched rows away, and the type\'s own standard rows come back (a Vacuum Pump\'s Electrical, no voltage prompt); a row the tech filled in stays, and stands for the type\'s row of its kind (no second Electrical); an ATS\'s two feeds from its voltage stay on ATS - Generic picked again';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await tplUnit('VP-519', 'Vacuum Pump', 'Medical Vacuum', { 'pump-inlet-valve': 'cancel' });
+    closeAllPrompts();
+    got.medical = sources.map(s => s.energySource).join(' | ');
+    let toasts = await withToasts(async () => { await withDialogs({ confirm: true }, async () => { pickTemplate('Vacuum Pump'); await sleep(0); }); });
+    got.plain = rowsFull() + ' / prompt ' + !!document.getElementById('templateVoltageOverlay') + ' / ' + toasts.join(' ~ ');
+    want(got.medical === 'Electrical 208V | Vacuum Air In' && /^Electrical 208V\/\/\/\/1 \/ prompt false/.test(got.plain), 'Medical Vacuum → Vacuum Pump');
+    // a filled-in row stays, and no second Electrical
+    await withDialogs({ confirm: true }, async () => { pickTemplate('Medical Vacuum'); await sleep(0); if (document.getElementById('templateConfirmOverlay')) confirmTemplateChange('Medical Vacuum'); await sleep(0); });
+    closeAllPrompts();
+    const e = sources.findIndex(s => /^Electrical/.test(s.energySource));
+    updateSource(e, 'deviceId', 'VP-DISC-1');
+    await withDialogs({ confirm: true }, async () => { pickTemplate('Vacuum Pump'); await sleep(0); if (document.getElementById('templateConfirmOverlay')) confirmTemplateChange('Vacuum Pump'); await sleep(0); });
+    got.kept = sources.map(s => s.energySource + '/' + (s.deviceId || '')).join(' | ');
+    want(got.kept === 'Electrical 208V/VP-DISC-1', 'the kept row stands for the type\'s Electrical');
+    // ATS feeds stay
+    await resetAppState(); fillFormNoSources('ATS-519');
+    document.getElementById('equipType').value = 'ATS';
+    await withDialogs({ confirm: true, choice: {} }, async () => { handleEquipTypeChange(); await sleep(0); applyVoltageChoice('480V'); await sleep(0); await sleep(0); });
+    closeAllPrompts();
+    const before = sources.length;
+    await withDialogs({ confirm: true, choice: {} }, async () => { pickTemplate('ATS - Generic'); await sleep(0); if (document.getElementById('templateConfirmOverlay')) confirmTemplateChange('ATS - Generic'); await sleep(0); });
+    got.ats = before + ' → ' + sources.map(s => s.energySource + '/' + s.deviceType).join(' | ') + ' / dialog ' + !!document.getElementById('voltageOverlay');
+    want(got.ats === '2 → Electrical 480V/Breaker | Electrical 480V/Breaker / dialog false', 'ATS feeds stay');
+    closeAllPrompts();
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T520 — A VFD unit is a drive, and a template's drive rows ask their feeder (A5)
+  async function t520_templateDrivesAskTheirFeeder() {
+    const N = 'T520 build 179 (gap A5): a VFD unit\'s Electrical row starts on Device VFD (a Transformer on the same template stays blank), and after its voltage one question offers to record the drive\'s feeder now ("Record it now" runs the feeder question as Device = VFD does; "Later" leaves it to Save & New, which still asks); an AHU template asks once, after its count (never before it, never over the count prompt), for all its drives; no question when every drive has its feeder';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    let r = await hhwUnit('VFD-520', 'VFD', { 'template-drives': 'later' }, { voltage: '480V' });
+    got.vfd = rowsFull() + ' / ' + (r.log.match(/\[CHOICE template-drives\][^/]*/g) || []).join(',');
+    want(/^Electrical 480V\/VFD\/\/(Meter)?\/1 \/ \[CHOICE template-drives\] This drive has no feeder recorded\s*$/.test(got.vfd), 'VFD type: Device VFD and the question');
+    got.saveStillAsks = drivesToAskAtSave().length;
+    want(got.saveStillAsks === 1, 'Later: Save & New still asks');
+    r = await hhwUnit('VFD-520b', 'VFD', { 'template-drives': 'record', 'feeder-panel': 'cancel' }, { voltage: '480V' });
+    got.record = (r.log.match(/\[CHOICE [^\]]*\]/g) || []).join(',');
+    want(/template-drives\],\[CHOICE /.test(got.record), 'Record it now goes on to the feeder question');
+    await hhwUnit('XF-520', 'Transformer', {}, { template: 'Electrical with Stored Energy', voltage: '480V' });
+    got.xfmr = rowsFull();
+    want(/^Electrical 480V\/\//.test(got.xfmr), 'a Transformer\'s row stays blank');
+    // AHU: the question after the count, once
+    const asked = [];
+    r = await hhwUnit('AHU-520', 'Air Handler', (o) => { asked.push(o.id + (document.getElementById('electricalCountOverlay') ? '+count' : '')); return o.defaultValue || 'cancel'; }, { template: 'AHU - HHW', voltage: '480V' });
+    got.beforeCount = asked.join(',');
+    const opened = !!document.getElementById('electricalCountOverlay');
+    await withDialogs({ choice: (o) => { asked.push(o.id); return 'later'; } }, async () => { promptForElectricalCount('AHU - HHW', 2); applyElectricalCountChoice(2); await sleep(0); });
+    got.afterCount = asked.join(',') + ' / ' + unitDrives(sources).length + ' drives';
+    want(got.beforeCount === '' && got.afterCount === 'template-drives / 2 drives', 'AHU: once, after the count');
+    // every drive fed → no question
+    asked.length = 0;
+    sources.filter(isDriveRow).forEach((s, k) => { s.deviceId = 'VFD-' + (k + 1); });
+    sources.push({ energySource: 'Electrical 480V', deviceType: 'Breaker', quantity: 1, location: 'Feeder: MCC-1 (VFD-1, VFD-2)', verification: 'Meter', duplicate: 'No', detail: '', collapsed: true });
+    await withDialogs({ choice: (o) => { asked.push(o.id); return 'later'; } }, async () => { await offerTemplateDrives(); });
+    got.fed = asked.join(',') || 'none';
+    want(got.fed === 'none', 'fed drives: no question');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T521 — the ATS, chiller and generator templates under another type (A6)
+  async function t521_typeTemplatesAskTheirTypesQuestions() {
+    const N = 'T521 build 179 (gap A6): ATS - Generic, Chiller and Emergency Generator picked under a typed type ask their type\'s voltage question and its follow-ups — two ATS feed breakers (Meter) and the Emergency / Normal question, the chiller\'s Electrical ahead of its CHW rows and "About this chiller", the generator\'s disconnect — and the template stays; "Keep Default (208V)" replaces Cancel on that question (Cancel left no template and no Electrical row), on the type path too; the ATS type is asked once';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const run = async (name, type, template, volt, choice) => {
+      await tplUnit(name, type, template, choice);
+      const dialog = !!document.getElementById('voltageOverlay');
+      const buttons = dialog ? [...document.querySelectorAll('#voltageOverlay button')].map(b => b.textContent.trim()).join(',') : '';
+      const r = await withDialogs({ confirm: true, choice: choice || {} }, async () => { if (dialog) applyVoltageChoice(volt); await sleep(0); await sleep(0); });
+      closeAllPrompts();
+      return { dialog, buttons, log: r.log.join(' / ') };
+    };
+    let r = await run('ATS-521', 'custom:Transfer Switch 2', 'ATS - Generic', '480V', { 'ats-emergency-feed': 'cancel' });
+    got.ats = r.dialog + ' / ' + sources.map(s => s.energySource + '/' + s.deviceType + '/' + s.verification).join(' | ') + ' / ' + getTemplate() + ' / ' + /ats-emergency-feed/.test(r.log);
+    want(got.ats === 'true / Electrical 480V/Breaker/Meter | Electrical 480V/Breaker/Meter / ATS - Generic / true', 'ATS - Generic');
+    got.keepDefault = r.buttons;
+    want(r.buttons === '208V,480V,Other voltage…,Keep Default (208V),Cancel', 'Keep Default and Cancel');
+    // the review: the ATS feeds go with ATS - Generic when the tech picks Emergency Generator, which asks its own question
+    await withDialogs({ confirm: true, choice: {} }, async () => { pickTemplate('Emergency Generator'); await sleep(0); if (document.getElementById('templateConfirmOverlay')) confirmTemplateChange('Emergency Generator'); await sleep(0); });
+    got.swap = !!document.getElementById('voltageOverlay') + ' / ' + sources.map(s => s.energySource + '/' + s.deviceType).join(' | ');
+    want(got.swap === 'true / Kinetic/Rotating', 'another template: the last one\'s voltage rows go, its own question asked');
+    closeAllPrompts();
+    // Cancel takes the pick back: the template under a typed type, the type on the type path
+    await tplUnit('CH-521c', 'custom:Chiller 3', 'Chiller', { 'chiller-sheet': 'cancel' });
+    await withDialogs({ confirm: true, choice: {} }, async () => { cancelVoltageDialog(); await sleep(0); });
+    got.cancelTpl = (getTemplate() || 'no template') + ' / ' + (sources.length ? sources.map(s => s.energySource).join(' | ') : 'no rows');
+    await resetAppState(); fillFormNoSources('GEN-521c');
+    document.getElementById('equipType').value = 'Generator';
+    await withDialogs({ confirm: true, choice: {} }, async () => { handleEquipTypeChange(); await sleep(0); cancelVoltageDialog(); await sleep(0); });
+    got.cancelType = (getEquipType() || 'no type') + ' / ' + (getTemplate() || 'no template') + ' / ' + sources.length + ' rows';
+    want(got.cancelTpl === 'no template / no rows' && got.cancelType === 'no type / no template / 0 rows', 'Cancel');
+    r = await run('CH-521', 'custom:Chiller 2', 'Chiller', '480V', { 'chiller-sheet': 'cancel' });
+    got.chiller = r.dialog + ' / ' + sources.map(s => s.energySource).join(' | ') + ' / ' + getTemplate() + ' / ' + /chiller-sheet/.test(r.log);
+    // its Electrical ahead of the CHW rows (the sheet's capacitor answer may add its row between)
+    want(/^true \/ Electrical 480V \|.*CHW In \| CHW Out \/ Chiller \/ true$/.test(got.chiller), 'Chiller');
+    r = await run('GEN-521', 'custom:Genset', 'Emergency Generator', '208V');
+    got.gen = r.dialog + ' / ' + sources.map(s => s.energySource + '/' + s.deviceType).join(' | ') + ' / ' + getTemplate();
+    want(got.gen === 'true / Kinetic/Rotating | Electrical 208V/Disconnect / Emergency Generator', 'Emergency Generator');
+    // the type path: Keep Default puts the template and a 208V row on
+    await resetAppState(); fillFormNoSources('GEN-521b');
+    document.getElementById('equipType').value = 'Generator';
+    await withDialogs({ confirm: true, choice: {} }, async () => { handleEquipTypeChange(); await sleep(0); [...document.querySelectorAll('#voltageOverlay button')].find(b => /Keep Default/.test(b.textContent)).click(); await sleep(0); });
+    got.typeKeep = getTemplate() + ' / ' + sources.map(s => s.energySource).join(' | ') + ' / ' + !!document.getElementById('voltageOverlay');
+    want(got.typeKeep === 'Emergency Generator / Kinetic | Electrical 208V / false', 'type path Keep Default');
+    // the ATS type: once
+    const seen = [];
+    await resetAppState(); fillFormNoSources('ATS-521b');
+    document.getElementById('equipType').value = 'ATS';
+    await withDialogs({ confirm: true, choice: {} }, async () => { handleEquipTypeChange(); await sleep(0); seen.push(!!document.getElementById('voltageOverlay')); applyVoltageChoice('480V'); await sleep(0); seen.push(!!document.getElementById('voltageOverlay')); });
+    got.atsType = seen.join(',') + ' / ' + sources.length;
+    want(got.atsType === 'true,false / 2', 'ATS type asked once');
+    closeAllPrompts();
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T522 — the arc flash label on Switchgear and UPS (B2)
+  async function t522_arcFlashOnSwitchgearAndUps() {
+    const N = 'T522 build 179 (gap B2): the arc flash label is asked on Switchgear and UPS units (by type, and by their templates), and on an Emergency Generator template under a typed type — the photo slot, Save & New\'s question and the sheet\'s column 13 — and still not on a Battery Charger, a VFD or a pump';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    got.asked = [['Switchgear', 'Switchgear'], ['UPS', 'UPS'], ['Transformer', 'Standard Electrical'], ['Generator', 'Emergency Generator'], ['Genset', 'Emergency Generator'],
+      ['Battery Charger', 'Standard Electrical'], ['VFD', 'Electrical with Stored Energy'], ['CHW Pump', 'Chilled Water Pump']].map(([t, p]) => t + ':' + arcFlashAskedFor(t, p)).join(',');
+    want(got.asked === 'Switchgear:true,UPS:true,Transformer:true,Generator:true,Genset:true,Battery Charger:false,VFD:false,CHW Pump:false', 'who is asked');
+    await hhwUnit('SWGR-522', 'Switchgear', {}, { voltage: '480V' });
+    syncArcFlashSlot();
+    got.slot = document.getElementById('arcFlashSlot').style.display !== 'none';
+    const r = await withDialogs({ choice: { 'arc-flash-save': 'none' } }, async () => askBeforeSave());
+    got.save = /\[CHOICE arc-flash-save\]/.test(r.log.join(' ')) + ' / ' + !!unitAnswers.arcFlashNone;
+    got.cell = arcFlashSheetValue(formEntryLike(), '');
+    want(got.slot && got.save === 'true / true' && got.cell === 'No label', 'Switchgear: slot, question, sheet');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T523 — Cable keeps the valve checks (C4); a chemical line's Gauge / Visual / Controls
+  async function t523_cableAndChemicalChecks() {
+    const N = 'T523 build 179 (gap C4 + wilkins 2026-11-26): a Cable on a water row offers the water checks and the Gauge / Drain / None chips, and simplified mode fills a blank one with the water code, never Controls (a fuel line\'s Cable still offers Controls); Chemical In / Out offer Controls beside Visual, and their card shows Gauge / Visual / Controls / More… — Gauge saves GaugeOnly, one pick per row — while a blank chemical line is never filled in by itself';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    got.cableHhw = getFilteredVerifications('Cable', 'HHW In').join(',');
+    got.cableFuel = getFilteredVerifications('Cable', 'Fuel Oil In').join(',');
+    want(got.cableHhw === 'Temp Only - Hot,Gauge/Drain - Hot,GaugeOnly - Hot,Drain Only - Hot' && /Controls/.test(got.cableFuel), 'Cable lists');
+    await resetAppState(); fillFormNoSources('CAB-523');
+    sources = [{ energySource: 'HHW In', deviceType: 'Cable', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', collapsed: false },
+               { energySource: 'Chemical In', deviceType: 'Ball Valve', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', collapsed: false },
+               { energySource: 'Chemical Out', deviceType: '', quantity: 1, location: '', verification: 'Visual', duplicate: 'No', detail: '', collapsed: false }];
+    renderSources();
+    applySimpleVerifDefaults();
+    got.filled = sources.map(s => s.verification || '(blank)').join(' | ');
+    want(got.filled === 'Temp Only - Hot | (blank) | Visual', 'simplified fill');
+    renderSources();
+    got.cableChips = [...document.querySelectorAll('#sv_0 .sv-chip')].map(b => b.dataset.sv).join(',');
+    got.chemChips = [...document.querySelectorAll('#sv_2 .sv-extra')].map(b => b.textContent.trim()).join(',');
+    want(got.cableChips === 'gauge,drain,none' && got.chemChips === 'Gauge,✓ Visual,Controls', 'chips');
+    document.querySelector('#sv_2 .sv-extra[data-v="GaugeOnly"]').click();
+    got.gauge = sources[2].verification + ' / ' + document.querySelector('#verGroup_2 .sv-saves').textContent;
+    document.querySelector('#sv_1 .sv-extra[data-v="Controls"]').click();
+    got.controls = sources[1].verification;
+    want(got.gauge === 'GaugeOnly / Saves as GaugeOnly' && got.controls === 'Controls', 'taps');
+    got.chwDrain = getFilteredVerifications('Ball Valve', 'CHW In').join(',');
+    want(/Drain Only - CHW/.test(got.chwDrain) && !/Drain Only(,|$)/.test(got.chwDrain), 'a CHW row\'s classic list offers the Drain chip\'s code');
+    got.chemList = getFilteredVerifications('', 'Chemical Out').join(',');
+    want(/GaugeOnly/.test(got.chemList) && /Visual,Controls$/.test(got.chemList), 'the chemical list');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -20008,7 +20260,9 @@
     t500_aDriveLockedOutUpstream, t501_aDriveAtAPadlockedBreaker, t502_theDrainQuestionFollowsTheFacility, t503_tiedToSeveralPiecesOfEquipment, t504_ahuSteamChwHhwRetired,
     t505_answeredListsFoldAndShortWords, t506_gaugeDrainOrNone, t507_stepperButtonsBoxAndColumns,
     t508_aboutThisChillerSheet, t509_chillerBoxFollowsAnswers, t510_chillerExportShape, t511_chillerPumpsNext, t512_stillToCapture,
-    t513_aboutThisPump, t514_aboutThisHeatExchanger, t515_oneSystem, t516_systemPickedDirectly, t517_systemSheetContract];
+    t513_aboutThisPump, t514_aboutThisHeatExchanger, t515_oneSystem, t516_systemPickedDirectly, t517_systemSheetContract,
+    t518_templateDefaults179, t519_templateWithoutRowsReplacesTheLast, t520_templateDrivesAskTheirFeeder, t521_typeTemplatesAskTheirTypesQuestions,
+    t522_arcFlashOnSwitchgearAndUps, t523_cableAndChemicalChecks];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
