@@ -603,7 +603,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b176</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b177</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1338,7 +1338,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 176;
+const APP_BUILD = 177;
 
 // ============================================================================
 // DATA
@@ -5952,6 +5952,8 @@ function changeLaterAutoNotes(entryLike) {
   const inletVented = () => (entryLike.sources || []).some(s => vacPumpInletRow(entryLike.template, s)
     && DRAIN_FOUND.includes((s.drainLocation || {}).where) && sourceTakesDrainLocation(s, fac));
   if (k.vacPump && a.reliefJoint === 'No' && !inletVented()) notes.push(RELIEF_JOINT_NOTE);
+  // Build 177: whether the procedure needs the drive's DC-bus steps is the office's to find out
+  if (k.chiller && a.chillerDrive === 'Can\'t tell') notes.push(CHILLER_DRIVE_NOTE);
   // The point is named for the medium since build 122 ("No purge point found…").
   // Every "None found" that goes on the sheet: loto-web prints its stop line
   // whatever the Device, so one held on a pump row writes it too (build 123
@@ -6169,7 +6171,17 @@ function buildUnitQuestionsHtml(k, template, auto) {
         <input type="checkbox" class="uq-backfeed painted-check" id="uq_backfeed_${n}" ${got.includes(c) ? 'checked' : ''}
           onchange="toggleUnitBackfeed(${jsArg(c)},this.checked)"> ${c}</label>`)}`, 'tick all that apply'));
   }
-  if (k.chiller) parts.push(group('Capacitor bank?', pick('capacitors', DATA.yesNoCantTell)));
+  if (k.chiller) {   // build 177: the sheet's answers, changeable here
+    parts.push(group('Capacitor bank?', pick('capacitors', DATA.yesNoCantTell), 'power factor or harmonic filter, not the drive’s own'));
+    parts.push(group('Drive on this chiller?', pick('chillerDrive', DATA.yesNoCantTell, '', CHILLER_DRIVE_WORDS), 'Yes makes its Electrical row a VFD'));
+    parts.push(group('Water-cooled or air-cooled?', pick('chillerCooling', CHILLER_COOLING), 'water-cooled adds Condenser Water In and Out'));
+    parts.push(group('Its own pumps?', pick('chillerPumps', CHILLER_PUMPS), 'they run only with this chiller'));
+    if (a.chillerPumps === 'Its own') {
+      const pumpBox = (key, placeholder) => text(key, placeholder, 'autocomplete="off" onchange="setChillerPumpName(\'' + key + '\',this.value)"');
+      parts.push(group('Chilled water pump', pumpBox('chillerChwPump', 'e.g. CHWP-1'), 'goes into Tied To'));
+      if (a.chillerCooling !== 'Air-cooled') parts.push(group('Condenser water pump', pumpBox('chillerCwPump', 'e.g. CWP-1'), 'goes into Tied To'));
+    }
+  }
   if (k.plantBoiler) {   // build 169 (wilkins: "Ask in the field"): the light-off SOP's purge
     const typed = String(a.purgeSeconds == null ? '' : a.purgeSeconds).trim();
     parts.push(group('Burner purge (seconds)', html`<input type="text" id="uq_purgeSeconds" inputmode="numeric" maxlength="4"
@@ -6290,6 +6302,13 @@ function setUnitAnswer(key, value) {
         verification: '', quantity: 1, duplicate: 'No', detail: '', collapsed: true, auto: true, noPhoto: true });
       renderSources();
     }
+  }
+  // About this chiller (build 177): the drive, the condenser water rows and
+  // Tied To follow the box as they follow the sheet
+  if (/^chiller(Drive|Cooling|Pumps)$/.test(key) && unitKinds(getEquipType(), getTemplate(), sources).chiller) {
+    if (key === 'chillerDrive' && applyChillerDrive(value)) renderSources();
+    if (key === 'chillerCooling' && applyChillerCooling(value)) renderSources();
+    if (key !== 'chillerDrive') syncChillerTiedTo();
   }
   // Redrawn only when the pick changes the section (an Other box, the biohazard
   // warning, a change-later note); otherwise the select just used stays as it
@@ -6595,31 +6614,324 @@ function addAfterElectrical(row) {
   sources.splice(at + 1, 0, row);
   rebindSourcePhotos(prev);
 }
-// Chiller: loto-web adds its own capacitor row unless the unit says it has no
-// capacitor bank, so the answer travels on the sheet; the app's row follows it.
-// No answer (the box closed) keeps the row, as before build 118.
-function askChillerCapacitors() {
+// ---- About this chiller (build 177, wilkins' Option B, 2026-11-26) -----------
+// wilkins: prompts "for fieldgoing personnel who may not be as familiar with
+// all of these equipment types". One sheet after a chiller's voltage asks four
+// things, each with what to look for: a drive on the chiller, a separate
+// capacitor bank (build 118's question, which a tech could take for the drive's
+// own capacitors), water- or air-cooled, and pumps of its own. Each answer
+// writes what it stands for:
+//  - a drive makes the chiller's Electrical row a VFD (an existing Device):
+//    loto-web adds the drive's DC-bus row and keeps the Chiller template's
+//    capacitor steps while that row prints (it drops a drive's capacitors at a
+//    site whose "VFD stored energy" is off, by design);
+//  - water-cooled adds Condenser Water In and Out (the template adds CHW only);
+//  - its own pumps go into Tied To, "Shut Down" (wilkins: the chiller's LOTO
+//    shuts its own pumps down first, and each pump's shuts the chiller down
+//    first); the pumps then come up after Save & New and on the Saved list.
+// The answers stay on the device (no sheet column, no entries.json key), so
+// the unit's box can change them later; "Can't tell" on the drive writes a
+// change-later note for the office. Capacitor bank travels as before (U3).
+// No answer to the capacitor question (Skip, or the box closed) keeps the
+// capacitor row, as before build 118.
+const CHILLER_DRIVE_WORDS = { 'Yes': 'Yes, a drive', 'No': 'No, a starter' };
+const CHILLER_COOLING = ['Water-cooled', 'Air-cooled', 'Can\'t tell'];
+const CHILLER_PUMPS = ['Its own', 'Shared header', 'Can\'t tell'];
+const CHILLER_DRIVE_NOTE = 'Can\'t tell whether this chiller has a drive';
+const CHILLER_CHW_PUMP_TYPE = 'CHW Pump', CHILLER_CW_PUMP_TYPE = 'Condenser Water Pump';
+const CHILLER_SHEET_KEYS = ['capacitors', 'chillerDrive', 'chillerCooling', 'chillerPumps', 'chillerChwPump', 'chillerCwPump'];
+const isCondenserWaterRow = s => !!s && /^Condenser Water\b/.test(s.energySource || '');
+// A name as two names are compared: trimmed, one space, any case
+function normPumpName(n) { return String(n == null ? '' : n).trim().replace(/\s+/g, ' ').toLowerCase(); }
+function samePumpName(x, y) { return normPumpName(x) !== '' && normPumpName(x) === normPumpName(y); }
+// The pumps a chiller's answers name: [{ name, type }] \u2014 the condenser water
+// ones only while it isn't air-cooled, none unless they are its own
+function chillerPumpList(a) {
+  a = a || {};
+  if (a.chillerPumps !== 'Its own') return [];
+  const out = [];
+  const add = (text, type) => splitTiedNames(text).forEach(name => { if (!out.some(p => samePumpName(p.name, name))) out.push({ name, type }); });
+  add(a.chillerChwPump, CHILLER_CHW_PUMP_TYPE);
+  if (a.chillerCooling !== 'Air-cooled') add(a.chillerCwPump, CHILLER_CW_PUMP_TYPE);
+  return out;
+}
+// The chiller's own Electrical row: the one its voltage added, else the template's
+function chillerElectricalRow() {
+  return sources.find(s => s && s._voltagePick && /^Electrical\b/.test(s.energySource || ''))
+    || sources.find(isAutoElectricalRow) || null;
+}
+// Yes: that row becomes a VFD, unless it is a drive already (a tech's own pick,
+// "VFD - Upstream Breaker" and the like, stays). Any other answer puts back an
+// app-made VFD nobody has touched since; one with a tag typed stays, and Save
+// & New notes the mismatch.
+function applyChillerDrive(value) {
+  const row = chillerElectricalRow();
+  if (!row) return false;
+  if (value === 'Yes') {
+    if (isDriveDevice(row.deviceType)) return false;
+    row._chillerDriveWas = row.deviceType || '';
+    row.deviceType = 'VFD';
+    row._chillerDrive = true;
+    return true;
+  }
+  if (row._chillerDrive && row.deviceType === 'VFD' && !row.userEdited) {
+    row.deviceType = row._chillerDriveWas || 'Disconnect';
+    delete row._chillerDrive;
+    delete row._chillerDriveWas;
+    return true;
+  }
+  return false;
+}
+// Water-cooled: Condenser Water In and Out after the CHW rows (butterfly valves,
+// as the template's CHW ones), unless the unit has a condenser water row
+// already. Any other answer takes away the app's two while untouched.
+function applyChillerCooling(value) {
+  if (value === 'Water-cooled') {
+    if (sources.some(isCondenserWaterRow)) return false;
+    const row = name => noteDefaultDrain({ energySource: name, deviceType: 'Butterfly Valve', quantity: 1, location: '', verification: 'Gauge/Drain',
+      duplicate: 'No', detail: '', collapsed: true, auto: true, _chillerCw: true });
+    const rows = [row('Condenser Water In'), row('Condenser Water Out')];
+    let at = -1;
+    sources.forEach((s, i) => { if (s && /^CHW\b/.test(s.energySource || '')) at = i; });
+    if (at < 0 || at === sources.length - 1) { sources.push(...rows); return true; }
+    const prev = sources.slice();
+    sources.splice(at + 1, 0, ...rows);
+    rebindSourcePhotos(prev);
+    return true;
+  }
+  let gone = false;
+  while (removeUntouchedAutoRow(s => !!s._chillerCw)) gone = true;
+  return gone;
+}
+// Tied To follows the pump answers: the names the app put there last
+// (chillerTiedNames) that the answers no longer give come out, new ones go in
+// (no twice, any case). A name the tech typed is never taken out. A blank
+// action becomes "Shut Down" (chillerTiedSet), and goes blank again when the
+// app's names are all gone and it still says Shut Down.
+function syncChillerTiedTo() {
+  const a = unitAnswers;
+  const want = chillerPumpList(a).map(p => p.name);
+  const had = splitTiedNames(a.chillerTiedNames);
+  const before = tiedToNameValue();
+  let names = splitTiedNames(before).filter(n => !had.some(h => samePumpName(h, n)) || want.some(w => samePumpName(w, n)));
+  const added = [];
+  want.forEach(w => { if (!names.some(n => samePumpName(n, w))) { names.push(w); added.push(w); } });
+  const mine = had.filter(h => want.some(w => samePumpName(w, h)) && names.some(n => samePumpName(n, h))).concat(added);
+  if (mine.length) a.chillerTiedNames = mine.join(TIED_NAME_SEP); else delete a.chillerTiedNames;
+  const after = names.join(TIED_NAME_SEP);
+  if (after !== before) setTiedToNames(after);
+  const sel = document.getElementById('equipTiedTo'), group = document.getElementById('tiedToNameGroup');
+  if (!sel) return;
+  if (names.length && !sel.value) { sel.value = 'Shut Down'; a.chillerTiedSet = true; }
+  if (!names.length && a.chillerTiedSet) { if (sel.value === 'Shut Down') sel.value = ''; delete a.chillerTiedSet; }
+  if (group) group.style.display = sel.value ? 'flex' : 'none';
+}
+// A pump name box under "Its own pumps?" (typed: setUnitText; done: Tied To follows)
+function setChillerPumpName(key, value) {
+  const t = splitTiedNames(value).join(TIED_NAME_SEP);
+  if (t) unitAnswers[key] = t; else delete unitAnswers[key];
+  syncChillerTiedTo();
+  autoSaveCurrent();
+}
+// The sheet. Resolves 'done' or 'cancel' (Skip, or the box closed). The suite
+// answers it through window.__askChoiceAuto, id 'chiller-sheet': an object of
+// answers (CHILLER_SHEET_KEYS), or 'cancel'.
+let _chillerSheet = null;   // { answers, resolve } while it is open
+function askChillerSheet() {
+  const start = {};
+  CHILLER_SHEET_KEYS.forEach(k => { start[k] = unitAnswers[k] || ''; });
+  if (typeof window.__askChoiceAuto === 'function') {
+    let v;
+    try { v = window.__askChoiceAuto({ id: 'chiller-sheet', title: 'About this chiller', answers: Object.assign({}, start) }); } catch (e) { v = 'cancel'; }
+    return Promise.resolve(v).then(x => applyChillerSheet(x && typeof x === 'object' ? Object.assign(start, x) : null));
+  }
+  return new Promise(resolve => {
+    closeChillerSheet();
+    _chillerSheet = { answers: start, resolve };
+    const overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+    overlay.id = 'chillerSheetOverlay';
+    overlay.style.display = 'flex';
+    overlay.onclick = (e) => { if (e.target === overlay) finishChillerSheet(false); };   // tap outside = Skip
+    document.body.appendChild(overlay);
+    paintChillerSheet();
+  });
+}
+function closeChillerSheet() {
+  const o = document.getElementById('chillerSheetOverlay');
+  if (o) o.remove();
+  _chillerSheet = null;
+}
+function paintChillerSheet() {
+  const ov = document.getElementById('chillerSheetOverlay');
+  if (!ov || !_chillerSheet) return;
+  const a = _chillerSheet.answers;
+  const dim = 'font-size:12px;color:var(--text-dim);line-height:1.4;';
+  const row = (key, q, hint, list, words, last) => html`<div style="padding:12px 0;${last ? '' : 'border-bottom:1px solid var(--border);'}">
+      <div style="font-size:15px;font-weight:700;margin-bottom:3px;">${q}</div>
+      <div style="${dim}margin-bottom:8px;">${hint}</div>
+      <div class="qp-row" role="group" aria-label="${q}">${list.map((v, n) => html`<button type="button" id="cs_${key}_${n}"
+        class="qp-chip${a[key] === v ? ' on' : ''}" aria-pressed="${a[key] === v ? 'true' : 'false'}"
+        onclick="pickChillerSheet(${jsArg(key)},${jsArg(v)})">${a[key] === v ? '\u2713 ' : ''}${(words && words[v]) || v.replace('\'', '\u2019')}</button>`)}</div>
+    </div>`;
+  const box = (key, label, placeholder) => html`<div style="flex:1 1 180px;min-width:0;">
+      <label for="cs_${key}" style="display:block;font-size:12px;font-weight:600;color:var(--text-dim);margin:0 0 4px;text-transform:none;letter-spacing:0;">${label}</label>
+      <input type="text" id="cs_${key}" value="${a[key] || ''}" placeholder="${placeholder}" autocomplete="off" autocapitalize="characters"
+        oninput="typeChillerSheet(${jsArg(key)},this.value)" style="width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:16px;"></div>`;
+  const own = a.chillerPumps === 'Its own', air = a.chillerCooling === 'Air-cooled';
+  ov.innerHTML = html`<div class="dialog" role="dialog" aria-labelledby="csTitle" style="max-width:560px;width:100%;max-height:90vh;overflow-y:auto;">
+      <h3 id="csTitle" style="margin:0 0 4px 0;color:var(--accent);">About this chiller</h3>
+      <div style="${dim}font-size:13px;">Tap what you see. You can change any answer later on the unit.</div>
+      ${row('chillerDrive', 'Drive on this chiller?', 'Marked VSD, AFD or VFD on the starter\u2019s label, or a drive cabinet on or beside the chiller. No drive = a starter (solid-state or wye-delta).', DATA.yesNoCantTell, CHILLER_DRIVE_WORDS)}
+      ${row('capacitors', 'Separate capacitor bank?', 'Power factor or harmonic filter capacitors, in their own section or cabinet. Not the drive\u2019s own.', DATA.yesNoCantTell)}
+      ${row('chillerCooling', 'Water-cooled or air-cooled?', 'Water-cooled: condenser water pipes run to a cooling tower. Adds Condenser Water In and Out.', CHILLER_COOLING)}
+      ${row('chillerPumps', 'Its own pumps?', 'Its own = they run only with this chiller. Shared = they feed a header serving several chillers.', CHILLER_PUMPS, null, true)}
+      ${own ? html`<div id="csPumpNames" style="padding:12px;margin-bottom:4px;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;">
+        <div style="display:flex;flex-wrap:wrap;gap:12px;">
+          ${box('chillerChwPump', 'Chilled water pump', 'e.g. CHWP-1')}
+          ${air ? '' : box('chillerCwPump', 'Condenser water pump', 'e.g. CWP-1')}
+        </div>
+        <div style="${dim}margin-top:8px;">This chiller\u2019s procedure shuts them down first, and each pump\u2019s shuts the chiller down first. Two pumps in one box? Put ; between the names.</div>
+      </div>` : ''}
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:12px;">
+        <button type="button" id="csSkip" class="btn btn-outline" onclick="finishChillerSheet(false)" style="padding:11px 16px;font-size:14px;">Skip for now</button>
+        <button type="button" id="csDone" class="btn btn-primary" onclick="finishChillerSheet(true)" style="padding:11px 22px;font-size:14px;">Done</button>
+      </div>
+    </div>`;
+}
+// A chip: tapped again, it comes off
+function pickChillerSheet(key, value) {
+  if (!_chillerSheet) return;
+  const a = _chillerSheet.answers;
+  a[key] = a[key] === value ? '' : value;
+  paintChillerSheet();
+}
+function typeChillerSheet(key, value) { if (_chillerSheet) _chillerSheet.answers[key] = value; }
+function finishChillerSheet(done) {
+  const s = _chillerSheet;
+  closeChillerSheet();
+  if (s) s.resolve(applyChillerSheet(done ? s.answers : null));
+}
+// The sheet's answers (null = skipped) onto the form
+function applyChillerSheet(ans) {
+  const cap = ans ? ans.capacitors : '';
+  if (DATA.yesNoCantTell.includes(cap)) unitAnswers.capacitors = cap;
+  if (cap !== 'No' && !sources.some(s => s && s.energySource === 'Stored Electrical Energy')) {
+    addAfterElectrical({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank',
+      verification: '', quantity: 1, duplicate: 'No', detail: '', collapsed: true, auto: true, noPhoto: true, _voltagePick: true });
+  }
+  if (ans) {
+    const put = (k, list) => { const v = String(ans[k] || ''); if (list.includes(v)) unitAnswers[k] = v; else delete unitAnswers[k]; };
+    put('chillerDrive', DATA.yesNoCantTell);
+    put('chillerCooling', CHILLER_COOLING);
+    put('chillerPumps', CHILLER_PUMPS);
+    ['chillerChwPump', 'chillerCwPump'].forEach(k => {
+      const t = splitTiedNames(ans[k]).join(TIED_NAME_SEP);
+      if (t) unitAnswers[k] = t; else delete unitAnswers[k];
+    });
+    applyChillerDrive(unitAnswers.chillerDrive);
+    applyChillerCooling(unitAnswers.chillerCooling);
+    syncChillerTiedTo();
+  }
+  renderSources();
+  renderUnitQuestions(true);
+  autoSaveCurrent();
+  return ans ? 'done' : 'cancel';
+}
+
+// ---- The chiller's pumps next (build 177) ------------------------------------
+// After Save & New on a chiller with pumps of its own, its pumps not yet saved
+// are offered: Start opens one with its type, the chiller's building and room,
+// and Tied To "Shut Down" the chiller. Later leaves them on the Saved list's
+// "Still to capture", until a unit by that name is saved at the facility or the
+// tech dismisses it. A dismissal is kept on this device only
+// (loto_pumps_dismissed), never on the saved chiller: saving it again would drop
+// its exported stamps.
+const PUMPS_DISMISSED_KEY = 'loto_pumps_dismissed';
+function chillerPumpsOf(entry) {
+  if (!entry || !unitKinds(entry.equipType, entry.template, entry.sources).chiller) return [];
+  return chillerPumpList(entry.unitAnswers).filter(p => !samePumpName(p.name, entry.equipName));
+}
+function dismissedPumpKeys() {
+  try { const v = JSON.parse(localStorage.getItem(PUMPS_DISMISSED_KEY) || '[]'); return new Set(Array.isArray(v) ? v : []); }
+  catch (e) { return new Set(); }
+}
+function pumpKey(chillerId, name) { return String(normEntryId(chillerId)) + '|' + normPumpName(name); }
+function pumpsStillToCapture(chiller) {
+  const pumps = chillerPumpsOf(chiller);
+  if (!pumps.length) return [];
+  const code = entryHospitalCode(chiller);
+  const saved = new Set(savedEquipment.filter(e => e && entryHospitalCode(e) === code).map(e => normPumpName(e.equipName)));
+  const gone = dismissedPumpKeys();
+  return pumps.filter(p => !saved.has(normPumpName(p.name)) && !gone.has(pumpKey(chiller.id, p.name)));
+}
+function dismissChillerPump(chillerId, name) {
+  const keys = dismissedPumpKeys();
+  keys.add(pumpKey(chillerId, name));
+  try { localStorage.setItem(PUMPS_DISMISSED_KEY, JSON.stringify([...keys])); } catch (e) {}
+  renderSavedPanel();
+}
+// Asked once a chiller is saved (performSaveAndNew), on the blank next unit
+function offerChillerPumps(entry) {
+  const left = pumpsStillToCapture(entry);
+  if (!left.length) return Promise.resolve(null);
+  const ch = entry.equipName || 'the chiller';
   return askChoice({
-    id: 'chiller-capacitors', defaultValue: 'Yes',
-    title: 'Capacitor bank?',
-    html: html`Does this chiller have a capacitor bank? loto-web prints its discharge steps only on a chiller that has one.`,
-    choices: [{ value: 'Yes', label: 'Yes', primary: true }, { value: 'No', label: 'No' }, { value: 'Can\'t tell', label: 'Can\u2019t tell' }]
+    id: 'chiller-pumps-next', defaultValue: 'later',
+    title: html`Capture ${ch}\u2019s pumps next?`,
+    html: html`${ch} has its own pumps. Start one now: it opens with its type, building, room and Tied To filled in. Later keeps them under Still to capture on the Saved list.`,
+    choices: left.map((p, n) => ({ value: 'pump' + n, label: p.name + ' \u00b7 ' + p.type, primary: true }))
+      .concat([{ value: 'later', label: 'Later' }])
   }).then(v => {
-    if (DATA.yesNoCantTell.includes(v)) unitAnswers.capacitors = v;
-    const hasRow = sources.some(s => s && s.energySource === 'Stored Electrical Energy');
-    if (v !== 'No' && !hasRow) {
-      addAfterElectrical({ energySource: 'Stored Electrical Energy', deviceType: 'Capacitor', location: 'At Capacitor Bank',
-        verification: '', quantity: 1, duplicate: 'No', detail: '', collapsed: true, auto: true, noPhoto: true, _voltagePick: true });
-    }
-    renderSources();
-    renderUnitQuestions(true);
-    autoSaveCurrent();
+    const m = /^pump(\d+)$/.exec(String(v));
+    if (m && left[+m[1]]) startChillerPump(entry.id, left[+m[1]].name);
     return v;
   });
 }
+// A new unit for one of a saved chiller's pumps. Never over a unit in progress.
+function startChillerPump(chillerId, name) {
+  const ch = savedEquipment.find(e => e && sameEntryId(e.id, chillerId));
+  const pump = ch ? chillerPumpsOf(ch).find(p => samePumpName(p.name, name)) : null;
+  if (!pump) { showToast('That pump is no longer on the chiller', true); return false; }
+  if (formHasData()) { showToast('Save or discard the unit on the form first, then tap Start again.', true); return false; }
+  if (ch.hospitalCode && ch.hospitalCode !== getHospitalCode()) {
+    showToast((ch.equipName || 'The chiller') + ' is at ' + facilityLabel(ch.hospitalCode) + ' \u2014 switch the facility first.', true);
+    return false;
+  }
+  const typeSel = document.getElementById('equipType');
+  if (!typeSel || ![...typeSel.options].some(o => o.value === pump.type)) { showToast('The type list has no ' + pump.type, true); return false; }
+  if (!tabMayWrite()) return false;
+  startNextUnit({ building: ch.equipBuilding || '', room: ch.equipRoom || '' });
+  const nameBox = document.getElementById('equipName');
+  nameBox.value = pump.name;
+  nameBox.dispatchEvent(new Event('input', { bubbles: true }));
+  typeSel.value = pump.type;
+  handleEquipTypeChange();   // its template and voltage questions, as when the tech picks the type
+  document.getElementById('equipTiedTo').value = 'Shut Down';
+  document.getElementById('tiedToNameGroup').style.display = 'flex';
+  setTiedToNames(ch.equipName || '');
+  autoSaveCurrent();
+  showToast('Started ' + pump.name + ' \u2014 Tied To: Shut Down ' + (ch.equipName || 'the chiller'));
+  return true;
+}
+// The Saved list's box: each chiller's pumps not yet saved, for the facility in view
+function stillToCaptureHtml(inView) {
+  const rows = [];
+  savedEquipment.forEach((e, i) => { if (inView(i)) pumpsStillToCapture(e).forEach(p => rows.push({ ch: e, p })); });
+  if (!rows.length) return '';
+  return html`<div id="stillToCapture" style="padding:12px 14px;margin:0 0 10px;border:1.5px solid var(--accent);border-radius:10px;background:var(--input-bg);">
+    <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:6px;">Still to capture</div>
+    ${rows.map(({ ch, p }) => html`<div class="capture-row" style="display:flex;align-items:center;gap:10px;padding:6px 0;flex-wrap:wrap;">
+      <div style="flex:1 1 220px;min-width:0;"><div class="capture-name" style="font-weight:600;">${p.name} \u00b7 ${p.type}</div>
+        <div style="font-size:12px;color:var(--text-dim);">${ch.equipName || 'A chiller'}\u2019s own pump \u00b7 clears once a unit named ${p.name} is saved</div></div>
+      <button type="button" class="btn btn-sm btn-outline" onclick="dismissChillerPump(${jsArg(ch.id)},${jsArg(p.name)})" style="min-height:40px;">Dismiss</button>
+      <button type="button" class="btn btn-sm btn-primary" onclick="startChillerPump(${jsArg(ch.id)},${jsArg(p.name)})" style="min-height:40px;">Start</button>
+    </div>`)}
+  </div>`;
+}
 function afterTypeVoltage(equipType, added) {
   if (equipType === 'ATS') return askAtsFeeds(added.filter(s => s && s.deviceType === 'Breaker'));
-  if (equipType === 'Chiller') return askChillerCapacitors();
+  if (equipType === 'Chiller') return askChillerSheet();
   return Promise.resolve(null);
 }
 // "Other voltage\u2026" (build 118): loto-web needs a voltage (the Section 1
@@ -16304,6 +16616,13 @@ function collectSaveNotices() {
     if (k.vacPump && a.vacuumExhaust === 'Own valve' && !hasOut) notices.push('The exhaust has its own valve, but there’s no exhaust row (Vacuum Air Out) for it.');
     if (k.vacPump && a.vacuumExhaust && a.vacuumExhaust !== 'Own valve' && hasOut) notices.push('The exhaust is “' + a.vacuumExhaust + '”, but the unit has an exhaust row (Vacuum Air Out).');
     if (k.chiller && a.capacitors === 'No' && hasCap) notices.push('Capacitor bank is No, but the unit has a Stored Electrical Energy row.');
+    // build 177: the chiller's drive and condenser answers against its rows
+    if (k.chiller) {
+      const drive = sources.some(s => s && /^Electrical\b/.test(s.energySource || '') && isDriveDevice(s.deviceType));
+      if (a.chillerDrive === 'Yes' && !drive) notices.push('Drive on this chiller is Yes, but no Electrical row is a drive (VFD).');
+      if (a.chillerDrive === 'No' && drive) notices.push('Drive on this chiller is No, but its Electrical row is a drive (VFD).');
+      if (a.chillerCooling === 'Water-cooled' && !sources.some(isCondenserWaterRow)) notices.push('The chiller is water-cooled, but the unit has no Condenser Water rows.');
+    }
   }
   // A photo of the valve a row no longer has (build 125): flagged when the app
   // swapped its Device, until a retake replaces it
@@ -16531,6 +16850,7 @@ function performSaveAndNew() {
   saveAll();
   startNextUnit();   // the blank form (with the carried-over building/room) is what survives a reload
   showToast(`\u2714 Saved "${equipName}" \u2014 ${savedEquipment.length} total`);   // plain text: the toast shows text, not HTML (build 94)
+  offerChillerPumps(entry);   // a chiller's own pumps, next (build 177)
 }
 
 // "Cancel edit" / "Discard" (build 109). There was no way out of an Edit but
@@ -16982,7 +17302,8 @@ function renderSavedPanel() {
   savedEquipment.forEach(e => { if (e && e.id) idCounts[e.id] = (idCounts[e.id] || 0) + 1; });
   // Build 158: a name another saved unit in the same room has (sameNamePlaceClashes)
   const clashKeys = sameNamePlaceClashes(unitsOnDevice(null));
-  body.innerHTML = visible.map(({ entry, i }) => {
+  // Build 177: a chiller's own pumps not saved yet, above the list
+  body.innerHTML = htmlValue(stillToCaptureHtml(here)) + visible.map(({ entry, i }) => {
     const photoCount = entry.photos ? Object.keys(entry.photos).filter(k => entry.photos[k] && entry.photos[k].timestamp).length : 0;
     const isEditing = editingEntry === entry;
     const savedTwice = entry.id && idCounts[entry.id] > 1;

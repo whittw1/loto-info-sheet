@@ -352,6 +352,7 @@
     localStorage.removeItem('photoSeqNext');
     localStorage.removeItem('loto_building_lists');   // build 142: no facility's building list carries over
     localStorage.removeItem('loto_building_lists_earlier');   // …nor its earlier lists (build 143)
+    localStorage.removeItem('loto_pumps_dismissed');   // build 177: no chiller pump stays dismissed
     // clear the form exactly as the app does (repaints the photo slots, clears
     // building/room, autosaves the blank form so a relaunch doesn't restore a
     // test form), then refresh the header count
@@ -409,8 +410,9 @@
   // Close every prompt overlay a template/type change may have opened
   // (voltage, electrical count, template pick) without applying a choice.
   function closeAllPrompts() {
-    ['templateVoltageOverlay', 'electricalCountOverlay', 'drivesTogetherOverlay', 'templatePromptOverlay', 'voltageOverlay', 'templateConfirmOverlay']
+    ['templateVoltageOverlay', 'electricalCountOverlay', 'drivesTogetherOverlay', 'templatePromptOverlay', 'voltageOverlay', 'templateConfirmOverlay', 'chillerSheetOverlay']
       .forEach(id => { const o = document.getElementById(id); if (o) o.remove(); });
+    if (typeof closeChillerSheet === 'function') closeChillerSheet();   // build 177
   }
 
   // Run fn with confirm()/alert()/askChoice answered automatically.
@@ -7813,7 +7815,7 @@
       document.getElementById('equipTemplate').value = '';
       document.getElementById('equipType').value = 'Chiller';
       await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
-      await withDialogs({ confirm: true, choice: { 'chiller-capacitors': answer } }, async () => {
+      await withDialogs({ confirm: true, choice: { 'chiller-sheet': answer === 'cancel' ? 'cancel' : { capacitors: answer } } }, async () => {   // build 177: the chiller sheet
         await applyVoltageChoice('480V'); await sleep(0);
         // a form holding the tech's rows asks before the template changes (build 93)
         if (document.getElementById('templateConfirmOverlay')) { confirmTemplateChange('Chiller'); await sleep(0); }
@@ -9989,7 +9991,7 @@
 
   // T242 — the type voltage box: ATS feeds, a chiller's capacitors, "Other voltage…".
   async function t242_theTypeVoltageQuestions() {
-    const N = 'T242 after a type\'s voltage: an ATS asks its emergency then normal feed\'s panel (build 153: rows "Panel <typed>" then "Panel", a blank keeping bare Panel); a chiller asks "Capacitor bank?" (No: no Stored Electrical Energy row; Yes / Can\'t tell: the row; closed: the row, nothing recorded); the box offers "Other voltage…" (the full list, no blank voltage)';
+    const N = 'T242 after a type\'s voltage: an ATS asks its emergency then normal feed\'s panel (build 153: rows "Panel <typed>" then "Panel", a blank keeping bare Panel); a chiller asks "Capacitor bank?" (on the chiller sheet since build 177; No: no Stored Electrical Energy row; Yes / Can\'t tell: the row; closed: the row, nothing recorded); the box offers "Other voltage…" (the full list, no blank voltage)';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -10011,7 +10013,7 @@
     got.ats = sources.filter(s => s.deviceType === 'Breaker').map(s => s.energySource + '|' + s.location).join(' / ');
     want(got.ats === 'Electrical 480V|Panel EDP-1 bkr 3 / Electrical 480V|Panel', 'the ATS rows name their feeds\' panels');
     const chiller = async (answer) => {
-      await typeVoltage('Chiller', 'CH-242', { 'chiller-capacitors': answer }, '480V');
+      await typeVoltage('Chiller', 'CH-242', { 'chiller-sheet': answer === 'cancel' ? 'cancel' : { capacitors: answer } }, '480V');   // build 177: the chiller sheet's capacitor answer
       return sources.filter(s => s.energySource === 'Stored Electrical Energy').length + ':' + (unitAnswers.capacitors || '');
     };
     got.chiller = { no: await chiller('No'), yes: await chiller('Yes'), cantTell: await chiller('Can\'t tell'), closed: await chiller('cancel') };
@@ -11545,18 +11547,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 176 (was build 122\'s): APP_BUILD and the header label say 176, the service worker\'s cache is loto-collector-v7.171, Xcode\'s CURRENT_PROJECT_VERSION is 176 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 177 (was build 122\'s): APP_BUILD and the header label say 177, the service worker\'s cache is loto-collector-v7.172, Xcode\'s CURRENT_PROJECT_VERSION is 177 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 176 && !!label && +label[1] === 176, 'the build');
+    want(APP_BUILD === 177 && !!label && +label[1] === 177, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.171', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.172', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 176;,CURRENT_PROJECT_VERSION = 176;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 177;,CURRENT_PROJECT_VERSION = 177;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -19257,6 +19259,252 @@
       record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
     });
   }
+  // ---- Build 177: About this chiller (wilkins' Option B, 2026-11-26) -------------
+
+  // A chiller through its type, its voltage and the sheet (an object of answers,
+  // or 'cancel' = Skip); before() runs on the named form first. Returns the log.
+  async function chillerThroughSheet(name, sheet, before) {
+    await resetAppState();
+    fillFormNoSources(name);
+    if (before) await before();
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = 'Chiller';
+    await withDialogs({ confirm: true }, async () => { handleEquipTypeChange(); });
+    const r = await withDialogs({ confirm: true, choice: { 'chiller-sheet': sheet } }, async () => {
+      await applyVoltageChoice('480V'); await sleep(0);
+      if (document.getElementById('templateConfirmOverlay')) { confirmTemplateChange('Chiller'); await sleep(0); }
+    });
+    closeAllPrompts();
+    return r.log;
+  }
+  const CH_OWN = { chillerDrive: 'Yes', capacitors: 'No', chillerCooling: 'Water-cooled', chillerPumps: 'Its own', chillerChwPump: 'CHWP-1', chillerCwPump: 'CWP-1' };
+  const chRows = () => sources.map(s => [s.energySource, s.deviceType, s.verification].join('/')).join(' | ');
+  const chNames = () => tiedToNameValue();
+  const chCw = () => sources.filter(s => /^Condenser Water/.test(s.energySource || '')).map(s => s.energySource).join('+');
+
+  // T508 — the sheet's answers onto the form
+  async function t508_aboutThisChillerSheet() {
+    const N = 'T508 build 177 (wilkins\' Option B of the chiller prompts mockup, 2026-11-26): after a chiller\'s voltage one sheet, "About this chiller", asks four things — Yes, a drive makes its Electrical row a VFD; No capacitor bank adds no Stored Electrical Energy row; Water-cooled adds Condenser Water In and Out (Butterfly Valve, Gauge/Drain) after the CHW rows; its own pumps go into Tied To as "Shut Down" + the names (";" splits a box, names trimmed) and show in the unit\'s box; Skip keeps today\'s rows (Disconnect, the capacitor row, no tie, nothing recorded); the real sheet: four rows of three chips, the pump boxes only after Its own, no condenser box on Air-cooled, a chip tapped again comes off, Done = done, tap outside = cancel with the answers kept, and it reopens on the unit\'s answers';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    got.log = (await chillerThroughSheet('CH-508', Object.assign({}, CH_OWN, { chillerChwPump: ' CHWP-1 ', chillerCwPump: 'CWP-1;CWP-2' }))).join(' / ');
+    want(/\[CHOICE chiller-sheet\] About this chiller/.test(got.log) && !/chiller-capacitors/.test(got.log), 'the sheet was asked, not the old question');
+    got.rows = chRows();
+    want(got.rows === 'Electrical 480V/VFD/Controls | CHW In/Butterfly Valve/Gauge/Drain - CHW | CHW Out/Butterfly Valve/Gauge/Drain - CHW | Condenser Water In/Butterfly Valve/Gauge/Drain | Condenser Water Out/Butterfly Valve/Gauge/Drain', 'rows');
+    want(getFilteredVerifications('Butterfly Valve', 'Condenser Water In').includes('Gauge/Drain'), 'Gauge/Drain is a condenser water row\'s code');
+    got.tied = document.getElementById('equipTiedTo').value + ' — ' + chNames();
+    want(got.tied === 'Shut Down — CHWP-1; CWP-1; CWP-2' && document.getElementById('tiedToNameGroup').style.display === 'flex', 'Tied To');
+    const a = unitAnswers;
+    got.answers = JSON.stringify(a);
+    want(a.capacitors === 'No' && a.chillerDrive === 'Yes' && a.chillerCooling === 'Water-cooled' && a.chillerPumps === 'Its own'
+      && a.chillerChwPump === 'CHWP-1' && a.chillerCwPump === 'CWP-1; CWP-2' && a.chillerTiedNames === 'CHWP-1; CWP-1; CWP-2' && a.chillerTiedSet === true, 'answers');
+    const uq = id => document.getElementById('uq_' + id);
+    want(!!uq('chillerDrive') && uq('chillerDrive').value === 'Yes' && uq('chillerCooling').value === 'Water-cooled' && uq('chillerPumps').value === 'Its own'
+      && !!uq('chillerChwPump') && uq('chillerChwPump').value === 'CHWP-1' && !!uq('chillerCwPump') && uq('chillerCwPump').value === 'CWP-1; CWP-2', 'the unit\'s box');
+    // Skip: today's rows, nothing recorded
+    await chillerThroughSheet('CH-508b', 'cancel');
+    got.skip = chRows() + ' / ' + (document.getElementById('equipTiedTo').value || 'no tie') + ' / ' + Object.keys(unitAnswers).filter(k => /^(chiller|capacitors$)/.test(k)).join(',');
+    want(got.skip === 'Electrical 480V/Disconnect/Controls | Stored Electrical Energy/Capacitor/ | CHW In/Butterfly Valve/Gauge/Drain - CHW | CHW Out/Butterfly Valve/Gauge/Drain - CHW / no tie / ', 'skip');
+    // the real sheet
+    const hook = window.__askChoiceAuto;
+    window.__askChoiceAuto = undefined;
+    try {
+      const done = askChillerSheet();
+      const ov = document.getElementById('chillerSheetOverlay');
+      got.chips = ov ? ov.querySelectorAll('.qp-chip').length : 0;
+      want(got.chips === 12 && !document.getElementById('cs_chillerChwPump'), 'four rows of three chips, no pump boxes yet');
+      document.getElementById('cs_chillerPumps_0').click();
+      want(!!document.getElementById('cs_chillerChwPump') && !!document.getElementById('cs_chillerCwPump'), 'Its own shows both boxes');
+      document.getElementById('cs_chillerCooling_1').click();   // Air-cooled
+      want(!!document.getElementById('cs_chillerChwPump') && !document.getElementById('cs_chillerCwPump'), 'Air-cooled hides the condenser box');
+      const box = document.getElementById('cs_chillerChwPump');
+      box.value = 'CHWP-7'; box.dispatchEvent(new Event('input', { bubbles: true }));
+      document.getElementById('cs_chillerDrive_1').click();   // No, a starter
+      want(!!document.querySelector('#cs_chillerDrive_1.on') && document.getElementById('cs_chillerChwPump').value === 'CHWP-7', 'a pick keeps what was typed');
+      document.getElementById('cs_chillerDrive_1').click();   // tapped again: off
+      want(!document.querySelector('#chillerSheetOverlay .qp-row[aria-label="Drive on this chiller?"] .on'), 'tapped again, it comes off');
+      document.getElementById('csDone').click();
+      got.done = await done;
+      want(got.done === 'done' && !document.getElementById('chillerSheetOverlay'), 'Done closes it');
+      got.real = JSON.stringify(unitAnswers) + ' / ' + chNames() + ' / ' + (chCw() || 'no cw');
+      want(unitAnswers.chillerPumps === 'Its own' && unitAnswers.chillerCooling === 'Air-cooled' && !unitAnswers.chillerDrive && unitAnswers.chillerChwPump === 'CHWP-7'
+        && chNames() === 'CHWP-7' && !chCw(), 'its answers');
+      const again = askChillerSheet();
+      const ov2 = document.getElementById('chillerSheetOverlay');
+      want(!!ov2 && !!ov2.querySelector('#cs_chillerPumps_0.on') && !!ov2.querySelector('#cs_chillerCooling_1.on')
+        && document.getElementById('cs_chillerChwPump').value === 'CHWP-7', 'it reopens on the unit\'s answers');
+      ov2.dispatchEvent(new MouseEvent('click', { bubbles: true }));   // outside the box
+      got.outside = await again;
+      want(got.outside === 'cancel' && !document.getElementById('chillerSheetOverlay') && unitAnswers.chillerChwPump === 'CHWP-7', 'tap outside = Skip, the answers kept');
+    } finally { window.__askChoiceAuto = hook; closeAllPrompts(); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T509 — the unit's box moves what the answers stand for
+  async function t509_chillerBoxFollowsAnswers() {
+    const N = 'T509 build 177: a chiller\'s answers changed in the unit\'s box move what they stand for — Air-cooled takes the app\'s untouched Condenser Water rows and its condenser pumps\' names away, Water-cooled puts them back, a tagged condenser row stays (and no second set is added beside it); No / Can\'t tell put an untouched app-made VFD back to Disconnect, a tagged one stays and Save & New notes it; Can\'t tell on the drive writes the change-later note; a renamed pump is renamed in Tied To; Shared header takes the app\'s names out and blanks the action only when it set it and no name is left; a name the tech typed (before the sheet, or after) is never taken out; Water-cooled with no condenser rows and Yes with no drive row are noted';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await chillerThroughSheet('CH-509', CH_OWN);
+    setUnitAnswer('chillerCooling', 'Air-cooled');
+    got.air = [chCw() || 'none', chNames(), !!document.getElementById('uq_chillerCwPump')].join(' / ');
+    want(got.air === 'none / CHWP-1 / false', 'air-cooled');
+    setUnitAnswer('chillerCooling', 'Water-cooled');
+    got.water = [chCw(), chNames()].join(' / ');
+    want(got.water === 'Condenser Water In+Condenser Water Out / CHWP-1; CWP-1', 'water-cooled again');
+    sources.find(s => s.energySource === 'Condenser Water In').deviceId = 'CW-V1';
+    setUnitAnswer('chillerCooling', 'Air-cooled');
+    got.tagged = chCw();
+    setUnitAnswer('chillerCooling', 'Water-cooled');
+    got.tagged += ' / ' + chCw();
+    want(got.tagged === 'Condenser Water In / Condenser Water In', 'the tagged row stays, alone');
+    sources = sources.filter(s => !/^Condenser Water/.test(s.energySource || ''));
+    renderSources();
+    want(collectSaveNotices().some(n => /water-cooled, but the unit has no Condenser Water rows/.test(n)), 'water-cooled with no condenser rows is noted');
+    // the drive
+    const dev = () => sources[0].deviceType;
+    const d = [];
+    setUnitAnswer('chillerDrive', 'No'); d.push(dev());
+    setUnitAnswer('chillerDrive', 'Yes'); d.push(dev());
+    setUnitAnswer('chillerDrive', 'Can\'t tell'); d.push(dev());
+    d.push(changeLaterAutoNotes(formEntryLike()).includes(CHILLER_DRIVE_NOTE));
+    setUnitAnswer('chillerDrive', 'No');
+    d.push(changeLaterAutoNotes(formEntryLike()).includes(CHILLER_DRIVE_NOTE));
+    setUnitAnswer('chillerDrive', 'Yes');
+    updateSource(0, 'deviceId', 'VFD-CH1');   // the tech's tag: the row is theirs now
+    setUnitAnswer('chillerDrive', 'No'); d.push(dev());
+    d.push(collectSaveNotices().some(n => /Drive on this chiller is No, but its Electrical row is a drive/.test(n)));
+    got.drive = d.join(' / ');
+    want(got.drive === 'Disconnect / VFD / Disconnect / true / false / VFD / true', 'the drive');
+    // a drive row the app doesn't own: Yes changes nothing and is noted
+    Object.assign(sources[0], { deviceType: 'Disconnect' }); delete sources[0]._voltagePick; delete sources[0].auto; delete sources[0]._chillerDrive;
+    setUnitAnswer('chillerDrive', 'Yes');
+    got.notOurs = dev() + ' / ' + collectSaveNotices().some(n => /Drive on this chiller is Yes, but no Electrical row is a drive/.test(n));
+    want(got.notOurs === 'Disconnect / true', 'Yes with no drive row of the app\'s');
+    // the names
+    await chillerThroughSheet('CH-509b', CH_OWN);
+    setChillerPumpName('chillerChwPump', ' CHWP-9 ');
+    got.rename = chNames() + ' / ' + unitAnswers.chillerTiedNames;
+    want(chNames().split('; ').sort().join() === 'CHWP-9,CWP-1' && unitAnswers.chillerChwPump === 'CHWP-9', 'renamed');
+    addTiedToName('AHU-9', false);   // the tech's own, after
+    setUnitAnswer('chillerPumps', 'Shared header');
+    got.shared = document.getElementById('equipTiedTo').value + ' — ' + chNames();
+    want(got.shared === 'Shut Down — AHU-9', 'the tech\'s name stays, and the action with it');
+    await chillerThroughSheet('CH-509c', { chillerPumps: 'Its own', chillerCooling: 'Air-cooled', chillerChwPump: 'CHWP-1', chillerCwPump: 'CWP-1' });
+    want(chNames() === 'CHWP-1', 'air-cooled: no condenser pump in Tied To');
+    setUnitAnswer('chillerPumps', 'Can\'t tell');
+    got.blank = (document.getElementById('equipTiedTo').value || 'blank') + ' / ' + (chNames() || 'none') + ' / ' + document.getElementById('tiedToNameGroup').style.display + ' / ' + !!unitAnswers.chillerTiedSet;
+    want(got.blank === 'blank / none / none / false', 'the action it set goes blank');
+    // a name and an action the tech set before the sheet stay theirs
+    await chillerThroughSheet('CH-509d', CH_OWN, async () => {
+      document.getElementById('equipTiedTo').value = 'Shut Down & LOTO';
+      document.getElementById('tiedToNameGroup').style.display = 'flex';
+      setTiedToNames('chwp-1');
+    });
+    got.before = document.getElementById('equipTiedTo').value + ' — ' + chNames() + ' / ' + (unitAnswers.chillerTiedNames || '') + ' / ' + !!unitAnswers.chillerTiedSet;
+    want(got.before === 'Shut Down & LOTO — chwp-1; CWP-1 / CWP-1 / false', 'the tech\'s tie first');
+    setUnitAnswer('chillerPumps', 'Shared header');
+    got.beforeAfter = document.getElementById('equipTiedTo').value + ' — ' + chNames();
+    want(got.beforeAfter === 'Shut Down & LOTO — chwp-1', 'the tech\'s name and action kept');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T510 — what reaches loto-web
+  async function t510_chillerExportShape() {
+    const N = 'T510 build 177: the chiller\'s new answers add no Information Sheet label and no top-level entries.json key (they ride inside the unit\'s unitAnswers, as every answer does); what they wrote travels as before — the VFD row, the two Condenser Water rows, Tied To "Shut Down" with the pump names, Capacitors (U3) and, on a Can\'t tell drive, the change-later note';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await chillerThroughSheet('CH-510', Object.assign({}, CH_OWN, { chillerDrive: 'Can\'t tell' }));
+    let A = null;
+    await withDialogs({ confirm: true, choice: { 'chiller-pumps-next': 'later' } }, async () => { A = saveEntry(); await sleep(0); });
+    got.labels = Object.values(unitSheetCells(A)).map(c => c[0]).join(',');
+    want(!/drive|cool|pump/i.test(got.labels) && /Capacitors/.test(got.labels), 'sheet labels ' + got.labels);
+    const { zip, confirms } = await runExport({ confirmResponse: true, choice: { 'chiller-pumps-next': 'later' } });
+    if (zip) {
+      const u = await unzipExport(zip.blob);
+      const je = jsonEntryFor(u.entriesJson, A);
+      if (!je) fails.push('no entries.json entry');
+      else {
+        got.top = Object.keys(je).filter(k => /chiller/i.test(k)).join(',') || 'none';
+        want(got.top === 'none', 'no top-level chiller key');
+        got.json = [je.tiedTo, je.tiedToName, je.capacitors, (je.sources || []).map(s => s.energySource + '/' + s.deviceType).join('|')].join(' / ');
+        want(got.json === 'Shut Down / CHWP-1; CWP-1 / No / Electrical 480V/Disconnect|CHW In/Butterfly Valve|CHW Out/Butterfly Valve|Condenser Water In/Butterfly Valve|Condenser Water Out/Butterfly Valve', 'entries.json');
+        want(je.changeLater && String(je.changeLater.text || '').includes(CHILLER_DRIVE_NOTE) && je.changeLater.auto === true, 'the change-later note ' + JSON.stringify(je.changeLater));
+        want(je.unitAnswers && je.unitAnswers.chillerDrive === 'Can\'t tell' && je.unitAnswers.chillerPumps === 'Its own', 'the backup copy of the answers');
+      }
+    } else fails.push('no zip: ' + confirms.join(' | '));
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T511 — Save & New: the chiller's pumps next
+  async function t511_chillerPumpsNext() {
+    const N = 'T511 build 177: Save & New on a chiller with pumps of its own asks "Capture <CH>’s pumps next?" (one button per pump not yet saved, plus Later); a pump starts the next unit with its name, type and template (CHW Pump / Condenser Water Pump), the chiller\'s building and room and Tied To "Shut Down" the chiller (wilkins: a pump\'s LOTO shuts the chiller down first), then its voltage question; Later starts nothing; Start never goes over a unit in progress or into another facility, and takes the name in any case; a chiller with a shared header asks nothing';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await chillerThroughSheet('CH-511', CH_OWN);
+    document.getElementById('equipRoom').value = 'Plant 2';
+    let asked = null;
+    await withDialogs({ confirm: true, choice: o => { if (o.id === 'chiller-pumps-next') { asked = o; return 'pump1'; } return 'cancel'; } },
+      async () => { saveEntry(); await sleep(0); await sleep(0); });
+    got.asked = asked ? String(asked.title) + ' [' + asked.choices.map(c => c.label).join(' | ') + ']' : 'not asked';
+    want(got.asked === 'Capture CH-511’s pumps next? [CHWP-1 · CHW Pump | CWP-1 · Condenser Water Pump | Later]', 'the question');
+    got.started = [document.getElementById('equipName').value, getEquipType(), getTemplate(), getBuilding(), document.getElementById('equipRoom').value,
+      document.getElementById('equipTiedTo').value, chNames(), !!document.getElementById('templateVoltageOverlay')].join(' / ');
+    want(got.started === 'CWP-1 / Condenser Water Pump / Condenser Water Pump / Main / Plant 2 / Shut Down / CH-511 / true', 'the pump unit');
+    closeAllPrompts();
+    const ch = savedEquipment.find(e => e.equipName === 'CH-511');
+    want(startChillerPump(ch.id, 'CHWP-1') === false && document.getElementById('equipName').value === 'CWP-1', 'never over a unit in progress');
+    // Later
+    await chillerThroughSheet('CH-511b', Object.assign({}, CH_OWN, { chillerChwPump: 'CHWP-5', chillerCwPump: '' }));
+    await withDialogs({ confirm: true, choice: { 'chiller-pumps-next': 'later' } }, async () => { saveEntry(); await sleep(0); await sleep(0); });
+    got.later = (document.getElementById('equipName').value || 'blank') + ' / ' + (getEquipType() || 'no type');
+    want(got.later === 'blank / no type', 'Later starts nothing');
+    const chb = savedEquipment.find(e => e.equipName === 'CH-511b');
+    const was = chb.hospitalCode;
+    chb.hospitalCode = 'ZZ-Other';
+    got.elsewhere = startChillerPump(chb.id, 'CHWP-5');
+    chb.hospitalCode = was;
+    want(got.elsewhere === false && !document.getElementById('equipName').value, 'not into another facility');
+    got.anyCase = startChillerPump(chb.id, ' chwp-5 ') + ' / ' + document.getElementById('equipName').value + ' / ' + getEquipType() + ' / ' + chNames();
+    want(got.anyCase === 'true / CHWP-5 / CHW Pump / CH-511b', 'any case');
+    closeAllPrompts();
+    // a shared header asks nothing
+    await chillerThroughSheet('CH-511c', { chillerPumps: 'Shared header', chillerChwPump: 'CHWP-X' });
+    const r = await withDialogs({ confirm: true }, async () => { saveEntry(); await sleep(0); });
+    want(!r.log.some(l => /chiller-pumps-next/.test(l)) && !document.getElementById('equipName').value, 'shared: no question');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T512 — the Saved list's "Still to capture"
+  async function t512_stillToCapture() {
+    const N = 'T512 build 177: the Saved list\'s "Still to capture" lists each saved chiller\'s own pumps not yet saved at its facility; a unit saved under the name (any case or spacing) clears it, one at another facility doesn\'t; Dismiss takes one off on this device only (loto_pumps_dismissed) and leaves the saved chiller exactly as it was; Start opens the pump as Save & New\'s question does';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await chillerThroughSheet('CH-512', CH_OWN);
+    await withDialogs({ confirm: true, choice: { 'chiller-pumps-next': 'later' } }, async () => { saveEntry(); await sleep(0); });
+    const shown = () => { renderSavedPanel(); return [...document.querySelectorAll('#stillToCapture .capture-row')].map(r => r.querySelector('.capture-name').textContent.trim()).join(' | '); };
+    got.first = shown();
+    want(got.first === 'CHWP-1 · CHW Pump | CWP-1 · Condenser Water Pump', 'both pumps');
+    savedEquipment.push(Object.assign(mkEntry('CWP-1'), { hospitalCode: 'ZZ-Other' }));
+    savedEquipment.push(Object.assign(mkEntry('  chwp-1 '), { hospitalCode: savedEquipment[0].hospitalCode }));
+    saveAll();
+    got.after = shown();
+    want(got.after === 'CWP-1 · Condenser Water Pump', 'CHWP-1 saved here clears it; CWP-1 elsewhere does not');
+    const ch = savedEquipment.find(e => e.equipName === 'CH-512');
+    const before = JSON.stringify(ch);
+    document.querySelector('#stillToCapture .capture-row button').click();   // Dismiss
+    got.dismissed = (document.getElementById('stillToCapture') ? 'still shown' : 'gone') + ' / ' + (localStorage.getItem('loto_pumps_dismissed') || '');
+    want(/^gone \/ .*\|cwp-1/.test(got.dismissed) && JSON.stringify(savedEquipment.find(e => e.equipName === 'CH-512')) === before, 'Dismiss, the chiller untouched');
+    localStorage.removeItem('loto_pumps_dismissed');
+    got.back = shown();
+    const start = [...document.querySelectorAll('#stillToCapture .capture-row button')].find(b => b.textContent.trim() === 'Start');
+    if (start) start.click();
+    got.start = [document.getElementById('equipName').value, getEquipType(), document.getElementById('equipTiedTo').value, chNames()].join(' / ');
+    want(got.back === 'CWP-1 · Condenser Water Pump' && got.start === 'CWP-1 / Condenser Water Pump / Shut Down / CH-512', 'Start');
+    closeAllPrompts();
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
     t9_removeMiscThenDiscard, t10_reattachOrphans, t11_duplicateSourceThenRetakeCopy,
@@ -19458,7 +19706,8 @@
     t493_visualChipOnTheMoreOptionsLine, t494_typedPressureAndTemperature, t495_deviceInAnotherRoom, t496_fuelOilPumpTypeAndTemplate,
     t497_upsTypeAndTemplate, t498_steamSterilizerTypeAndTemplate, t499_largeSteamBoiler,
     t500_aDriveLockedOutUpstream, t501_aDriveAtAPadlockedBreaker, t502_theDrainQuestionFollowsTheFacility, t503_tiedToSeveralPiecesOfEquipment, t504_ahuSteamChwHhwRetired,
-    t505_answeredListsFoldAndShortWords, t506_gaugeDrainOrNone, t507_stepperButtonsBoxAndColumns];
+    t505_answeredListsFoldAndShortWords, t506_gaugeDrainOrNone, t507_stepperButtonsBoxAndColumns,
+    t508_aboutThisChillerSheet, t509_chillerBoxFollowsAnswers, t510_chillerExportShape, t511_chillerPumpsNext, t512_stillToCapture];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
