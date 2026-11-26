@@ -7170,8 +7170,10 @@ const SYSTEM_SHEET = {
   }
 };
 function systemPreview(hx, tags) {
+  const odd = tags.filter(tagReadsAsSourceId);
   return String(hx || '').trim() && tags.length
-    ? html`Saved as <strong style="color:var(--text);">${systemName(String(hx).trim(), tags)}</strong>; you can change the name. Each pump’s Electrical source gets its tag as Device ID.`
+    ? html`Saved as <strong style="color:var(--text);">${systemName(String(hx).trim(), tags)}</strong>; you can change the name. Each pump’s Electrical source gets its tag as Device ID.${odd.length
+      ? html`<div id="ssTagWarning" style="margin-top:6px;color:#b5451b;font-weight:600;">${odd.join(', ')}: ${SOURCE_ID_TAG_ADVICE}</div>` : ''}`
     : html`Type the heat exchanger’s tag and at least two pumps’ tags.`;
 }
 function openSystemSheet(from) { return openUnitSheet(Object.assign({}, SYSTEM_SHEET, { from: from === 'pump' ? 'pump' : 'hx' })); }
@@ -7183,6 +7185,14 @@ function openSystemSheet(from) { return openUnitSheet(Object.assign({}, SYSTEM_S
 // photographed or filled in is kept for it), no Kinetic. Any other row the tech photographed or
 // filled in stays after them; the app's untouched ones go. The pump's / heat
 // exchanger's answers no longer apply, nor the tie they made.
+// A pump tag shaped like a loto-web source ID ("P-1", "B-2", "Pump E-3") reads as a
+// LOTO ID in the procedure: loto-web's pre-QC (check_matrix_prose_ids, step_ids)
+// takes any whole token of its prefixes (_KNOWN_PREFIXES ∪ _MATRIX_ID_PREFIXES,
+// case-sensitive) + "-" + digits for one (loto-web 2026-11-26). "HWP-1", "P-1A",
+// "P1" are fine. Written without a lookbehind for older WebKit.
+const LOTO_SOURCE_ID_RE = /(^|[^A-Za-z0-9])(AF|BH|CG|CH|CL|ES|MS|OL|PR|RG|B|D|E|F|G|H|K|P|S|T|V|W|X)-\d+(?![A-Za-z0-9])/;
+function tagReadsAsSourceId(tag) { return LOTO_SOURCE_ID_RE.test(String(tag == null ? '' : tag)); }
+const SOURCE_ID_TAG_ADVICE = 'Pump tags like P-1 read as a LOTO ID in the procedure; use the pump\u2019s own tag, e.g. HWP-1.';
 // A drive's feeder (Location "Feeder: …", loto-web's Tier 1 row) is not a pump
 // (loto-web 2026-11-26, its A1 run on the build 178 sample)
 function isSystemPumpRow(s, template) {
@@ -17110,6 +17120,10 @@ function collectSaveNotices() {
       if (a.chillerDrive === 'No' && drive) notices.push('Drive on this chiller is No, but its Electrical row is a drive (VFD).');
       if (a.chillerCooling === 'Water-cooled' && !sources.some(isCondenserWaterRow)) notices.push('The chiller is water-cooled, but the unit has no Condenser Water rows.');
     }
+    // build 178: a system's pump tag that loto-web would read as a source ID
+    sources.forEach((s, i) => {
+      if (isSystemPumpRow(s) && tagReadsAsSourceId(s.deviceId)) notices.push('Source #' + (i + 1) + ' (pump tag ' + String(s.deviceId).trim() + '): ' + SOURCE_ID_TAG_ADVICE);
+    });
   }
   // A photo of the valve a row no longer has (build 125): flagged when the app
   // swapped its Device, until a retake replaces it

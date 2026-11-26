@@ -1592,7 +1592,11 @@ and "HWP-2 VFD or Controls"; pre-QC clean but the sample's empty Locations. `che
 app-lists: 0 ERROR, the same 9 WARN as before. Its notes for the field: a pump row with an H/O/A switch code ("SW
 (Hand/Off/Auto) - VFD") gets the Hand step and, after the steam, the Auto step (no code: "Start … using their
 controls"); avoid pump tags shaped like a source ID ("P-1", "B-2"), which trip its matrix prose check; a feeder row is
-not a pump — since the same day, the app agrees (`isSystemPumpRow`, T516).
+not a pump — since the same day, the app agrees (`isSystemPumpRow`, T516). The tag shape is now warned too, with
+loto-web's own pattern (its pre-QC `_KNOWN_PREFIXES` ∪ `_MATRIX_ID_PREFIXES`, case-sensitive, a whole token: "P-1",
+"Pump E-3", "ES-4" trip; "HWP-1", "P-1A", "P1" don't — `LOTO_SOURCE_ID_RE`, `tagReadsAsSourceId`, written without a
+lookbehind): Save & New notes "Source #n (pump tag P-1): Pump tags like P-1 read as a LOTO ID in the procedure; use the
+pump's own tag, e.g. HWP-1." (`collectSaveNotices`), and the One system sheet says the same under its name (T516).
 
 **Not released.** Branch `hhw-sheet-178` (worktree `loto-hhw-178`), on build 177's `1577e5b`; not pushed. Released
 with 177 once loto-web's HHW System - Steam is live (D14; wilkins: "One release").

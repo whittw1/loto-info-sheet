@@ -19743,6 +19743,13 @@
     got.feeder = [isSystemPumpRow(sources[sources.length - 1]), tags(), systemPumpTags().length, systemRowTag(sources.length - 1) || 'no tag'].join(' / ');
     sources.pop(); renderSources();
     want(got.feeder === 'false / 0 / 3 / no tag', 'a feeder is not a pump');
+    // a pump tag loto-web would read as a source ID (its pre-QC prefixes, case-sensitive)
+    got.shape = ['P-1', 'B-2', 'E-3', 'Pump P-1', 'S-12', 'ES-4', 'HWP-1', 'HHWP-2', 'P-1A', 'P1', 'Pump 1', 'CHWP-3', 'p-1'].map(x => x + '=' + (tagReadsAsSourceId(x) ? 'ID' : 'ok')).join(',');
+    updateSource(1, 'deviceId', 'P-2');
+    got.shapeNotice = collectSaveNotices().filter(n => /read as a LOTO ID/.test(n)).join(' | ');
+    updateSource(1, 'deviceId', 'HWP-2');
+    want(got.shape === 'P-1=ID,B-2=ID,E-3=ID,Pump P-1=ID,S-12=ID,ES-4=ID,HWP-1=ok,HHWP-2=ok,P-1A=ok,P1=ok,Pump 1=ok,CHWP-3=ok,p-1=ok'
+      && /^Source #2 \(pump tag P-2\): Pump tags like P-1 read as a LOTO ID/.test(got.shapeNotice) && !collectSaveNotices().some(n => /read as a LOTO ID/.test(n)), 'source-ID-shaped pump tags');
     want(got.missing === 3 && got.missingAfter === 0 && got.label === 'Pump tag — required'
       && got.rowTags === 'Pump 1,Pump 2,Pump 3,steam supply,condensate return,return / pump suction boundary,supply boundary,make-up water'
       && got.name2 === 'HHW System HX-516 (HWP-1, HWP-2)' && got.name3 === 'HHW System HX-516 (HWP-1, HWP-2, HWP-3)' && got.kept === 'Bldg 15 HHW system', 'pump tags and the name');
