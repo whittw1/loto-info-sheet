@@ -7183,8 +7183,10 @@ function openSystemSheet(from) { return openUnitSheet(Object.assign({}, SYSTEM_S
 // photographed or filled in is kept for it), no Kinetic. Any other row the tech photographed or
 // filled in stays after them; the app's untouched ones go. The pump's / heat
 // exchanger's answers no longer apply, nor the tie they made.
+// A drive's feeder (Location "Feeder: …", loto-web's Tier 1 row) is not a pump
+// (loto-web 2026-11-26, its A1 run on the build 178 sample)
 function isSystemPumpRow(s, template) {
-  return (template === undefined ? getTemplate() : template) === HHW_SYSTEM && isElectricalSource(s);
+  return (template === undefined ? getTemplate() : template) === HHW_SYSTEM && isElectricalSource(s) && !isFeederRow(s);
 }
 function convertToHhwSystem(sys) {
   const prev = sources.slice();
@@ -7193,7 +7195,7 @@ function convertToHhwSystem(sys) {
   const take = test => { const s = sources.find(x => x && !used.has(x) && test(x)); if (s) used.add(s); return s || null; };
   const retagged = [];
   const pumpRows = sys.pumps.map(tag => {
-    const s = take(isElectricalSource) || { energySource: '', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true, collapsed: true };
+    const s = take(x => isElectricalSource(x) && !isFeederRow(x)) || { energySource: '', deviceType: '', quantity: 1, location: '', verification: '', duplicate: 'No', detail: '', auto: true, collapsed: true };
     const was = String(s.deviceId || '').trim();
     if (was && !samePumpName(was, tag)) retagged.push(was + ' → ' + tag);
     s.energySource = 'Electrical ' + sys.voltage;

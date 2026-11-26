@@ -19737,6 +19737,12 @@
     document.getElementById('equipName').value = 'Bldg 15 HHW system';
     updateSource(2, 'deviceId', 'HWP-4');
     got.kept = document.getElementById('equipName').value;
+    // a drive's feeder (Location "Feeder: …") is not a pump: no Pump tag asked, no Pump N, not in the name
+    sources.push(Object.assign(mkSrc('Electrical 480V'), { deviceType: 'Breaker', location: 'Feeder: MCC-1 bkr 3 (HWP-1)', role: 'feeder', auto: false }));
+    renderSources();
+    got.feeder = [isSystemPumpRow(sources[sources.length - 1]), tags(), systemPumpTags().length, systemRowTag(sources.length - 1) || 'no tag'].join(' / ');
+    sources.pop(); renderSources();
+    want(got.feeder === 'false / 0 / 3 / no tag', 'a feeder is not a pump');
     want(got.missing === 3 && got.missingAfter === 0 && got.label === 'Pump tag — required'
       && got.rowTags === 'Pump 1,Pump 2,Pump 3,steam supply,condensate return,return / pump suction boundary,supply boundary,make-up water'
       && got.name2 === 'HHW System HX-516 (HWP-1, HWP-2)' && got.name3 === 'HHW System HX-516 (HWP-1, HWP-2, HWP-3)' && got.kept === 'Bldg 15 HHW system', 'pump tags and the name');
