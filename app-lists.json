@@ -1,7 +1,7 @@
 {
   "schema": "loto-collector-lists",
   "version": 1,
-  "build": 177,
+  "build": 178,
   "hospitals": [
     {
       "code": "Marion",
@@ -217,7 +217,8 @@
     ],
     "Heat Exchanger": [
       "Heat Exchanger - Steam",
-      "Heat Exchanger - CHW/Glycol"
+      "Heat Exchanger - CHW/Glycol",
+      "HHW System - Steam"
     ],
     "Boiler": [
       "Boiler - Natural Gas - HHW",
@@ -298,6 +299,7 @@
     "Heat Exchanger - Steam",
     "DA Tank",
     "Heat Exchanger - CHW/Glycol",
+    "HHW System - Steam",
     "Steam PRV Station",
     "Boiler - Natural Gas - HHW",
     "Boiler - Natural Gas - STM",

@@ -410,9 +410,10 @@
   // Close every prompt overlay a template/type change may have opened
   // (voltage, electrical count, template pick) without applying a choice.
   function closeAllPrompts() {
-    ['templateVoltageOverlay', 'electricalCountOverlay', 'drivesTogetherOverlay', 'templatePromptOverlay', 'voltageOverlay', 'templateConfirmOverlay', 'chillerSheetOverlay']
+    ['templateVoltageOverlay', 'electricalCountOverlay', 'drivesTogetherOverlay', 'templatePromptOverlay', 'voltageOverlay', 'templateConfirmOverlay',
+     'chillerSheetOverlay', 'pumpSheetOverlay', 'hxSheetOverlay', 'systemSheetOverlay']
       .forEach(id => { const o = document.getElementById(id); if (o) o.remove(); });
-    if (typeof closeChillerSheet === 'function') closeChillerSheet();   // build 177
+    if (typeof closeUnitSheet === 'function') closeUnitSheet();   // builds 177, 178
   }
 
   // Run fn with confirm()/alert()/askChoice answered automatically.
@@ -9769,7 +9770,7 @@
     want(got.rows === got.hxRows && /^LPS 10 PSI\/Gate Valve\/\/.*\|Condensate Out\/Gate Valve\/Below Equipment\/Temp Only - Hot$/.test(got.rows), 'the same rows');
     want(TEMPLATE_DIAGRAM_MAP['DA Tank'] === TEMPLATE_DIAGRAM_MAP['Heat Exchanger - Steam'], 'the same sketch');
     want(!expectsElectricalSource('DA Tank', 'DA Tank') && !expectsElectricalSource('Deaerator 2', 'DA Tank'), 'no Electrical expected');
-    want((EQUIPMENT_TEMPLATE_MAP['Heat Exchanger'] || []).join() === 'Heat Exchanger - Steam,Heat Exchanger - CHW/Glycol', 'Heat Exchanger type unchanged');
+    want((EQUIPMENT_TEMPLATE_MAP['Heat Exchanger'] || []).slice(0, 2).join() === 'Heat Exchanger - Steam,Heat Exchanger - CHW/Glycol', 'Heat Exchanger type unchanged');   // build 178 adds HHW System - Steam third
     // a DA Tank saved on Heat Exchanger - Steam before build 116
     await resetAppState();
     const A = mkEntry('DA Tank 1', { sources: [Object.assign(mkSrc('LPS 10 PSI'), { sourceId: genUuid(), deviceType: 'Gate Valve' })] });
@@ -11547,18 +11548,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 177 (was build 122\'s): APP_BUILD and the header label say 177, the service worker\'s cache is loto-collector-v7.172, Xcode\'s CURRENT_PROJECT_VERSION is 177 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 178 (was build 122\'s): APP_BUILD and the header label say 178, the service worker\'s cache is loto-collector-v7.173, Xcode\'s CURRENT_PROJECT_VERSION is 178 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 177 && !!label && +label[1] === 177, 'the build');
+    want(APP_BUILD === 178 && !!label && +label[1] === 178, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.172', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.173', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 177;,CURRENT_PROJECT_VERSION = 177;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 178;,CURRENT_PROJECT_VERSION = 178;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -19297,7 +19298,7 @@
     const a = unitAnswers;
     got.answers = JSON.stringify(a);
     want(a.capacitors === 'No' && a.chillerDrive === 'Yes' && a.chillerCooling === 'Water-cooled' && a.chillerPumps === 'Its own'
-      && a.chillerChwPump === 'CHWP-1' && a.chillerCwPump === 'CWP-1; CWP-2' && a.chillerTiedNames === 'CHWP-1; CWP-1; CWP-2' && a.chillerTiedSet === true, 'answers');
+      && a.chillerChwPump === 'CHWP-1' && a.chillerCwPump === 'CWP-1; CWP-2' && a.tiedAppNames === 'CHWP-1; CWP-1; CWP-2' && a.tiedAppAction === 'Shut Down', 'answers');
     const uq = id => document.getElementById('uq_' + id);
     want(!!uq('chillerDrive') && uq('chillerDrive').value === 'Yes' && uq('chillerCooling').value === 'Water-cooled' && uq('chillerPumps').value === 'Its own'
       && !!uq('chillerChwPump') && uq('chillerChwPump').value === 'CHWP-1' && !!uq('chillerCwPump') && uq('chillerCwPump').value === 'CWP-1; CWP-2', 'the unit\'s box');
@@ -19383,8 +19384,8 @@
     want(got.notOurs === 'Disconnect / true', 'Yes with no drive row of the app\'s');
     // the names
     await chillerThroughSheet('CH-509b', CH_OWN);
-    setChillerPumpName('chillerChwPump', ' CHWP-9 ');
-    got.rename = chNames() + ' / ' + unitAnswers.chillerTiedNames;
+    setUnitNames('chillerChwPump', ' CHWP-9 ');
+    got.rename = chNames() + ' / ' + unitAnswers.tiedAppNames;
     want(chNames().split('; ').sort().join() === 'CHWP-9,CWP-1' && unitAnswers.chillerChwPump === 'CHWP-9', 'renamed');
     addTiedToName('AHU-9', false);   // the tech's own, after
     setUnitAnswer('chillerPumps', 'Shared header');
@@ -19393,7 +19394,7 @@
     await chillerThroughSheet('CH-509c', { chillerPumps: 'Its own', chillerCooling: 'Air-cooled', chillerChwPump: 'CHWP-1', chillerCwPump: 'CWP-1' });
     want(chNames() === 'CHWP-1', 'air-cooled: no condenser pump in Tied To');
     setUnitAnswer('chillerPumps', 'Can\'t tell');
-    got.blank = (document.getElementById('equipTiedTo').value || 'blank') + ' / ' + (chNames() || 'none') + ' / ' + document.getElementById('tiedToNameGroup').style.display + ' / ' + !!unitAnswers.chillerTiedSet;
+    got.blank = (document.getElementById('equipTiedTo').value || 'blank') + ' / ' + (chNames() || 'none') + ' / ' + document.getElementById('tiedToNameGroup').style.display + ' / ' + !!unitAnswers.tiedAppAction;
     want(got.blank === 'blank / none / none / false', 'the action it set goes blank');
     // a name and an action the tech set before the sheet stay theirs
     await chillerThroughSheet('CH-509d', CH_OWN, async () => {
@@ -19401,7 +19402,7 @@
       document.getElementById('tiedToNameGroup').style.display = 'flex';
       setTiedToNames('chwp-1');
     });
-    got.before = document.getElementById('equipTiedTo').value + ' — ' + chNames() + ' / ' + (unitAnswers.chillerTiedNames || '') + ' / ' + !!unitAnswers.chillerTiedSet;
+    got.before = document.getElementById('equipTiedTo').value + ' — ' + chNames() + ' / ' + (unitAnswers.tiedAppNames || '') + ' / ' + !!unitAnswers.tiedAppAction;
     want(got.before === 'Shut Down & LOTO — chwp-1; CWP-1 / CWP-1 / false', 'the tech\'s tie first');
     setUnitAnswer('chillerPumps', 'Shared header');
     got.beforeAfter = document.getElementById('equipTiedTo').value + ' — ' + chNames();
@@ -19416,10 +19417,10 @@
     const want = (ok, what) => { if (!ok) fails.push(what); };
     await chillerThroughSheet('CH-510', Object.assign({}, CH_OWN, { chillerDrive: 'Can\'t tell' }));
     let A = null;
-    await withDialogs({ confirm: true, choice: { 'chiller-pumps-next': 'later' } }, async () => { A = saveEntry(); await sleep(0); });
+    await withDialogs({ confirm: true, choice: { 'pumps-next': 'later' } }, async () => { A = saveEntry(); await sleep(0); });
     got.labels = Object.values(unitSheetCells(A)).map(c => c[0]).join(',');
     want(!/drive|cool|pump/i.test(got.labels) && /Capacitors/.test(got.labels), 'sheet labels ' + got.labels);
-    const { zip, confirms } = await runExport({ confirmResponse: true, choice: { 'chiller-pumps-next': 'later' } });
+    const { zip, confirms } = await runExport({ confirmResponse: true, choice: { 'pumps-next': 'later' } });
     if (zip) {
       const u = await unzipExport(zip.blob);
       const je = jsonEntryFor(u.entriesJson, A);
@@ -19444,7 +19445,7 @@
     await chillerThroughSheet('CH-511', CH_OWN);
     document.getElementById('equipRoom').value = 'Plant 2';
     let asked = null;
-    await withDialogs({ confirm: true, choice: o => { if (o.id === 'chiller-pumps-next') { asked = o; return 'pump1'; } return 'cancel'; } },
+    await withDialogs({ confirm: true, choice: o => { if (o.id === 'pumps-next') { asked = o; return 'pump1'; } return 'cancel'; } },
       async () => { saveEntry(); await sleep(0); await sleep(0); });
     got.asked = asked ? String(asked.title) + ' [' + asked.choices.map(c => c.label).join(' | ') + ']' : 'not asked';
     want(got.asked === 'Capture CH-511’s pumps next? [CHWP-1 · CHW Pump | CWP-1 · Condenser Water Pump | Later]', 'the question');
@@ -19453,25 +19454,25 @@
     want(got.started === 'CWP-1 / Condenser Water Pump / Condenser Water Pump / Main / Plant 2 / Shut Down / CH-511 / true', 'the pump unit');
     closeAllPrompts();
     const ch = savedEquipment.find(e => e.equipName === 'CH-511');
-    want(startChillerPump(ch.id, 'CHWP-1') === false && document.getElementById('equipName').value === 'CWP-1', 'never over a unit in progress');
+    want(startOwnPump(ch.id, 'CHWP-1') === false && document.getElementById('equipName').value === 'CWP-1', 'never over a unit in progress');
     // Later
     await chillerThroughSheet('CH-511b', Object.assign({}, CH_OWN, { chillerChwPump: 'CHWP-5', chillerCwPump: '' }));
-    await withDialogs({ confirm: true, choice: { 'chiller-pumps-next': 'later' } }, async () => { saveEntry(); await sleep(0); await sleep(0); });
+    await withDialogs({ confirm: true, choice: { 'pumps-next': 'later' } }, async () => { saveEntry(); await sleep(0); await sleep(0); });
     got.later = (document.getElementById('equipName').value || 'blank') + ' / ' + (getEquipType() || 'no type');
     want(got.later === 'blank / no type', 'Later starts nothing');
     const chb = savedEquipment.find(e => e.equipName === 'CH-511b');
     const was = chb.hospitalCode;
     chb.hospitalCode = 'ZZ-Other';
-    got.elsewhere = startChillerPump(chb.id, 'CHWP-5');
+    got.elsewhere = startOwnPump(chb.id, 'CHWP-5');
     chb.hospitalCode = was;
     want(got.elsewhere === false && !document.getElementById('equipName').value, 'not into another facility');
-    got.anyCase = startChillerPump(chb.id, ' chwp-5 ') + ' / ' + document.getElementById('equipName').value + ' / ' + getEquipType() + ' / ' + chNames();
+    got.anyCase = startOwnPump(chb.id, ' chwp-5 ') + ' / ' + document.getElementById('equipName').value + ' / ' + getEquipType() + ' / ' + chNames();
     want(got.anyCase === 'true / CHWP-5 / CHW Pump / CH-511b', 'any case');
     closeAllPrompts();
     // a shared header asks nothing
     await chillerThroughSheet('CH-511c', { chillerPumps: 'Shared header', chillerChwPump: 'CHWP-X' });
     const r = await withDialogs({ confirm: true }, async () => { saveEntry(); await sleep(0); });
-    want(!r.log.some(l => /chiller-pumps-next/.test(l)) && !document.getElementById('equipName').value, 'shared: no question');
+    want(!r.log.some(l => /pumps-next/.test(l)) && !document.getElementById('equipName').value, 'shared: no question');
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -19481,7 +19482,7 @@
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     await chillerThroughSheet('CH-512', CH_OWN);
-    await withDialogs({ confirm: true, choice: { 'chiller-pumps-next': 'later' } }, async () => { saveEntry(); await sleep(0); });
+    await withDialogs({ confirm: true, choice: { 'pumps-next': 'later' } }, async () => { saveEntry(); await sleep(0); });
     const shown = () => { renderSavedPanel(); return [...document.querySelectorAll('#stillToCapture .capture-row')].map(r => r.querySelector('.capture-name').textContent.trim()).join(' | '); };
     got.first = shown();
     want(got.first === 'CHWP-1 · CHW Pump | CWP-1 · Condenser Water Pump', 'both pumps');
@@ -19502,6 +19503,292 @@
     got.start = [document.getElementById('equipName').value, getEquipType(), document.getElementById('equipTiedTo').value, chNames()].join(' / ');
     want(got.back === 'CWP-1 · Condenser Water Pump' && got.start === 'CWP-1 / Condenser Water Pump / Shut Down / CH-512', 'Start');
     closeAllPrompts();
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // ---- Build 178: the HHW pump, the steam heat exchanger, the one system --------
+
+  // A unit through its type (its template, its voltage, a pump count) with the
+  // sheets answered from `choice` ({ <sheet id>: answers | 'cancel' } or a
+  // function). Returns { log, count } (count: the count prompt's buttons).
+  async function hhwUnit(name, type, choice, opts) {
+    opts = opts || {};
+    await resetAppState();
+    fillFormNoSources(name);
+    if (opts.before) await opts.before();
+    document.getElementById('equipTemplate').value = '';
+    document.getElementById('equipType').value = type;
+    let count = null;
+    const r = await withDialogs({ confirm: true, choice: choice || {} }, async () => {
+      handleEquipTypeChange(); await sleep(0);
+      if (opts.template && document.getElementById('templatePromptOverlay')) { applyTemplatePromptChoice(opts.template); await sleep(0); }
+      if (document.getElementById('templateConfirmOverlay')) { confirmTemplateChange(getTemplate()); await sleep(0); }
+      if (document.getElementById('templateVoltageOverlay')) { applyTemplateVoltageChoice(opts.voltage || '480V'); await sleep(0); }
+      const cp = document.getElementById('electricalCountOverlay');
+      if (cp) { count = [...cp.querySelectorAll('button')].map(b => b.textContent.trim()).join(','); if (opts.count) { pickElectricalCount(opts.count); await sleep(0); } }
+      await sleep(0); await sleep(0);
+    });
+    closeAllPrompts();
+    return { log: r.log.join(' / '), count };
+  }
+  const tieText = () => (document.getElementById('equipTiedTo').value || 'no tie') + ' — ' + (tiedToNameValue() || 'none');
+  const rowsText = () => sources.map(s => [s.energySource, s.deviceType, s.deviceId || ''].join('/')).join(' | ');
+
+  // T513 — About this pump
+  async function t513_aboutThisPump() {
+    const N = 'T513 build 178 (wilkins: "Looks right", the HHW page of the equipment prompts mockup): after a Heating HW Pump\'s voltage one sheet, "About this pump" — feeds a heat exchanger (which one), its own valves or shared, and with its own valves the only pump on it — and only on that TYPE (a Condensate Pump shares the template and is never asked); the only pump: Tied To "Shut Down" the heat exchanger; a standby: no tie; shared valves kept as a pump: "Shut Down & LOTO" the heat exchanger and the other pumps; Can\'t tell: the change-later note "Can\'t tell whether <name> can be locked out on its own"; the box under Notes moves the tie (the action the app set follows the answers, a name the tech typed stays, the action stays with it) and offers One system… on shared valves; the real sheet shows the heat exchanger box after Yes, the only-pump row after Its own valves, the other pumps box and One system… after Shared valves; the pump\'s rows never change';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const ans = (o) => ({ 'hhw-pump-sheet': o });
+    let r = await hhwUnit('HWP-513', 'Heating HW Pump', ans({ hhwFeedsHx: 'Yes', hhwHx: ' HX-1 ', hhwIsolation: 'Its own valves', hhwOnlyPump: 'Yes' }));
+    want(/\[CHOICE hhw-pump-sheet\] About this pump/.test(r.log), 'asked');
+    got.only = tieText() + ' / ' + (unitAnswers.tiedAppAction || '') + ' / ' + rowsText();
+    want(got.only === 'Shut Down — HX-1 / Shut Down / Electrical 480V// | HHW In/Ball Valve/', 'the only pump');
+    // the box
+    setUnitAnswer('hhwOnlyPump', 'No');
+    got.standbyBox = tieText();
+    setUnitAnswer('hhwOnlyPump', 'Yes');
+    setUnitNames('hhwHx', 'HX-9');
+    got.renamed = tieText();
+    setUnitAnswer('hhwIsolation', 'Shared valves');
+    setUnitNames('hhwOtherPumps', 'HWP-2; hwp-2 ; HWP-3');
+    got.sharedBox = tieText() + ' / ' + !!document.getElementById('uq_oneSystem') + ' / ' + !!document.getElementById('uq_hhwOnlyPump');
+    addTiedToName('AHU-1', false);
+    setUnitAnswer('hhwFeedsHx', 'No');
+    got.techKept = tieText() + ' / ' + !document.getElementById('uq_oneSystem');
+    want(got.standbyBox === 'no tie — none' && got.renamed === 'Shut Down — HX-9' && got.sharedBox === 'Shut Down & LOTO — HX-9; HWP-2; HWP-3 / true / false'
+      && got.techKept === 'Shut Down & LOTO — AHU-1 / true', 'the box');
+    r = await hhwUnit('HWP-513b', 'Heating HW Pump', ans({ hhwFeedsHx: 'Yes', hhwHx: 'HX-1', hhwIsolation: 'Its own valves', hhwOnlyPump: 'No' }));
+    got.standby = tieText();
+    r = await hhwUnit('HWP-513c', 'Heating HW Pump', ans({ hhwFeedsHx: 'Yes', hhwHx: 'HX-1', hhwIsolation: 'Shared valves', hhwOtherPumps: 'HWP-2;HWP-3' }));
+    got.shared = tieText() + ' / ' + unitAnswers.hhwOtherPumps;
+    r = await hhwUnit('HWP-513d', 'Heating HW Pump', ans({ hhwFeedsHx: 'Yes', hhwHx: 'HX-1', hhwIsolation: 'Can\'t tell' }));
+    got.cant = changeLaterAutoNotes(formEntryLike()).join(' | ') + ' / ' + tieText();
+    want(got.standby === 'no tie — none' && got.shared === 'Shut Down & LOTO — HX-1; HWP-2; HWP-3 / HWP-2; HWP-3'
+      && got.cant === 'Can\'t tell whether HWP-513d can be locked out on its own / no tie — none', 'standby / shared / can\'t tell');
+    r = await hhwUnit('CP-513', 'Condensate Pump', {});
+    got.condensate = getTemplate() + ' / ' + /hhw-pump-sheet/.test(r.log);
+    want(got.condensate === 'Heating Hot Water Pump / false', 'a Condensate Pump is never asked');
+    // the real sheet
+    await hhwUnit('HWP-513e', 'Heating HW Pump', ans('cancel'));
+    const hook = window.__askChoiceAuto;
+    window.__askChoiceAuto = undefined;
+    try {
+      const done = askHhwPumpSheet();
+      const has = id => !!document.getElementById(id);
+      const seen = [has('pumpSheetOverlay'), has('ps_hhwHx'), has('ps_hhwOnlyPump_0')];
+      document.getElementById('ps_hhwFeedsHx_0').click();
+      seen.push(has('ps_hhwHx'));
+      const box = document.getElementById('ps_hhwHx'); box.value = 'HX-4'; box.dispatchEvent(new Event('input', { bubbles: true }));
+      document.getElementById('ps_hhwIsolation_0').click();
+      seen.push(has('ps_hhwOnlyPump_0'), document.getElementById('ps_hhwHx').value);
+      document.getElementById('ps_hhwIsolation_1').click();
+      seen.push(has('ps_hhwOnlyPump_0'), has('ps_hhwOtherPumps'), has('psSystem'));
+      document.getElementById('ps_hhwIsolation_0').click();
+      document.getElementById('ps_hhwOnlyPump_0').click();
+      document.getElementById('psDone').click();
+      seen.push(await done, tieText());
+      got.real = seen.join(' / ');
+      want(got.real === 'true / false / false / true / true / HX-4 / false / true / true / done / Shut Down — HX-4', 'the real sheet');
+    } finally { window.__askChoiceAuto = hook; closeAllPrompts(); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T514 — About this heat exchanger, and its pumps next
+  async function t514_aboutThisHeatExchanger() {
+    const N = 'T514 build 178: a Heat Exchanger - Steam (not CHW/Glycol, not a DA Tank) gets "About this heat exchanger" after its template — its pumps (one box each, + Add another) and whether each can be locked out on its own; its own valves: Tied To "Shut Down" the pumps; shared valves kept as a heat exchanger: "Shut Down & LOTO" the pumps; Save & New offers "Capture <HX>’s pumps next?" and a pump started from it is a Heating HW Pump on the Heating Hot Water Pump template, in the heat exchanger\'s room, with its sheet answered from the heat exchanger\'s (feeds it; its own valves = its answer; one pump listed = the only pump, Tied To "Shut Down" the heat exchanger; two = a standby, no tie; shared valves: the other pumps named, "Shut Down & LOTO") and not asked again; "Still to capture" lists them ("<HX>’s pump") until each is saved';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const HX = (name, o, before) => hhwUnit(name, 'Heat Exchanger', { 'hx-sheet': o }, { template: 'Heat Exchanger - Steam', before });
+    let r = await HX('HX-514', { hxPumps: 'Yes', hxPumpNames: ['HWP-1', ' HWP-2 ', 'hwp-1'], hxIsolation: 'Its own valves' });
+    want(/\[CHOICE hx-sheet\] About this heat exchanger/.test(r.log), 'asked');
+    got.own = tieText() + ' / ' + unitAnswers.hxPumpNames + ' / ' + rowsText();
+    want(got.own === 'Shut Down — HWP-1; HWP-2 / HWP-1; HWP-2 / LPS 10 PSI/Gate Valve/ | Condensate Out/Gate Valve/', 'its own valves');
+    // pumps next: two pumps = a standby
+    document.getElementById('equipRoom').value = 'Mech 15';
+    let asked = null;
+    await withDialogs({ confirm: true, choice: o => { if (o.id === 'pumps-next') { asked = o; return 'pump1'; } return 'cancel'; } }, async () => { saveEntry(); await sleep(0); await sleep(0); });
+    got.asked = asked ? String(asked.title) + ' [' + asked.choices.map(c => c.label).join(' | ') + ']' : 'not asked';
+    want(got.asked === 'Capture HX-514’s pumps next? [HWP-1 · Heating HW Pump | HWP-2 · Heating HW Pump | Later]', 'the question');
+    got.started = [document.getElementById('equipName').value, getEquipType(), getTemplate(), document.getElementById('equipRoom').value,
+      unitAnswers.hhwFeedsHx, unitAnswers.hhwHx, unitAnswers.hhwIsolation, unitAnswers.hhwOnlyPump, tieText(), !!document.getElementById('templateVoltageOverlay')].join(' / ');
+    want(got.started === 'HWP-2 / Heating HW Pump / Heating Hot Water Pump / Mech 15 / Yes / HX-514 / Its own valves / No / no tie — none / true', 'the pump started');
+    const r2 = await withDialogs({ confirm: true }, async () => { applyTemplateVoltageChoice('208V'); await sleep(0); });
+    want(!r2.log.some(l => /hhw-pump-sheet/.test(l)), 'not asked again');
+    closeAllPrompts();
+    renderSavedPanel();
+    const capture = () => { renderSavedPanel(); return [...document.querySelectorAll('#stillToCapture .capture-row')].map(x => x.textContent.replace(/\s+/g, ' ').trim()).join(' | '); };
+    got.still = capture();
+    await withDialogs({ confirm: true }, async () => { saveEntry(); await sleep(0); });   // HWP-2 saved
+    got.stillAfter = capture();
+    want(/^HWP-1 · Heating HW Pump HX-514’s pump · clears once a unit named HWP-1 is saved/.test(got.still) && /HWP-2 · Heating HW Pump/.test(got.still)
+      && /^HWP-1 · /.test(got.stillAfter) && !/HWP-2/.test(got.stillAfter), 'Still to capture');
+    // one pump = the only pump
+    r = await HX('HX-514b', { hxPumps: 'Yes', hxPumpNames: 'HWP-7', hxIsolation: 'Its own valves' });
+    await withDialogs({ confirm: true, choice: { 'pumps-next': 'pump0' } }, async () => { saveEntry(); await sleep(0); await sleep(0); });
+    got.onlyOne = document.getElementById('equipName').value + ' / ' + unitAnswers.hhwOnlyPump + ' / ' + tieText();
+    want(got.onlyOne === 'HWP-7 / Yes / Shut Down — HX-514b', 'one pump listed');
+    closeAllPrompts();
+    // shared valves, kept as a heat exchanger
+    r = await HX('HX-514c', { hxPumps: 'Yes', hxPumpNames: ['HWP-1', 'HWP-2'], hxIsolation: 'Shared valves' });
+    got.shared = tieText();
+    await withDialogs({ confirm: true, choice: { 'pumps-next': 'pump0' } }, async () => { saveEntry(); await sleep(0); await sleep(0); });
+    got.sharedPump = [document.getElementById('equipName').value, unitAnswers.hhwIsolation, unitAnswers.hhwOtherPumps, tieText()].join(' / ');
+    want(got.shared === 'Shut Down & LOTO — HWP-1; HWP-2' && got.sharedPump === 'HWP-1 / Shared valves / HWP-2 / Shut Down & LOTO — HX-514c; HWP-2', 'shared valves');
+    closeAllPrompts();
+    // not on CHW/Glycol or a DA Tank
+    r = await hhwUnit('HX-514d', 'Heat Exchanger', {}, { template: 'Heat Exchanger - CHW/Glycol' });
+    const chw = /hx-sheet/.test(r.log);
+    r = await hhwUnit('DA-514', 'DA Tank', {});
+    got.notAsked = chw + ' / ' + /hx-sheet/.test(r.log) + ' / ' + getTemplate();
+    want(got.notAsked === 'false / false / DA Tank', 'CHW/Glycol and DA Tank never asked');
+    // the real sheet: a box per pump and + Add another
+    await HX('HX-514e', 'cancel');
+    const hook = window.__askChoiceAuto;
+    window.__askChoiceAuto = undefined;
+    try {
+      const done = askHxSheet();
+      document.getElementById('xs_hxPumps_0').click();
+      const boxes = () => document.querySelectorAll('#hxSheetOverlay input[id^="xs_hxPumpNames_box"]').length;
+      const b0 = boxes();
+      const t = (i, v) => { const x = document.getElementById('xs_hxPumpNames_box' + i); x.value = v; x.dispatchEvent(new Event('input', { bubbles: true })); };
+      t(0, 'HWP-1'); t(1, 'HWP-2');
+      document.getElementById('xs_hxPumpNames_add').click();
+      const b1 = boxes(), b2 = !!document.getElementById('xs_hxPumpNames_box2');
+      t(2, 'HWP-3');
+      document.getElementById('xs_hxIsolation_1').click();
+      const sys = !!document.getElementById('xsSystem');
+      document.getElementById('xsDone').click();
+      got.real = [b0, b1, b2, sys, await done, tieText()].join(' / ');
+      want(got.real === '2 / 3 / true / true / done / Shut Down & LOTO — HWP-1; HWP-2; HWP-3', 'the real sheet');
+    } finally { window.__askChoiceAuto = hook; closeAllPrompts(); }
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T515 — One system: the open unit becomes the HHW System - Steam
+  async function t515_oneSystem() {
+    const N = 'T515 build 178 (loto-web\'s HHW System - Steam rev 2): One system… — from a pump on shared valves (its tag, the other pumps, its voltage filled in) or a heat exchanger — makes the open unit the system: type Heat Exchanger, template "HHW System - Steam", the name "HHW System <HX> (<pumps>)", one Electrical row per pump whose Device ID is the pump\'s tag (the row already on the form is pump 1\'s and keeps its photo), the steam, condensate, HHW In / Out (Butterfly) and DW In rows, no Kinetic; the pump\'s / heat exchanger\'s answers and the tie they made go; Keep as a pump changes nothing; fewer than two pumps or no voltage does nothing; a system\'s pumps are never offered next nor on Still to capture';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    // from the pump: the nested sheets, and the system sheet's start
+    let start = null;
+    const choose = o => {
+      if (o.id === 'hhw-pump-sheet') return { hhwFeedsHx: 'Yes', hhwHx: 'HX-1', hhwIsolation: 'Shared valves', hhwOtherPumps: 'HWP-2', _act: 'system' };
+      if (o.id === 'hhw-system-sheet') { start = o.answers; return { _act: 'make' }; }
+      return 'cancel';
+    };
+    await hhwUnit('HWP-1', 'Heating HW Pump', choose);
+    got.start = start ? [start.sysHx, (start.sysPumps || []).join('+'), start.sysVoltage].join(' / ') : 'not asked';
+    want(got.start === 'HX-1 / HWP-1+HWP-2 / 480V', 'the system sheet starts from the pump');
+    got.pump = [getEquipType(), getTemplate(), document.getElementById('equipName').value, rowsText(), tieText(), Object.keys(unitAnswers).sort().join(',')].join(' / ');
+    want(got.pump === 'Heat Exchanger / HHW System - Steam / HHW System HX-1 (HWP-1, HWP-2) / Electrical 480V//HWP-1 | Electrical 480V//HWP-2 | LPS 10 PSI/Gate Valve/ | Condensate Out/Gate Valve/ | HHW In/Butterfly Valve/ | HHW Out/Butterfly Valve/ | DW In/Ball Valve/ / no tie — none / sysAutoName,sysHx', 'the system from the pump');
+    // the photographed Electrical row stays pump 1's, its photo with it
+    await hhwUnit('HWP-5', 'Heating HW Pump', { 'hhw-pump-sheet': 'cancel' });
+    await captureInto('source_0', await makePhotoFile('t515'));
+    const key = photos.source_0 && photos.source_0.dbKey;
+    sources.push({ energySource: 'Kinetic', deviceType: 'Rotating', location: 'On Equipment', verification: 'Rotating', quantity: 1, duplicate: 'No', detail: '', auto: true });
+    await withDialogs({ confirm: true, choice: { 'hhw-system-sheet': { sysHx: 'HX-5', sysPumps: ['HWP-5', 'HWP-6'], sysVoltage: '208V', _act: 'make' } } }, async () => { await openSystemSheet('pump'); });
+    got.photo = [!!key && photos.source_0 && photos.source_0.dbKey === key, sources[0].deviceId, sources[0].energySource, sources.some(s => /Kinetic/.test(s.energySource))].join(' / ');
+    want(got.photo === 'true / HWP-5 / Electrical 208V / false', 'pump 1 keeps the photo; no Kinetic');
+    // Keep as a pump; too few pumps; no voltage
+    await hhwUnit('HWP-8', 'Heating HW Pump', { 'hhw-pump-sheet': { hhwFeedsHx: 'Yes', hhwHx: 'HX-8', hhwIsolation: 'Shared valves', hhwOtherPumps: 'HWP-9', _act: 'system' }, 'hhw-system-sheet': 'cancel' });
+    got.kept = getTemplate() + ' / ' + tieText();
+    const before = rowsText();
+    let res = await withDialogs({ confirm: true, choice: { 'hhw-system-sheet': { sysHx: 'HX-8', sysPumps: ['HWP-8'], sysVoltage: '480V', _act: 'make' } } }, async () => openSystemSheet('pump'));
+    const one = res.result;
+    res = await withDialogs({ confirm: true, choice: { 'hhw-system-sheet': { sysHx: 'HX-8', sysPumps: ['HWP-8', 'HWP-9'], sysVoltage: '', _act: 'make' } } }, async () => openSystemSheet('pump'));
+    got.notReady = [one, res.result, getTemplate(), rowsText() === before].join(' / ');
+    want(got.kept === 'Heating Hot Water Pump / Shut Down & LOTO — HX-8; HWP-9' && got.notReady === 'kept / kept / Heating Hot Water Pump / true', 'kept / not ready');
+    // from the heat exchanger
+    await hhwUnit('HX-515', 'Heat Exchanger', { 'hx-sheet': { hxPumps: 'Yes', hxPumpNames: ['HWP-1', 'HWP-2', 'HWP-3'], hxIsolation: 'Shared valves', _act: 'system' },
+      'hhw-system-sheet': { sysVoltage: '480V', _act: 'make' } }, { template: 'Heat Exchanger - Steam' });
+    got.hx = [getTemplate(), document.getElementById('equipName').value, sources.filter(s => /^Electrical/.test(s.energySource)).map(s => s.deviceId).join('+'), tieText()].join(' / ');
+    want(got.hx === 'HHW System - Steam / HHW System HX-515 (HWP-1, HWP-2, HWP-3) / HWP-1+HWP-2+HWP-3 / no tie — none', 'the system from the heat exchanger');
+    // its pumps are never offered
+    const r = await withDialogs({ confirm: true }, async () => { const e = saveEntry(); got.still = pumpsStillToCapture(e).length; await sleep(0); });
+    want(got.still === 0 && !r.log.some(l => /pumps-next/.test(l)), 'no pumps next');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T516 — the system picked as a template
+  async function t516_systemPickedDirectly() {
+    const N = 'T516 build 178 (loto-web rev 2 F1–F4): "HHW System - Steam" is the Heat Exchanger type\'s third template ("Steam + its pumps (one system)"), HVAC Shop, voltages 120 / 208 / 240 / 480 V; picked, it asks the pump count 2 to 4 (a tap outside = 2) and makes one Electrical row per pump (never one Qty-n line), no Kinetic, the default rows; each pump row\'s Device ID box reads "Pump tag — required" and the incomplete list names a missing one; the rows say what they are (Pump 1…, steam supply, condensate return, return / pump suction boundary, supply boundary, make-up water); the name the tech typed (the heat exchanger\'s tag) becomes "HHW System <HX> (<pump tags>)" as the tags are typed, never over a name the tech changed; app-lists carries the template';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const r = await hhwUnit('HX-516', 'Heat Exchanger', {}, { template: HHW_SYSTEM, voltage: '208V', count: 3 });
+    got.offer = [EQUIPMENT_TEMPLATE_MAP['Heat Exchanger'].join('|'), EQUIPMENT_TEMPLATE_LABELS['Heat Exchanger'][HHW_SYSTEM], defaultShopFor(HHW_SYSTEM, []), getElectricalVoltageOptions(HHW_SYSTEM).join(','), r.count].join(' / ');
+    want(got.offer === 'Heat Exchanger - Steam|Heat Exchanger - CHW/Glycol|HHW System - Steam / Steam + its pumps (one system) / HVAC Shop / 120V,208V,240V,480V / 2,3,4', 'offered');
+    got.rows = rowsText();
+    want(got.rows === 'Electrical 208V// | Electrical 208V// | Electrical 208V// | LPS 10 PSI/Gate Valve/ | Condensate Out/Gate Valve/ | HHW In/Butterfly Valve/ | HHW Out/Butterfly Valve/ | DW In/Ball Valve/'
+      && sources.every(s => sourceQty(s) === 1), 'rows');
+    const tags = () => collectIncompleteFields().filter(x => /Pump tag/.test(x)).length;
+    got.missing = tags();
+    renderSources();
+    sources.forEach(s => { s.collapsed = false; });
+    renderSources();
+    const card0 = document.querySelectorAll('.source-card')[0];
+    got.label = card0 ? [...card0.querySelectorAll('label')].map(l => l.textContent.replace(/\s+/g, ' ').trim()).filter(t => /Pump tag|Device ID/.test(t)).join('|') : 'no card';
+    got.rowTags = [...document.querySelectorAll('.sys-row-tag')].map(t => t.textContent).filter((t, i, a) => a.indexOf(t) === i).join(',');
+    updateSource(0, 'deviceId', 'HWP-1'); updateSource(1, 'deviceId', 'HWP-2');
+    got.name2 = document.getElementById('equipName').value;
+    updateSource(2, 'deviceId', 'HWP-3');
+    got.name3 = document.getElementById('equipName').value;
+    got.missingAfter = tags();
+    document.getElementById('equipName').value = 'Bldg 15 HHW system';
+    updateSource(2, 'deviceId', 'HWP-4');
+    got.kept = document.getElementById('equipName').value;
+    want(got.missing === 3 && got.missingAfter === 0 && got.label === 'Pump tag — required'
+      && got.rowTags === 'Pump 1,Pump 2,Pump 3,steam supply,condensate return,return / pump suction boundary,supply boundary,make-up water'
+      && got.name2 === 'HHW System HX-516 (HWP-1, HWP-2)' && got.name3 === 'HHW System HX-516 (HWP-1, HWP-2, HWP-3)' && got.kept === 'Bldg 15 HHW system', 'pump tags and the name');
+    // a tap outside the count = 2
+    await hhwUnit('HX-516b', 'Heat Exchanger', {}, { template: HHW_SYSTEM });
+    promptForElectricalCount(HHW_SYSTEM, 4);
+    const ov = document.getElementById('electricalCountOverlay');
+    if (ov) ov.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    got.dismiss = sources.filter(s => /^Electrical/.test(s.energySource)).length;
+    want(got.dismiss === 2, 'a tap outside = 2');
+    const al = appListsSnapshot(APP_BUILD);
+    got.lists = JSON.stringify((al.typeToTemplates || {})['Heat Exchanger'] || null) + ' / ' + (al.templates || []).includes(HHW_SYSTEM);
+    want(/HHW System - Steam/.test(got.lists) && /true$/.test(got.lists), 'app-lists');
+    closeAllPrompts();
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T517 — loto-web's information-sheet contract (rev 2 §4, F5)
+  async function t517_systemSheetContract() {
+    const N = 'T517 build 178 (loto-web HHW System - Steam rev 2 §4 / F5): the system exports as loto-web reads it — the name row\'s Equipment Type "Heat Exchanger" and name "HHW System HX-1 (HWP-1, HWP-2)", the Template cell exactly "HHW System - Steam" (ASCII hyphen), one source row per pump (Electrical 480V, its Device ID the pump\'s tag, Quantity 1), no Kinetic row, then LPS 10 PSI, Condensate Out, HHW In, HHW Out and DW In; entries.json the same (template, equipType, the pump tags); no new column, no unit answer for loto-web (U3–U8 stay free)';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    await hhwUnit('HX-1', 'Heat Exchanger', {}, { template: HHW_SYSTEM, voltage: '480V', count: 2 });
+    updateSource(0, 'deviceId', 'HWP-1'); updateSource(1, 'deviceId', 'HWP-2');
+    sources[0].deviceType = 'VFD'; sources[1].deviceType = 'VFD';
+    let A = null;
+    await withDialogs({ confirm: true }, async () => { A = saveEntry(); await sleep(0); });
+    got.cells = Object.values(unitSheetCells(A)).map(c => c[0]).join(',');
+    want(got.cells === 'Shop,Change Later', 'no unit answer beyond Shop / Change Later');
+    const { zip, confirms } = await runExport({ confirmResponse: true });
+    if (zip) {
+      artifacts().hhwSystemZip = zip.blob;   // the sample export for loto-web (docs/samples)
+      const u = await unzipExport(zip.blob);
+      const xp = Object.keys(u.files).find(q => /Information_Sheet_.*\.xlsx$/.test(q));
+      const blocks = await sheetBlocks(u.files[xp]);
+      const b = blocks['HHW System HX-1 (HWP-1, HWP-2)'];
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xp]);
+      const ws = wb.worksheets[0];
+      let tpl = null, type = null;
+      ws.eachRow(r => {
+        if (String(r.getCell(1).value || '') === 'Tied to Equipment' && String(r.getCell(8).value || '') === 'Template') {
+          tpl = String(ws.getRow(r.number + 1).getCell(8).value || '');
+        }
+        if (String(r.getCell(1).value || '') === 'HHW System HX-1 (HWP-1, HWP-2)') type = String(r.getCell(6).value || '');
+      });
+      got.sheet = [type, tpl, b ? b.src.filter(x => x.es).map(x => [x.es, x.dev, x.id].join('/')).join(' | ') : 'no block'].join(' / ');
+      want(got.sheet === 'Heat Exchanger / HHW System - Steam / Electrical 480V/VFD/HWP-1 | Electrical 480V/VFD/HWP-2 | LPS 10 PSI/Gate Valve/ | Condensate Out/Gate Valve/ | HHW In/Butterfly Valve/ | HHW Out/Butterfly Valve/ | DW In/Ball Valve/', 'the sheet');
+      const je = jsonEntryFor(u.entriesJson, A);
+      got.json = je ? [je.equipType, je.template, je.equipName, (je.sources || []).map(s => s.energySource + '/' + (s.deviceId || '') + '/' + s.quantity).join(' | ')].join(' / ') : 'none';
+      want(got.json === 'Heat Exchanger / HHW System - Steam / HHW System HX-1 (HWP-1, HWP-2) / Electrical 480V/HWP-1/1 | Electrical 480V/HWP-2/1 | LPS 10 PSI//1 | Condensate Out//1 | HHW In//1 | HHW Out//1 | DW In//1', 'entries.json');
+      want(!(je.sources || []).some(s => /Kinetic/i.test(s.energySource)), 'no Kinetic');
+    } else fails.push('no zip: ' + confirms.join(' | '));
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
@@ -19707,7 +19994,8 @@
     t497_upsTypeAndTemplate, t498_steamSterilizerTypeAndTemplate, t499_largeSteamBoiler,
     t500_aDriveLockedOutUpstream, t501_aDriveAtAPadlockedBreaker, t502_theDrainQuestionFollowsTheFacility, t503_tiedToSeveralPiecesOfEquipment, t504_ahuSteamChwHhwRetired,
     t505_answeredListsFoldAndShortWords, t506_gaugeDrainOrNone, t507_stepperButtonsBoxAndColumns,
-    t508_aboutThisChillerSheet, t509_chillerBoxFollowsAnswers, t510_chillerExportShape, t511_chillerPumpsNext, t512_stillToCapture];
+    t508_aboutThisChillerSheet, t509_chillerBoxFollowsAnswers, t510_chillerExportShape, t511_chillerPumpsNext, t512_stillToCapture,
+    t513_aboutThisPump, t514_aboutThisHeatExchanger, t515_oneSystem, t516_systemPickedDirectly, t517_systemSheetContract];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the
