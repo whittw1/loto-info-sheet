@@ -3593,6 +3593,1010 @@
    "code": "P",
    "family": "Compressed Air",
    "magnitude": "100 PSI"
+  },
+  {
+   "energySource": "Condenser Water In/Out",
+   "code": "W",
+   "family": "Condenser Water",
+   "magnitude": "40 PSI @ 70 F"
+  },
+  {
+   "energySource": "Condenser Water In",
+   "code": "W",
+   "family": "Condenser Water",
+   "magnitude": "40 PSI @ 70 F"
+  },
+  {
+   "energySource": "Condenser Water Out",
+   "code": "W",
+   "family": "Condenser Water",
+   "magnitude": "40 PSI @ 70 F"
+  },
+  {
+   "energySource": "Energy Recovery Water In/Out",
+   "code": "W",
+   "family": "Energy Recovery Water",
+   "magnitude": "30 PSI @ 90 F"
+  },
+  {
+   "energySource": "Energy Recovery Water In",
+   "code": "W",
+   "family": "Energy Recovery Water",
+   "magnitude": "30 PSI @ 90 F"
+  },
+  {
+   "energySource": "Energy Recovery Water Out",
+   "code": "W",
+   "family": "Energy Recovery Water",
+   "magnitude": "30 PSI @ 90 F"
+  },
+  {
+   "energySource": "Geothermal Water In/Out",
+   "code": "W",
+   "family": "Geothermal Water",
+   "magnitude": "50 PSI @ 95 F"
+  },
+  {
+   "energySource": "Geothermal Water In",
+   "code": "W",
+   "family": "Geothermal Water",
+   "magnitude": "50 PSI @ 95 F"
+  },
+  {
+   "energySource": "Geothermal Water Out",
+   "code": "W",
+   "family": "Geothermal Water",
+   "magnitude": "50 PSI @ 95 F"
+  },
+  {
+   "energySource": "Feedwater In/Out",
+   "code": "W",
+   "family": "Feedwater",
+   "magnitude": "200 PSI @ 240 F"
+  },
+  {
+   "energySource": "Feedwater In",
+   "code": "W",
+   "family": "Feedwater",
+   "magnitude": "200 PSI @ 240 F"
+  },
+  {
+   "energySource": "Feedwater Out",
+   "code": "W",
+   "family": "Feedwater",
+   "magnitude": "200 PSI @ 240 F"
+  },
+  {
+   "energySource": "Condensate In/Out",
+   "code": "W",
+   "family": "Condensate",
+   "magnitude": "5 PSI @ 200 F"
+  },
+  {
+   "energySource": "Condensate In",
+   "code": "W",
+   "family": "Condensate",
+   "magnitude": "5 PSI @ 200 F"
+  },
+  {
+   "energySource": "Condensate Out",
+   "code": "W",
+   "family": "Condensate",
+   "magnitude": "5 PSI @ 200 F"
+  },
+  {
+   "energySource": "Fuel Oil In/Out",
+   "code": "F",
+   "family": "Fuel Oil",
+   "magnitude": "50 PSI"
+  },
+  {
+   "energySource": "Fuel Oil In",
+   "code": "F",
+   "family": "Fuel Oil",
+   "magnitude": "50 PSI"
+  },
+  {
+   "energySource": "Fuel Oil Out",
+   "code": "F",
+   "family": "Fuel Oil",
+   "magnitude": "50 PSI"
+  },
+  {
+   "energySource": "Glycol HW In/Out",
+   "code": "W",
+   "family": "Glycol Water",
+   "magnitude": "60 PSI @ 140 F"
+  },
+  {
+   "energySource": "Glycol CHW In/Out",
+   "code": "W",
+   "family": "Glycol Water",
+   "magnitude": "65 PSI @ 50 F"
+  },
+  {
+   "energySource": "Natural Gas",
+   "code": "G",
+   "family": "Natural Gas",
+   "magnitude": "10 PSI"
+  },
+  {
+   "energySource": "Propane",
+   "code": "G",
+   "family": "Propane",
+   "magnitude": "5 PSI"
+  },
+  {
+   "energySource": "Chemical In",
+   "code": "W",
+   "family": "Chemical Feed",
+   "magnitude": "40 PSI"
+  },
+  {
+   "energySource": "Chemical Out",
+   "code": "W",
+   "family": "Chemical Feed",
+   "magnitude": "40 PSI"
+  }
+ ],
+ "magnitudeTaken": [
+  {
+   "energySource": "Electrical 24V",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Electrical 120V",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Electrical 208V",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Electrical 240V",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Electrical 277V",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Electrical 480V",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Electrical 4160V",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Battery 12V DC",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Battery 24V DC",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Battery 48V DC",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Battery 125V DC",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Battery 240V DC",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Battery 480V DC",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "LPS 10 PSI",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "MPS 20 PSI",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "HPS 100 PSI",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Main Steam Stop",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Non-Return",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Steam Header Drain",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Steam Warm Up",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Blanket Steam",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Boiler Vent",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Atomizing Steam",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Atomizing Air",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Surface Blowdown",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Bottom Blowdown",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Low Water Cutoff Drain",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Condensate In/Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Condensate In",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Condensate Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "HHW In/Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "HHW In",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "HHW Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "CHW In/Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "CHW In",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "CHW Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "DHW In/Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "DHW In",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "DHW Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "DW In/Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "DW In",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "DW Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Compressed Air In/Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Compressed Air In",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Compressed Air Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Vacuum Air In",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Vacuum Air Out",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Fuel Oil In/Out",
+   "unit": {
+    "both": false,
+    "psi": true
+   },
+   "boiler": {
+    "both": false,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Fuel Oil In",
+   "unit": {
+    "both": false,
+    "psi": true
+   },
+   "boiler": {
+    "both": false,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Fuel Oil Out",
+   "unit": {
+    "both": false,
+    "psi": true
+   },
+   "boiler": {
+    "both": false,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Natural Gas",
+   "unit": {
+    "both": false,
+    "psi": true
+   },
+   "boiler": {
+    "both": false,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Propane",
+   "unit": {
+    "both": false,
+    "psi": true
+   },
+   "boiler": {
+    "both": false,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Condenser Water In/Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Condenser Water In",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Condenser Water Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Geothermal Water In/Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Geothermal Water In",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Geothermal Water Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Feedwater In/Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Feedwater In",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Feedwater Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Gravity/Potential",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Chemical In",
+   "unit": {
+    "both": false,
+    "psi": true
+   },
+   "boiler": {
+    "both": false,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Chemical Out",
+   "unit": {
+    "both": false,
+    "psi": true
+   },
+   "boiler": {
+    "both": false,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Glycol HW In/Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Glycol CHW In/Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Energy Recovery Water In/Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Energy Recovery Water In",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Energy Recovery Water Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Kinetic",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Stored Electrical Energy",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Refrigerant",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Hydraulic",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Damper Actuator",
+   "unit": {
+    "both": false,
+    "psi": false
+   },
+   "boiler": {
+    "both": false,
+    "psi": false
+   }
+  },
+  {
+   "energySource": "Glycol HW In",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Glycol HW Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Glycol CHW In",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
+  },
+  {
+   "energySource": "Glycol CHW Out",
+   "unit": {
+    "both": true,
+    "psi": true
+   },
+   "boiler": {
+    "both": true,
+    "psi": true
+   }
   }
  ],
  "boilerRole": [

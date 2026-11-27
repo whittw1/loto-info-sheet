@@ -97,6 +97,7 @@ Collapsible section that auto-expands when a template's diagram is available or 
 **Temperature variants** (applied to valve verifications):
 - **Hot** (Steam, HPS, LPS, MPS, HHW, DHW, Feedwater, Condensate, Glycol HW): Gauge/Drain - Hot, GaugeOnly - Hot, Drain Only - Hot, Temp Only - Hot (shown first)
 - **CHW** (CHW only): Gauge/Drain - CHW, GaugeOnly - CHW
+- **A Domestic Water Heater** offers the Hot variants on its water rows as well (a DW In too); since build 181 never on its gas, fuel or chemical rows
 - **Other** (DW, Domestic, CW / Condenser Water — the warm tower side — Pneumatic, Fuel, etc.): Gauge/Drain, GaugeOnly, Drain Only (plain)
 - **Chemical In / Chemical Out** (build 179): the card's checks are chips — **Gauge** (saves GaugeOnly) / **Visual** / **Controls** / More… — one per row; Controls is on their list too.
 - **Visual** (Condenser Water rows since build 157, Chemical In / Chemical Out rows since build 161): loto-web's "Visually confirm absence of flow through lines." — a Cooling Tower's Condenser Water In / Out default to it, and a new Chemical In / Chemical Out row starts on it (build 162). On a condenser water row still on the Drain/Gauge boxes it is a chip on the "Saves as" line beside More options… (build 162; under the boxes until build 165; not picked)

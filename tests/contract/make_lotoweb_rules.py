@@ -245,8 +245,12 @@ def steam_answers():
 # A pressure & temperature typed on a water or air row (field app build 166): the
 # app's box starts at what loto-web prints for the name with nothing typed, its
 # Mapping Sheet magnitude (the lines under the family name), and calls it the
-# default. T290 asserts the app's MAGNITUDE_MEDIA matches for all 15 names.
-MAGNITUDE_NAMES = [f"{m} {side}" for m in ("HHW", "CHW", "DHW", "DW", "Compressed Air") for side in ("In/Out", "In", "Out")]
+# default. T290 asserts the app's MAGNITUDE_MEDIA matches for every name here.
+# Build 181 (gap C14): every water and process line, on every unit.
+MAGNITUDE_NAMES = [f"{m} {side}" for m in ("HHW", "CHW", "DHW", "DW", "Compressed Air", "Condenser Water",
+                                          "Energy Recovery Water", "Geothermal Water", "Feedwater", "Condensate",
+                                          "Fuel Oil") for side in ("In/Out", "In", "Out")] + [
+    "Glycol HW In/Out", "Glycol CHW In/Out", "Natural Gas", "Propane", "Chemical In", "Chemical Out"]
 
 
 def magnitude_answers():
@@ -260,6 +264,42 @@ def magnitude_answers():
         out.append({"energySource": name, "code": str(m.get("code") or ""), "family": lines[0] if lines else "",
                     "magnitude": " ".join(ln for ln in lines[1:] if ln)})
     return out
+
+
+# Which rows loto-web's importer takes column 24 "Magnitude" on (field app build 181,
+# gap C14): its own _sheet_magnitude, asked for every name on the app's list (and
+# the In / Out halves a split In/Out row makes), on an ordinary unit and on a Large
+# Steam Boiler, with a pressure and temperature and with a pressure alone. T290
+# asserts the app offers the box exactly where loto-web takes a value, the form it
+# sends is taken, and a pressure-only medium is one loto-web refuses a temperature on.
+def magnitude_taken_answers():
+    from app.routers import import_data as idm
+    cell = [""]
+    saved = idm.labeled_source_value, idm._row_link
+    idm.labeled_source_value = lambda ws, r, layout, key: cell[0] if key == "col_magnitude" else None
+    idm._row_link = lambda ws, r, layout: None
+    try:
+        with open(os.path.join(REPO, "app-lists.json"), encoding="utf-8") as f:
+            names = list(json.load(f)["energySources"])
+        for n in list(names):
+            if n.endswith(" In/Out"):
+                for half in (n[:-len("In/Out")] + "In", n[:-len("In/Out")] + "Out"):
+                    if half not in names:
+                        names.append(half)
+        out = []
+        for name in names:
+            case = {"energySource": name}
+            for where, boiler in (("unit", False), ("boiler", True)):
+                taken = {}
+                for form, text in (("both", "45 PSI @ 180 F"), ("psi", "45 PSI")):
+                    cell[0] = text
+                    value, _problem = idm._sheet_magnitude(None, 0, {}, name, boiler)
+                    taken[form] = bool(value)
+                case[where] = taken
+            out.append(case)
+        return out
+    finally:
+        idm.labeled_source_value, idm._row_link = saved
 
 
 # A Large Steam Boiler's roles (field app build 169, loto-web spec rev 2): loto-web's
@@ -432,6 +472,7 @@ def main():
                        "warns": bool(vs.cell_problem("lock_open", t, q))} for a, q, t in LOCK_CELLS],
         "steam": steam_answers(),
         "magnitudes": magnitude_answers(),
+        "magnitudeTaken": magnitude_taken_answers(),
         "boilerRole": boiler_role_answers(),
     }
     out = os.path.join(HERE, "lotoweb-rules.json")

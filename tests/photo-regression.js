@@ -11551,18 +11551,18 @@
 
   // T268 — the build bump
   async function t268_build122() {
-    const N = 'T268 build 179 (was build 122\'s): APP_BUILD and the header label say 179, the service worker\'s cache is loto-collector-v7.174, Xcode\'s CURRENT_PROJECT_VERSION is 179 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
+    const N = 'T268 build 181 (was build 122\'s): APP_BUILD and the header label say 181, the service worker\'s cache is loto-collector-v7.175, Xcode\'s CURRENT_PROJECT_VERSION is 181 in both entries, app-lists.json carries build 122\'s lists, and the Finger Lakes copy is the same page (inside the Simulator, less the harness lines run-sim-suite.sh adds to the bundled page)';
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
     const label = /b(\d+)/.exec((document.querySelector('.header-title h1 span') || {}).textContent || '');
-    want(APP_BUILD === 179 && !!label && +label[1] === 179, 'the build');
+    want(APP_BUILD === 181 && !!label && +label[1] === 181, 'the build');
     const fetchText = async (p) => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.text() : null; } catch (e) { return null; } };
     const sw = await fetchText('sw.js');
     got.sw = sw === null ? 'not served' : ((/const CACHE_NAME = '([^']+)'/.exec(sw) || [])[1] || '');
-    want(sw === null || got.sw === 'loto-collector-v7.174', 'sw.js');
+    want(sw === null || got.sw === 'loto-collector-v7.175', 'sw.js');
     const pbx = await fetchText('ios/App/App.xcodeproj/project.pbxproj');
     got.pbx = (pbx === null || !/CURRENT_PROJECT_VERSION/.test(pbx)) ? 'not served' : (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) || []).join();
-    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 179;,CURRENT_PROJECT_VERSION = 179;', 'Xcode');
+    want(got.pbx === 'not served' || got.pbx === 'CURRENT_PROJECT_VERSION = 181;,CURRENT_PROJECT_VERSION = 181;', 'Xcode');
     const lists = appListsSnapshot(APP_BUILD).answers;
     want(lists.drainsTo.join() === 'Containment,Floor drain,Hose' && lists.xfmrAltKinds.join() === 'ATS,UPS output,Generator connection,Tie breaker,Another transformer,PV or battery'
       && lists.xfmrConnections.join() === 'Delta-Wye,Delta-Delta,Wye-Wye,Wye-Delta,Single-phase' && lists.xfmrTempRises.join() === '80 C,115 C,150 C'
@@ -12332,13 +12332,32 @@
     });
     want((fx.steam || []).length >= 15, 'the fixture carries the typed steam pressures');
     // A typed pressure & temperature (build 166): the box starts at, and calls "default", what
-    // loto-web prints for the name with nothing typed (its Mapping Sheet), for all 15 names
+    // loto-web prints for the name with nothing typed (its Mapping Sheet), for every name (39 since
+    // build 181, gap C14: the water and process lines on every unit)
     check('magnitudes', fx.magnitudes || [], c => {
       const medium = magnitudeMediumOf(c.energySource);
-      return { ok: !!medium && magnitudeText(MAGNITUDE_MEDIA[medium]) === c.magnitude && (c.code === 'W' || c.code === 'P'),
+      return { ok: !!medium && magnitudeText(MAGNITUDE_MEDIA[medium]) === c.magnitude && !!c.code,
         what: c.energySource + ': app ' + JSON.stringify(medium && magnitudeText(MAGNITUDE_MEDIA[medium])) + ', loto-web prints ' + JSON.stringify(c.magnitude) + ' (' + c.code + ')' };
     });
-    want((fx.magnitudes || []).length === 15, 'the fixture carries the 15 magnitude names');
+    want((fx.magnitudes || []).length === 39, 'the fixture carries the 39 magnitude names');
+    // Where loto-web's importer takes column 24 (build 181, gap C14): for every list name (and a
+    // split In/Out row's halves), on an ordinary unit and on a Large Steam Boiler, the app offers the
+    // box exactly where loto-web takes a value and the form the app sends is taken (a bare "NN PSI"
+    // too where the temperature may be left blank). A name the app offers a box on that loto-web
+    // drops shows here. (loto-web may take more than the app sends: a temperature on compressed air.)
+    check('magnitudeTaken', fx.magnitudeTaken || [], c => {
+      const bad = [];
+      for (const [where, tmpl] of [['unit', ''], ['boiler', LARGE_STEAM_BOILER]]) {
+        const lw = c[where] || {}, medium = magnitudeMediumOf(c.energySource, tmpl);
+        if (!medium) { if (lw.both || lw.psi) bad.push(where + ': loto-web takes one, the app offers no box'); continue; }
+        if (magnitudeHasTemp(medium)) {
+          if (!lw.both) bad.push(where + ': the app sends "NN PSI @ NNN F", loto-web drops it');
+          if (magnitudeTempOptional(medium, tmpl) && !lw.psi) bad.push(where + ': a blank temperature sends "NN PSI", loto-web drops it');
+        } else if (!lw.psi) bad.push(where + ': the app sends "NN PSI", loto-web drops it');
+      }
+      return { ok: !bad.length, what: c.energySource + ' (' + bad.join('; ') + ')' };
+    });
+    want((fx.magnitudeTaken || []).length >= DATA.energySources.length, 'the fixture carries loto-web\'s column 24 answer for every list name');
     // A Large Steam Boiler's roles (build 169): the app's boilerRoleOf is loto-web's
     // boiler_source_role on every case, the eleven list names each a role
     check('boilerRole', fx.boilerRole || [], c => ({ ok: boilerRoleOf(c.energySource) === c.role,
@@ -18050,8 +18069,8 @@
     // the media and the names
     got.media = ['HHW In/Out', 'HHW In', 'CHW Out', 'DHW In', 'DW In/Out', 'Compressed Air In', 'Compressed Air Out', 'Glycol HW In/Out', 'Condenser Water In', 'MPS 20 PSI', 'Electrical 480V', 'HHW In ', 'Compressed Air', 'HHW']
       .map(n => magnitudeMediumOf(n) || '-').join(',');
-    want(got.media === 'HHW,HHW,CHW,DHW,DW,CA,CA,-,-,-,-,-,-,-', 'the media ' + got.media);
-    want(DATA.energySources.filter(n => magnitudeMediumOf(n)).length === 15, 'fifteen list names take it');
+    want(got.media === 'HHW,HHW,CHW,DHW,DW,CA,CA,GHW,CW,-,-,-,-,-', 'the media ' + got.media);   // Glycol HW, Condenser Water since build 181
+    want(DATA.energySources.filter(n => magnitudeMediumOf(n)).length === 39, 'thirty-nine list names take it (fifteen until build 181)');
     // an HHW In/Out row: nothing new until the menu item is used
     fillFormNoSources('AHU-494');
     addSource();
@@ -18541,7 +18560,7 @@
 
   // T499 — the Large Steam Boiler (build 169)
   async function t499_largeSteamBoiler() {
-    const N = 'T499 build 169 (wilkins 2026-11-11, Q1–Q7 and Q8–Q10; loto-web spec rev 2, its half live 2026-11-12 00:22:50Z): the Boiler type asks "Hot water" / "Steam (small)" / "Plant steam boiler (large)"; the large one asks 120V / 208V / 480V and fills the nine rows, the 120V controls keeping their voltage; the eleven roles are offered only on it, lettered S (atomizing air P), with valves (the main stop\'s circuit setter, the blowdowns\' Cable) and only the no-drain hot checks (Sight Glass on the bottom blowdown and LWCO drain, atomizing air GaugeOnly), never the simplified boxes; Normally Closed on every valve role, Lock Open only on the vent and the header drain; no drain question on a role row; Boiler Plant; col 24 on its lines only on this template (a steam role "90 PSI", its temperature optional and never asked about; feedwater "150 PSI @ 230 F", asked above 212 F; natural gas whole PSI); Purge Seconds in U3 (1–3600, else blank); the export: Template cell, col 24, U3, Lock Open';
+    const N = 'T499 build 169 (wilkins 2026-11-11, Q1–Q7 and Q8–Q10; loto-web spec rev 2, its half live 2026-11-12 00:22:50Z): the Boiler type asks "Hot water" / "Steam (small)" / "Plant steam boiler (large)"; the large one asks 120V / 208V / 480V and fills the nine rows, the 120V controls keeping their voltage; the eleven roles are offered only on it, lettered S (atomizing air P), with valves (the main stop\'s circuit setter, the blowdowns\' Cable) and only the no-drain hot checks (Sight Glass on the bottom blowdown and LWCO drain, atomizing air GaugeOnly), never the simplified boxes; Normally Closed on every valve role, Lock Open only on the vent and the header drain; no drain question on a role row; Boiler Plant; col 24 on its role lines only on this template, its other lines on every unit since build 181 (a steam role "90 PSI", its temperature optional and never asked about; feedwater "150 PSI @ 230 F", asked above 212 F; natural gas whole PSI); Purge Seconds in U3 (1–3600, else blank); the export: Template cell, col 24, U3, Lock Open';
     await resetAppState();
     const fails = [], got = {};
     const want = (ok, what) => { if (!ok) fails.push(what); };
@@ -18593,7 +18612,9 @@
     got.media = ['Main Steam Stop', 'Atomizing Air', 'Feedwater In', 'Condensate Out', 'Natural Gas', 'Propane', 'Fuel Oil In', 'Chemical In', 'HHW In', 'Electrical 480V', 'HPS 100 PSI']
       .map(n => magnitudeMediumOf(n, 'Large Steam Boiler') || '-').join();
     want(got.media === 'STEAM,AIR,FW,COND,NG,LP,FO,CHEM,HHW,-,-', 'media ' + got.media);
-    want(magnitudeMediumOf('Main Steam Stop', 'Boiler - Natural Gas - STM') === '' && magnitudeMediumOf('Natural Gas', 'Standard Pump') === '', 'none elsewhere');
+    want(magnitudeMediumOf('Main Steam Stop', 'Boiler - Natural Gas - STM') === '' && magnitudeMediumOf('Atomizing Air', 'Standard Pump') === '', 'its roles nowhere else');
+    // build 181 (gap C14): feedwater, condensate, fuels and chemical on every unit
+    want(magnitudeMediumOf('Natural Gas', 'Standard Pump') === 'NG' && magnitudeMediumOf('Feedwater In', 'Boiler - Natural Gas - STM') === 'FW', 'its other lines everywhere');
     const idx = n => sources.findIndex(x => x.energySource === n);
     const menu = i => { const c = document.querySelectorAll('#sourcesContainer > .source-card')[i]; const b = [...c.querySelectorAll('.src-more-menu button')].find(x => /^Change /.test(x.textContent)); return b ? b.textContent : '-'; };
     const ms = idx('Main Steam Stop'), fw = idx('Feedwater In'), ng = idx('Natural Gas');
@@ -20057,6 +20078,102 @@
     record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
   }
 
+  // ---- Build 181: the mapping reference's gaps C3 and C14 ----
+  // T524 — a water heater's "- Hot" extras on its water rows only (C3)
+  async function t524_waterHeaterHotChecksOnWaterRowsOnly() {
+    const N = 'T524 build 181 (gap C3): a Domestic Water Heater still offers the "- Hot" checks and Temp Only - Hot on its water rows (its cold DW In too), but its Natural Gas, Propane, Fuel Oil and Chemical rows get exactly the list they get on any other unit — no Temp Only - Hot, Gauge/Drain - Hot, GaugeOnly - Hot or Drain Only - Hot';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    const rows = [['Ball Valve', 'Natural Gas'], ['Ball Valve', 'Propane'], ['Gate Valve', 'Fuel Oil In'], ['Ball Valve', 'Chemical In'], ['', 'Natural Gas'], ['Cable', 'Fuel Oil Out']];
+    const lists = () => rows.map(([d, e]) => getFilteredVerifications(d, e).join(','));
+    await tplUnit('WH-524', 'Domestic Water Heater', 'Water Heater - Gas');
+    want(getEquipType() === 'Domestic Water Heater', 'the unit is a water heater: ' + getEquipType());
+    got.dwIn = getFilteredVerifications('Ball Valve', 'DW In').join(',');
+    want(/Temp Only - Hot/.test(got.dwIn) && /Drain Only - Hot/.test(got.dwIn) && /(^|,)Drain Only(,|$)/.test(got.dwIn), 'DW In keeps the hot extras: ' + got.dwIn);
+    const heater = lists();
+    got.heater = heater;
+    want(heater.every(l => !/- Hot/.test(l)), 'no hot code on a gas, fuel or chemical row: ' + heater.join(' | '));
+    // the same lists as on a unit that isn't a water heater
+    document.getElementById('equipType').value = 'Air Handler';
+    const other = lists();
+    want(getEquipType() === 'Air Handler' && heater.every((l, i) => l === other[i]), 'the lists any other unit gets: ' + other.join(' | '));
+    // the Water Heater - Gas template's own gas row keeps its Controls
+    await tplUnit('WH-524b', 'Domestic Water Heater', 'Water Heater - Gas');
+    const gas = sources.find(x => x.energySource === 'Natural Gas');
+    got.gasRow = gas ? gas.deviceType + '/' + gas.verification + ' of ' + getFilteredVerifications(gas.deviceType, gas.energySource).join(',') : '-';
+    want(gas && gas.verification === 'Controls' && getFilteredVerifications(gas.deviceType, gas.energySource).includes('Controls'), 'the template\'s gas row: ' + got.gasRow);
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
+  // T525 — a typed pressure & temperature on every water and process line, on every unit (C14)
+  async function t525_typedMagnitudeOnEveryLine() {
+    const N = 'T525 build 181 (gap C14, wilkins 2026-11-27): the More menu offers the pressure box on any unit for Condenser Water, Glycol HW / CHW (the split In and Out halves too), Energy Recovery Water, Geothermal Water, Feedwater and Condensate ("Change pressure & temperature", both boxes, starting at loto-web\'s default) and for Natural Gas, Propane, Fuel Oil and Chemical ("Change pressure", one box); off the Large Steam Boiler a feedwater or condensate temperature is required (emptied, it is kept, with the reason), on the boiler it may still be left blank; the boiler\'s steam roles, Vacuum Air, Hydraulic, Refrigerant and the old Glycol ER Water name take none; the typed values go out in sheet column 24 and entries.json';
+    const fails = [], got = {};
+    const want = (ok, what) => { if (!ok) fails.push(what); };
+    got.media = ['Condenser Water In', 'Glycol HW In/Out', 'Glycol CHW In/Out', 'Glycol HW In', 'Energy Recovery Water Out', 'Geothermal Water In/Out',
+      'Feedwater In', 'Condensate Out', 'Natural Gas', 'Propane', 'Fuel Oil In', 'Chemical Out',
+      'Main Steam Stop', 'Atomizing Air', 'Glycol ER Water In/Out', 'Vacuum Air In', 'Hydraulic', 'Refrigerant', 'LPS 10 PSI']
+      .map(n => magnitudeMediumOf(n, 'Standard Pump') || '-').join();
+    want(got.media === 'CW,GHW,GCHW,GHW,ERW,GEO,FW,COND,NG,LP,FO,CHEM,-,-,-,-,-,-,-', 'the media ' + got.media);
+    got.optional = [magnitudeTempOptional('COND', 'Standard Pump'), magnitudeTempOptional('FW', ''), magnitudeTempOptional('COND', LARGE_STEAM_BOILER),
+      magnitudeTempOptional('STEAM', LARGE_STEAM_BOILER), magnitudeTempOptional('CW', LARGE_STEAM_BOILER)].join();
+    want(got.optional === 'false,false,true,true,false', 'a blank temperature allowed ' + got.optional);
+    const bare = { energySource: 'Condensate Out', typedMagnitude: { medium: 'COND', psi: 5 } };
+    got.bare = [magnitudeSheetText(bare, LARGE_STEAM_BOILER) || '-', magnitudeSheetText(bare, 'Condensate Return Unit') || '-'].join();
+    want(got.bare === '5 PSI,-', 'a bare condensate pressure goes out on the boiler only ' + got.bare);
+    await resetAppState();
+    fillFormNoSources('P-525');
+    const card = i => document.querySelectorAll('#sourcesContainer > .source-card')[i];
+    const menu = i => { const b = [...card(i).querySelectorAll('.src-more-menu button')].find(x => /^Change /.test(x.textContent)); return b ? b.textContent : '-'; };
+    const P = i => document.getElementById('src_mag_psi_' + i), F = i => document.getElementById('src_mag_f_' + i);
+    const typeIn = (el, kind, text, i) => { el.value = text; typeMagnitude(i, kind, el); return magnitudeSheetText(sources[i]); };
+    ['Glycol HW In/Out', 'Natural Gas', 'Condensate Out', 'Condenser Water In'].forEach((n, i) => { addSource(); handleEnergySourceChange(i, n); });
+    sources.forEach(x => { x.collapsed = false; }); renderSources();
+    got.menus = [0, 1, 2, 3].map(menu).join('|');
+    want(got.menus === 'Change pressure & temperature|Change pressure|Change pressure & temperature|Change pressure & temperature', 'menus ' + got.menus);
+    openMagnitude(0);
+    got.glycolStart = [P(0).value, F(0).value, /optional/.test(F(0).getAttribute('aria-label')), /Both valves print this/.test(document.getElementById('src_mag_0').textContent)].join();
+    want(got.glycolStart === '60,140,false,true', 'glycol starts at loto-web\'s 60 PSI @ 140 F ' + got.glycolStart);
+    got.glycol = typeIn(P(0), 'psi', '45', 0);
+    commitMagnitude(0, 'psi', P(0));
+    want(got.glycol === '45 PSI @ 140 F', 'glycol typed ' + got.glycol);
+    openMagnitude(1);
+    got.gas = [!F(1), P(1).value, typeIn(P(1), 'psi', '3', 1)].join();
+    commitMagnitude(1, 'psi', P(1));
+    want(got.gas === 'true,10,3 PSI', 'natural gas: one box ' + got.gas);
+    openMagnitude(2);
+    want(!/optional/.test(F(2).getAttribute('aria-label')), 'the condensate temperature isn\'t "optional" here');
+    typeIn(P(2), 'psi', '7', 2); commitMagnitude(2, 'psi', P(2));
+    const toasts = await withToasts(async () => { typeIn(F(2), 'f', '', 2); commitMagnitude(2, 'f', F(2)); await new Promise(r => setTimeout(r, 0)); });
+    got.condensate = [magnitudeSheetText(sources[2]), F(2).value, toasts.some(m => /kept 200 F/.test(m))].join();
+    want(got.condensate === '7 PSI @ 200 F,200,true', 'an emptied condensate temperature is kept ' + got.condensate);
+    // the export: column 24 under its own header, entries.json
+    const A = saveEntry();
+    got.saved = ((A && A.sources) || []).map(x => x.energySource + '=' + (magnitudeSheetText(x, A.template || '') || '-')).join(',');
+    want(got.saved === 'Glycol HW In/Out=45 PSI @ 140 F,Natural Gas=3 PSI,Condensate Out=7 PSI @ 200 F,Condenser Water In=-', 'saved ' + got.saved);
+    const { zip } = await runExport({ confirmResponse: true });
+    if (zip) {
+      const u = await unzipExport(zip.blob);
+      const je = jsonEntryFor(u.entriesJson, A);
+      got.json = je ? (je.sources || []).map(x => x.energySource + '=' + (x.magnitude === undefined ? 'none' : x.magnitude)).join(',') : null;
+      want(got.json === 'Glycol HW In/Out=45 PSI @ 140 F,Natural Gas=3 PSI,Condensate Out=7 PSI @ 200 F,Condenser Water In=none', 'entries.json ' + got.json);
+      const xpath = Object.keys(u.files).find(f => /Information_Sheet_.*\.xlsx$/.test(f));
+      if (xpath) {
+        const wb = new ExcelJS.Workbook(); await wb.xlsx.load(u.files[xpath]);
+        const ws = wb.worksheets[0], cells = [];
+        ws.eachRow(row => {
+          if (/^Energy Source #[1-4]$/.test(String(row.getCell(1).value || ''))) {
+            const d = ws.getRow(row.number + 1);
+            cells.push(String(d.getCell(1).value || '') + '=' + String(row.getCell(24).value || '') + ':' + String(d.getCell(24).value || ''));
+          }
+        });
+        got.sheet = cells.join(',');
+        want(got.sheet === 'Glycol HW In/Out=Magnitude:45 PSI @ 140 F,Natural Gas=Magnitude:3 PSI,Condensate Out=Magnitude:7 PSI @ 200 F,Condenser Water In=:', 'sheet ' + got.sheet);
+      } else fails.push('no XLSX in the ZIP');
+    } else fails.push('no export ZIP');
+    record(N, !fails.length, (fails.length ? 'FAILED: ' + fails.join('; ') + ' — ' : '') + JSON.stringify(got));
+  }
+
   const ALL_TESTS = [t1_sameNameDistinctExports, t2_reExportStability, t3_duplicateEntry,
     t4_crossLinkGate, t4b_hashGateHardAbort, t5_legacyKeyNotSilent, t6_keyFormat, t8_retakeThenDiscard,
     t9_removeMiscThenDiscard, t10_reattachOrphans, t11_duplicateSourceThenRetakeCopy,
@@ -20262,7 +20379,8 @@
     t508_aboutThisChillerSheet, t509_chillerBoxFollowsAnswers, t510_chillerExportShape, t511_chillerPumpsNext, t512_stillToCapture,
     t513_aboutThisPump, t514_aboutThisHeatExchanger, t515_oneSystem, t516_systemPickedDirectly, t517_systemSheetContract,
     t518_templateDefaults179, t519_templateWithoutRowsReplacesTheLast, t520_templateDrivesAskTheirFeeder, t521_typeTemplatesAskTheirTypesQuestions,
-    t522_arcFlashOnSwitchgearAndUps, t523_cableAndChemicalChecks];
+    t522_arcFlashOnSwitchgearAndUps, t523_cableAndChemicalChecks,
+    t524_waterHeaterHotChecksOnWaterRowsOnly, t525_typedMagnitudeOnEveryLine];
 
   // Inside the app, the suite may only run on the iOS SIMULATOR: its app
   // container lives under ~/Library/Developer/CoreSimulator/Devices/ on the

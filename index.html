@@ -604,7 +604,7 @@ if ('serviceWorker' in navigator) {
 
 <div class="header">
   <div class="header-title">
-    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b179</span></h1>
+    <h1>VA LOTO Collector <span style="font-size:10px;font-weight:400;color:var(--text-dim);vertical-align:middle;">v7.0 &middot; b181</span></h1>
     <span class="header-badge" id="headerBadge" style="display:none;">0 saved</span>
     <span id="facilityBadge" onclick="showSettings()" style="display:none;font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:10px;cursor:pointer;" title="Facility stamped on every entry & export. Tap to change.">&#127973;</span>
     <span id="autosaveStatus" style="font-size:11px;color:var(--text-dim);margin-left:10px;transition:color 0.4s;" title="This form autosaves as you type.">&#128190; Autosave ready</span>
@@ -1339,7 +1339,7 @@ function resetPhotoSettings() {
 // The build this page is (build 118): the export records it in manifest.json and
 // on every Information Sheet's Facility banner. The header label says the same
 // (tools/gen-app-lists.js reads that one), and the suite checks the two agree.
-const APP_BUILD = 179;
+const APP_BUILD = 181;
 
 // ============================================================================
 // DATA
@@ -1592,45 +1592,74 @@ function listEnergyName(energySource) {
 // Saved as src.typedMagnitude = { medium, psi, f } (no f for air). The medium is
 // saved with it: a row re-picked as another medium neither shows nor exports the
 // numbers, and nothing is deleted (picked back, they are there again).
+// Build 181 (gap C14, wilkins 2026-11-27: "Fix C3 and C14"): every water and process
+// line takes it on every unit, not only HHW / CHW / DHW / DW / Compressed Air —
+// Condenser Water, Glycol HW / CHW, Energy Recovery Water and Geothermal Water
+// (pressure and temperature), Feedwater and Condensate (until then on a Large Steam
+// Boiler only), and Natural Gas, Propane, Fuel Oil and Chemical (a pressure only, as
+// on the boiler). Defaults = loto-web's Mapping Sheet text (T290 checks every name).
+// loto-web's importer takes column 24 on these rows from its build-181 change on.
 const MAGNITUDE_MEDIA = {
   HHW: { psi: 50, f: 180 }, CHW: { psi: 65, f: 50 },
   DHW: { psi: 60, f: 140 }, DW:  { psi: 40, f: 70 },
   CA:  { psi: 100 },   // compressed air: a pressure only
-  // Build 169: on a Large Steam Boiler only (loto-web spec rev 2 §2.4, wilkins: "Extend
-  // the magnitude per row values to this"), the boiler's own lines, at loto-web's
-  // Mapping Sheet defaults. fOpt: the temperature may be left blank — on a steam role
-  // loto-web then adds the saturated one ("90 PSI" → "90 PSI @ 331 F"); fStart: the
-  // temperature box starts at the default (feedwater, condensate) or blank (steam, air).
+  CW:  { psi: 40, f: 70 },                   // Condenser Water (build 181)
+  GHW: { psi: 60, f: 140 }, GCHW: { psi: 65, f: 50 },   // Glycol HW / Glycol CHW (build 181)
+  ERW: { psi: 30, f: 90 }, GEO: { psi: 50, f: 95 },     // Energy Recovery / Geothermal Water (build 181)
+  // Build 169: a Large Steam Boiler's own lines (loto-web spec rev 2 §2.4, wilkins:
+  // "Extend the magnitude per row values to this"), at loto-web's Mapping Sheet
+  // defaults — its steam roles and atomizing air there only; feedwater, condensate,
+  // fuels and chemical on every unit since build 181. fOpt: the temperature may be
+  // left blank — on a steam role loto-web then adds the saturated one ("90 PSI" →
+  // "90 PSI @ 331 F"); fStart: the temperature box starts at the default (feedwater,
+  // condensate) or blank (steam, air).
+  // fOpt 'boiler': optional on a Large Steam Boiler only — on any other unit (build 181)
+  // feedwater and condensate need both numbers, because loto-web's Thermal row reads
+  // the temperature (a bare "5 PSI" would drop a condensate unit's 200 F).
   // noFlash: no 212 F question (steam is above it by nature; air isn't water).
   STEAM: { psi: 100, f: 338, fOpt: true, fStart: false, sat: true, noFlash: true },
   AIR:   { psi: 100, fOpt: true, fStart: false, noFlash: true },
-  FW:    { psi: 200, f: 240, fOpt: true, fStart: true },
-  COND:  { psi: 5, f: 200, fOpt: true, fStart: true },
+  FW:    { psi: 200, f: 240, fOpt: 'boiler', fStart: true },
+  COND:  { psi: 5, f: 200, fOpt: 'boiler', fStart: true },
   NG: { psi: 10 }, LP: { psi: 5 }, FO: { psi: 50 }, CHEM: { psi: 40 }   // whole PSI only (D13)
 };
 // What each medium is called aloud (the boxes' labels); kept out of MAGNITUDE_MEDIA,
 // whose entries are copied into a row's typed pair
 const MAGNITUDE_WORDS = { HHW: 'Heating hot water', CHW: 'Chilled water', DHW: 'Domestic hot water', DW: 'Domestic water', CA: 'Compressed air',
+  CW: 'Condenser water', GHW: 'Glycol heating water', GCHW: 'Glycol chilled water', ERW: 'Energy recovery water', GEO: 'Geothermal water',
   STEAM: 'Steam', AIR: 'Atomizing air', FW: 'Feedwater', COND: 'Condensate', NG: 'Natural gas', LP: 'Propane', FO: 'Fuel oil', CHEM: 'Chemical' };
-const MAGNITUDE_NAME_RE = /^(HHW|CHW|DHW|DW|Compressed Air) (In\/Out|In|Out)$/;
+// A list name's medium on every unit: [name pattern, medium]. The In/Out, In and Out
+// spellings (a split Glycol HW In/Out pair makes "Glycol HW In"), as loto-web's importer
+const MAGNITUDE_NAMES = [
+  [/^HHW (In\/Out|In|Out)$/, 'HHW'], [/^CHW (In\/Out|In|Out)$/, 'CHW'],
+  [/^DHW (In\/Out|In|Out)$/, 'DHW'], [/^DW (In\/Out|In|Out)$/, 'DW'],
+  [/^Compressed Air (In\/Out|In|Out)$/, 'CA'],
+  [/^Condenser Water (In\/Out|In|Out)$/, 'CW'],
+  [/^Glycol HW (In\/Out|In|Out)$/, 'GHW'], [/^Glycol CHW (In\/Out|In|Out)$/, 'GCHW'],
+  [/^Energy Recovery Water (In\/Out|In|Out)$/, 'ERW'], [/^Geothermal Water (In\/Out|In|Out)$/, 'GEO'],
+  [/^Feedwater (In\/Out|In|Out)$/, 'FW'], [/^Condensate (In\/Out|In|Out)$/, 'COND'],
+  [/^Natural Gas$/, 'NG'], [/^Propane$/, 'LP'],
+  [/^Fuel Oil (In\/Out|In|Out)$/, 'FO'], [/^Chemical (In\/Out|In|Out)$/, 'CHEM'],
+];
 const MAGNITUDE_PSI_MAX = 300, MAGNITUDE_F_MIN = 32, MAGNITUDE_F_MAX = 450;
-// 'HHW', 'CHW', 'DHW', 'DW' or 'CA' for a list name of those media; on a Large Steam
-// Boiler (`template`, build 169) also its own lines: 'STEAM' (the ten steam-side roles),
-// 'AIR', 'FW', 'COND', 'NG', 'LP', 'FO', 'CHEM'. Else ''.
+// The medium of a list name (MAGNITUDE_NAMES) on any unit; on a Large Steam Boiler
+// (`template`, build 169) also its role lines: 'STEAM' (the ten steam-side roles) and
+// 'AIR'. Else ''.
 function magnitudeMediumOf(energySource, template) {
   const name = String(energySource || '');
-  const m = MAGNITUDE_NAME_RE.exec(name);
-  if (m) return m[1] === 'Compressed Air' ? 'CA' : m[1];
+  const hit = MAGNITUDE_NAMES.find(([re]) => re.test(name));
+  if (hit) return hit[1];
   if (template !== LARGE_STEAM_BOILER) return '';
   const role = boilerRoleOf(name);
   if (role) return role === 'atom_air' ? 'AIR' : 'STEAM';
-  if (/^Feedwater (In\/Out|In|Out)$/.test(name)) return 'FW';
-  if (/^Condensate (In\/Out|In|Out)$/.test(name)) return 'COND';
-  if (name === 'Natural Gas') return 'NG';
-  if (name === 'Propane') return 'LP';
-  if (/^Fuel Oil (In\/Out|In|Out)$/.test(name)) return 'FO';
-  if (/^Chemical (In\/Out|In|Out)$/.test(name)) return 'CHEM';
   return '';
+}
+// Whether a medium's temperature may be left blank ("NN PSI" alone) on this unit:
+// steam and atomizing air always; feedwater and condensate on a Large Steam Boiler only
+function magnitudeTempOptional(medium, template) {
+  const md = MAGNITUDE_MEDIA[medium];
+  if (!md || !md.fOpt) return false;
+  return md.fOpt !== 'boiler' || (template === undefined ? getTemplate() : template) === LARGE_STEAM_BOILER;
 }
 // …of a row: never a custom (typed) energy source, as steam's box, nor a linked
 // row: the row it is linked to owns the value (loto-web, 2026-11-11), and
@@ -1656,7 +1685,7 @@ function typedMagnitudeOf(src, template) {
   const medium = magnitudeMediumOfRow(src, template), t = src && src.typedMagnitude;
   if (!medium || !t || t.medium !== medium || !magnitudeNumberOk('psi', t.psi)) return null;
   if (!magnitudeHasTemp(medium)) return { psi: t.psi };
-  if (t.f == null && MAGNITUDE_MEDIA[medium].fOpt) return { psi: t.psi };
+  if (t.f == null && magnitudeTempOptional(medium, template)) return { psi: t.psi };
   return magnitudeNumberOk('f', t.f) ? { psi: t.psi, f: t.f } : null;
 }
 function magnitudeText(m) { return m ? m.psi + ' PSI' + (m.f != null ? ' @ ' + m.f + ' F' : '') : ''; }
@@ -1811,12 +1840,13 @@ const CHW_ENERGY_SOURCES = [
   'CHW'
 ];
 
-// Equipment types that always offer the "- Hot" verification choices in addition
-// to whatever the energy source's temperature classification would normally show.
-// Equipment that always offers the "- Hot" verification variants regardless of
-// the source's own temperature. 'Boiler' was here for the old DW In inlet;
-// that source is now HHW In (hot on its own, and template-narrowed anyway), so
-// Boiler was removed to stop Natural Gas offering temperature verifications.
+// Equipment whose WATER rows always offer the "- Hot" verification variants as
+// well, whatever the source's own temperature (a water heater's DW In can run
+// hot). 'Boiler' was here for the old DW In inlet; that source is now HHW In (hot
+// on its own, and template-narrowed anyway), so Boiler was removed to stop
+// Natural Gas offering temperature verifications. Build 181 (gap C3): water rows
+// only (isWaterFamilySource), so a gas-fired heater's Natural Gas / Propane row,
+// its fuel oil or its chemical feed is offered no Temp Only - Hot or "- Hot" codes.
 const HOT_VERIFICATION_EQUIP = ['Domestic Water Heater'];
 
 // Temperature classification for an energy source ('hot' | 'chw' | '').
@@ -1885,8 +1915,9 @@ function getFilteredVerifications(deviceType, energySource) {
   if (!workingList) return DATA.verificationTypes.filter(v => v !== 'Sight Glass');
 
   // Some equipment (e.g. Domestic Water Heater) always offers the "- Hot"
-  // verification choices in addition to whatever the source temperature implies.
-  const alwaysHot = HOT_VERIFICATION_EQUIP.includes(getEquipType());
+  // verification choices on its water rows, in addition to whatever the source
+  // temperature implies (build 181, gap C3: never on its gas, fuel or chemical rows)
+  const alwaysHot = HOT_VERIFICATION_EQUIP.includes(getEquipType()) && isWaterFamilySource(energySource);
 
   // Resolve placeholders (add() de-dupes so we never list the same option twice)
   const result = [];
@@ -4449,7 +4480,7 @@ function magnitudeControl(src, i, open) {
       placeholder="${ph || ''}" aria-label="${label}" oninput="typeMagnitude(${i},'${kind}',this)" onchange="commitMagnitude(${i},'${kind}',this)" onblur="endMagnitudeEdit()">`;
   return html`<div class="src-psi src-mag" id="src_mag_${i}">
     ${box('psi', MAGNITUDE_WORDS[medium] + ' pressure (PSI)')}<span>PSI</span>
-    ${magnitudeHasTemp(medium) ? html`<span>@</span>${box('f', MAGNITUDE_WORDS[medium] + ' temperature (F)' + (md.sat ? ', blank for saturated' : md.fOpt ? ', optional' : ''), md.sat ? 'sat.' : '')}<span>F</span>` : ''}
+    ${magnitudeHasTemp(medium) ? html`<span>@</span>${box('f', MAGNITUDE_WORDS[medium] + ' temperature (F)' + (md.sat ? ', blank for saturated' : magnitudeTempOptional(medium) ? ', optional' : ''), md.sat ? 'sat.' : '')}<span>F</span>` : ''}
     <span class="src-mag-note">${magnitudeNoteText(medium, typed)}</span>
     <button type="button" class="btn btn-sm btn-outline src-mag-clear" ${typed ? '' : 'hidden'} onclick="clearMagnitude(${i})">Clear</button>
     ${/In\/Out$/.test(src.energySource) ? html`<div class="src-mag-hint">Both valves print this. In and Out differ? Make them separate In and Out rows.</div>` : ''}
@@ -4502,9 +4533,9 @@ function setTypedMagnitude(index, kind, n) {
   src.typedMagnitude = next;
   autoSaveCurrent();
 }
-// An optional temperature (fOpt) whose box is empty: "NN PSI" alone, never refused
+// An optional temperature (magnitudeTempOptional) whose box is empty: "NN PSI" alone, never refused
 function magnitudeTempEmptied(medium, kind, el) {
-  return kind === 'f' && MAGNITUDE_MEDIA[medium].fOpt && String(el.value || '').trim() === '';
+  return kind === 'f' && magnitudeTempOptional(medium) && String(el.value || '').trim() === '';
 }
 // What the row held before this box was typed in: a "No" to the 212 F question puts
 // it back. Taken at the box's first keystroke (not on focus: a box that has the
